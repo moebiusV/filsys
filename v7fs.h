@@ -162,4 +162,17 @@ int v7fs_dir_remove(v7fs_t *fs, v7_inode_t *ip, const char *name);
 /* Resolve a path into an inode number.  0 or -errno. */
 int v7fs_lookup(v7fs_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip);
 
+/* ---- integrity check ---------------------------------------------------- */
+
+typedef struct {
+    uint32_t free_blocks;    /* free blocks found by walking the free list */
+    uint32_t inodes;         /* total inode slots */
+    uint32_t used_inodes;    /* inodes with a non-zero mode */
+    uint32_t errors;         /* number of integrity problems found */
+} v7_check_t;
+
+/* Walk the free list and the inode table; report findings to stdout.
+ * Returns 0 if no errors were found, -1 otherwise. */
+int v7fs_check(v7fs_t *fs, v7_check_t *rep);
+
 #endif /* V7FS_H */

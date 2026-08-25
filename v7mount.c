@@ -529,11 +529,14 @@ static struct fuse_operations v7_ops = {
 /* ---- main --------------------------------------------------------------- */
 
 static void usage(const char *prog) {
-    fprintf(stderr, "usage: %s [-r] [-f] [-d] <image> <mountpoint>\n", prog);
+    fprintf(stderr,
+            "usage: %s [-r] [-f] [-d] <image> <mountpoint>\n"
+            "       %s -c <image>            # integrity check (no mount)\n",
+            prog, prog);
 }
 
 int main(int argc, char *argv[]) {
-    int readonly = 0, foreground = 0, debug = 0;
+    int readonly = 0, foreground = 0, debug = 0, check = 0;
     int ai = 1;
     for (; ai < argc && argv[ai][0] == '-'; ai++) {
         for (const char *p = argv[ai] + 1; *p; p++) {
@@ -541,24 +544,36 @@ int main(int argc, char *argv[]) {
             case 'r': readonly = 1; break;
             case 'f': foreground = 1; break;
             case 'd': debug = 1; break;
+            case 'c': check = 1; break;
             default:
                 usage(argv[0]);
                 return 2;
             }
         }
     }
-    if (argc - ai != 2) {
+    if (check && (argc - ai != 1)) {
+        fprintf(stderr, "usage: %s -c <image>\n", argv[0]);
+        return 2;
+    }
+    if (!check && (argc - ai != 2)) {
         usage(argv[0]);
         return 2;
     }
     const char *image = argv[ai];
-    const char *mountpoint = argv[ai + 1];
+    const char *mountpoint = check ? NULL : argv[ai + 1];
 
     v7fs_t fs;
-    int rc = v7fs_open(&fs, image, readonly);
+    int rc = v7fs_open(&fs, image, readonly || check);
     if (rc) {
         fprintf(stderr, "v7mount: cannot open %s: %s\n", image, strerror(-rc));
         return 1;
+    }
+
+    if (check) {
+        v7_check_t rep;
+        int crc = v7fs_check(&fs, &rep);
+        v7fs_close(&fs);
+        return crc == 0 ? 0 : 1;
     }
 
     /* Hold an exclusive lock on the image for the whole mount, so the
