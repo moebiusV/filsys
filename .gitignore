@@ -1,0 +1,24 @@
+# generated build artifacts
+v7mount
+*.o
+
+# disk image (large binary; fetch with ./fetch.sh)
+rp06-0.disk
+rp06-0.disk.gz
+
+# local libfuse3 dev package + extracted headers (fetch with ./fetch.sh)
+libfuse3-dev_*.deb
+fuselib/
+
+# scratch / tooling
+.venv/
+__pycache__/
+*.py
+mnt/
+mount.log
+testcopy.disk
+ls-off
+boottest/
+core
+core.*
+tm0.tap
