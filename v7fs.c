@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -577,4 +578,100 @@ int v7fs_lookup(v7fs_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
     if (ip)
         *ip = dip;
     return 0;
+}
+
+/* ---- integrity check ---------------------------------------------------- */
+
+int v7fs_check(v7fs_t *fs, v7_check_t *rep) {
+    memset(rep, 0, sizeof(*rep));
+
+    /* 1. superblock sanity */
+    if (fs->isize >= fs->fsize || fs->fsize == 0) {
+        printf("bad superblock: isize=%u fsize=%u\n", fs->isize, fs->fsize);
+        rep->errors++;
+    }
+    if (fs->nfree > V7_NICFREE) {
+        printf("bad nfree=%u (>%d)\n", fs->nfree, V7_NICFREE);
+        rep->errors++;
+    }
+    if (fs->ninode > V7_NICINOD) {
+        printf("bad ninode=%u (>%d)\n", fs->ninode, V7_NICINOD);
+        rep->errors++;
+    }
+
+    /* 2. walk the free list exactly as alloc() would, checking integrity */
+    uint8_t *seen = calloc(fs->fsize ? fs->fsize : 1, 1);
+    if (!seen)
+        return -ENOMEM;
+    uint16_t n = fs->nfree;
+    uint32_t cur[V7_NICFREE];
+    memcpy(cur, fs->free, sizeof(cur));
+    uint32_t guard = 0;
+    while (n > 0) {
+        uint32_t bno = cur[--n];
+        if (bno == 0)
+            break;                       /* sentinel: end of chain */
+        if (bno < fs->isize || bno >= fs->fsize) {
+            printf("free block %u out of range [%u,%u)\n",
+                   bno, fs->isize, fs->fsize);
+            rep->errors++;
+            break;
+        }
+        if (seen[bno]) {
+            printf("free block %u listed twice (cycle?)\n", bno);
+            rep->errors++;
+            break;
+        }
+        seen[bno] = 1;
+        rep->free_blocks++;
+        if (++guard > fs->fsize + V7_NICFREE) {
+            printf("free list does not terminate\n");
+            rep->errors++;
+            break;
+        }
+        if (n == 0) {
+            /* just popped the bottom: it is a dump block holding the next batch */
+            uint8_t blk[V7_BSIZE];
+            if (v7fs_read_block(fs, bno, blk)) {
+                printf("cannot read free-list block %u\n", bno);
+                rep->errors++;
+                break;
+            }
+            n = v7_get16le(blk);
+            if (n > V7_NICFREE) {
+                printf("free-list block %u has bad count %u\n", bno, n);
+                rep->errors++;
+                break;
+            }
+            for (int i = 0; i < V7_NICFREE; i++)
+                cur[i] = v7_get32me(blk + 2 + 4 * i);
+        }
+    }
+    free(seen);
+
+    /* 3. inode table walk */
+    uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
+    rep->inodes = maxino;
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        v7_inode_t ip;
+        if (v7fs_read_inode(fs, ino, &ip)) {
+            printf("inode %u unreadable\n", ino);
+            rep->errors++;
+            continue;
+        }
+        if (ip.mode == 0)
+            continue;
+        rep->used_inodes++;
+        for (int i = 0; i < V7_NIADDR; i++) {
+            uint32_t a = ip.addr[i];
+            if (a != 0 && a >= fs->fsize) {
+                printf("inode %u addr[%d]=%u out of range\n", ino, i, a);
+                rep->errors++;
+            }
+        }
+    }
+
+    printf("free blocks=%u  inodes=%u/%u used  errors=%u\n",
+           rep->free_blocks, rep->used_inodes, rep->inodes, rep->errors);
+    return rep->errors ? -1 : 0;
 }
