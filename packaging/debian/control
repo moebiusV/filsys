@@ -1,10 +1,10 @@
 Source: v7fuse
 Section: admin
 Priority: optional
-Maintainer: David <david@localhost>
+Maintainer: David Walther <david@clearbrookdistillery.com>
 Build-Depends: debhelper-compat (= 13), autoconf, automake, pkg-config, libfuse3-dev
 Standards-Version: 4.6.2
-Homepage: https://github.com/example/v7fuse
+Homepage: https://github.com/moebiusV/v7fuse
 Rules-Requires-Root: no
 
 Package: v7fuse

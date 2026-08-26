@@ -3,8 +3,8 @@ Version:        0.1.0
 Release:        1%{?dist}
 Summary:        FUSE driver for V7 (PDP-11) Unix filesystem images
 
-License:        GPL-3.0-or-later
-URL:            https://github.com/example/v7fuse
+License:        LGPL-2.1-or-later
+URL:            https://github.com/moebiusV/v7fuse
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  gcc
@@ -42,5 +42,5 @@ autoreconf -i
 %{_mandir}/man1/v7mount.1*
 
 %changelog
-* Mon Aug 25 2026 David <david@localhost> - 0.1.0-1
+* Mon Aug 25 2026 David Walther <david@clearbrookdistillery.com> - 0.1.0-1
 - Initial release
