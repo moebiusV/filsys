@@ -1,0 +1,24 @@
+# Maintainer: David <david@localhost>
+pkgname=v7fuse
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="FUSE driver for V7 (PDP-11) Unix filesystem images"
+arch=('x86_64')
+url="https://github.com/example/v7fuse"
+license=('GPL3')
+depends=('fuse3')
+makedepends=('autoconf' 'automake' 'pkg-config')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  autoreconf -i
+  ./configure --prefix=/usr
+  make
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" install
+}

@@ -1,0 +1,5 @@
+#!/usr/bin/make -f
+# debian/rules for v7fuse — standard dh + autotools build.
+
+%:
+	dh $@

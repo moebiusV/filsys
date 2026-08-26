@@ -1,0 +1,81 @@
+.TH V7MOUNT 1 "August 2026" "v7fuse 0.1.0" "User Commands"
+.SH NAME
+v7mount \- mount a Seventh Edition (V7) Unix filesystem image
+.SH SYNOPSIS
+.B v7mount
+[\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
+.I image mountpoint
+.br
+.B v7mount
+.B \-c
+.I image
+.SH DESCRIPTION
+.B v7mount
+mounts a Seventh Edition (V7) Unix filesystem image (as used by a PDP-11) as
+a FUSE filesystem, so files can be copied on and off the image for use with a
+simulator such as SIMH
+.BR pdp11 (1).
+.PP
+The image is laid out exactly as the V7 kernel expects it: a 512-byte block
+size, the PDP-11's middle-endian byte order, and the same free-block/free-inode
+allocation discipline as the kernel's
+.IR sys/alloc.c .
+The on-disk format is understood by a running V7 kernel, so files staged with
+.B v7mount
+are visible after booting the image.
+.PP
+The first form mounts the image at
+.IR mountpoint .
+The second form
+.RB ( \-c )
+does not mount; it walks the free list and the inode table and reports any
+integrity problems on standard output.
+.SH OPTIONS
+.TP
+.B \-r
+Mount read-only.
+.TP
+.B \-f
+Stay in the foreground (do not daemonize).
+.TP
+.B \-d
+Enable FUSE debug output (implies
+.BR \-f ).
+.TP
+.B \-c
+Run the integrity check instead of mounting.  The image is opened read-only
+and the free list and inode table are walked; a non-zero exit status means
+problems were found.
+.SH LOCKING
+For the whole duration of a mount,
+.B v7mount
+holds an exclusive
+.BR flock (2)
+on the image file.  This is the hook a patched simulator uses to pause its own
+disk I/O while the image is mounted, so the two writers never touch the image
+at once.  Do not run the simulator while the image is mounted: the running
+kernel caches the superblock free list, the inode table, and the buffer cache,
+and editing the image behind it leaves those stale.
+.SH EXAMPLES
+.RS
+.nf
+mkdir mnt
+v7mount rp06-0.disk mnt
+cp host.txt mnt/tmp/            # copy a file onto the image
+cp mnt/etc/passwd .             # copy a file off
+fusermount3 -u mnt              # unmount
+
+v7mount -c rp06-0.disk          # free-list / inode-table check
+.fi
+.RE
+.SH EXIT STATUS
+0 on success; non-zero on error, or (for
+.BR \-c )
+when integrity problems were found.
+.SH SEE ALSO
+.BR fusermount3 (1),
+.BR mount.fuse3 (8),
+.BR flock (2),
+.BR pdp11 (1)
+.SH AUTHOR
+Written for the v7fuse project.

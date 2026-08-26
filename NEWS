@@ -1,0 +1,12 @@
+v7fuse 0.1.0 (2026-08-26)
+=========================
+
+First release.
+
+- Mount a V7 (PDP-11) filesystem image read-write or read-only.
+- Full middle-endian byte-order handling (16-bit LE; 32-bit high-word-first;
+  3-byte block pointers; 4-byte indirect entries).
+- Read/write/mkdir/rmdir/unlink/rename/chmod/chown/truncate/utimens/statfs.
+- Free-list and inode-table integrity check with `-c`.
+- Exclusive flock on the image for the whole mount, so a patched simulator
+  pauses while the image is mounted.
