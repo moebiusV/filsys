@@ -1,4 +1,4 @@
-v7fuse was written by David <david@localhost>.
+v7fuse was written by David Walther <david@clearbrookdistillery.com>.
 
 The on-disk filesystem layout and the allocation algorithms (balloc/bfree/
 ialloc/ifree/itrunc) mirror the Seventh Edition Unix kernel sources published

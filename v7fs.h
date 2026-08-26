@@ -1,3 +1,5 @@
+/* v7fuse 0.1.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* v7fs.h — Seventh Edition (V7) Unix filesystem, on-disk access layer.
  *
  * The V7 filesystem lives on a PDP-11 disk image.  Block size is 512 bytes:

@@ -1,3 +1,5 @@
+/* v7fuse 0.1.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* v7mount.c — FUSE driver exposing a V7 (PDP-11) filesystem image.
  *
  * Usage:

@@ -1,3 +1,5 @@
+/* v7fuse 0.1.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /* v7fs.c — Seventh Edition Unix filesystem, on-disk access layer.
  *
  * Reads and writes a V7 filesystem image.  All multi-byte fields follow the

@@ -8,6 +8,8 @@ v7fuse understands the V7 on-disk format exactly — middle-endian byte order an
 the kernel's own free-list allocation discipline — so files you stage with it
 are seen by a running V7 kernel after you boot the image.
 
+Home: <https://github.com/moebiusV/v7fuse>
+
 ## Dependencies
 
 - a C17 compiler (`gcc` or `clang`)
@@ -20,14 +22,15 @@ SONAME directly.
 ## Build
 
 ```sh
-autoreconf -i        # first time only (generates ./configure)
 ./configure
 make
 sudo make install    # installs v7mount + v7mount(1)
 ```
 
-`./configure && make && make install` is the standard GNU flow.  The code is
-compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
+`./configure && make && make install` is the standard GNU flow; `configure` is
+shipped so no autotools are needed.  (To build from a git checkout after
+editing `configure.ac` or `Makefile.am`, run `autoreconf -i` first.)  The code
+is compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
 
 ## Usage
 
@@ -108,3 +111,11 @@ sequence is `boot rp0` → type `boot` → at `:` type `hp(0,0)unix`.
 
 - Mount read-write only on a **copy** of the image; the driver has been
   smoke-tested but V7 has no journal — a bug corrupts the image.
+
+## License
+
+v7fuse is free software, licensed under the **GNU Lesser General Public
+License, version 2.1 or later** (LGPL-2.1-or-later), to match the libfuse3
+library it links against.  See [`COPYING`](COPYING) for the full text.  The
+`reference/` excerpts are original Seventh Edition Unix sources, included for
+documentation only.
