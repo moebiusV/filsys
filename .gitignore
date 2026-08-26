@@ -1,24 +1,41 @@
-# generated build artifacts
+# --- generated build artifacts ---
 v7mount
 *.o
+Makefile
+Makefile.in
+aclocal.m4
+autom4te.cache/
+build-aux/
+configure
+config.log
+config.status
+config.h
+config.h.in
+INSTALL
+stamp-h1
+.deps/
+.dirstamp
+*.tar.gz
+*.tar.xz
+*.tar.bz2
 
-# disk image (large binary; fetch with ./fetch.sh)
+# --- disk images (large binaries; fetch with ./fetch.sh) ---
 rp06-0.disk
 rp06-0.disk.gz
+runv7/rp06-0.disk
+tm0.tap
+runv7/tm0.tap
 
-# local libfuse3 dev package + extracted headers (fetch with ./fetch.sh)
+# --- local libfuse3 dev package + extracted headers (fetch with ./fetch.sh) ---
 libfuse3-dev_*.deb
 fuselib/
 
-# scratch / tooling
+# --- scratch / tooling ---
 .venv/
 __pycache__/
-*.py
 mnt/
 mount.log
 testcopy.disk
 ls-off
-boottest/
 core
 core.*
-tm0.tap
