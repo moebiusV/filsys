@@ -4,13 +4,13 @@ Mount a **Research Unix** filesystem image (PDP-11) as a FUSE filesystem on
 Linux, so files can be copied on and off the disk for use with a simulator
 (SIMH `pdp11`).
 
-One binary, every edition we care about — the on-disk format is understood
-exactly (middle-endian byte order and the kernel's own free-list allocation
+One binary, every edition we care about: the on-disk format is understood
+(middle-endian byte order and the kernel's own free-list allocation
 discipline), so files staged with it are seen by a running kernel after you
 boot the image.
 
 ```
-kenfsmount -v 6 v6root.dsk mnt        # V6 format (also V4 and V5 — identical on disk)
+kenfsmount -v 6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
 kenfsmount -v 7 rp06-0.disk mnt       # V7 format
 kenfsmount -v 32 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
 ```
@@ -46,7 +46,7 @@ kenfsmount -v <4|5|6|7|32> [options] <image> <mountpoint>
 kenfsmount -v <4|5|6|7|32> -c <image>        # integrity check (no mount)
 ```
 
-`-v` takes the Unix edition — `4`, `5`, `6`, `7` or `32` (a leading `v`, as in
+`-v` takes the Unix edition: `4`, `5`, `6`, `7` or `32` (a leading `v`, as in
 `v7`, is accepted; so is `32v`).  `4` and `5` are byte-identical to `6`, so
 they share one code path.
 
@@ -59,7 +59,7 @@ they share one code path.
 | `-v 32`| 32V format (little-endian V7)      |
 | `-o offset=N` | mount a filesystem at byte offset N (a partition) |
 | `-o uid=N,gid=N` | override reported ownership (default: you) |
-| `-o allow_other,…` | pass a FUSE option through |
+| `-o allow_other,...` | pass a FUSE option through |
 | `-r`   | mount read-only                  |
 | `-f`   | stay in foreground               |
 | `-d`   | FUSE debug output                |
@@ -89,21 +89,19 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 - The filesystem was designed on blackboards and scribbled notes in 1969 by
   **Ken Thompson, Dennis Ritchie and Rudd Canaday**.  Thompson was the
   architect; Ritchie claims the one idea of *device files*; Canaday is the
-  third name almost nobody remembers.  The design **predates the hardware** —
-  Thompson modeled its disk behaviour on Multics (GE-645) before there was a
-  computer to run it on — and the filesystem **predates the operating
-  system**: it was built on the PDP-7 first, and the exercising programs
-  (editor, assembler, kernel) grew into Unix almost by accident in the summer
-  of 1969.
-- **V1–V3** (1971–73) kernels are PDP-11 **assembly**.  Directory entries were
+  third name.  The design **predates the hardware**; Thompson modeled its disk
+  behaviour on Multics (GE-645) before there was a computer to run it on, and
+  the filesystem **predates the operating system**: it was built on the PDP-7
+  first, and the exercising programs (editor, assembler, kernel) grew into
+  Unix in the summer of 1969.
+- **V1-V3** (1971-73) kernels are PDP-11 **assembly**.  Directory entries were
   **10 bytes** (2-byte i-number + 8-char name).  The i-list, directories-as-
   files, and device files were already there from the 1969 design.
-- **V4 (1973)** is the famous **C rewrite** of the kernel *and* the
-  filesystem, and the first edition with the **16-byte directory entry**
-  (`d_ino` + `d_name[14]`) — the same struct that survives into V7's
-  `dir.h`.  The 14 is an artifact of making the entry 16 bytes once the
-  i-number took two.
-- **V5, V6 (1974–75)**: **no on-disk change** from V4.  The V6 inode is 32
+- **V4 (1973)** is the **C rewrite** of the kernel *and* the filesystem, and
+  the first edition with the **16-byte directory entry** (`d_ino` +
+  `d_name[14]`), the same struct that survives into V7's `dir.h`.  The 14 is
+  an artifact of making the entry 16 bytes once the i-number took two.
+- **V5, V6 (1974-75)**: **no on-disk change** from V4.  The V6 inode is 32
   bytes, eight 16-bit block addresses with the `ILARG` flag switching them to
   indirect, and a 24-bit size split across a byte and a word.
 - **V7 (1979)** is the **only format break** in the range.  Disks had grown
@@ -113,7 +111,7 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
   triple indirect), made the size a full 32 bits, and added `ctime`.  The
   widening is generally Ken Thompson's, driven by the same portability work
   (Johnson and Ritchie's Interdata port) that produced `daddr_t`.
-- **32V** is V7 recompiled for the VAX — structurally identical, but see the
+- **32V** is V7 recompiled for the VAX; structurally identical, but see the
   byte-order caveat below.
 
 ### Format table
@@ -122,20 +120,20 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 |---|---|---|---|
 | block size | 512 | 512 | 512 |
 | inode size | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) |
-| block addresses | 8 × 16-bit | 13 × 24-bit (3-byte packed) | same |
+| block addresses | 8 x 16-bit | 13 x 24-bit (3-byte packed) | same |
 | file size | 24-bit | 32-bit | 32-bit |
 | superblock free list | `free[100]`, 16-bit | `s_free[50]`, 24-bit | same |
 | root inode | 1 | 2 | 2 |
 | bad-block file | none | inode 1 | inode 1 |
 | directory entry | 16 B (`d_ino` + 14-char) | 16 B | 16 B |
 
-One `-v 6` code path covers V4, V5 and V6 — they are byte-identical on disk.
+One `-v 6` code path covers V4, V5 and V6, which are byte-identical on disk.
 
 ### Gotchas
 
 - **The V6 24-bit size is `(size0 << 16) | size1`.**  `size0` (one byte at
   inode offset +5) is the *high* byte and `size1` (the word at +6) is the
-  *low* 16 bits — not the other way around.  Getting this backwards makes a
+  *low* 16 bits, not the other way around.  Getting this backwards makes a
   160-byte root directory read as 40960 and every write fail `ENOSPC`.
 - **Root inode differs by edition.**  V4/V5/V6 have `ROOTINO 1` and no
   bad-block file; V7/32V have `ROOTINO 2` and reserve inode 1.  Do not carry
@@ -143,38 +141,37 @@ One `-v 6` code path covers V4, V5 and V6 — they are byte-identical on disk.
 - **The V7 bad-block file.**  Inode 1 is a regular file with `nlink = 0`
   (nameless), and its `di_addr` entries *are* the bad block numbers,
   marking them allocated.  The kernel's `badblock()` in `alloc.c` is
-  unrelated — it is just a range check; the bad-block *list* is used by
+  unrelated; it is just a range check, and the bad-block *list* is used by
   `mkfs`/`fsck`/`icheck`, not by the running allocator.  Stock V7 `mkfs`
   stubs `badblk()` out and creates an empty bad-block file.
-- **A device file's `i_addr[0]` is not a block number — it is the device
-  number.**  In V4–V7 a character or block special file stores its
+- **A device file's `i_addr[0]` is not a block number; it is the device
+  number.**  In V4-V7 a character or block special file stores its
   major/minor device number in `i_addr[0]` (e.g. `/dev/tty0` is `0x300`,
   `/dev/null` is `0x800`, `/dev/mem` is `0x100`) and leaves the rest of
   `i_addr` zero.  Those small numbers collide with the low data-block numbers,
   so a naive "walk every inode and flag a block owned twice" checker reports a
-  **double allocation** where there is none — `/bin/cdb` owns block 768, and
+  **double allocation** where there is none: `/bin/cdb` owns block 768, and
   `/dev/tty0` is *also* "768", but only as a device number.  For a while this
   looked like a genuine "two files sharing a block" corruption on the V6
   image; it was always the device files.  A block-ownership audit must skip
   type `IFCHR`/`IFBLK` before reading `i_addr` as block pointers.
 - **V6 added `int pad[50]` to the superblock struct; V4/V5 have no pad.**  The
-  V6 `filsys` is 516 bytes — 4 bytes *over* the 512-byte block.  It does
+  V6 `filsys` is 516 bytes, 4 bytes *over* the 512-byte block.  It does
   **not** spill into block 2: V6's `bcopy` counts in 16-bit *words* (its body
   is `*b++ = *a++` over `int *`), and the superblock I/O calls `bcopy(..., 256)`
   = 256 words = 512 bytes, so the last 4 bytes of `pad[50]` (`pad[48]`,
   `pad[49]`) are never written to disk.  Block 2 is the start of the i-list
-  and is untouched.  The pad looks like an over-count — `pad[48]` (96 bytes)
+  and is untouched.  The pad looks like an over-count: `pad[48]` (96 bytes)
   would have landed the struct on exactly 512; `pad[50]` overshoots by 4.
 - **32V is not byte-identical to V7 at all.**  *Every* 32-bit field flips byte
   order: `di_size`, `di_atime`/`di_mtime`/`di_ctime`, `s_fsize`, `s_free[]`,
-  `s_time`, and the indirect-block `daddr_t` entries.  And — correcting a
-  claim made earlier in this project — the **3-byte `di_addr` addresses differ
-  too**: the V7 `iexpand` packs them `[hi, lo, mid]`, the 32V `iexpand` packs
-  them `[lo, mid, hi]`.  The two kernels' `iexpand` differ in exactly where the
-  zero pad byte goes (byte 1 on the PDP-11, byte 3 on the VAX).  Only the
-  16-bit fields (`di_mode`, `di_nlink`, `di_uid`, `di_gid`, `s_isize`,
-  `s_nfree`, `s_ninode`, `s_inode[]`) are byte-order neutral.  kenfs handles
-  this with a `-32` selector.
+  `s_time`, and the indirect-block `daddr_t` entries.  The **3-byte `di_addr`
+  addresses differ too**: the V7 `iexpand` packs them `[hi, lo, mid]`, the 32V
+  `iexpand` packs them `[lo, mid, hi]`.  The two kernels' `iexpand` differ in
+  exactly where the zero pad byte goes (byte 1 on the PDP-11, byte 3 on the
+  VAX).  Only the 16-bit fields (`di_mode`, `di_nlink`, `di_uid`, `di_gid`,
+  `s_isize`, `s_nfree`, `s_ninode`, `s_inode[]`) are byte-order neutral.
+  kenfs handles this with a `-v 32` selector.
 - **V3-and-earlier directories are 10 bytes**, so a reader for those editions
   needs a different directory walker.  Out of scope here (we floor at V4).
 
@@ -190,8 +187,17 @@ The PDP-11 is **middle-endian**:
 - V7 indirect blocks: 4-byte middle-endian `daddr_t`, 128 entries/block.
 - V6 indirect blocks: 2-byte little-endian block numbers, 256 entries/block.
 - **32V (VAX)** is little-endian throughout: 32-bit fields low word first, and
-  the 3-byte `di_addr` packed `[lo, mid, hi]`.  The `-32` selector flips all of
-  these in `v7fs.c` (the `le` byte-order flag).
+  the 3-byte `di_addr` packed `[lo, mid, hi]`.  The `-v 32` selector flips all
+  of these in `v7fs.c` (the `le` byte-order flag).
+- **32V also shifts several *superblock* fields two bytes later**: the VAX
+  aligns `daddr_t`/`time_t` to 4 bytes, so `s_fsize` moves +2->+4, `s_nfree`
+  +6->+8, `s_free[]` +8->+12, `s_ninode` +208->+212, and `s_time` +414->+420
+  (each 2-byte field `s_isize`/`s_nfree`/`s_ninode` gains a 2-byte pad after
+  it).  The free-list dump block shifts the same way: `df_nfree` is a 4-byte
+  `int` on the VAX (2 bytes on the PDP-11), so `df_free[]` moves +2->+4.  The
+  inode and directory entry are *not* shifted (their fields already fall on
+  4-byte boundaries), so only `filsys` and `fblk` differ in *layout*; every
+  other structure differs from V7 only in byte order.
 
 `v6fs.c` and `v7fs.c` implement `balloc`/`bfree`/`ialloc`/`ifree`/`itrunc`
 mirroring the respective kernel's `sys/alloc.c`, so the free list stays
@@ -200,22 +206,22 @@ interchangeable with what a running kernel expects.
 ### Disk partitions
 
 A V7 disk is a **partitioned** disk, and the partition table is *not on the
-disk* — it is compiled into the kernel's device driver (`rp.c`'s `rp_sizes`,
+disk*; it is compiled into the kernel's device driver (`rp.c`'s `rp_sizes`,
 `rk.c`'s table).  The pcollinson RP06 images divide their 340,671 blocks as:
 
 | partition | blocks | size | holds |
 |---|---|---|---|
-| root (`/dev/rp0`) | 0–4999 | 2.5 MB | `/`, `etc/rc`, `/unix` |
-| swap + spare | 5000–18391 | 6.5 MB | (mostly zeroed) |
-| `/usr` (`/dev/rp3` = `rp0h`) | 18392–340669 | 165 MB | full source tree |
+| root (`/dev/rp0`) | 0-4999 | 2.5 MB | `/`, `etc/rc`, `/unix` |
+| swap + spare | 5000-18391 | 6.5 MB | (mostly zeroed) |
+| `/usr` (`/dev/rp3` = `rp0h`) | 18392-340669 | 165 MB | full source tree |
 
 The root's `/etc/rc` gives it away: `mount /dev/rp3 /usr`, and `/dev/rp3` is a
 block device (major 6, minor 7 = `rp0h`).  So the "root smaller than the disk"
-is not waste — it is the normal V7 root/swap//usr split, and the `/usr`
+is not waste; it is the normal V7 root/swap//usr split, and the `/usr`
 filesystem sits **intact** at block 18392 (superblock at 18393: `isize=8189`,
 `fsize=322278`, middle-endian).  Mount it in place with the byte offset
-(`18392 × 512 = 9416704`) — `kenfsmount -v 7 -o offset=9416704 rp06-0.disk mnt`
-— and `-c` reports 2064 used inodes, `errors=0`; it mounts as a complete
+(`18392 x 512 = 9416704`): `kenfsmount -v 7 -o offset=9416704 rp06-0.disk mnt`,
+and `-c` reports 2064 used inodes, `errors=0`; it mounts as a complete
 May-1979 source tree (`/usr/src`, `/usr/sys`, man pages, games).
 
 To locate such a partition you read `/etc/rc` (for the *name*), read the
@@ -226,7 +232,7 @@ too low: this `/usr` has `isize=8189` (65,512 inodes), which a naive
 "small i-list" heuristic wrongly skips.
 
 `kenfsmount -o offset=N` shifts the superblock read to byte `N`, so a
-partition mounts in place without `dd` — and the root and `/usr` partitions
+partition mounts in place without `dd`, and the root and `/usr` partitions
 can be mounted from the *same* file at once, nested:
 
 ```
@@ -235,7 +241,7 @@ kenfsmount -v 7 -o offset=9416704 rp06-0.disk mnt/usr
 ```
 
 The second (nested) mount needs the outer mount point to be owned by you (it
-is — kenfsmount reports files as the mounting user, override with
+is; kenfsmount reports files as the mounting user, override with
 `-o uid=,gid=`), and needs FUSE to let the mount helper enter the outer mount,
 which requires `user_allow_other` in `/etc/fuse.conf` and `-o allow_other` on
 the outer mount (or running the whole thing as root).
@@ -263,10 +269,10 @@ every edition:
 
 | edition | image | `-c` | mount | create/write | chmod/chown | delete |
 |---|---|---|---|---|---|---|
-| V4 | TUHS `Utah_v4/disk.rk` | ✅ | ✅ | ✅ | ✅ (on-disk bytes verified) | ✅ |
-| V5 | TUHS `Dennis_v5/v5root` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| V6 | pcollinson `rk0` / SIMH `uv6swre` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| V7 | pcollinson `rp06-0.disk` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| V4 | TUHS `Utah_v4/disk.rk` | yes | yes | yes | yes (on-disk bytes verified) | yes |
+| V5 | TUHS `Dennis_v5/v5root` | yes | yes | yes | yes | yes |
+| V6 | pcollinson `rk0` / SIMH `uv6swre` | yes | yes | yes | yes | yes |
+| V7 | pcollinson `rp06-0.disk` | yes | yes | yes | yes | yes |
 
 On-disk verification dumped the raw 32-byte inode blocks after `chmod`/`chown`
 and confirmed the mode, uid/gid and size fields landed correctly, and that
@@ -289,18 +295,18 @@ emulator is running.
 
 ## Layout
 
-- `v6fs.h` / `v6fs.c` — V4/V5/V6 on-disk access layer.
-- `v7fs.h` / `v7fs.c` — V7/32V on-disk access layer.
-- `kenfsmount.c` — FUSE callbacks + the `-v` edition selector.
-- `kenfsfind.c` — locate filesystem superblocks (partitions) on a raw image.
-- `kenfs.5`, `kenfsfind.1` — the format and tool manpages.
-- `configure.ac`, `Makefile.am` — GNU autotools build.
+- `v6fs.h` / `v6fs.c`: V4/V5/V6 on-disk access layer.
+- `v7fs.h` / `v7fs.c`: V7/32V on-disk access layer.
+- `kenfsmount.c`: FUSE callbacks + the `-v` edition selector.
+- `kenfsfind.c`: locate filesystem superblocks (partitions) on a raw image.
+- `kenfs.5`, `kenfsfind.1`: the format and tool manpages.
+- `configure.ac`, `Makefile.am`: GNU autotools build.
 - `test.sh`, `fetch.sh`, `reference/`, `runv7/`.
 
 ## Notes
 
-- Mount read-write only on a **copy** of the image; V4–V7 have no journal —
-  a bug corrupts the image.
+- Mount read-write only on a **copy** of the image; V4-V7 have no journal; a
+  bug corrupts the image.
 - The `-c` integrity check walks the free list and the inode table and
   reports out-of-range block numbers, cycles, and unreadable inodes.
 - The on-disk `fsize` and every inode's `size` are validated against the real
@@ -312,7 +318,7 @@ emulator is running.
 ## License
 
 The original code (`v6fs.c`, `v7fs.c`, `kenfsmount.c`, and their headers) is
-licensed under the **ISC license** — Copyright (c) 2026 David Walther.
+licensed under the **ISC license**: Copyright (c) 2026 David Walther.
 
 The `kenfs.5` manpage is derived from the ancient UNIX `fs(5)` (V4, V6) and
 `filsys(5)`/`dir(5)` (V7, 32V) pages, and retains the **Caldera International

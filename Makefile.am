@@ -1,4 +1,4 @@
-# Makefile.am — kenfs, a FUSE driver for Research Unix filesystem images.
+# Makefile.am - kenfs, a FUSE driver for Research Unix filesystem images.
 
 bin_PROGRAMS = kenfsmount kenfsfind
 
