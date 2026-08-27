@@ -13,7 +13,7 @@ filsysfind_CFLAGS = -std=c17 -Wall -Wextra
 
 dist_man_MANS = filsys.5 filsysfind.1
 
-EXTRA_DIST = test.sh fetch.sh reference runv7/headless.ini runv7/headless_boot.py packaging
+EXTRA_DIST = test.sh fetch.sh reference packaging
 
 # `make check` runs the end-to-end smoke test.  It needs a disk image
 # (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).
