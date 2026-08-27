@@ -194,6 +194,35 @@ The PDP-11 is **middle-endian**:
 mirroring the respective kernel's `sys/alloc.c`, so the free list stays
 interchangeable with what a running kernel expects.
 
+### Disk partitions
+
+A V7 disk is a **partitioned** disk, and the partition table is *not on the
+disk* — it is compiled into the kernel's device driver (`rp.c`'s `rp_sizes`,
+`rk.c`'s table).  The pcollinson RP06 images divide their 340,671 blocks as:
+
+| partition | blocks | size | holds |
+|---|---|---|---|
+| root (`/dev/rp0`) | 0–4999 | 2.5 MB | `/`, `etc/rc`, `/unix` |
+| swap + spare | 5000–18391 | 6.5 MB | (mostly zeroed) |
+| `/usr` (`/dev/rp3` = `rp0h`) | 18392–340669 | 165 MB | full source tree |
+
+The root's `/etc/rc` gives it away: `mount /dev/rp3 /usr`, and `/dev/rp3` is a
+block device (major 6, minor 7 = `rp0h`).  So the "root smaller than the disk"
+is not waste — it is the normal V7 root/swap//usr split, and the `/usr`
+filesystem sits **intact** at block 18392 (superblock at 18393: `isize=8189`,
+`fsize=322278`, middle-endian).  Extract it with `dd skip=18392` and
+`kenfsmount -v 7 -c` reports 2064 used inodes, `errors=0`; it mounts as a
+complete May-1979 source tree (`/usr/src`, `/usr/sys`, man pages, games).
+
+To locate such a partition you read `/etc/rc` (for the *name*), read the
+driver's partition table (for the *offset*), or scan for superblocks — at
+cylinder boundaries (RP06: 418 blocks/cylinder, so 18392 = cylinder 44), and
+**without capping `isize` too low**: this `/usr` has `isize=8189` (65,512
+inodes), which a naive "small i-list" heuristic wrongly skips.
+
+kenfsmount reads the superblock at block 1 (byte 512) and has no `offset=`
+option, so to mount a partition in place you extract it with `dd skip=` first.
+
 ## Verification
 
 The read path and the write path were both exercised against real images of
