@@ -17,9 +17,7 @@ autom4te.cache/
 # --- disk images (large binaries; fetch with ./fetch.sh) ---
 rp06-0.disk
 rp06-0.disk.gz
-runv7/rp06-0.disk
 tm0.tap
-runv7/tm0.tap
 
 # --- local libfuse3 dev package + extracted headers (fetch with ./fetch.sh) ---
 libfuse3-dev_*.deb
