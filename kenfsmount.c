@@ -5,18 +5,20 @@
  *
  * One binary, every edition we care about:
  *
- *   -6   V6 format (also V4 and V5 — byte-identical on disk)
- *   -7   V7 format (default)
- *   -32  32V format (V7 for the VAX; little-endian 32-bit fields + addresses)
+ *   -v 4     V4 format (byte-identical to V5/V6)
+ *   -v 5     V5 format (byte-identical to V4/V6)
+ *   -v 6     V6 format
+ *   -v 7     V7 format
+ *   -v 32    32V format (V7 for the VAX; little-endian 32-bit fields + addresses)
  *
  * The on-disk layout is the 1969 Thompson/Canaday/Ritchie design — a flat
  * i-list at a fixed offset, directories as ordinary files of 16-byte entries,
  * and device files — carried essentially unchanged from the PDP-7 through V6,
- * then widened in V7 (64-byte inode, 24-bit block numbers).  See kenfs(1).
+ * then widened in V7 (64-byte inode, 24-bit block numbers).  See kenfs.5.
  *
  * Usage:
- *     kenfs [-6|-7|-32] [-r] [-f] [-d] <image> <mountpoint>
- *     kenfs [-6|-7|-32] -c <image>            # integrity check (no mount)
+ *     kenfsmount -v <4|5|6|7|32> [-r] [-f] [-d] <image> <mountpoint>
+ *     kenfsmount -v <4|5|6|7|32> -c <image>       # integrity check (no mount)
  */
 #include "v6fs.h"
 #include "v7fs.h"
@@ -548,8 +550,8 @@ static struct fuse_operations kfs_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s [-6|-7|-32] [-r] [-f] [-d] <image> <mountpoint>\n"
-            "       %s [-6|-7|-32] -c <image>            # integrity check\n",
+            "usage: %s -v <4|5|6|7|32> [-r] [-f] [-d] <image> <mountpoint>\n"
+            "       %s -v <4|5|6|7|32> -c <image>        # integrity check\n",
             p, p);
 }
 
@@ -558,9 +560,23 @@ int main(int argc, char *argv[]) {
     int ai = 1;
     for (; ai < argc && argv[ai][0] == '-'; ai++) {
         const char *a = argv[ai];
-        if (!strcmp(a, "-6")) { ver = KFS_V6; continue; }
-        if (!strcmp(a, "-7")) { ver = KFS_V7; continue; }
-        if (!strcmp(a, "-32")) { ver = KFS_32V; continue; }
+        if (!strcmp(a, "-v")) {
+            if (ai + 1 >= argc) { usage(argv[0]); return 2; }
+            const char *v = argv[++ai];
+            if (v[0] == 'v' || v[0] == 'V') v++;   /* accept "v7" and "7" alike */
+            if (!strcmp(v, "4") || !strcmp(v, "5") || !strcmp(v, "6"))
+                ver = KFS_V6;
+            else if (!strcmp(v, "7"))
+                ver = KFS_V7;
+            else if (!strcmp(v, "32") || !strcmp(v, "32v"))
+                ver = KFS_32V;
+            else {
+                fprintf(stderr, "%s: unknown Unix version \"%s\" (4, 5, 6, 7, 32)\n", argv[0], v);
+                usage(argv[0]);
+                return 2;
+            }
+            continue;
+        }
         for (const char *p = a + 1; *p; p++) {
             switch (*p) {
             case 'r': readonly = 1; break;
