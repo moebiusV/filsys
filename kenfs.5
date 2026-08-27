@@ -7,11 +7,11 @@
 kenfsmount, kenfs \- mount a Research Unix filesystem image; filesystem format (V4 through 32V)
 .SH SYNOPSIS
 .B kenfsmount
-[\fB\-6\fR|\fB\-7\fR|\fB\-32\fR] [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
+\fB\-v\fR \fI<4|5|6|7|32>\fR [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
 .I image mountpoint
 .br
 .B kenfsmount
-[\fB\-6\fR|\fB\-7\fR|\fB\-32\fR]
+\fB\-v\fR \fI<4|5|6|7|32>\fR
 .B \-c
 .I image
 .SH DESCRIPTION
@@ -38,19 +38,26 @@ does not mount; it walks the free list and the inode table and reports any
 integrity problems on standard output.
 .SH OPTIONS
 .TP
-.B \-6
-Select the V6 on-disk format.  This also covers V4 and V5, which are identical
-on disk.
-.TP
-.B \-7
-Select the V7 on-disk format (the default).
-.TP
-.B \-32
-Select the 32V (VAX) on-disk format: the same layout as V7, but every 32-bit
-field and the 3-byte block addresses are little-endian rather than PDP-11
-middle-endian (see
+.B \-v <4|5|6|7|32>
+Select the on-disk edition.
+.BR 4 ,
+.B 5
+and
+.B 6
+are byte-identical (the V6 format);
+.B 7
+is the V7 format; and
+.B 32
+selects 32V (VAX), whose 32-bit fields and 3-byte block addresses are
+little-endian rather than PDP-11 middle-endian (see
 .B "FILESYSTEM FORMAT"
-below).
+below).  A leading
+.B v
+is accepted
+.RB ( v7 ,
+.BR v6 ,
+\&...), as is
+.BR 32v .
 .TP
 .B \-r
 Mount read-only.
@@ -80,13 +87,13 @@ and editing the image behind it leaves those stale.
 .RS
 .nf
 mkdir mnt
-kenfsmount -7 rp06-0.disk mnt         # V7 image
-kenfsmount -6 v6root.dsk mnt2         # V6 (also V4/V5) image
+kenfsmount -v 7 rp06-0.disk mnt         # V7 image
+kenfsmount -v 6 v6root.dsk mnt2         # V6 (also V4/V5) image
 cp host.txt mnt/tmp/             # copy a file onto the image
 cp mnt/etc/passwd .              # copy a file off
 fusermount3 -u mnt               # unmount
 
-kenfsmount -6 -c v6root.dsk           # free-list / inode-table check
+kenfsmount -v 6 -c v6root.dsk           # free-list / inode-table check
 .fi
 .RE
 .SH EXIT STATUS
@@ -156,6 +163,7 @@ not spill into block 2: V6's
 .I bcopy
 counts in 16-bit words, and the superblock I/O copies 256 words (512 bytes),
 so the last 4 bytes of the pad are never written.  V4 and V5 have no pad.
+.PP
 .I V7, 32V \(em widened block addresses
 .PP
 .nf

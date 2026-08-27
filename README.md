@@ -10,9 +10,9 @@ discipline), so files staged with it are seen by a running kernel after you
 boot the image.
 
 ```
-kenfsmount -6 v6root.dsk mnt        # V6 format (also V4 and V5 — identical on disk)
-kenfsmount -7 rp06-0.disk mnt       # V7 format (default)
-kenfsmount -32 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
+kenfsmount -v 6 v6root.dsk mnt        # V6 format (also V4 and V5 — identical on disk)
+kenfsmount -v 7 rp06-0.disk mnt       # V7 format
+kenfsmount -v 32 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
 ```
 
 Home: <https://github.com/moebiusV/kenfs>
@@ -42,15 +42,21 @@ is compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
 ## Usage
 
 ```sh
-kenfsmount [-6|-7|-32] [options] <image> <mountpoint>
-kenfsmount [-6|-7|-32] -c <image>           # integrity check (no mount)
+kenfsmount -v <4|5|6|7|32> [options] <image> <mountpoint>
+kenfsmount -v <4|5|6|7|32> -c <image>        # integrity check (no mount)
 ```
+
+`-v` takes the Unix edition — `4`, `5`, `6`, `7` or `32` (a leading `v`, as in
+`v7`, is accepted; so is `32v`).  `4` and `5` are byte-identical to `6`, so
+they share one code path.
 
 | option | meaning                          |
 |--------|----------------------------------|
-| `-6`   | V6 format (V4/V5/V6)             |
-| `-7`   | V7 format (default)              |
-| `-32`  | 32V format (little-endian V7)    |
+| `-v 4` | V4 format (byte-identical to V5/V6) |
+| `-v 5` | V5 format (byte-identical to V4/V6) |
+| `-v 6` | V6 format                          |
+| `-v 7` | V7 format                          |
+| `-v 32`| 32V format (little-endian V7)      |
 | `-r`   | mount read-only                  |
 | `-f`   | stay in foreground               |
 | `-d`   | FUSE debug output                |
@@ -58,13 +64,13 @@ kenfsmount [-6|-7|-32] -c <image>           # integrity check (no mount)
 
 ```sh
 mkdir mnt
-kenfsmount -7 rp06-0.disk mnt        # read-write (make a copy first!)
+kenfsmount -v 7 rp06-0.disk mnt        # read-write (make a copy first!)
 ls mnt
 cp mnt/etc/passwd .             # copy a file off
 cp host.txt mnt/tmp/            # copy a file on
 fusermount3 -u mnt              # unmount
 
-kenfsmount -6 -c v6root.dsk          # verify the free list + inode table
+kenfsmount -v 6 -c v6root.dsk          # verify the free list + inode table
 ```
 
 See `kenfs.5` for both the tool and the on-disk format.
@@ -120,7 +126,7 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 | bad-block file | none | inode 1 | inode 1 |
 | directory entry | 16 B (`d_ino` + 14-char) | 16 B | 16 B |
 
-One `-6` code path covers V4, V5 and V6 — they are byte-identical on disk.
+One `-v 6` code path covers V4, V5 and V6 — they are byte-identical on disk.
 
 ### Gotchas
 
