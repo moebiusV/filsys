@@ -1,11 +1,12 @@
-/* v7fuse 0.1.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
-/* SPDX-License-Identifier: LGPL-2.1-or-later */
+/* kenfs 0.9.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* SPDX-License-Identifier: ISC */
 /* v7fs.c — Seventh Edition Unix filesystem, on-disk access layer.
  *
- * Reads and writes a V7 filesystem image.  All multi-byte fields follow the
- * PDP-11 middle-endian convention (see v7fs.h).  The allocation algorithms
- * (balloc/bfree/ialloc/ifree) mirror the V7 kernel's sys/alloc.c so the free
- * list stays interchangeable with what a running V7 kernel expects.
+ * Reads and writes a V7 filesystem image, and a 32V (VAX) image under the
+ * same code with the little-endian byte order selected (see v7fs.h).  The
+ * allocation algorithms (balloc/bfree/ialloc/ifree) mirror the V7 kernel's
+ * sys/alloc.c so the free list stays interchangeable with what a running
+ * kernel expects.
  */
 #include "v7fs.h"
 
@@ -16,14 +17,16 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 static int super_write(v7fs_t *fs);
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int v7fs_open(v7fs_t *fs, const char *path, int readonly) {
+int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian) {
     memset(fs, 0, sizeof(*fs));
     fs->readonly = readonly;
+    fs->le = little_endian;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
         return -errno;
@@ -34,14 +37,26 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly) {
         return -EIO;
     }
     fs->isize  = v7_get16le(sb + 0);
-    fs->fsize  = v7_get32me(sb + 2);
+    fs->fsize  = v7_get32(sb + 2, fs->le);
     fs->nfree  = v7_get16le(sb + 6);
     for (int i = 0; i < V7_NICFREE; i++)
-        fs->free[i] = v7_get32me(sb + 8 + 4 * i);
+        fs->free[i] = v7_get32(sb + 8 + 4 * i, fs->le);
     fs->ninode = v7_get16le(sb + 208);
     for (int i = 0; i < V7_NICINOD; i++)
         fs->inode[i] = v7_get16le(sb + 210 + 2 * i);
-    fs->time   = v7_get32me(sb + 414);
+    fs->time   = v7_get32(sb + 414, fs->le);
+
+    /* Reject a superblock that claims more disk than the image file actually
+     * holds, or one with no data area.  Without this, a corrupt image can make
+     * the checker (and directory readers) allocate gigabytes. */
+    struct stat st;
+    if (fstat(fs->fd, &st) == 0 &&
+        ((uint64_t)fs->fsize * V7_BSIZE > (uint64_t)st.st_size ||
+         fs->fsize <= fs->isize)) {
+        close(fs->fd);
+        fs->fd = -1;
+        return -EINVAL;
+    }
     return 0;
 }
 
@@ -83,14 +98,14 @@ static int super_write(v7fs_t *fs) {
     if (v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
     v7_put16le(sb + 0, fs->isize);
-    v7_put32me(sb + 2, fs->fsize);
+    v7_put32(sb + 2, fs->le, fs->fsize);
     v7_put16le(sb + 6, fs->nfree);
     for (int i = 0; i < V7_NICFREE; i++)
-        v7_put32me(sb + 8 + 4 * i, fs->free[i]);
+        v7_put32(sb + 8 + 4 * i, fs->le, fs->free[i]);
     v7_put16le(sb + 208, fs->ninode);
     for (int i = 0; i < V7_NICINOD; i++)
         v7_put16le(sb + 210 + 2 * i, fs->inode[i]);
-    v7_put32me(sb + 414, (uint32_t)time(NULL));  /* s_time */
+    v7_put32(sb + 414, fs->le, (uint32_t)time(NULL));  /* s_time */
     return v7fs_write_block(fs, V7_SUPERB, sb);
 }
 
@@ -113,12 +128,12 @@ int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip) {
     ip->nlink = (int16_t)v7_get16le(d + 2);
     ip->uid   = (int16_t)v7_get16le(d + 4);
     ip->gid   = (int16_t)v7_get16le(d + 6);
-    ip->size  = v7_get32me(d + 8);
+    ip->size  = v7_get32(d + 8, fs->le);
     for (int i = 0; i < V7_NIADDR; i++)
-        ip->addr[i] = v7_get24me(d + 12 + 3 * i);
-    ip->atime = v7_get32me(d + 52);
-    ip->mtime = v7_get32me(d + 56);
-    ip->ctime = v7_get32me(d + 60);
+        ip->addr[i] = v7_get24(d + 12 + 3 * i, fs->le);
+    ip->atime = v7_get32(d + 52, fs->le);
+    ip->mtime = v7_get32(d + 56, fs->le);
+    ip->ctime = v7_get32(d + 60, fs->le);
     return 0;
 }
 
@@ -137,12 +152,12 @@ int v7fs_write_inode(v7fs_t *fs, uint32_t ino, const v7_inode_t *ip) {
     v7_put16le(d + 2, (uint16_t)ip->nlink);
     v7_put16le(d + 4, (uint16_t)ip->uid);
     v7_put16le(d + 6, (uint16_t)ip->gid);
-    v7_put32me(d + 8, ip->size);
+    v7_put32(d + 8, fs->le, ip->size);
     for (int i = 0; i < V7_NIADDR; i++)
-        v7_put24me(d + 12 + 3 * i, ip->addr[i]);
-    v7_put32me(d + 52, ip->atime);
-    v7_put32me(d + 56, ip->mtime);
-    v7_put32me(d + 60, ip->ctime);
+        v7_put24(d + 12 + 3 * i, fs->le, ip->addr[i]);
+    v7_put32(d + 52, fs->le, ip->atime);
+    v7_put32(d + 56, fs->le, ip->mtime);
+    v7_put32(d + 60, fs->le, ip->ctime);
     return v7fs_write_block(fs, bno, raw);
 }
 
@@ -163,7 +178,7 @@ int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
             return -EIO;
         fs->nfree = v7_get16le(buf + 0);
         for (int i = 0; i < V7_NICFREE; i++)
-            fs->free[i] = v7_get32me(buf + 2 + 4 * i);
+            fs->free[i] = v7_get32(buf + 2 + 4 * i, fs->le);
     }
     if (blk < fs->isize || blk >= fs->fsize)
         return -EIO;   /* badblock: refuse garbage */
@@ -184,7 +199,7 @@ void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
         memset(buf, 0, V7_BSIZE);
         v7_put16le(buf + 0, fs->nfree);
         for (int i = 0; i < V7_NICFREE; i++)
-            v7_put32me(buf + 2 + 4 * i, fs->free[i]);
+            v7_put32(buf + 2 + 4 * i, fs->le, fs->free[i]);
         if (v7fs_write_block(fs, bno, buf) == 0)
             fs->nfree = 0;
     }
@@ -240,7 +255,7 @@ static void tloop(v7fs_t *fs, uint32_t blk, int level) {
     if (v7fs_read_block(fs, blk, buf))
         return;
     for (int i = V7_NINDIR - 1; i >= 0; i--) {
-        uint32_t nb = v7_get32me(buf + 4 * i);
+        uint32_t nb = v7_get32(buf + 4 * i, fs->le);
         if (nb == 0)
             continue;
         if (level > 0)
@@ -293,13 +308,13 @@ static int ind_follow(v7fs_t *fs, uint32_t *slot, int levels,
         uint8_t buf[V7_BSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
-        uint32_t next = v7_get32me(buf + 4 * indices[L]);
+        uint32_t next = v7_get32(buf + 4 * indices[L], fs->le);
 
         if (L == levels - 1) {
             if (next == 0 && create) {
                 if (v7fs_balloc(fs, &next))
                     return -ENOSPC;
-                v7_put32me(buf + 4 * indices[L], next);
+                v7_put32(buf + 4 * indices[L], fs->le, next);
                 if (v7fs_write_block(fs, blk, buf))
                     return -EIO;
             }
@@ -315,7 +330,7 @@ static int ind_follow(v7fs_t *fs, uint32_t *slot, int levels,
             memset(z, 0, V7_BSIZE);
             if (v7fs_balloc(fs, &next) || v7fs_write_block(fs, next, z))
                 return -ENOSPC;
-            v7_put32me(buf + 4 * indices[L], next);
+            v7_put32(buf + 4 * indices[L], fs->le, next);
             if (v7fs_write_block(fs, blk, buf))
                 return -EIO;
         }
@@ -419,6 +434,11 @@ ssize_t v7fs_file_write(v7fs_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t s
 int v7fs_dir_read(v7fs_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count) {
     if ((ip->mode & V7_IFMT) != V7_IFDIR)
         return -ENOTDIR;
+    /* A directory's data cannot exceed the filesystem's data area; reject a
+     * corrupt size before the malloc below, else a bogus di_size (up to 4 GiB)
+     * turns into a multi-gigabyte allocation. */
+    if (ip->size > (uint64_t)(fs->fsize - fs->isize) * V7_BSIZE)
+        return -EFBIG;
     size_t cap = ip->size / 16 + 1;
     v7_dirent_t *out = calloc(cap, sizeof(v7_dirent_t));
     if (!out)
@@ -646,7 +666,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep) {
                 break;
             }
             for (int i = 0; i < V7_NICFREE; i++)
-                cur[i] = v7_get32me(blk + 2 + 4 * i);
+                cur[i] = v7_get32(blk + 2 + 4 * i, fs->le);
         }
     }
     free(seen);

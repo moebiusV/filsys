@@ -4,8 +4,8 @@
 # `./configure && make && make install`.
 
 AC_PREREQ([2.69])
-AC_INIT([v7fuse], [0.1.0], [david@localhost])
-AC_CONFIG_SRCDIR([v7mount.c])
+AC_INIT([kenfs], [0.9.0], [david@localhost])
+AC_CONFIG_SRCDIR([kenfsmount.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE([-Wall])
 AM_SILENT_RULES([yes])

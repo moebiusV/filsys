@@ -1,0 +1,370 @@
+.\" This manpage is derived from the ancient UNIX fs(5) (V4, V6) and
+.\" filsys(5)/dir(5) (V7, 32V) pages, distributed under the Caldera
+.\" International "Ancient UNIX License" (2002).  The LICENSE section below
+.\" retains that license's copyright notice, conditions and disclaimer.
+.TH KENFS 5 "August 2026" "kenfs 0.9.0" "File Formats and Mounting"
+.SH NAME
+kenfsmount, kenfs \- mount a Research Unix filesystem image; filesystem format (V4 through 32V)
+.SH SYNOPSIS
+.B kenfsmount
+[\fB\-6\fR|\fB\-7\fR|\fB\-32\fR] [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
+.I image mountpoint
+.br
+.B kenfsmount
+[\fB\-6\fR|\fB\-7\fR|\fB\-32\fR]
+.B \-c
+.I image
+.SH DESCRIPTION
+.B kenfsmount
+mounts a Research Unix filesystem image (as used by a PDP-11) as a FUSE
+filesystem, so files can be copied on and off the image for use with a
+simulator such as SIMH
+.BR pdp11 (1).
+.PP
+One binary serves every edition we care about.  The on-disk format is the
+1969 Thompson/Canaday/Ritchie design \(em a flat i-list at a fixed offset,
+directories as ordinary files of fixed-size entries, and device files \(em
+carried essentially unchanged from the PDP-7 through V6, then widened once,
+in V7.  V4, V5 and V6 are byte-for-byte identical on disk; 32V is V7
+recompiled for the VAX, with one byte-order caveat noted under
+.B "FILESYSTEM FORMAT"
+below.
+.PP
+The first form mounts the image at
+.IR mountpoint .
+The second form
+.RB ( \-c )
+does not mount; it walks the free list and the inode table and reports any
+integrity problems on standard output.
+.SH OPTIONS
+.TP
+.B \-6
+Select the V6 on-disk format.  This also covers V4 and V5, which are identical
+on disk.
+.TP
+.B \-7
+Select the V7 on-disk format (the default).
+.TP
+.B \-32
+Select the 32V (VAX) on-disk format: the same layout as V7, but every 32-bit
+field and the 3-byte block addresses are little-endian rather than PDP-11
+middle-endian (see
+.B "FILESYSTEM FORMAT"
+below).
+.TP
+.B \-r
+Mount read-only.
+.TP
+.B \-f
+Stay in the foreground (do not daemonize).
+.TP
+.B \-d
+Enable FUSE debug output (implies
+.BR \-f ).
+.TP
+.B \-c
+Run the integrity check instead of mounting.  The image is opened read-only
+and the free list and inode table are walked; a non-zero exit status means
+problems were found.
+.SH LOCKING
+For the whole duration of a mount,
+.B kenfsmount
+holds an exclusive
+.BR flock (2)
+on the image file.  This is the hook a patched simulator uses to pause its own
+disk I/O while the image is mounted, so the two writers never touch the image
+at once.  Do not run the simulator while the image is mounted: the running
+kernel caches the superblock free list, the inode table, and the buffer cache,
+and editing the image behind it leaves those stale.
+.SH EXAMPLES
+.RS
+.nf
+mkdir mnt
+kenfsmount -7 rp06-0.disk mnt         # V7 image
+kenfsmount -6 v6root.dsk mnt2         # V6 (also V4/V5) image
+cp host.txt mnt/tmp/             # copy a file onto the image
+cp mnt/etc/passwd .              # copy a file off
+fusermount3 -u mnt               # unmount
+
+kenfsmount -6 -c v6root.dsk           # free-list / inode-table check
+.fi
+.RE
+.SH EXIT STATUS
+0 on success; non-zero on error, or (for
+.BR \-c )
+when integrity problems were found.
+.SH FILESYSTEM FORMAT
+The rest of this page folds together the historical
+.IR fs (5)
+(V4, V6) and
+.IR filsys (5)/dir (5)
+(V7, 32V) pages into a single description of the whole V4-through-32V range.
+.SS Layout common to all editions
+Every volume is divided into 512-byte blocks.
+.PP
+.nf
+    block 0         unused (bootstrap program, pack label, ...)
+    block 1         super block
+    blocks 2..      i-list (one or two blocks per inode, see below)
+.fi
+.PP
+A directory is an ordinary file (its type bit is set in the mode) whose data
+is a sequence of entries.  From V4 onward each entry is 16 bytes:
+.PP
+.nf
+    struct direct { unsigned short d_ino; char d_name[14]; };
+.fi
+.PP
+The first two entries are, by convention,
+.B .
+and
+.BR .. .
+.PP
+(V3 and earlier used a 10-byte entry \(em a 2-byte i-number and an 8-character
+name \(em so a reader for those editions must use a different directory
+walker.  The 16-byte entry dates from V4, and is the same struct that
+survives verbatim into V7's
+.IR dir.h .)
+.SS The super block (block 1)
+.I V4, V5, V6 \(em all 16-bit fields
+.PP
+.nf
+    struct {
+        int   isize;        /* +0:  first block after the i-list */
+        int   fsize;        /* +2:  first block not allocatable */
+        int   nfree;        /* +4:  free-block count (0..100) */
+        int   free[100];    /* +6:  free block numbers */
+        int   ninode;       /* +206: free i-number count (0..100) */
+        int   inode[100];   /* +208: free i-numbers */
+        char  flock;        /* +408: lock flag (in-core only) */
+        char  ilock;        /* +409: lock flag (in-core only) */
+        char  fmod;         /* +410: modified flag (in-core only) */
+        char  ronly;        /* +411: (V6) read-only flag */
+        int   time[2];      /* +412: last superblock update (32-bit) */
+    };
+.fi
+.PP
+.I V6 only:
+the V6
+.I filsys.h
+appends
+.B "int pad[50];"
+after
+.IR s_time[2] ,
+making the struct 516 bytes \(em 4 bytes past the 512-byte block.  It does
+not spill into block 2: V6's
+.I bcopy
+counts in 16-bit words, and the superblock I/O copies 256 words (512 bytes),
+so the last 4 bytes of the pad are never written.  V4 and V5 have no pad.
+.I V7, 32V \(em widened block addresses
+.PP
+.nf
+    struct filsys {
+        unsigned short s_isize;      /* blocks in i-list + superblock */
+        daddr_t        s_fsize;      /* first block not allocatable */
+        short          s_nfree;      /* free-block count */
+        daddr_t        s_free[NICFREE];  /* free blocks (NICFREE=50) */
+        short          s_ninode;     /* free i-number count */
+        ino_t          s_inode[NICINOD]; /* free i-numbers (100) */
+        char           s_flock, s_ilock, s_fmod, s_ronly;
+        time_t         s_time;       /* last update */
+        daddr_t        s_tfree;      /* total free blocks (unmaintained) */
+        ino_t          s_tinode;     /* total free inodes (unmaintained) */
+        short          s_m, s_n;     /* interleave factors */
+        char           s_fname[6], s_fpack[6];
+    };
+.fi
+.PP
+The free list is a stack plus dump blocks.  The superblock caches up to
+NICFREE (V6: 100, V7: 50) free block numbers.  When the cache empties, the
+just-popped block is read as a dump block whose first word is a count and
+whose remaining words are the next batch of free block numbers (V6: 100
+16-bit entries; V7: 50 24-bit entries).  A zero block number marks the end
+of the chain.
+.PP
+.I s_ninode
+is handled the same way: the superblock caches up to NICINOD (100) free
+i-numbers, and when it empties the i-list is scanned to refill it.  This
+list only speeds allocation; the authoritative free/allocated state is the
+inode's mode field.
+.SS The inode
+.I V4, V5, V6 \(em 32 bytes, 16 per block
+.PP
+.nf
+    struct {
+        int   flags;     /* +0:  mode + type bits */
+        char  nlink;     /* +2:  link count */
+        char  uid;       /* +3:  owner */
+        char  gid;       /* +4:  group */
+        char  size0;     /* +5:  HIGH byte of the 24-bit size */
+        int   size1;     /* +6:  LOW 16 bits of the 24-bit size */
+        int   addr[8];   /* +8:  block numbers (or device number) */
+        int   atime[2];  /* +24: last access */
+        int   mtime[2];  /* +28: last modification */
+    };
+.fi
+.PP
+The size is 24 bits, stored as
+.BR "(size0 << 16) | size1" .
+I-number
+.I i
+lives in block
+.BR "(i+31)/16" ,
+at byte offset
+.BR "32*((i+31) mod 16)" .
+Mode bits:
+.PP
+.nf
+    0100000  allocated
+    0060000  file type: 000000 plain, 0040000 dir, 0020000 char, 0060000 block
+    0010000  ILARG (large file)
+    004000/002000/001000  setuid/setgid/sticky
+    000400/000200/000100  owner r/w/x (and 000070 group, 000007 other)
+.fi
+.PP
+.I V7, 32V \(em 64 bytes, 8 per block (INOPB=8)
+.PP
+.nf
+    struct dinode {
+        unsigned short di_mode;
+        short          di_nlink, di_uid, di_gid;
+        off_t          di_size;       /* 32-bit */
+        char           di_addr[40];   /* 13 block addresses x 3 bytes */
+        time_t         di_atime, di_mtime, di_ctime;
+    };
+.fi
+.PP
+.I di_mode
+is encoded like
+.IR stat (2) 's
+.I st_mode .
+The 40 address bytes hold 13 addresses of 3 bytes each, packed by
+.IR l3tol (3)
+specifically to be independent of host word order.
+.SS File storage (block mapping)
+.I V6 \(em small and large files
+.PP
+A file without the ILARG bit is
+.I small :
+its eight
+.I addr
+entries are direct block numbers, so it is at most 8 x 512 = 4096 bytes.
+.PP
+A file with ILARG set is
+.I large :
+.I addr[0..6]
+are seven single-indirect blocks (256 16-bit pointers each) and
+.I addr[7]
+is one double-indirect block.  The extra-large form is not marked by a mode
+bit, only by
+.I addr[7]
+being non-zero.  The scheme would allow 256 x 256 x 512 = 33,554,432 bytes,
+but the 24-bit size field caps a file at 16,777,216 bytes; 16-bit block
+numbers cap a volume at 32 MB.
+.PP
+.I V7
+.PP
+The 13 addresses are ten direct blocks, then single, double and triple
+indirect blocks, each holding 128 pointers of type
+.IR daddr_t .
+.I di_size
+is a full 32 bits, so the triple-indirect limit is reachable.
+.SS Byte order
+The PDP-11 is middle-endian: 16-bit fields are little-endian; 32-bit fields
+.RB ( daddr_t ,
+.IR off_t ,
+.IR time_t )
+are stored high word first, each word little-endian.  The 3-byte block
+pointers in
+.I di_addr
+are the low three bytes of that layout, i.e. [hi, lo, mid].
+.PP
+.I 32V caveat:
+32V is V7 recompiled for the VAX, and
+.I every
+multi-byte field of 32 bits or more flips byte order.  The 3-byte
+.I di_addr
+addresses are packed
+.B [lo, mid, hi]
+instead of V7's
+.BR [hi, lo, mid] ,
+and
+.IR di_size ,
+the three timestamps,
+.IR s_fsize ,
+.IR s_free[] ,
+.IR s_time ,
+and the indirect-block
+.I daddr_t
+entries are little-endian instead of middle-endian.  The two kernels'
+.I iexpand
+functions differ in exactly where the zero pad byte lands \(em byte 1 on the
+PDP-11, byte 3 on the VAX.  Only the 16-bit fields are byte-order neutral.
+Treat a 32V pack as little-endian throughout;
+.B kenfsmount
+selects it with
+.BR \-32 .
+.SS Reserved i-numbers
+.I V4, V5, V6:
+i-number 1 is the root directory; no bad-block file exists.
+.I V7, 32V:
+i-number 1 is the bad-block file \(em a regular file with
+.I nlink = 0
+(so it has no name) whose
+.I di_addr
+entries are the bad block numbers themselves, marking them allocated so the
+allocator never hands them out.  Root moves to i-number 2.  The stock V7
+.I mkfs
+creates an empty bad-block file; the list is supplied by a site's own disk
+analysis.
+.SH LICENSE
+This manpage is derived from the ancient UNIX
+.IR fs (5)
+(V4, V6) and
+.IR filsys (5)/dir (5)
+(V7, 32V) pages.  The following notice, conditions and disclaimer are
+retained from those works, as their license requires.
+.PP
+Copyright (C) Caldera International Inc. 2001-2002. All rights reserved.
+.PP
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+.PP
+Redistributions of source code and documentation must retain the above
+copyright notice, this list of conditions and the following disclaimer.
+Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+.PP
+All advertising materials mentioning features or use of this software must
+display the following acknowledgement:
+.PP
+.RS
+This product includes software developed or owned by Caldera International,
+Inc.
+.RE
+.PP
+Neither the name of Caldera International, Inc. nor the names of other
+contributors may be used to endorse or promote products derived from this
+software without specific prior written permission.
+.PP
+USE OF THE SOFTWARE PROVIDED FOR UNDER THIS LICENSE BY CALDERA
+INTERNATIONAL, INC. AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+EVENT SHALL CALDERA INTERNATIONAL, INC. BE LIABLE FOR ANY DIRECT, INDIRECT
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+.SH SEE ALSO
+.BR fusermount3 (1),
+.BR mount.fuse3 (8),
+.BR flock (2),
+.BR pdp11 (1),
+.BR icheck (1),
+.BR stat (2)
+.SH AUTHOR
+Written for the kenfs project (formerly v7fuse).
