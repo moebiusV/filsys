@@ -258,15 +258,15 @@ top (the nested mount needs `-o allow_other` + `user_allow_other`, as above).
     kenfsmount -v 7  rp06-0.disk mnt
     kenfsmount -v 7  -o offset=9416704 rp06-0.disk mnt/usr
 
-    # 32V (rp06.disk, from prebsd): same layout as V7
-    kenfsmount -v 32 rp06.disk mnt
-    kenfsmount -v 32 -o offset=9416704 rp06.disk mnt/usr
+    # 32V (32v-rp06.disk, from prebsd): same layout as V7
+    kenfsmount -v 32 32v-rp06.disk mnt
+    kenfsmount -v 32 -o offset=9416704 32v-rp06.disk mnt/usr
 
     # single-filesystem images
-    kenfsmount -v 32 root32v.disk mnt       # 32V root only
+    kenfsmount -v 32 32v-root.disk mnt       # 32V root only
     kenfsmount -v 6  rk0.dsk mnt            # V6 root only
 
-The 32V images (`rp06.disk.gz`, `root32v.disk.gz`, `32v.tape.gz`) are
+The 32V images (`32v-rp06.disk.gz`, `32v-root.disk.gz`, `32v-tape.gz`) are
 distributed with the `prebsd` boot tool (`dist/`), redistributable under the
 Caldera Ancient UNIX License.
 
@@ -297,7 +297,7 @@ every edition:
 | V5 | TUHS `Dennis_v5/v5root` | yes | yes | yes | yes | yes |
 | V6 | pcollinson `rk0` / SIMH `uv6swre` | yes | yes | yes | yes | yes |
 | V7 | pcollinson `rp06-0.disk` | yes | yes | yes | yes | yes |
-| 32V (VAX) | `root32v.disk`, `rp06.disk` (`/usr`) | yes | yes | yes | yes | yes |
+| 32V (VAX) | `32v-root.disk`, `32v-rp06.disk` (`/usr`) | yes | yes | yes | yes | yes |
 
 On-disk verification dumped the raw 32-byte inode blocks after `chmod`/`chown`
 and confirmed the mode, uid/gid and size fields landed correctly, and that
