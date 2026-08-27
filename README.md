@@ -249,26 +249,9 @@ is; kenfsmount reports files as the mounting user, override with
 which requires `user_allow_other` in `/etc/fuse.conf` and `-o allow_other` on
 the outer mount (or running the whole thing as root).
 
-### Mount commands
-
-Copy-paste commands per image.  Mount the root, then nest the `/usr` mount on
-top (the nested mount needs `-o allow_other` + `user_allow_other`, as above).
-
-    # V7 (pcollinson rp06-0.disk): root 0-4999, swap 5000-18391, /usr 18392+
-    kenfsmount -v 7  rp06-0.disk mnt
-    kenfsmount -v 7  -o offset=9416704 rp06-0.disk mnt/usr
-
-    # 32V (32v-rp06.disk, from prebsd): same layout as V7
-    kenfsmount -v 32 32v-rp06.disk mnt
-    kenfsmount -v 32 -o offset=9416704 32v-rp06.disk mnt/usr
-
-    # single-filesystem images
-    kenfsmount -v 32 32v-root.disk mnt       # 32V root only
-    kenfsmount -v 6  rk0.dsk mnt            # V6 root only
-
-The 32V images (`32v-rp06.disk.gz`, `32v-root.disk.gz`, `32v-tape.gz`) are
-distributed with the `prebsd` boot tool (`dist/`), redistributable under the
-Caldera Ancient UNIX License.
+Disk images to mount are distributed by the
+[prebsd](https://github.com/moebiusV/prebsd) project, which also documents each
+image's partition layout.
 
 ### Finding partitions (kenfsfind)
 
