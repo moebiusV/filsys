@@ -7,7 +7,7 @@
 kenfsmount, kenfs \- mount a Research Unix filesystem image; filesystem format (V4 through 32V)
 .SH SYNOPSIS
 .B kenfsmount
-\fB\-v\fR \fI<4|5|6|7|32>\fR [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
+\fB\-v\fR \fI<4|5|6|7|32>\fR [\fB\-o\fR \fIoffset=N\fR] [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
 .I image mountpoint
 .br
 .B kenfsmount
@@ -58,6 +58,20 @@ is accepted
 .BR v6 ,
 \&...), as is
 .BR 32v .
+.TP
+.B \-o offset=N[,uid=N,gid=N,...]
+Mount a filesystem that lives at byte offset
+.I N
+within the image (a partition of a larger disk), instead of one at block 0.
+.I uid=N
+and
+.I gid=N
+override the reported ownership (default: the mounting user, so a nested mount
+point is writable).  Any other
+.B \-o
+option is passed through to FUSE
+.RB ( allow_other ,
+\&...).
 .TP
 .B \-r
 Mount read-only.

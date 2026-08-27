@@ -22,9 +22,10 @@ static int super_write(v6fs_t *fs);
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int v6fs_open(v6fs_t *fs, const char *path, int readonly) {
+int v6fs_open(v6fs_t *fs, const char *path, int readonly, uint64_t offset) {
     memset(fs, 0, sizeof(*fs));
     fs->readonly = readonly;
+    fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
         return -errno;
@@ -49,7 +50,7 @@ int v6fs_open(v6fs_t *fs, const char *path, int readonly) {
      * holds, or one with no data area (see the same check in v7fs_open). */
     struct stat st;
     if (fstat(fs->fd, &st) == 0 &&
-        ((uint64_t)fs->fsize * V6_BSIZE > (uint64_t)st.st_size ||
+        (fs->base + (uint64_t)fs->fsize * V6_BSIZE > (uint64_t)st.st_size ||
          fs->fsize <= fs->isize)) {
         close(fs->fd);
         fs->fd = -1;
@@ -70,7 +71,7 @@ void v6fs_close(v6fs_t *fs) {
 /* ---- block io ---------------------------------------------------------- */
 
 int v6fs_read_block(v6fs_t *fs, uint32_t bno, uint8_t *buf) {
-    ssize_t n = pread(fs->fd, buf, V6_BSIZE, (off_t)bno * V6_BSIZE);
+    ssize_t n = pread(fs->fd, buf, V6_BSIZE, (off_t)bno * V6_BSIZE + (off_t)fs->base);
     if (n != V6_BSIZE)
         return -EIO;
     return 0;
@@ -79,7 +80,7 @@ int v6fs_read_block(v6fs_t *fs, uint32_t bno, uint8_t *buf) {
 int v6fs_write_block(v6fs_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
-    ssize_t n = pwrite(fs->fd, buf, V6_BSIZE, (off_t)bno * V6_BSIZE);
+    ssize_t n = pwrite(fs->fd, buf, V6_BSIZE, (off_t)bno * V6_BSIZE + (off_t)fs->base);
     if (n != V6_BSIZE)
         return -EIO;
     return 0;

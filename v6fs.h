@@ -101,6 +101,7 @@ typedef struct {
 typedef struct {
     int        fd;             /* open disk image */
     int        readonly;
+    uint64_t   base;           /* byte offset of this filesystem within the file */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
@@ -113,8 +114,9 @@ typedef struct {
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-/* Open a disk image.  Returns 0, or -errno. */
-int v6fs_open(v6fs_t *fs, const char *path, int readonly);
+/* Open a disk image.  Returns 0, or -errno.  offset is the byte offset of the
+ * filesystem within the file (0 = it starts at block 0 of the file). */
+int v6fs_open(v6fs_t *fs, const char *path, int readonly, uint64_t offset);
 /* Flush the superblock and close. */
 void v6fs_close(v6fs_t *fs);
 

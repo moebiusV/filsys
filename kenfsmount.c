@@ -17,8 +17,14 @@
  * then widened in V7 (64-byte inode, 24-bit block numbers).  See kenfs.5.
  *
  * Usage:
- *     kenfsmount -v <4|5|6|7|32> [-r] [-f] [-d] <image> <mountpoint>
- *     kenfsmount -v <4|5|6|7|32> -c <image>       # integrity check (no mount)
+ *     kenfsmount -v <4|5|6|7|32> [-o offset=N[,uid=N,gid=N,...]] [-r] [-f] [-d] <image> <mountpoint>
+ *     kenfsmount -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check
+ *
+ * `-o offset=N` mounts a filesystem that lives at byte offset N within the
+ * file (a partition of a larger disk image), instead of one at block 0.
+ * `-o uid=N,gid=N` override the reported ownership (default: the mounting
+ * user, so a nested mount point is writable).  Any other -o option is passed
+ * through to FUSE (e.g. allow_other).
  */
 #include "v6fs.h"
 #include "v7fs.h"
@@ -29,7 +35,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/types.h>
@@ -49,6 +54,7 @@ typedef v7_dirent_t kfs_dirent_t;
 
 typedef struct {
     int ver;
+    int uid, gid;              /* reported ownership (default: the mounting user) */
     union { v6fs_t v6; v7fs_t v7; } u;
 } kfs_t;
 
@@ -85,9 +91,9 @@ static uint16_t kfs_perm_of(mode_t m) {
 
 /* ---- dispatch wrappers --------------------------------------------------- */
 
-static int kfs_fs_open(kfs_t *k, const char *path, int readonly) {
-    if (k->ver == KFS_V6) return v6fs_open(&k->u.v6, path, readonly);
-    return v7fs_open(&k->u.v7, path, readonly, k->ver == KFS_32V);
+static int kfs_fs_open(kfs_t *k, const char *path, int readonly, uint64_t offset) {
+    if (k->ver == KFS_V6) return v6fs_open(&k->u.v6, path, readonly, offset);
+    return v7fs_open(&k->u.v7, path, readonly, k->ver == KFS_32V, offset);
 }
 static void kfs_close(kfs_t *k) {
     if (k->ver == KFS_V6) v6fs_close(&k->u.v6);
@@ -187,8 +193,8 @@ static void fill_stat(kfs_t *k, const kfs_inode_t *ip, struct stat *st) {
     st->st_ino   = ip->ino;
     st->st_mode  = kfs_to_posix_mode(k->ver, ip->mode);
     st->st_nlink = ip->nlink;
-    st->st_uid   = ip->uid;
-    st->st_gid   = ip->gid;
+    st->st_uid   = k->uid;
+    st->st_gid   = k->gid;
     st->st_size  = ip->size;
     uint16_t t = k->ver == KFS_V6 ? (ip->mode & V6_IFMT) : (ip->mode & V7_IFMT);
     int isdev = (k->ver == KFS_V6) ? (t == V6_IFCHR || t == V6_IFBLK)
@@ -550,13 +556,16 @@ static struct fuse_operations kfs_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <4|5|6|7|32> [-r] [-f] [-d] <image> <mountpoint>\n"
-            "       %s -v <4|5|6|7|32> -c <image>        # integrity check\n",
+            "usage: %s -v <4|5|6|7|32> [-o offset=N] [-r] [-f] [-d] <image> <mountpoint>\n"
+            "       %s -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check\n",
             p, p);
 }
 
 int main(int argc, char *argv[]) {
     int ver = KFS_V7, readonly = 0, foreground = 0, debug = 0, check = 0;
+    uint64_t offset = 0;
+    int uid = -1, gid = -1;   /* -1 = report as the mounting user */
+    char fuse_opts[512] = ""; /* -o options passed through to FUSE (allow_other, ...) */
     int ai = 1;
     for (; ai < argc && argv[ai][0] == '-'; ai++) {
         const char *a = argv[ai];
@@ -577,6 +586,29 @@ int main(int argc, char *argv[]) {
             }
             continue;
         }
+        if (!strcmp(a, "-o")) {
+            if (ai + 1 >= argc) { usage(argv[0]); return 2; }
+            char *opts = strdup(argv[++ai]);
+            int bad = 0;
+            for (char *tok = strtok(opts, ","); tok; tok = strtok(NULL, ",")) {
+                if (!strncmp(tok, "offset=", 7)) {
+                    char *end = NULL;
+                    offset = strtoull(tok + 7, &end, 0);
+                    if (!end || *end) { bad = 1; break; }
+                } else if (!strncmp(tok, "uid=", 4)) {
+                    uid = atoi(tok + 4);
+                } else if (!strncmp(tok, "gid=", 4)) {
+                    gid = atoi(tok + 4);
+                } else {
+                    /* pass anything else through to FUSE (allow_other, ...) */
+                    if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
+                    strncat(fuse_opts, tok, sizeof(fuse_opts) - strlen(fuse_opts) - 1);
+                }
+            }
+            free(opts);
+            if (bad) { usage(argv[0]); return 2; }
+            continue;
+        }
         for (const char *p = a + 1; *p; p++) {
             switch (*p) {
             case 'r': readonly = 1; break;
@@ -595,7 +627,9 @@ int main(int argc, char *argv[]) {
     kfs_t k;
     memset(&k, 0, sizeof(k));
     k.ver = ver;
-    int rc = kfs_fs_open(&k, image, readonly || check);
+    k.uid = uid >= 0 ? uid : (int)getuid();
+    k.gid = gid >= 0 ? gid : (int)getgid();
+    int rc = kfs_fs_open(&k, image, readonly || check, offset);
     if (rc) {
         fprintf(stderr, "kenfs: cannot open %s: %s\n", image, strerror(-rc));
         return 1;
@@ -608,25 +642,21 @@ int main(int argc, char *argv[]) {
         return crc == 0 ? 0 : 1;
     }
 
-    int fd = ver == KFS_V6 ? k.u.v6.fd : k.u.v7.fd;
-    if (flock(fd, LOCK_EX) != 0) {
-        fprintf(stderr, "kenfs: cannot lock %s: %s\n", image, strerror(errno));
-        kfs_close(&k);
-        return 1;
-    }
-
     struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
     fuse_opt_add_arg(&args, argv[0]);
     fuse_opt_add_arg(&args, mountpoint);
     fuse_opt_add_arg(&args, "-s");
     if (foreground) fuse_opt_add_arg(&args, "-f");
     if (debug)      fuse_opt_add_arg(&args, "-d");
-    if (readonly)   { fuse_opt_add_arg(&args, "-o"); fuse_opt_add_arg(&args, "ro"); }
+    if (readonly) {
+        if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
+        strncat(fuse_opts, "ro", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
+    }
+    if (fuse_opts[0]) { fuse_opt_add_arg(&args, "-o"); fuse_opt_add_arg(&args, fuse_opts); }
 
     rc = fuse_main(args.argc, args.argv, &kfs_ops, &k);
     fuse_opt_free_args(&args);
 
-    flock(fd, LOCK_UN);
     kfs_close(&k);
     return rc;
 }

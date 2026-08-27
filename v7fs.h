@@ -137,6 +137,7 @@ typedef struct {
     int        fd;             /* open disk image */
     int        readonly;
     int        le;             /* 0 = PDP-11 middle-endian (V7), 1 = VAX little-endian (32V) */
+    uint64_t   base;           /* byte offset of this filesystem within the file */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
@@ -151,8 +152,10 @@ typedef struct {
 
 /* Open a disk image.  Returns 0, or -errno.  little_endian selects the 32V
  * (VAX) byte order for 32-bit fields and 3-byte block addresses; 0 selects
- * the PDP-11 (V7) middle-endian order. */
-int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian);
+ * the PDP-11 (V7) middle-endian order.  offset is the byte offset of the
+ * filesystem within the file (0 = it starts at block 0 of the file). */
+int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
+              uint64_t offset);
 /* Flush the superblock and close. */
 void v7fs_close(v7fs_t *fs);
 
