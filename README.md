@@ -243,15 +243,28 @@ kenfsmount -v 7 rp06-0.disk mnt/
 kenfsmount -v 7 -o offset=9416704 rp06-0.disk mnt/usr
 ```
 
-The second (nested) mount needs the outer mount point to be owned by you (it
-is; kenfsmount reports files as the mounting user, override with
-`-o uid=,gid=`), and needs FUSE to let the mount helper enter the outer mount,
-which requires `user_allow_other` in `/etc/fuse.conf` and `-o allow_other` on
-the outer mount (or running the whole thing as root).
+The second (nested) mount works because kenfsmount reports files as the
+mounting user (override with `-o uid=,gid=`), so the inner mount point is
+owned by you.
 
-Disk images to mount are distributed by the
-[prebsd](https://github.com/moebiusV/prebsd) project, which also documents each
-image's partition layout.
+### Mount commands
+
+Copy-paste commands per image (images distributed by the
+[prebsd](https://github.com/moebiusV/prebsd) project):
+
+    # V7 (rp06-0.disk): root 0-4999, swap 5000-18391, /usr 18392+
+    kenfsmount -v 7  rp06-0.disk mnt
+    kenfsmount -v 7  -o offset=9416704 rp06-0.disk mnt/usr
+
+    # 32V (32v-rp06.disk): same layout as V7
+    kenfsmount -v 32 32v-rp06.disk mnt
+    kenfsmount -v 32 -o offset=9416704 32v-rp06.disk mnt/usr
+
+    # single-filesystem images
+    kenfsmount -v 32 32v-root.disk mnt       # 32V root only
+    kenfsmount -v 6  rk0 mnt                 # V6 root only
+
+Mount the root first, then nest the `/usr` mount on top.
 
 ### Finding partitions (kenfsfind)
 
