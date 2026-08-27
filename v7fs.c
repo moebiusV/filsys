@@ -21,6 +21,18 @@
 
 static int super_write(v7fs_t *fs);
 
+/* 32V (VAX) aligns daddr_t/time_t to 4 bytes, so in the superblock and the
+ * free-list dump block the fields that follow such a type sit 2 bytes later
+ * than they do in V7 (PDP-11, 2-byte alignment).  The inode is unaffected
+ * (di_size already lands on a 4-byte boundary). */
+static inline int sb_fsize_off(int le)  { return le ? 4 : 2; }
+static inline int sb_nfree_off(int le)  { return le ? 8 : 6; }
+static inline int sb_free_off(int le)   { return le ? 12 : 8; }
+static inline int sb_ninode_off(int le) { return le ? 212 : 208; }
+static inline int sb_inode_off(int le)  { return le ? 214 : 210; }
+static inline int sb_time_off(int le)   { return le ? 420 : 414; }
+static inline int fb_free_off(int le)   { return le ? 4 : 2; }
+
 /* ---- lifecycle --------------------------------------------------------- */
 
 int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
@@ -39,14 +51,14 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
         return -EIO;
     }
     fs->isize  = v7_get16le(sb + 0);
-    fs->fsize  = v7_get32(sb + 2, fs->le);
-    fs->nfree  = v7_get16le(sb + 6);
+    fs->fsize  = v7_get32(sb + sb_fsize_off(fs->le), fs->le);
+    fs->nfree  = v7_get16le(sb + sb_nfree_off(fs->le));
     for (int i = 0; i < V7_NICFREE; i++)
-        fs->free[i] = v7_get32(sb + 8 + 4 * i, fs->le);
-    fs->ninode = v7_get16le(sb + 208);
+        fs->free[i] = v7_get32(sb + sb_free_off(fs->le) + 4 * i, fs->le);
+    fs->ninode = v7_get16le(sb + sb_ninode_off(fs->le));
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->inode[i] = v7_get16le(sb + 210 + 2 * i);
-    fs->time   = v7_get32(sb + 414, fs->le);
+        fs->inode[i] = v7_get16le(sb + sb_inode_off(fs->le) + 2 * i);
+    fs->time   = v7_get32(sb + sb_time_off(fs->le), fs->le);
 
     /* Reject a superblock that claims more disk than the image file actually
      * holds, or one with no data area.  Without this, a corrupt image can make
@@ -100,14 +112,14 @@ static int super_write(v7fs_t *fs) {
     if (v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
     v7_put16le(sb + 0, fs->isize);
-    v7_put32(sb + 2, fs->le, fs->fsize);
-    v7_put16le(sb + 6, fs->nfree);
+    v7_put32(sb + sb_fsize_off(fs->le), fs->le, fs->fsize);
+    v7_put16le(sb + sb_nfree_off(fs->le), fs->nfree);
     for (int i = 0; i < V7_NICFREE; i++)
-        v7_put32(sb + 8 + 4 * i, fs->le, fs->free[i]);
-    v7_put16le(sb + 208, fs->ninode);
+        v7_put32(sb + sb_free_off(fs->le) + 4 * i, fs->le, fs->free[i]);
+    v7_put16le(sb + sb_ninode_off(fs->le), fs->ninode);
     for (int i = 0; i < V7_NICINOD; i++)
-        v7_put16le(sb + 210 + 2 * i, fs->inode[i]);
-    v7_put32(sb + 414, fs->le, (uint32_t)time(NULL));  /* s_time */
+        v7_put16le(sb + sb_inode_off(fs->le) + 2 * i, fs->inode[i]);
+    v7_put32(sb + sb_time_off(fs->le), fs->le, (uint32_t)time(NULL));  /* s_time */
     return v7fs_write_block(fs, V7_SUPERB, sb);
 }
 
@@ -180,7 +192,7 @@ int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
             return -EIO;
         fs->nfree = v7_get16le(buf + 0);
         for (int i = 0; i < V7_NICFREE; i++)
-            fs->free[i] = v7_get32(buf + 2 + 4 * i, fs->le);
+            fs->free[i] = v7_get32(buf + fb_free_off(fs->le) + 4 * i, fs->le);
     }
     if (blk < fs->isize || blk >= fs->fsize)
         return -EIO;   /* badblock: refuse garbage */
@@ -201,7 +213,7 @@ void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
         memset(buf, 0, V7_BSIZE);
         v7_put16le(buf + 0, fs->nfree);
         for (int i = 0; i < V7_NICFREE; i++)
-            v7_put32(buf + 2 + 4 * i, fs->le, fs->free[i]);
+            v7_put32(buf + fb_free_off(fs->le) + 4 * i, fs->le, fs->free[i]);
         if (v7fs_write_block(fs, bno, buf) == 0)
             fs->nfree = 0;
     }
@@ -668,7 +680,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep) {
                 break;
             }
             for (int i = 0; i < V7_NICFREE; i++)
-                cur[i] = v7_get32(blk + 2 + 4 * i, fs->le);
+                cur[i] = v7_get32(blk + fb_free_off(fs->le) + 4 * i, fs->le);
         }
     }
     free(seen);
