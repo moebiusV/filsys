@@ -249,6 +249,27 @@ is; kenfsmount reports files as the mounting user, override with
 which requires `user_allow_other` in `/etc/fuse.conf` and `-o allow_other` on
 the outer mount (or running the whole thing as root).
 
+### Mount commands
+
+Copy-paste commands per image.  Mount the root, then nest the `/usr` mount on
+top (the nested mount needs `-o allow_other` + `user_allow_other`, as above).
+
+    # V7 (pcollinson rp06-0.disk): root 0-4999, swap 5000-18391, /usr 18392+
+    kenfsmount -v 7  rp06-0.disk mnt
+    kenfsmount -v 7  -o offset=9416704 rp06-0.disk mnt/usr
+
+    # 32V (rp06.disk, from prebsd): same layout as V7
+    kenfsmount -v 32 rp06.disk mnt
+    kenfsmount -v 32 -o offset=9416704 rp06.disk mnt/usr
+
+    # single-filesystem images
+    kenfsmount -v 32 root32v.disk mnt       # 32V root only
+    kenfsmount -v 6  rk0.dsk mnt            # V6 root only
+
+The 32V images (`rp06.disk.gz`, `root32v.disk.gz`, `32v.tape.gz`) are
+distributed with the `prebsd` boot tool (`dist/`), redistributable under the
+Caldera Ancient UNIX License.
+
 ### Finding partitions (kenfsfind)
 
 `kenfsfind` locates the filesystems on a raw image.  It scans for superblocks
@@ -309,7 +330,7 @@ emulator is running.
 - `kenfsfind.c`: locate filesystem superblocks (partitions) on a raw image.
 - `kenfs.5`, `kenfsfind.1`: the format and tool manpages.
 - `configure.ac`, `Makefile.am`: GNU autotools build.
-- `test.sh`, `fetch.sh`, `reference/`, `runv7/`.
+- `test.sh`, `fetch.sh`, `reference/`.
 
 ## Notes
 
