@@ -1,4 +1,4 @@
-# kenfs
+# filsys
 
 Mount a **Research Unix** filesystem image (PDP-11) as a FUSE filesystem on
 Linux, so files can be copied on and off the disk for use with a simulator
@@ -10,12 +10,12 @@ discipline), so files staged with it are seen by a running kernel after you
 boot the image.
 
 ```
-kenfsmount -v 6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
-kenfsmount -v 7 rp06-0.disk mnt       # V7 format
-kenfsmount -v 32 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
+filsysmount -v 6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
+filsysmount -v 7 rp06-0.disk mnt       # V7 format
+filsysmount -v 32 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
 ```
 
-Home: <https://github.com/moebiusV/kenfs>
+Home: <https://github.com/moebiusV/filsys>
 
 ## Dependencies
 
@@ -31,7 +31,7 @@ SONAME directly.
 ```sh
 ./configure
 make
-sudo make install    # installs kenfsmount, kenfsfind + their manpages
+sudo make install    # installs filsysmount, filsysfind + their manpages
 ```
 
 `./configure && make && make install` is the standard GNU flow; `configure` is
@@ -42,8 +42,8 @@ is compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
 ## Usage
 
 ```sh
-kenfsmount -v <4|5|6|7|32> [options] <image> <mountpoint>
-kenfsmount -v <4|5|6|7|32> -c <image>        # integrity check (no mount)
+filsysmount -v <4|5|6|7|32> [options] <image> <mountpoint>
+filsysmount -v <4|5|6|7|32> -c <image>        # integrity check (no mount)
 ```
 
 `-v` takes the Unix edition: `4`, `5`, `6`, `7` or `32` (a leading `v`, as in
@@ -67,16 +67,16 @@ they share one code path.
 
 ```sh
 mkdir mnt
-kenfsmount -v 7 rp06-0.disk mnt        # read-write (make a copy first!)
+filsysmount -v 7 rp06-0.disk mnt        # read-write (make a copy first!)
 ls mnt
 cp mnt/etc/passwd .             # copy a file off
 cp host.txt mnt/tmp/            # copy a file on
 fusermount3 -u mnt              # unmount
 
-kenfsmount -v 6 -c v6root.dsk          # verify the free list + inode table
+filsysmount -v 6 -c v6root.dsk          # verify the free list + inode table
 ```
 
-See `kenfs.5` for both the tool and the on-disk format.
+See `filsys.5` for both the tool and the on-disk format.
 
 ## Implementor's Notes
 
@@ -87,13 +87,19 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 ### History
 
 - The filesystem was designed on blackboards and scribbled notes in 1969 by
-  **Ken Thompson, Dennis Ritchie and Rudd Canaday**.  Thompson was the
+  **Kenneth Lane Thompson, Dennis MacAlistair Ritchie and Rudd Canaday**.
+  Thompson was the
   architect; Ritchie claims the one idea of *device files*; Canaday is the
   third name.  The design **predates the hardware**; Thompson modeled its disk
   behaviour on Multics (GE-645) before there was a computer to run it on, and
   the filesystem **predates the operating system**: it was built on the PDP-7
   first, and the exercising programs (editor, assembler, kernel) grew into
   Unix in the summer of 1969.
+- The name **filsys** is an homage to the original filesystem code: the on-disk
+  superblock has been `struct filsys` (short for "file system") in the Unix
+  headers from day one, entering the source as `filsys.h`.  The term itself
+  came from the GE GECOS mainframe the early Bell Labs PDP-7/11 sat alongside,
+  which is why `/etc/passwd` still carries a `GECOS` field half a century later.
 - **V1-V3** (1971-73) kernels are PDP-11 **assembly**.  Directory entries were
   **10 bytes** (2-byte i-number + 8-char name).  The i-list, directories-as-
   files, and device files were already there from the 1969 design.
@@ -174,7 +180,7 @@ One `-v 6` code path covers V4, V5 and V6, which are byte-identical on disk.
   exactly where the zero pad byte goes (byte 1 on the PDP-11, byte 3 on the
   VAX).  Only the 16-bit fields (`di_mode`, `di_nlink`, `di_uid`, `di_gid`,
   `s_isize`, `s_nfree`, `s_ninode`, `s_inode[]`) are byte-order neutral.
-  kenfs handles this with a `-v 32` selector.
+  filsys handles this with a `-v 32` selector.
 - **V3-and-earlier directories are 10 bytes**, so a reader for those editions
   needs a different directory walker.  Out of scope here (we floor at V4).
 
@@ -223,27 +229,27 @@ block device (major 6, minor 7 = `rp0h`).  So the "root smaller than the disk"
 is not waste; it is the normal V7 root/swap//usr split, and the `/usr`
 filesystem sits **intact** at block 18392 (superblock at 18393: `isize=8189`,
 `fsize=322278`, middle-endian).  Mount it in place with the byte offset
-(`18392 x 512 = 9416704`): `kenfsmount -v 7 -o offset=9416704 rp06-0.disk mnt`,
+(`18392 x 512 = 9416704`): `filsysmount -v 7 -o offset=9416704 rp06-0.disk mnt`,
 and `-c` reports 2064 used inodes, `errors=0`; it mounts as a complete
 May-1979 source tree (`/usr/src`, `/usr/sys`, man pages, games).
 
 To locate such a partition you read `/etc/rc` (for the *name*), read the
-driver's partition table (for the *offset*), or run **`kenfsfind`** (see
+driver's partition table (for the *offset*), or run **`filsysfind`** (see
 below), which scans for superblocks at cylinder boundaries and, with `-i`,
 traces inode-table runs backwards to their superblocks.  Do not cap `isize`
 too low: this `/usr` has `isize=8189` (65,512 inodes), which a naive
 "small i-list" heuristic wrongly skips.
 
-`kenfsmount -o offset=N` shifts the superblock read to byte `N`, so a
+`filsysmount -o offset=N` shifts the superblock read to byte `N`, so a
 partition mounts in place without `dd`, and the root and `/usr` partitions
 can be mounted from the *same* file at once, nested:
 
 ```
-kenfsmount -v 7 rp06-0.disk mnt/
-kenfsmount -v 7 -o offset=9416704 rp06-0.disk mnt/usr
+filsysmount -v 7 rp06-0.disk mnt/
+filsysmount -v 7 -o offset=9416704 rp06-0.disk mnt/usr
 ```
 
-The second (nested) mount works because kenfsmount reports files as the
+The second (nested) mount works because filsysmount reports files as the
 mounting user (override with `-o uid=,gid=`), so the inner mount point is
 owned by you.
 
@@ -253,34 +259,34 @@ Copy-paste commands per image (images distributed by the
 [prebsd](https://github.com/moebiusV/prebsd) project):
 
     # V7 (rp06-0.disk): root 0-4999, swap 5000-18391, /usr 18392+
-    kenfsmount -v 7  rp06-0.disk mnt
-    kenfsmount -v 7  -o offset=9416704 rp06-0.disk mnt/usr
+    filsysmount -v 7  rp06-0.disk mnt
+    filsysmount -v 7  -o offset=9416704 rp06-0.disk mnt/usr
 
     # 32V (32v-rp06.disk): same layout as V7
-    kenfsmount -v 32 32v-rp06.disk mnt
-    kenfsmount -v 32 -o offset=9416704 32v-rp06.disk mnt/usr
+    filsysmount -v 32 32v-rp06.disk mnt
+    filsysmount -v 32 -o offset=9416704 32v-rp06.disk mnt/usr
 
     # single-filesystem images
-    kenfsmount -v 32 32v-root.disk mnt       # 32V root only
-    kenfsmount -v 6  rk0 mnt                 # V6 root only
+    filsysmount -v 32 32v-root.disk mnt       # 32V root only
+    filsysmount -v 6  rk0 mnt                 # V6 root only
 
 Mount the root first, then nest the `/usr` mount on top.
 
-### Finding partitions (kenfsfind)
+### Finding partitions (filsysfind)
 
-`kenfsfind` locates the filesystems on a raw image.  It scans for superblocks
+`filsysfind` locates the filesystems on a raw image.  It scans for superblocks
 (validating the edition, i-list and volume sizes, and that the free list holds
 only in-range blocks), and with `-i` also scans for inode-table runs and
 traces backwards to their superblocks.  Scan at cylinder boundaries to dodge
 the false positives a block-by-block sweep of file data produces:
 
 ```
-kenfsfind -c 418 rp06-0.disk
+filsysfind -c 418 rp06-0.disk
 # fs @ block 0      (byte 0)       V7  isize=202  fsize=5000
 # fs @ block 18392  (byte 9416704) V7  isize=8189 fsize=322278
 ```
 
-Mount any hit with `kenfsmount -o offset=<byte>`.
+Mount any hit with `filsysmount -o offset=<byte>`.
 
 ## Verification
 
@@ -311,7 +317,7 @@ boot 32V, and install it from a tape image.
 > is to stage files while the system is *not* running, then boot it fresh.
 > (`sync` inside before halting flushes its buffers.)
 
-kenfsmount deliberately takes **no lock** on the image: a V7 disk is a set of
+filsysmount deliberately takes **no lock** on the image: a V7 disk is a set of
 partitions in one file, and mounting the root and `/usr` at two mount points
 from the same file at once requires both mounts to share it read-only.  The
 "don't edit a disk under a running kernel" rule above is the real protection;
@@ -322,9 +328,9 @@ emulator is running.
 
 - `v6fs.h` / `v6fs.c`: V4/V5/V6 on-disk access layer.
 - `v7fs.h` / `v7fs.c`: V7/32V on-disk access layer.
-- `kenfsmount.c`: FUSE callbacks + the `-v` edition selector.
-- `kenfsfind.c`: locate filesystem superblocks (partitions) on a raw image.
-- `kenfs.5`, `kenfsfind.1`: the format and tool manpages.
+- `filsysmount.c`: FUSE callbacks + the `-v` edition selector.
+- `filsysfind.c`: locate filesystem superblocks (partitions) on a raw image.
+- `filsys.5`, `filsysfind.1`: the format and tool manpages.
 - `configure.ac`, `Makefile.am`: GNU autotools build.
 - `test.sh`, `fetch.sh`, `reference/`.
 
@@ -342,10 +348,10 @@ emulator is running.
 
 ## License
 
-The original code (`v6fs.c`, `v7fs.c`, `kenfsmount.c`, and their headers) is
+The original code (`v6fs.c`, `v7fs.c`, `filsysmount.c`, and their headers) is
 licensed under the **ISC license**: Copyright (c) 2026 David Walther.
 
-The `kenfs.5` manpage is derived from the ancient UNIX `fs(5)` (V4, V6) and
+The `filsys.5` manpage is derived from the ancient UNIX `fs(5)` (V4, V6) and
 `filsys(5)`/`dir(5)` (V7, 32V) pages, and retains the **Caldera International
 "Ancient UNIX License"** (2002) notice and terms, as that license requires for
 redistribution of derived documentation.

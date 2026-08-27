@@ -1,5 +1,5 @@
 #!/usr/bin/make -f
-# debian/rules for kenfs - standard dh + autotools build.
+# debian/rules for filsys - standard dh + autotools build.
 
 %:
 	dh $@

@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-# Makefile.am - kenfs, a FUSE driver for Research Unix filesystem images.
+# Makefile.am - filsys, a FUSE driver for Research Unix filesystem images.
 
 VPATH = @srcdir@
 am__is_gnu_make = { \
@@ -90,7 +90,7 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = kenfsmount$(EXEEXT) kenfsfind$(EXEEXT)
+bin_PROGRAMS = filsysmount$(EXEEXT) filsysfind$(EXEEXT)
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -106,17 +106,17 @@ CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" \
 	"$(DESTDIR)$(man5dir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_kenfsfind_OBJECTS = kenfsfind-kenfsfind.$(OBJEXT)
-kenfsfind_OBJECTS = $(am_kenfsfind_OBJECTS)
-kenfsfind_LDADD = $(LDADD)
-kenfsfind_LINK = $(CCLD) $(kenfsfind_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+am_filsysfind_OBJECTS = filsysfind-filsysfind.$(OBJEXT)
+filsysfind_OBJECTS = $(am_filsysfind_OBJECTS)
+filsysfind_LDADD = $(LDADD)
+filsysfind_LINK = $(CCLD) $(filsysfind_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
-am_kenfsmount_OBJECTS = kenfsmount-kenfsmount.$(OBJEXT) \
-	kenfsmount-v6fs.$(OBJEXT) kenfsmount-v7fs.$(OBJEXT)
-kenfsmount_OBJECTS = $(am_kenfsmount_OBJECTS)
+am_filsysmount_OBJECTS = filsysmount-filsysmount.$(OBJEXT) \
+	filsysmount-v6fs.$(OBJEXT) filsysmount-v7fs.$(OBJEXT)
+filsysmount_OBJECTS = $(am_filsysmount_OBJECTS)
 am__DEPENDENCIES_1 =
-kenfsmount_DEPENDENCIES = $(am__DEPENDENCIES_1)
-kenfsmount_LINK = $(CCLD) $(kenfsmount_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+filsysmount_DEPENDENCIES = $(am__DEPENDENCIES_1)
+filsysmount_LINK = $(CCLD) $(filsysmount_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -133,9 +133,9 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/kenfsfind-kenfsfind.Po \
-	./$(DEPDIR)/kenfsmount-kenfsmount.Po \
-	./$(DEPDIR)/kenfsmount-v6fs.Po ./$(DEPDIR)/kenfsmount-v7fs.Po
+am__depfiles_remade = ./$(DEPDIR)/filsysfind-filsysfind.Po \
+	./$(DEPDIR)/filsysmount-filsysmount.Po \
+	./$(DEPDIR)/filsysmount-v6fs.Po ./$(DEPDIR)/filsysmount-v7fs.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -153,8 +153,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(kenfsfind_SOURCES) $(kenfsmount_SOURCES)
-DIST_SOURCES = $(kenfsfind_SOURCES) $(kenfsmount_SOURCES)
+SOURCES = $(filsysfind_SOURCES) $(filsysmount_SOURCES)
+DIST_SOURCES = $(filsysfind_SOURCES) $(filsysmount_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -331,14 +331,14 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-kenfsmount_SOURCES = kenfsmount.c v6fs.c v6fs.h v7fs.c v7fs.h
+filsysmount_SOURCES = filsysmount.c v6fs.c v6fs.h v7fs.c v7fs.h
 # C17, not C23: Microsoft's toolchain tops out at C17, so we match.
-kenfsmount_CFLAGS = -std=c17 -Wall -Wextra
-kenfsmount_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
-kenfsmount_LDADD = $(FUSE3_LIBS) -lpthread
-kenfsfind_SOURCES = kenfsfind.c
-kenfsfind_CFLAGS = -std=c17 -Wall -Wextra
-dist_man_MANS = kenfs.5 kenfsfind.1
+filsysmount_CFLAGS = -std=c17 -Wall -Wextra
+filsysmount_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
+filsysmount_LDADD = $(FUSE3_LIBS) -lpthread
+filsysfind_SOURCES = filsysfind.c
+filsysfind_CFLAGS = -std=c17 -Wall -Wextra
+dist_man_MANS = filsys.5 filsysfind.1
 EXTRA_DIST = test.sh fetch.sh reference runv7/headless.ini runv7/headless_boot.py packaging
 all: all-am
 
@@ -420,13 +420,13 @@ uninstall-binPROGRAMS:
 clean-binPROGRAMS:
 	-$(am__rm_f) $(bin_PROGRAMS)
 
-kenfsfind$(EXEEXT): $(kenfsfind_OBJECTS) $(kenfsfind_DEPENDENCIES) $(EXTRA_kenfsfind_DEPENDENCIES) 
-	@rm -f kenfsfind$(EXEEXT)
-	$(AM_V_CCLD)$(kenfsfind_LINK) $(kenfsfind_OBJECTS) $(kenfsfind_LDADD) $(LIBS)
+filsysfind$(EXEEXT): $(filsysfind_OBJECTS) $(filsysfind_DEPENDENCIES) $(EXTRA_filsysfind_DEPENDENCIES) 
+	@rm -f filsysfind$(EXEEXT)
+	$(AM_V_CCLD)$(filsysfind_LINK) $(filsysfind_OBJECTS) $(filsysfind_LDADD) $(LIBS)
 
-kenfsmount$(EXEEXT): $(kenfsmount_OBJECTS) $(kenfsmount_DEPENDENCIES) $(EXTRA_kenfsmount_DEPENDENCIES) 
-	@rm -f kenfsmount$(EXEEXT)
-	$(AM_V_CCLD)$(kenfsmount_LINK) $(kenfsmount_OBJECTS) $(kenfsmount_LDADD) $(LIBS)
+filsysmount$(EXEEXT): $(filsysmount_OBJECTS) $(filsysmount_DEPENDENCIES) $(EXTRA_filsysmount_DEPENDENCIES) 
+	@rm -f filsysmount$(EXEEXT)
+	$(AM_V_CCLD)$(filsysmount_LINK) $(filsysmount_OBJECTS) $(filsysmount_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -434,10 +434,10 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kenfsfind-kenfsfind.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kenfsmount-kenfsmount.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kenfsmount-v6fs.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kenfsmount-v7fs.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filsysfind-filsysfind.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filsysmount-filsysmount.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filsysmount-v6fs.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filsysmount-v7fs.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -459,61 +459,61 @@ am--depfiles: $(am__depfiles_remade)
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(COMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
 
-kenfsfind-kenfsfind.o: kenfsfind.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kenfsfind_CFLAGS) $(CFLAGS) -MT kenfsfind-kenfsfind.o -MD -MP -MF $(DEPDIR)/kenfsfind-kenfsfind.Tpo -c -o kenfsfind-kenfsfind.o `test -f 'kenfsfind.c' || echo '$(srcdir)/'`kenfsfind.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsfind-kenfsfind.Tpo $(DEPDIR)/kenfsfind-kenfsfind.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kenfsfind.c' object='kenfsfind-kenfsfind.o' libtool=no @AMDEPBACKSLASH@
+filsysfind-filsysfind.o: filsysfind.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsysfind_CFLAGS) $(CFLAGS) -MT filsysfind-filsysfind.o -MD -MP -MF $(DEPDIR)/filsysfind-filsysfind.Tpo -c -o filsysfind-filsysfind.o `test -f 'filsysfind.c' || echo '$(srcdir)/'`filsysfind.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/filsysfind-filsysfind.Tpo $(DEPDIR)/filsysfind-filsysfind.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='filsysfind.c' object='filsysfind-filsysfind.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kenfsfind_CFLAGS) $(CFLAGS) -c -o kenfsfind-kenfsfind.o `test -f 'kenfsfind.c' || echo '$(srcdir)/'`kenfsfind.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsysfind_CFLAGS) $(CFLAGS) -c -o filsysfind-filsysfind.o `test -f 'filsysfind.c' || echo '$(srcdir)/'`filsysfind.c
 
-kenfsfind-kenfsfind.obj: kenfsfind.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kenfsfind_CFLAGS) $(CFLAGS) -MT kenfsfind-kenfsfind.obj -MD -MP -MF $(DEPDIR)/kenfsfind-kenfsfind.Tpo -c -o kenfsfind-kenfsfind.obj `if test -f 'kenfsfind.c'; then $(CYGPATH_W) 'kenfsfind.c'; else $(CYGPATH_W) '$(srcdir)/kenfsfind.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsfind-kenfsfind.Tpo $(DEPDIR)/kenfsfind-kenfsfind.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kenfsfind.c' object='kenfsfind-kenfsfind.obj' libtool=no @AMDEPBACKSLASH@
+filsysfind-filsysfind.obj: filsysfind.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsysfind_CFLAGS) $(CFLAGS) -MT filsysfind-filsysfind.obj -MD -MP -MF $(DEPDIR)/filsysfind-filsysfind.Tpo -c -o filsysfind-filsysfind.obj `if test -f 'filsysfind.c'; then $(CYGPATH_W) 'filsysfind.c'; else $(CYGPATH_W) '$(srcdir)/filsysfind.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/filsysfind-filsysfind.Tpo $(DEPDIR)/filsysfind-filsysfind.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='filsysfind.c' object='filsysfind-filsysfind.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kenfsfind_CFLAGS) $(CFLAGS) -c -o kenfsfind-kenfsfind.obj `if test -f 'kenfsfind.c'; then $(CYGPATH_W) 'kenfsfind.c'; else $(CYGPATH_W) '$(srcdir)/kenfsfind.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsysfind_CFLAGS) $(CFLAGS) -c -o filsysfind-filsysfind.obj `if test -f 'filsysfind.c'; then $(CYGPATH_W) 'filsysfind.c'; else $(CYGPATH_W) '$(srcdir)/filsysfind.c'; fi`
 
-kenfsmount-kenfsmount.o: kenfsmount.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-kenfsmount.o -MD -MP -MF $(DEPDIR)/kenfsmount-kenfsmount.Tpo -c -o kenfsmount-kenfsmount.o `test -f 'kenfsmount.c' || echo '$(srcdir)/'`kenfsmount.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-kenfsmount.Tpo $(DEPDIR)/kenfsmount-kenfsmount.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kenfsmount.c' object='kenfsmount-kenfsmount.o' libtool=no @AMDEPBACKSLASH@
+filsysmount-filsysmount.o: filsysmount.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -MT filsysmount-filsysmount.o -MD -MP -MF $(DEPDIR)/filsysmount-filsysmount.Tpo -c -o filsysmount-filsysmount.o `test -f 'filsysmount.c' || echo '$(srcdir)/'`filsysmount.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/filsysmount-filsysmount.Tpo $(DEPDIR)/filsysmount-filsysmount.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='filsysmount.c' object='filsysmount-filsysmount.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-kenfsmount.o `test -f 'kenfsmount.c' || echo '$(srcdir)/'`kenfsmount.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -c -o filsysmount-filsysmount.o `test -f 'filsysmount.c' || echo '$(srcdir)/'`filsysmount.c
 
-kenfsmount-kenfsmount.obj: kenfsmount.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-kenfsmount.obj -MD -MP -MF $(DEPDIR)/kenfsmount-kenfsmount.Tpo -c -o kenfsmount-kenfsmount.obj `if test -f 'kenfsmount.c'; then $(CYGPATH_W) 'kenfsmount.c'; else $(CYGPATH_W) '$(srcdir)/kenfsmount.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-kenfsmount.Tpo $(DEPDIR)/kenfsmount-kenfsmount.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kenfsmount.c' object='kenfsmount-kenfsmount.obj' libtool=no @AMDEPBACKSLASH@
+filsysmount-filsysmount.obj: filsysmount.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -MT filsysmount-filsysmount.obj -MD -MP -MF $(DEPDIR)/filsysmount-filsysmount.Tpo -c -o filsysmount-filsysmount.obj `if test -f 'filsysmount.c'; then $(CYGPATH_W) 'filsysmount.c'; else $(CYGPATH_W) '$(srcdir)/filsysmount.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/filsysmount-filsysmount.Tpo $(DEPDIR)/filsysmount-filsysmount.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='filsysmount.c' object='filsysmount-filsysmount.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-kenfsmount.obj `if test -f 'kenfsmount.c'; then $(CYGPATH_W) 'kenfsmount.c'; else $(CYGPATH_W) '$(srcdir)/kenfsmount.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -c -o filsysmount-filsysmount.obj `if test -f 'filsysmount.c'; then $(CYGPATH_W) 'filsysmount.c'; else $(CYGPATH_W) '$(srcdir)/filsysmount.c'; fi`
 
-kenfsmount-v6fs.o: v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-v6fs.o -MD -MP -MF $(DEPDIR)/kenfsmount-v6fs.Tpo -c -o kenfsmount-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-v6fs.Tpo $(DEPDIR)/kenfsmount-v6fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='kenfsmount-v6fs.o' libtool=no @AMDEPBACKSLASH@
+filsysmount-v6fs.o: v6fs.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -MT filsysmount-v6fs.o -MD -MP -MF $(DEPDIR)/filsysmount-v6fs.Tpo -c -o filsysmount-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/filsysmount-v6fs.Tpo $(DEPDIR)/filsysmount-v6fs.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='filsysmount-v6fs.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -c -o filsysmount-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
 
-kenfsmount-v6fs.obj: v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-v6fs.obj -MD -MP -MF $(DEPDIR)/kenfsmount-v6fs.Tpo -c -o kenfsmount-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-v6fs.Tpo $(DEPDIR)/kenfsmount-v6fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='kenfsmount-v6fs.obj' libtool=no @AMDEPBACKSLASH@
+filsysmount-v6fs.obj: v6fs.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -MT filsysmount-v6fs.obj -MD -MP -MF $(DEPDIR)/filsysmount-v6fs.Tpo -c -o filsysmount-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/filsysmount-v6fs.Tpo $(DEPDIR)/filsysmount-v6fs.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='filsysmount-v6fs.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -c -o filsysmount-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
 
-kenfsmount-v7fs.o: v7fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-v7fs.o -MD -MP -MF $(DEPDIR)/kenfsmount-v7fs.Tpo -c -o kenfsmount-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-v7fs.Tpo $(DEPDIR)/kenfsmount-v7fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7fs.c' object='kenfsmount-v7fs.o' libtool=no @AMDEPBACKSLASH@
+filsysmount-v7fs.o: v7fs.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -MT filsysmount-v7fs.o -MD -MP -MF $(DEPDIR)/filsysmount-v7fs.Tpo -c -o filsysmount-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/filsysmount-v7fs.Tpo $(DEPDIR)/filsysmount-v7fs.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7fs.c' object='filsysmount-v7fs.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -c -o filsysmount-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
 
-kenfsmount-v7fs.obj: v7fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-v7fs.obj -MD -MP -MF $(DEPDIR)/kenfsmount-v7fs.Tpo -c -o kenfsmount-v7fs.obj `if test -f 'v7fs.c'; then $(CYGPATH_W) 'v7fs.c'; else $(CYGPATH_W) '$(srcdir)/v7fs.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-v7fs.Tpo $(DEPDIR)/kenfsmount-v7fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7fs.c' object='kenfsmount-v7fs.obj' libtool=no @AMDEPBACKSLASH@
+filsysmount-v7fs.obj: v7fs.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -MT filsysmount-v7fs.obj -MD -MP -MF $(DEPDIR)/filsysmount-v7fs.Tpo -c -o filsysmount-v7fs.obj `if test -f 'v7fs.c'; then $(CYGPATH_W) 'v7fs.c'; else $(CYGPATH_W) '$(srcdir)/v7fs.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/filsysmount-v7fs.Tpo $(DEPDIR)/filsysmount-v7fs.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7fs.c' object='filsysmount-v7fs.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-v7fs.obj `if test -f 'v7fs.c'; then $(CYGPATH_W) 'v7fs.c'; else $(CYGPATH_W) '$(srcdir)/v7fs.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(filsysmount_CPPFLAGS) $(CPPFLAGS) $(filsysmount_CFLAGS) $(CFLAGS) -c -o filsysmount-v7fs.obj `if test -f 'v7fs.c'; then $(CYGPATH_W) 'v7fs.c'; else $(CYGPATH_W) '$(srcdir)/v7fs.c'; fi`
 install-man1: $(dist_man_MANS)
 	@$(NORMAL_INSTALL)
 	@list1=''; \
@@ -882,10 +882,10 @@ clean-am: clean-binPROGRAMS clean-generic mostlyclean-am
 
 distclean: distclean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
-	-rm -f ./$(DEPDIR)/kenfsfind-kenfsfind.Po
-	-rm -f ./$(DEPDIR)/kenfsmount-kenfsmount.Po
-	-rm -f ./$(DEPDIR)/kenfsmount-v6fs.Po
-	-rm -f ./$(DEPDIR)/kenfsmount-v7fs.Po
+	-rm -f ./$(DEPDIR)/filsysfind-filsysfind.Po
+	-rm -f ./$(DEPDIR)/filsysmount-filsysmount.Po
+	-rm -f ./$(DEPDIR)/filsysmount-v6fs.Po
+	-rm -f ./$(DEPDIR)/filsysmount-v7fs.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -933,10 +933,10 @@ installcheck-am:
 maintainer-clean: maintainer-clean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -rf $(top_srcdir)/autom4te.cache
-	-rm -f ./$(DEPDIR)/kenfsfind-kenfsfind.Po
-	-rm -f ./$(DEPDIR)/kenfsmount-kenfsmount.Po
-	-rm -f ./$(DEPDIR)/kenfsmount-v6fs.Po
-	-rm -f ./$(DEPDIR)/kenfsmount-v7fs.Po
+	-rm -f ./$(DEPDIR)/filsysfind-filsysfind.Po
+	-rm -f ./$(DEPDIR)/filsysmount-filsysmount.Po
+	-rm -f ./$(DEPDIR)/filsysmount-v6fs.Po
+	-rm -f ./$(DEPDIR)/filsysmount-v7fs.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 

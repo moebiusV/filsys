@@ -2,11 +2,11 @@
 
 	* configure.ac, Makefile.am: GNU autotools build (configure && make
 	  && make install).  pkg-config fuse3 with a no-root fallback.
-	* kenfsmount.1: man page.
+	* filsysmount.1: man page.
 	* COPYING, AUTHORS, NEWS, ChangeLog: GNU standard files.
 
 2026-08-25  David Walther  <david@clearbrookdistillery.com>
 
-	* kenfsmount.c, v7fs.c, v7fs.h: first working driver.  Middle-endian
+	* filsysmount.c, v7fs.c, v7fs.h: first working driver.  Middle-endian
 	  V7 filesystem access, allocation mirroring sys/alloc.c, FUSE
 	  callbacks, and a free-list/inode-table integrity check (-c).

@@ -1,10 +1,10 @@
-Name:           kenfs
+Name:           filsys
 Version:        1.0.0
 Release:        1%{?dist}
 Summary:        FUSE driver for V7 (PDP-11) Unix filesystem images
 
 License:        LGPL-2.1-or-later
-URL:            https://github.com/moebiusV/kenfs
+URL:            https://github.com/moebiusV/filsys
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  gcc
@@ -16,7 +16,7 @@ BuildRequires:  pkgconfig(fuse3)
 Requires:       fuse3
 
 %description
-kenfs mounts a Seventh Edition Unix filesystem image (as used by a PDP-11)
+filsys mounts a Seventh Edition Unix filesystem image (as used by a PDP-11)
 as a FUSE filesystem, so files can be copied on and off the image for use with
 a simulator such as SIMH pdp11.
 
@@ -38,8 +38,8 @@ autoreconf -i
 %files
 %license COPYING
 %doc README.md AUTHORS NEWS ChangeLog
-%{_bindir}/kenfsmount
-%{_mandir}/man1/kenfsmount.1*
+%{_bindir}/filsysmount
+%{_mandir}/man1/filsysmount.1*
 
 %changelog
 * Mon Aug 25 2026 David Walther <david@clearbrookdistillery.com> - 1.0.0-1

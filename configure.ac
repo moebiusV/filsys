@@ -1,11 +1,11 @@
-# configure.ac - kenfs, a FUSE driver for V7 (PDP-11) filesystem images.
+# configure.ac - filsys, a FUSE driver for V7 (PDP-11) filesystem images.
 #
 # Run `autoreconf -i` to generate `configure`, then the usual
 # `./configure && make && make install`.
 
 AC_PREREQ([2.69])
-AC_INIT([kenfs], [1.0.0], [david@clearbrookdistillery.com])
-AC_CONFIG_SRCDIR([kenfsmount.c])
+AC_INIT([filsys], [1.0.0], [david@clearbrookdistillery.com])
+AC_CONFIG_SRCDIR([filsysmount.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE([-Wall])
 AM_SILENT_RULES([yes])
