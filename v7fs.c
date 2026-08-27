@@ -23,10 +23,12 @@ static int super_write(v7fs_t *fs);
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian) {
+int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
+              uint64_t offset) {
     memset(fs, 0, sizeof(*fs));
     fs->readonly = readonly;
     fs->le = little_endian;
+    fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
         return -errno;
@@ -51,7 +53,7 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian) {
      * the checker (and directory readers) allocate gigabytes. */
     struct stat st;
     if (fstat(fs->fd, &st) == 0 &&
-        ((uint64_t)fs->fsize * V7_BSIZE > (uint64_t)st.st_size ||
+        (fs->base + (uint64_t)fs->fsize * V7_BSIZE > (uint64_t)st.st_size ||
          fs->fsize <= fs->isize)) {
         close(fs->fd);
         fs->fd = -1;
@@ -72,7 +74,7 @@ void v7fs_close(v7fs_t *fs) {
 /* ---- block io ---------------------------------------------------------- */
 
 int v7fs_read_block(v7fs_t *fs, uint32_t bno, uint8_t *buf) {
-    ssize_t n = pread(fs->fd, buf, V7_BSIZE, (off_t)bno * V7_BSIZE);
+    ssize_t n = pread(fs->fd, buf, V7_BSIZE, (off_t)bno * V7_BSIZE + (off_t)fs->base);
     if (n != V7_BSIZE)
         return -EIO;
     return 0;
@@ -81,7 +83,7 @@ int v7fs_read_block(v7fs_t *fs, uint32_t bno, uint8_t *buf) {
 int v7fs_write_block(v7fs_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
-    ssize_t n = pwrite(fs->fd, buf, V7_BSIZE, (off_t)bno * V7_BSIZE);
+    ssize_t n = pwrite(fs->fd, buf, V7_BSIZE, (off_t)bno * V7_BSIZE + (off_t)fs->base);
     if (n != V7_BSIZE)
         return -EIO;
     return 0;

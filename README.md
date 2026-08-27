@@ -31,7 +31,7 @@ SONAME directly.
 ```sh
 ./configure
 make
-sudo make install    # installs kenfsmount + kenfs.5
+sudo make install    # installs kenfsmount, kenfsfind + their manpages
 ```
 
 `./configure && make && make install` is the standard GNU flow; `configure` is
@@ -57,6 +57,9 @@ they share one code path.
 | `-v 6` | V6 format                          |
 | `-v 7` | V7 format                          |
 | `-v 32`| 32V format (little-endian V7)      |
+| `-o offset=N` | mount a filesystem at byte offset N (a partition) |
+| `-o uid=N,gid=N` | override reported ownership (default: you) |
+| `-o allow_other,…` | pass a FUSE option through |
 | `-r`   | mount read-only                  |
 | `-f`   | stay in foreground               |
 | `-d`   | FUSE debug output                |
@@ -210,18 +213,48 @@ The root's `/etc/rc` gives it away: `mount /dev/rp3 /usr`, and `/dev/rp3` is a
 block device (major 6, minor 7 = `rp0h`).  So the "root smaller than the disk"
 is not waste — it is the normal V7 root/swap//usr split, and the `/usr`
 filesystem sits **intact** at block 18392 (superblock at 18393: `isize=8189`,
-`fsize=322278`, middle-endian).  Extract it with `dd skip=18392` and
-`kenfsmount -v 7 -c` reports 2064 used inodes, `errors=0`; it mounts as a
-complete May-1979 source tree (`/usr/src`, `/usr/sys`, man pages, games).
+`fsize=322278`, middle-endian).  Mount it in place with the byte offset
+(`18392 × 512 = 9416704`) — `kenfsmount -v 7 -o offset=9416704 rp06-0.disk mnt`
+— and `-c` reports 2064 used inodes, `errors=0`; it mounts as a complete
+May-1979 source tree (`/usr/src`, `/usr/sys`, man pages, games).
 
 To locate such a partition you read `/etc/rc` (for the *name*), read the
-driver's partition table (for the *offset*), or scan for superblocks — at
-cylinder boundaries (RP06: 418 blocks/cylinder, so 18392 = cylinder 44), and
-**without capping `isize` too low**: this `/usr` has `isize=8189` (65,512
-inodes), which a naive "small i-list" heuristic wrongly skips.
+driver's partition table (for the *offset*), or run **`kenfsfind`** (see
+below), which scans for superblocks at cylinder boundaries and, with `-i`,
+traces inode-table runs backwards to their superblocks.  Do not cap `isize`
+too low: this `/usr` has `isize=8189` (65,512 inodes), which a naive
+"small i-list" heuristic wrongly skips.
 
-kenfsmount reads the superblock at block 1 (byte 512) and has no `offset=`
-option, so to mount a partition in place you extract it with `dd skip=` first.
+`kenfsmount -o offset=N` shifts the superblock read to byte `N`, so a
+partition mounts in place without `dd` — and the root and `/usr` partitions
+can be mounted from the *same* file at once, nested:
+
+```
+kenfsmount -v 7 rp06-0.disk mnt/
+kenfsmount -v 7 -o offset=9416704 rp06-0.disk mnt/usr
+```
+
+The second (nested) mount needs the outer mount point to be owned by you (it
+is — kenfsmount reports files as the mounting user, override with
+`-o uid=,gid=`), and needs FUSE to let the mount helper enter the outer mount,
+which requires `user_allow_other` in `/etc/fuse.conf` and `-o allow_other` on
+the outer mount (or running the whole thing as root).
+
+### Finding partitions (kenfsfind)
+
+`kenfsfind` locates the filesystems on a raw image.  It scans for superblocks
+(validating the edition, i-list and volume sizes, and that the free list holds
+only in-range blocks), and with `-i` also scans for inode-table runs and
+traces backwards to their superblocks.  Scan at cylinder boundaries to dodge
+the false positives a block-by-block sweep of file data produces:
+
+```
+kenfsfind -c 418 rp06-0.disk
+# fs @ block 0      (byte 0)       V7  isize=202  fsize=5000
+# fs @ block 18392  (byte 9416704) V7  isize=8189 fsize=322278
+```
+
+Mount any hit with `kenfsmount -o offset=<byte>`.
 
 ## Verification
 
@@ -241,25 +274,26 @@ delete freed the inode and data block (free counts restored, `errors=0`).
 
 ## Coordination with the simulator
 
-The image must not be written by both the emulator and FUSE at once.  `kenfs`
-holds an **exclusive `flock`** on the image for the whole mount; a simulator
-patched to take that same lock around its own disk I/O will block (pause)
-while the image is mounted, and resume on unmount.
+> **Rule: the simulator must not run while the disk is mounted.**  The running
+> kernel caches the superblock free list, the inode table, and the buffer
+> cache, so editing the disk behind it leaves those stale.  The safe workflow
+> is to stage files while the system is *not* running, then boot it fresh.
+> (`sync` inside before halting flushes its buffers.)
 
-> **Rule: the simulator must not run while the disk is mounted.**  The lock
-> marks the image busy, but the deeper reason is the kernel's in-memory state:
-> the running kernel caches the superblock free list, the inode table, and the
-> buffer cache, so editing the disk behind it leaves those stale.  The safe
-> workflow is to stage files while the system is *not* running, then boot it
-> fresh.  (`sync` inside before halting flushes its buffers; the lock only
-> marks the image busy, it cannot refresh a running kernel's caches.)
+kenfsmount deliberately takes **no lock** on the image: a V7 disk is a set of
+partitions in one file, and mounting the root and `/usr` at two mount points
+from the same file at once requires both mounts to share it read-only.  The
+"don't edit a disk under a running kernel" rule above is the real protection;
+the file is never locked, so it is on you not to mount read-write while the
+emulator is running.
 
 ## Layout
 
 - `v6fs.h` / `v6fs.c` — V4/V5/V6 on-disk access layer.
-- `v7fs.h` / `v7fs.c` — V7 on-disk access layer.
-- `kenfsmount.c` — FUSE callbacks + the `-6`/`-7`/`-32` edition selector.
-- `kenfs.5` — the folded filesystem-format manpage (V4 through 32V).
+- `v7fs.h` / `v7fs.c` — V7/32V on-disk access layer.
+- `kenfsmount.c` — FUSE callbacks + the `-v` edition selector.
+- `kenfsfind.c` — locate filesystem superblocks (partitions) on a raw image.
+- `kenfs.5`, `kenfsfind.1` — the format and tool manpages.
 - `configure.ac`, `Makefile.am` — GNU autotools build.
 - `test.sh`, `fetch.sh`, `reference/`, `runv7/`.
 

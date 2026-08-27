@@ -1,0 +1,71 @@
+.\" kenfsfind.1 — part of kenfs 0.9.0
+.TH KENFSFIND 1 "August 2026" "kenfs 0.9.0" "File Format and Disk Utilities"
+.SH NAME
+kenfsfind \- locate filesystem superblocks (partitions) on a raw disk image
+.SH SYNOPSIS
+.B kenfsfind
+.RB [ \-c
+.IR N ]
+.RB [ \-i ]
+.I image
+.SH DESCRIPTION
+A Research Unix disk (V4 through 32V) is a set of
+.I partitions
+in one file, and the partition table is compiled into the kernel
+.RB ( rp.c 's
+.IR rp_sizes ,
+.RB for example)
+rather than stored on the disk.  So the offsets of the filesystems are not
+readable from the disk itself.
+.PP
+.B kenfsfind
+recovers them two ways.  First it scans every block (or every
+.IR N -th
+block) for a filesystem
+.I superblock ,
+validating the edition (V6, V7, or 32V), the i-list size, the volume size, and
+that the free-block list holds only in-range block numbers.  Second, with
+.BR \-i ,
+it scans for runs of
+.I inode-table
+blocks and traces backwards: block 2 of a filesystem is its first inode-table
+block, so the block just before an inode-table run is the superblock.  This
+finds filesystems whose superblock is damaged enough to defeat the direct scan.
+.PP
+Each hit is printed as:
+.PP
+.RS
+.nf
+fs @ block START  (byte BYTES)  V7  isize=N fsize=M
+.fi
+.RE
+.PP
+Mount the partition in place with
+.BR kenfsmount (1)
+using
+.BR "\-o offset=BYTES" .
+.SH OPTIONS
+.TP
+.B \-c N
+Scan every
+.IR N -th
+block instead of every block.  Use the disk's blocks-per-cylinder (418 for an
+RP06, 400 for an RK05) to find partitions quickly and without the false
+positives a block-by-block scan of file data produces.
+.TP
+.B \-i
+Also trace inode-table runs backwards to their superblocks.
+.SH EXAMPLE
+.nf
+kenfsfind -c 418 rp06-0.disk
+# fs @ block 0      (byte 0)       V7  isize=202  fsize=5000
+# fs @ block 18392  (byte 9416704) V7  isize=8189 fsize=322278
+
+kenfsmount -v 7 -o offset=9416704 rp06-0.disk /mnt/usr
+.fi
+.SH SEE ALSO
+.BR kenfsmount (1),
+.BR kenfs (5),
+.BR icheck (8)
+.SH AUTHOR
+Written for the kenfs project.
