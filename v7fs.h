@@ -1,5 +1,5 @@
-/* v7fuse 0.1.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
-/* SPDX-License-Identifier: LGPL-2.1-or-later */
+/* kenfs 0.9.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* SPDX-License-Identifier: ISC */
 /* v7fs.h — Seventh Edition (V7) Unix filesystem, on-disk access layer.
  *
  * The V7 filesystem lives on a PDP-11 disk image.  Block size is 512 bytes:
@@ -80,6 +80,40 @@ static inline void v7_put24me(uint8_t *p, uint32_t v) {
     p[2] = (uint8_t)((v >> 8) & 0xff);   /* mid */
 }
 
+/* 32V (VAX) stores the same fields little-endian: 32-bit values low word
+ * first, and the 3-byte di_addr bytes as [ lo, mid, hi ].  The PDP-11 (V7)
+ * layout above is middle-endian.  These dispatch on the edition's byte order,
+ * so the rest of the code can stay edition-neutral. */
+static inline uint32_t v7_get32le(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+static inline void v7_put32le(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)(v & 0xff);
+    p[1] = (uint8_t)((v >> 8) & 0xff);
+    p[2] = (uint8_t)((v >> 16) & 0xff);
+    p[3] = (uint8_t)((v >> 24) & 0xff);
+}
+static inline uint32_t v7_get32(const uint8_t *p, int le) {
+    return le ? v7_get32le(p) : v7_get32me(p);
+}
+static inline void v7_put32(uint8_t *p, int le, uint32_t v) {
+    if (le) v7_put32le(p, v); else v7_put32me(p, v);
+}
+static inline uint32_t v7_get24(const uint8_t *p, int le) {
+    return le ? (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16)
+              : v7_get24me(p);
+}
+static inline void v7_put24(uint8_t *p, int le, uint32_t v) {
+    if (le) {
+        p[0] = (uint8_t)(v & 0xff);
+        p[1] = (uint8_t)((v >> 8) & 0xff);
+        p[2] = (uint8_t)((v >> 16) & 0xff);
+    } else {
+        v7_put24me(p, v);
+    }
+}
+
 /* ---- core types -------------------------------------------------------- */
 
 /* Decoded on-disk inode. */
@@ -102,6 +136,7 @@ typedef struct {
 typedef struct {
     int        fd;             /* open disk image */
     int        readonly;
+    int        le;             /* 0 = PDP-11 middle-endian (V7), 1 = VAX little-endian (32V) */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
@@ -114,8 +149,10 @@ typedef struct {
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-/* Open a disk image.  Returns 0, or -errno. */
-int v7fs_open(v7fs_t *fs, const char *path, int readonly);
+/* Open a disk image.  Returns 0, or -errno.  little_endian selects the 32V
+ * (VAX) byte order for 32-bit fields and 3-byte block addresses; 0 selects
+ * the PDP-11 (V7) middle-endian order. */
+int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian);
 /* Flush the superblock and close. */
 void v7fs_close(v7fs_t *fs);
 
