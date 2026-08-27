@@ -100,10 +100,13 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 - **V4 (1973)** is the **C rewrite** of the kernel *and* the filesystem, and
   the first edition with the **16-byte directory entry** (`d_ino` +
   `d_name[14]`), the same struct that survives into V7's `dir.h`.  The 14 is
-  an artifact of making the entry 16 bytes once the i-number took two.
-- **V5, V6 (1974-75)**: **no on-disk change** from V4.  The V6 inode is 32
-  bytes, eight 16-bit block addresses with the `ILARG` flag switching them to
-  indirect, and a 24-bit size split across a byte and a word.
+  an artifact of making the entry 16 bytes once the i-number took two.  The V4
+  inode is **32 bytes** (16 per block): eight 16-bit block addresses, the
+  `ILARG` flag switching them to indirect, and a 24-bit size split across a
+  byte and a word.
+- **V5, V6 (1974-75)**: **no on-disk change** from V4.  V6 alone added
+  `int pad[50]` to the superblock struct, but the extra bytes never reach disk
+  (see the pad note below), so the on-disk layout is unchanged.
 - **V7 (1979)** is the **only format break** in the range.  Disks had grown
   enough that 16-bit block numbers were a handicap, so V7 widened block
   numbers to 24 bits (packed three to a byte-triple by `l3tol`/`ltol3`),
@@ -111,8 +114,8 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
   triple indirect), made the size a full 32 bits, and added `ctime`.  The
   widening is generally Ken Thompson's, driven by the same portability work
   (Johnson and Ritchie's Interdata port) that produced `daddr_t`.
-- **32V** is V7 recompiled for the VAX; structurally identical, but see the
-  byte-order caveat below.
+- **32V** is V7 recompiled for the VAX; structurally identical, but many
+  fields have a different byte order (see below).
 
 ### Format table
 
@@ -273,10 +276,15 @@ every edition:
 | V5 | TUHS `Dennis_v5/v5root` | yes | yes | yes | yes | yes |
 | V6 | pcollinson `rk0` / SIMH `uv6swre` | yes | yes | yes | yes | yes |
 | V7 | pcollinson `rp06-0.disk` | yes | yes | yes | yes | yes |
+| 32V (VAX) | `root32v.disk`, `rp06.disk` (`/usr`) | yes | yes | yes | yes | yes |
 
 On-disk verification dumped the raw 32-byte inode blocks after `chmod`/`chown`
 and confirmed the mode, uid/gid and size fields landed correctly, and that
 delete freed the inode and data block (free counts restored, `errors=0`).
+
+32V has no published disk image, so the test image was built from scratch:
+compile open-simh's VAX-11/780 (`vax780`, which requires the `vmb.exe` ROM),
+boot 32V, and install it from a tape image.
 
 ## Coordination with the simulator
 
