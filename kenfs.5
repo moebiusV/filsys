@@ -2,7 +2,7 @@
 .\" filsys(5)/dir(5) (V7, 32V) pages, distributed under the Caldera
 .\" International "Ancient UNIX License" (2002).  The LICENSE section below
 .\" retains that license's copyright notice, conditions and disclaimer.
-.TH KENFS 5 "August 2026" "kenfs 0.9.0" "File Formats and Mounting"
+.TH KENFS 5 "August 2026" "kenfs 1.0.0" "File Formats and Mounting"
 .SH NAME
 kenfsmount, kenfs \- mount a Research Unix filesystem image; filesystem format (V4 through 32V)
 .SH SYNOPSIS
@@ -22,8 +22,8 @@ simulator such as SIMH
 .BR pdp11 (1).
 .PP
 One binary serves every edition we care about.  The on-disk format is the
-1969 Thompson/Canaday/Ritchie design \(em a flat i-list at a fixed offset,
-directories as ordinary files of fixed-size entries, and device files \(em
+1969 Thompson/Canaday/Ritchie design (a flat i-list at a fixed offset,
+directories as ordinary files of fixed-size entries, and device files)
 carried essentially unchanged from the PDP-7 through V6, then widened once,
 in V7.  V4, V5 and V6 are byte-for-byte identical on disk; 32V is V7
 recompiled for the VAX, with one byte-order caveat noted under
@@ -87,16 +87,23 @@ Enable FUSE debug output (implies
 Run the integrity check instead of mounting.  The image is opened read-only
 and the free list and inode table are walked; a non-zero exit status means
 problems were found.
-.SH LOCKING
-For the whole duration of a mount,
+.SH SIMULATOR COORDINATION
 .B kenfsmount
-holds an exclusive
+deliberately takes
+.B no lock
+on the image file.  A Research Unix disk is a set of
+.I partitions
+in one file, and mounting the root and
+.I /usr
+partitions from the same file at two nested mount points requires both mounts
+to share the file, so an exclusive
 .BR flock (2)
-on the image file.  This is the hook a patched simulator uses to pause its own
-disk I/O while the image is mounted, so the two writers never touch the image
-at once.  Do not run the simulator while the image is mounted: the running
-kernel caches the superblock free list, the inode table, and the buffer cache,
-and editing the image behind it leaves those stale.
+would defeat that.  The protection is a workflow rule, not a lock: do not run
+the simulator while the image is mounted: the running kernel caches the
+superblock free list, the inode table, and the buffer cache, and editing the
+image behind it leaves those stale.
+.IR sync (8)
+inside the guest before halting flushes its buffers.
 .SH EXAMPLES
 .RS
 .nf
@@ -141,13 +148,13 @@ The first two entries are, by convention,
 and
 .BR .. .
 .PP
-(V3 and earlier used a 10-byte entry \(em a 2-byte i-number and an 8-character
-name \(em so a reader for those editions must use a different directory
+(V3 and earlier used a 10-byte entry (a 2-byte i-number and an 8-character
+name), so a reader for those editions must use a different directory
 walker.  The 16-byte entry dates from V4, and is the same struct that
 survives verbatim into V7's
 .IR dir.h .)
 .SS The super block (block 1)
-.I V4, V5, V6 \(em all 16-bit fields
+.I V4, V5, V6: all 16-bit fields
 .PP
 .nf
     struct {
@@ -172,13 +179,13 @@ appends
 .B "int pad[50];"
 after
 .IR s_time[2] ,
-making the struct 516 bytes \(em 4 bytes past the 512-byte block.  It does
+making the struct 516 bytes, 4 bytes past the 512-byte block.  It does
 not spill into block 2: V6's
 .I bcopy
 counts in 16-bit words, and the superblock I/O copies 256 words (512 bytes),
 so the last 4 bytes of the pad are never written.  V4 and V5 have no pad.
 .PP
-.I V7, 32V \(em widened block addresses
+.I V7, 32V: widened block addresses
 .PP
 .nf
     struct filsys {
@@ -210,7 +217,7 @@ i-numbers, and when it empties the i-list is scanned to refill it.  This
 list only speeds allocation; the authoritative free/allocated state is the
 inode's mode field.
 .SS The inode
-.I V4, V5, V6 \(em 32 bytes, 16 per block
+.I V4, V5, V6: 32 bytes, 16 per block
 .PP
 .nf
     struct {
@@ -244,7 +251,7 @@ Mode bits:
     000400/000200/000100  owner r/w/x (and 000070 group, 000007 other)
 .fi
 .PP
-.I V7, 32V \(em 64 bytes, 8 per block (INOPB=8)
+.I V7, 32V: 64 bytes, 8 per block (INOPB=8)
 .PP
 .nf
     struct dinode {
@@ -264,7 +271,7 @@ The 40 address bytes hold 13 addresses of 3 bytes each, packed by
 .IR l3tol (3)
 specifically to be independent of host word order.
 .SS File storage (block mapping)
-.I V6 \(em small and large files
+.I V6: small and large files
 .PP
 A file without the ILARG bit is
 .I small :
@@ -320,17 +327,47 @@ and the indirect-block
 .I daddr_t
 entries are little-endian instead of middle-endian.  The two kernels'
 .I iexpand
-functions differ in exactly where the zero pad byte lands \(em byte 1 on the
-PDP-11, byte 3 on the VAX.  Only the 16-bit fields are byte-order neutral.
+functions differ in exactly where the zero pad byte lands (byte 1 on the
+PDP-11, byte 3 on the VAX).  Only the 16-bit fields are byte-order neutral.
 Treat a 32V pack as little-endian throughout;
 .B kenfsmount
 selects it with
-.BR \-32 .
+.BR "\-v 32" .
+.PP
+Beyond byte order, the VAX aligns
+.I daddr_t
+and
+.I time_t
+to 4 bytes, so the superblock's 32-bit fields sit two bytes later than in V7:
+.I s_fsize
+moves from +2 to +4,
+.I s_nfree
+from +6 to +8,
+.I s_free[]
+from +8 to +12,
+.I s_ninode
+from +208 to +212, and
+.I s_time
+from +414 to +420 (each 2-byte field
+.IR s_isize ,
+.IR s_nfree ,
+.IR s_ninode
+is followed by a 2-byte pad).  The free-list dump block shifts the same way:
+.I df_nfree
+is a 4-byte
+.B int
+on the VAX (2 bytes on the PDP-11), so
+.I df_free[]
+moves from +2 to +4.  The inode and the directory entry are unaffected (their fields already fall on 4-byte boundaries), so only
+.I filsys
+and
+.I fblk
+differ in layout; every other structure differs from V7 only in byte order.
 .SS Reserved i-numbers
 .I V4, V5, V6:
 i-number 1 is the root directory; no bad-block file exists.
 .I V7, 32V:
-i-number 1 is the bad-block file \(em a regular file with
+i-number 1 is the bad-block file: a regular file with
 .I nlink = 0
 (so it has no name) whose
 .I di_addr
@@ -384,9 +421,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .SH SEE ALSO
 .BR fusermount3 (1),
 .BR mount.fuse3 (8),
-.BR flock (2),
 .BR pdp11 (1),
 .BR icheck (1),
 .BR stat (2)
 .SH AUTHOR
-Written for the kenfs project (formerly v7fuse).
+Written for the kenfs project .

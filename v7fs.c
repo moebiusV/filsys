@@ -1,6 +1,6 @@
-/* kenfs 0.9.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* kenfs 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* v7fs.c — Seventh Edition Unix filesystem, on-disk access layer.
+/* v7fs.c - Seventh Edition Unix filesystem, on-disk access layer.
  *
  * Reads and writes a V7 filesystem image, and a 32V (VAX) image under the
  * same code with the little-endian byte order selected (see v7fs.h).  The

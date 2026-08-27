@@ -1,6 +1,6 @@
-/* kenfs 0.9.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* kenfs 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* v6fs.c — Sixth Edition Unix filesystem, on-disk access layer.
+/* v6fs.c - Sixth Edition Unix filesystem, on-disk access layer.
  *
  * Reads and writes a V6 filesystem image.  All multi-byte fields follow the
  * PDP-11 middle-endian convention (see v6fs.h).  The allocation algorithms

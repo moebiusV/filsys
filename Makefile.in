@@ -14,7 +14,7 @@
 
 @SET_MAKE@
 
-# Makefile.am — v7fuse, a FUSE driver for V7 (PDP-11) filesystem images.
+# Makefile.am - kenfs, a FUSE driver for Research Unix filesystem images.
 
 VPATH = @srcdir@
 am__is_gnu_make = { \
@@ -90,7 +90,7 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = v7mount$(EXEEXT)
+bin_PROGRAMS = kenfsmount$(EXEEXT) kenfsfind$(EXEEXT)
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -103,13 +103,20 @@ am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
 mkinstalldirs = $(install_sh) -d
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)"
+am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" \
+	"$(DESTDIR)$(man5dir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_v7mount_OBJECTS = v7mount-v7mount.$(OBJEXT) v7mount-v7fs.$(OBJEXT)
-v7mount_OBJECTS = $(am_v7mount_OBJECTS)
+am_kenfsfind_OBJECTS = kenfsfind-kenfsfind.$(OBJEXT)
+kenfsfind_OBJECTS = $(am_kenfsfind_OBJECTS)
+kenfsfind_LDADD = $(LDADD)
+kenfsfind_LINK = $(CCLD) $(kenfsfind_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+	$(LDFLAGS) -o $@
+am_kenfsmount_OBJECTS = kenfsmount-kenfsmount.$(OBJEXT) \
+	kenfsmount-v6fs.$(OBJEXT) kenfsmount-v7fs.$(OBJEXT)
+kenfsmount_OBJECTS = $(am_kenfsmount_OBJECTS)
 am__DEPENDENCIES_1 =
-v7mount_DEPENDENCIES = $(am__DEPENDENCIES_1)
-v7mount_LINK = $(CCLD) $(v7mount_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+kenfsmount_DEPENDENCIES = $(am__DEPENDENCIES_1)
+kenfsmount_LINK = $(CCLD) $(kenfsmount_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -126,8 +133,9 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/v7mount-v7fs.Po \
-	./$(DEPDIR)/v7mount-v7mount.Po
+am__depfiles_remade = ./$(DEPDIR)/kenfsfind-kenfsfind.Po \
+	./$(DEPDIR)/kenfsmount-kenfsmount.Po \
+	./$(DEPDIR)/kenfsmount-v6fs.Po ./$(DEPDIR)/kenfsmount-v7fs.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -145,8 +153,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(v7mount_SOURCES)
-DIST_SOURCES = $(v7mount_SOURCES)
+SOURCES = $(kenfsfind_SOURCES) $(kenfsmount_SOURCES)
+DIST_SOURCES = $(kenfsfind_SOURCES) $(kenfsmount_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -179,6 +187,7 @@ am__uninstall_files_from_dir = { \
        $(am__cd) "$$dir" && echo $$files | $(am__xargs_n) 40 $(am__rm_f); }; \
   }
 man1dir = $(mandir)/man1
+man5dir = $(mandir)/man5
 NROFF = nroff
 MANS = $(dist_man_MANS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
@@ -322,12 +331,14 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-v7mount_SOURCES = v7mount.c v7fs.c v7fs.h
+kenfsmount_SOURCES = kenfsmount.c v6fs.c v6fs.h v7fs.c v7fs.h
 # C17, not C23: Microsoft's toolchain tops out at C17, so we match.
-v7mount_CFLAGS = -std=c17 -Wall -Wextra
-v7mount_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
-v7mount_LDADD = $(FUSE3_LIBS) -lpthread
-dist_man_MANS = v7mount.1
+kenfsmount_CFLAGS = -std=c17 -Wall -Wextra
+kenfsmount_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
+kenfsmount_LDADD = $(FUSE3_LIBS) -lpthread
+kenfsfind_SOURCES = kenfsfind.c
+kenfsfind_CFLAGS = -std=c17 -Wall -Wextra
+dist_man_MANS = kenfs.5 kenfsfind.1
 EXTRA_DIST = test.sh fetch.sh reference runv7/headless.ini runv7/headless_boot.py packaging
 all: all-am
 
@@ -409,9 +420,13 @@ uninstall-binPROGRAMS:
 clean-binPROGRAMS:
 	-$(am__rm_f) $(bin_PROGRAMS)
 
-v7mount$(EXEEXT): $(v7mount_OBJECTS) $(v7mount_DEPENDENCIES) $(EXTRA_v7mount_DEPENDENCIES) 
-	@rm -f v7mount$(EXEEXT)
-	$(AM_V_CCLD)$(v7mount_LINK) $(v7mount_OBJECTS) $(v7mount_LDADD) $(LIBS)
+kenfsfind$(EXEEXT): $(kenfsfind_OBJECTS) $(kenfsfind_DEPENDENCIES) $(EXTRA_kenfsfind_DEPENDENCIES) 
+	@rm -f kenfsfind$(EXEEXT)
+	$(AM_V_CCLD)$(kenfsfind_LINK) $(kenfsfind_OBJECTS) $(kenfsfind_LDADD) $(LIBS)
+
+kenfsmount$(EXEEXT): $(kenfsmount_OBJECTS) $(kenfsmount_DEPENDENCIES) $(EXTRA_kenfsmount_DEPENDENCIES) 
+	@rm -f kenfsmount$(EXEEXT)
+	$(AM_V_CCLD)$(kenfsmount_LINK) $(kenfsmount_OBJECTS) $(kenfsmount_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -419,8 +434,10 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/v7mount-v7fs.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/v7mount-v7mount.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kenfsfind-kenfsfind.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kenfsmount-kenfsmount.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kenfsmount-v6fs.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kenfsmount-v7fs.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -442,33 +459,61 @@ am--depfiles: $(am__depfiles_remade)
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(COMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
 
-v7mount-v7mount.o: v7mount.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(v7mount_CPPFLAGS) $(CPPFLAGS) $(v7mount_CFLAGS) $(CFLAGS) -MT v7mount-v7mount.o -MD -MP -MF $(DEPDIR)/v7mount-v7mount.Tpo -c -o v7mount-v7mount.o `test -f 'v7mount.c' || echo '$(srcdir)/'`v7mount.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/v7mount-v7mount.Tpo $(DEPDIR)/v7mount-v7mount.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7mount.c' object='v7mount-v7mount.o' libtool=no @AMDEPBACKSLASH@
+kenfsfind-kenfsfind.o: kenfsfind.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kenfsfind_CFLAGS) $(CFLAGS) -MT kenfsfind-kenfsfind.o -MD -MP -MF $(DEPDIR)/kenfsfind-kenfsfind.Tpo -c -o kenfsfind-kenfsfind.o `test -f 'kenfsfind.c' || echo '$(srcdir)/'`kenfsfind.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsfind-kenfsfind.Tpo $(DEPDIR)/kenfsfind-kenfsfind.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kenfsfind.c' object='kenfsfind-kenfsfind.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(v7mount_CPPFLAGS) $(CPPFLAGS) $(v7mount_CFLAGS) $(CFLAGS) -c -o v7mount-v7mount.o `test -f 'v7mount.c' || echo '$(srcdir)/'`v7mount.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kenfsfind_CFLAGS) $(CFLAGS) -c -o kenfsfind-kenfsfind.o `test -f 'kenfsfind.c' || echo '$(srcdir)/'`kenfsfind.c
 
-v7mount-v7mount.obj: v7mount.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(v7mount_CPPFLAGS) $(CPPFLAGS) $(v7mount_CFLAGS) $(CFLAGS) -MT v7mount-v7mount.obj -MD -MP -MF $(DEPDIR)/v7mount-v7mount.Tpo -c -o v7mount-v7mount.obj `if test -f 'v7mount.c'; then $(CYGPATH_W) 'v7mount.c'; else $(CYGPATH_W) '$(srcdir)/v7mount.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/v7mount-v7mount.Tpo $(DEPDIR)/v7mount-v7mount.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7mount.c' object='v7mount-v7mount.obj' libtool=no @AMDEPBACKSLASH@
+kenfsfind-kenfsfind.obj: kenfsfind.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kenfsfind_CFLAGS) $(CFLAGS) -MT kenfsfind-kenfsfind.obj -MD -MP -MF $(DEPDIR)/kenfsfind-kenfsfind.Tpo -c -o kenfsfind-kenfsfind.obj `if test -f 'kenfsfind.c'; then $(CYGPATH_W) 'kenfsfind.c'; else $(CYGPATH_W) '$(srcdir)/kenfsfind.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsfind-kenfsfind.Tpo $(DEPDIR)/kenfsfind-kenfsfind.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kenfsfind.c' object='kenfsfind-kenfsfind.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(v7mount_CPPFLAGS) $(CPPFLAGS) $(v7mount_CFLAGS) $(CFLAGS) -c -o v7mount-v7mount.obj `if test -f 'v7mount.c'; then $(CYGPATH_W) 'v7mount.c'; else $(CYGPATH_W) '$(srcdir)/v7mount.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kenfsfind_CFLAGS) $(CFLAGS) -c -o kenfsfind-kenfsfind.obj `if test -f 'kenfsfind.c'; then $(CYGPATH_W) 'kenfsfind.c'; else $(CYGPATH_W) '$(srcdir)/kenfsfind.c'; fi`
 
-v7mount-v7fs.o: v7fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(v7mount_CPPFLAGS) $(CPPFLAGS) $(v7mount_CFLAGS) $(CFLAGS) -MT v7mount-v7fs.o -MD -MP -MF $(DEPDIR)/v7mount-v7fs.Tpo -c -o v7mount-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/v7mount-v7fs.Tpo $(DEPDIR)/v7mount-v7fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7fs.c' object='v7mount-v7fs.o' libtool=no @AMDEPBACKSLASH@
+kenfsmount-kenfsmount.o: kenfsmount.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-kenfsmount.o -MD -MP -MF $(DEPDIR)/kenfsmount-kenfsmount.Tpo -c -o kenfsmount-kenfsmount.o `test -f 'kenfsmount.c' || echo '$(srcdir)/'`kenfsmount.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-kenfsmount.Tpo $(DEPDIR)/kenfsmount-kenfsmount.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kenfsmount.c' object='kenfsmount-kenfsmount.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(v7mount_CPPFLAGS) $(CPPFLAGS) $(v7mount_CFLAGS) $(CFLAGS) -c -o v7mount-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-kenfsmount.o `test -f 'kenfsmount.c' || echo '$(srcdir)/'`kenfsmount.c
 
-v7mount-v7fs.obj: v7fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(v7mount_CPPFLAGS) $(CPPFLAGS) $(v7mount_CFLAGS) $(CFLAGS) -MT v7mount-v7fs.obj -MD -MP -MF $(DEPDIR)/v7mount-v7fs.Tpo -c -o v7mount-v7fs.obj `if test -f 'v7fs.c'; then $(CYGPATH_W) 'v7fs.c'; else $(CYGPATH_W) '$(srcdir)/v7fs.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/v7mount-v7fs.Tpo $(DEPDIR)/v7mount-v7fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7fs.c' object='v7mount-v7fs.obj' libtool=no @AMDEPBACKSLASH@
+kenfsmount-kenfsmount.obj: kenfsmount.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-kenfsmount.obj -MD -MP -MF $(DEPDIR)/kenfsmount-kenfsmount.Tpo -c -o kenfsmount-kenfsmount.obj `if test -f 'kenfsmount.c'; then $(CYGPATH_W) 'kenfsmount.c'; else $(CYGPATH_W) '$(srcdir)/kenfsmount.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-kenfsmount.Tpo $(DEPDIR)/kenfsmount-kenfsmount.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kenfsmount.c' object='kenfsmount-kenfsmount.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(v7mount_CPPFLAGS) $(CPPFLAGS) $(v7mount_CFLAGS) $(CFLAGS) -c -o v7mount-v7fs.obj `if test -f 'v7fs.c'; then $(CYGPATH_W) 'v7fs.c'; else $(CYGPATH_W) '$(srcdir)/v7fs.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-kenfsmount.obj `if test -f 'kenfsmount.c'; then $(CYGPATH_W) 'kenfsmount.c'; else $(CYGPATH_W) '$(srcdir)/kenfsmount.c'; fi`
+
+kenfsmount-v6fs.o: v6fs.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-v6fs.o -MD -MP -MF $(DEPDIR)/kenfsmount-v6fs.Tpo -c -o kenfsmount-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-v6fs.Tpo $(DEPDIR)/kenfsmount-v6fs.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='kenfsmount-v6fs.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
+
+kenfsmount-v6fs.obj: v6fs.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-v6fs.obj -MD -MP -MF $(DEPDIR)/kenfsmount-v6fs.Tpo -c -o kenfsmount-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-v6fs.Tpo $(DEPDIR)/kenfsmount-v6fs.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='kenfsmount-v6fs.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
+
+kenfsmount-v7fs.o: v7fs.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-v7fs.o -MD -MP -MF $(DEPDIR)/kenfsmount-v7fs.Tpo -c -o kenfsmount-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-v7fs.Tpo $(DEPDIR)/kenfsmount-v7fs.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7fs.c' object='kenfsmount-v7fs.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
+
+kenfsmount-v7fs.obj: v7fs.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -MT kenfsmount-v7fs.obj -MD -MP -MF $(DEPDIR)/kenfsmount-v7fs.Tpo -c -o kenfsmount-v7fs.obj `if test -f 'v7fs.c'; then $(CYGPATH_W) 'v7fs.c'; else $(CYGPATH_W) '$(srcdir)/v7fs.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/kenfsmount-v7fs.Tpo $(DEPDIR)/kenfsmount-v7fs.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v7fs.c' object='kenfsmount-v7fs.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(kenfsmount_CPPFLAGS) $(CPPFLAGS) $(kenfsmount_CFLAGS) $(CFLAGS) -c -o kenfsmount-v7fs.obj `if test -f 'v7fs.c'; then $(CYGPATH_W) 'v7fs.c'; else $(CYGPATH_W) '$(srcdir)/v7fs.c'; fi`
 install-man1: $(dist_man_MANS)
 	@$(NORMAL_INSTALL)
 	@list1=''; \
@@ -512,6 +557,49 @@ uninstall-man1:
 	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^1][0-9a-z]*$$,1,;x' \
 	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
 	dir='$(DESTDIR)$(man1dir)'; $(am__uninstall_files_from_dir)
+install-man5: $(dist_man_MANS)
+	@$(NORMAL_INSTALL)
+	@list1=''; \
+	list2='$(dist_man_MANS)'; \
+	test -n "$(man5dir)" \
+	  && test -n "`echo $$list1$$list2`" \
+	  || exit 0; \
+	echo " $(MKDIR_P) '$(DESTDIR)$(man5dir)'"; \
+	$(MKDIR_P) "$(DESTDIR)$(man5dir)" || exit 1; \
+	{ for i in $$list1; do echo "$$i"; done;  \
+	if test -n "$$list2"; then \
+	  for i in $$list2; do echo "$$i"; done \
+	    | sed -n '/\.5[a-z]*$$/p'; \
+	fi; \
+	} | while read p; do \
+	  if test -f $$p; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; echo "$$p"; \
+	done | \
+	sed -e 'n;s,.*/,,;p;h;s,.*\.,,;s,^[^5][0-9a-z]*$$,5,;x' \
+	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,' | \
+	sed 'N;N;s,\n, ,g' | { \
+	list=; while read file base inst; do \
+	  if test "$$base" = "$$inst"; then list="$$list $$file"; else \
+	    echo " $(INSTALL_DATA) '$$file' '$(DESTDIR)$(man5dir)/$$inst'"; \
+	    $(INSTALL_DATA) "$$file" "$(DESTDIR)$(man5dir)/$$inst" || exit $$?; \
+	  fi; \
+	done; \
+	for i in $$list; do echo "$$i"; done | $(am__base_list) | \
+	while read files; do \
+	  test -z "$$files" || { \
+	    echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(man5dir)'"; \
+	    $(INSTALL_DATA) $$files "$(DESTDIR)$(man5dir)" || exit $$?; }; \
+	done; }
+
+uninstall-man5:
+	@$(NORMAL_UNINSTALL)
+	@list=''; test -n "$(man5dir)" || exit 0; \
+	files=`{ for i in $$list; do echo "$$i"; done; \
+	l2='$(dist_man_MANS)'; for i in $$l2; do echo "$$i"; done | \
+	  sed -n '/\.5[a-z]*$$/p'; \
+	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^5][0-9a-z]*$$,5,;x' \
+	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
+	dir='$(DESTDIR)$(man5dir)'; $(am__uninstall_files_from_dir)
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -755,7 +843,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(PROGRAMS) $(MANS)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man5dir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -794,8 +882,10 @@ clean-am: clean-binPROGRAMS clean-generic mostlyclean-am
 
 distclean: distclean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
-	-rm -f ./$(DEPDIR)/v7mount-v7fs.Po
-	-rm -f ./$(DEPDIR)/v7mount-v7mount.Po
+	-rm -f ./$(DEPDIR)/kenfsfind-kenfsfind.Po
+	-rm -f ./$(DEPDIR)/kenfsmount-kenfsmount.Po
+	-rm -f ./$(DEPDIR)/kenfsmount-v6fs.Po
+	-rm -f ./$(DEPDIR)/kenfsmount-v7fs.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -828,7 +918,7 @@ install-info: install-info-am
 
 install-info-am:
 
-install-man: install-man1
+install-man: install-man1 install-man5
 
 install-pdf: install-pdf-am
 
@@ -843,8 +933,10 @@ installcheck-am:
 maintainer-clean: maintainer-clean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -rf $(top_srcdir)/autom4te.cache
-	-rm -f ./$(DEPDIR)/v7mount-v7fs.Po
-	-rm -f ./$(DEPDIR)/v7mount-v7mount.Po
+	-rm -f ./$(DEPDIR)/kenfsfind-kenfsfind.Po
+	-rm -f ./$(DEPDIR)/kenfsmount-kenfsmount.Po
+	-rm -f ./$(DEPDIR)/kenfsmount-v6fs.Po
+	-rm -f ./$(DEPDIR)/kenfsmount-v7fs.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
@@ -862,7 +954,7 @@ ps-am:
 
 uninstall-am: uninstall-binPROGRAMS uninstall-man
 
-uninstall-man: uninstall-man1
+uninstall-man: uninstall-man1 uninstall-man5
 
 .MAKE: check-am install-am install-strip
 
@@ -877,12 +969,13 @@ uninstall-man: uninstall-man1
 	install-data install-data-am install-dvi install-dvi-am \
 	install-exec install-exec-am install-html install-html-am \
 	install-info install-info-am install-man install-man1 \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-compile mostlyclean-generic pdf pdf-am ps ps-am \
-	tags tags-am uninstall uninstall-am uninstall-binPROGRAMS \
-	uninstall-man uninstall-man1
+	install-man5 install-pdf install-pdf-am install-ps \
+	install-ps-am install-strip installcheck installcheck-am \
+	installdirs maintainer-clean maintainer-clean-generic \
+	mostlyclean mostlyclean-compile mostlyclean-generic pdf pdf-am \
+	ps ps-am tags tags-am uninstall uninstall-am \
+	uninstall-binPROGRAMS uninstall-man uninstall-man1 \
+	uninstall-man5
 
 .PRECIOUS: Makefile
 

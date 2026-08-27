@@ -1,10 +1,10 @@
-# configure.ac — v7fuse, a FUSE driver for V7 (PDP-11) filesystem images.
+# configure.ac - kenfs, a FUSE driver for V7 (PDP-11) filesystem images.
 #
 # Run `autoreconf -i` to generate `configure`, then the usual
 # `./configure && make && make install`.
 
 AC_PREREQ([2.69])
-AC_INIT([kenfs], [0.9.0], [david@localhost])
+AC_INIT([kenfs], [1.0.0], [david@clearbrookdistillery.com])
 AC_CONFIG_SRCDIR([kenfsmount.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE([-Wall])

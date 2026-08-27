@@ -1,6 +1,6 @@
-/* kenfs 0.9.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* kenfs 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* kenfsmount.c — mount a Research Unix filesystem image (PDP-11) as a FUSE
+/* kenfsmount.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
  * filesystem, selecting the on-disk edition at run time.
  *
  * One binary, every edition we care about:
@@ -11,9 +11,9 @@
  *   -v 7     V7 format
  *   -v 32    32V format (V7 for the VAX; little-endian 32-bit fields + addresses)
  *
- * The on-disk layout is the 1969 Thompson/Canaday/Ritchie design — a flat
+ * The on-disk layout is the 1969 Thompson/Canaday/Ritchie design - a flat
  * i-list at a fixed offset, directories as ordinary files of 16-byte entries,
- * and device files — carried essentially unchanged from the PDP-7 through V6,
+ * and device files - carried essentially unchanged from the PDP-7 through V6,
  * then widened in V7 (64-byte inode, 24-bit block numbers).  See kenfs.5.
  *
  * Usage:

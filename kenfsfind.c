@@ -1,11 +1,11 @@
-/* kenfs 0.9.0 — 2026-08-26 — Copyright (C) 2026 David Walther */
+/* kenfs 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* kenfsfind.c — locate filesystem superblocks on a raw disk image.
+/* kenfsfind.c - locate filesystem superblocks on a raw disk image.
  *
  * A V7 (and V4/V5/V6/32V) disk is a set of *partitions* in one file, and the
  * partition table is compiled into the kernel, not stored on the disk.  This
- * tool finds the filesystems by looking for their superblocks directly, and —
- * with -i — by scanning for inode-table runs and tracing backwards to the
+ * tool finds the filesystems by looking for their superblocks directly, and -
+ * with -i - by scanning for inode-table runs and tracing backwards to the
  * superblock (block 2 of a filesystem is its first inode-table block, so the
  * block just before an inode-table run is the superblock).  The latter finds
  * filesystems even when a damaged superblock defeats the direct scan.
@@ -54,17 +54,22 @@ static int super_v7(const uint8_t *b, uint32_t bno, uint32_t nblocks,
     uint16_t isz = get16le(b);
     if (isz < 3)
         return 0;
-    uint16_t nfree = get16le(b + 6);
-    uint16_t ninode = get16le(b + 208);
-    if (nfree > V7_NICFREE || ninode > V7_NICINOD)
-        return 0;
     for (int le = 0; le < 2; le++) {   /* 0 = PDP-11 ME (V7), 1 = VAX LE (32V) */
-        uint32_t fsz = le ? get32le(b + 2) : get32me(b + 2);
+        /* 32V aligns daddr_t to 4 bytes, so s_fsize/s_nfree/s_free/s_ninode
+         * sit 2 bytes later than in V7. */
+        int nfree_off  = le ? 8 : 6;
+        int ninode_off = le ? 212 : 208;
+        int free_off   = le ? 12 : 8;
+        uint16_t nfree  = get16le(b + nfree_off);
+        uint16_t ninode = get16le(b + ninode_off);
+        if (nfree > V7_NICFREE || ninode > V7_NICINOD)
+            continue;
+        uint32_t fsz = le ? get32le(b + 4) : get32me(b + 2);
         if (fsz <= isz || (uint64_t)bno - 1 + fsz > nblocks)
             continue;
         int ok = 1;
         for (int i = 0; i < nfree; i++) {
-            uint32_t fb = le ? get32le(b + 8 + 4 * i) : get32me(b + 8 + 4 * i);
+            uint32_t fb = le ? get32le(b + free_off + 4 * i) : get32me(b + free_off + 4 * i);
             if (fb != 0 && (fb < isz || fb >= fsz)) { ok = 0; break; }
         }
         if (ok) {
