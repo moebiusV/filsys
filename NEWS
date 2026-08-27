@@ -1,4 +1,4 @@
-kenfs 1.0.0 (2026-08-27)
+filsys 1.0.0 (2026-08-27)
 ========================
 
 First stable release: V4, V5, V6, V7 and 32V filesystems, read-write and
@@ -11,6 +11,6 @@ read-only, feature complete and tested against real images.
 - Free-list and inode-table integrity check with -c.
 - Partition mounting with -o offset=, and nested mounts of two partitions of
   one disk.
-- kenfsfind: locate filesystem superblocks (partitions) on a raw image.
+- filsysfind: locate filesystem superblocks (partitions) on a raw image.
 - No lock on the image, so several partitions of one disk can be mounted at
   once.

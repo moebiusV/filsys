@@ -1,4 +1,4 @@
-kenfs was written by David Walther <david@clearbrookdistillery.com>.
+filsys was written by David Walther <david@clearbrookdistillery.com>.
 
 The on-disk filesystem layout and the allocation algorithms (balloc/bfree/
 ialloc/ifree/itrunc) mirror the Seventh Edition Unix kernel sources published

@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: kenfs
-Source: https://github.com/moebiusV/kenfs
+Upstream-Name: filsys
+Source: https://github.com/moebiusV/filsys
 
 Files: *
 Copyright: 2026 David Walther <david@clearbrookdistillery.com>
@@ -27,4 +27,4 @@ License: Caldera
  The Seventh Edition Unix sources were released under a permissive license
  by Caldera International; see https://www.tuhs.org/ for the distribution
  and its terms.  These files are excerpts included for reference only and
- are not compiled into kenfs.
+ are not compiled into filsys.

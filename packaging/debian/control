@@ -1,17 +1,17 @@
-Source: kenfs
+Source: filsys
 Section: admin
 Priority: optional
 Maintainer: David Walther <david@clearbrookdistillery.com>
 Build-Depends: debhelper-compat (= 13), autoconf, automake, pkg-config, libfuse3-dev
 Standards-Version: 4.6.2
-Homepage: https://github.com/moebiusV/kenfs
+Homepage: https://github.com/moebiusV/filsys
 Rules-Requires-Root: no
 
-Package: kenfs
+Package: filsys
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, fuse3
 Description: FUSE driver for V7 (PDP-11) Unix filesystem images
- kenfs mounts a Seventh Edition Unix filesystem image (as used by a PDP-11)
+ filsys mounts a Seventh Edition Unix filesystem image (as used by a PDP-11)
  as a FUSE filesystem, so files can be copied on and off the image for use
  with a simulator such as SIMH pdp11.
  .

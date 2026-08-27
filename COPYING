@@ -1,7 +1,7 @@
-kenfs is distributed under two licenses, by file origin.
+filsys is distributed under two licenses, by file origin.
 
 ----------------------------------------------------------------------------
-1. Original source code (v6fs.h, v6fs.c, v7fs.h, v7fs.c, kenfsmount.c)
+1. Original source code (v6fs.h, v6fs.c, v7fs.h, v7fs.c, filsysmount.c)
 ----------------------------------------------------------------------------
 
 Copyright (c) 2026 David Walther
@@ -19,10 +19,10 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ----------------------------------------------------------------------------
-2. kenfs.5 manpage: derived from the ancient UNIX man pages
+2. filsys.5 manpage: derived from the ancient UNIX man pages
 ----------------------------------------------------------------------------
 
-The kenfs.5 manpage repurposes the historical fs(5) (V4, V6) and
+The filsys.5 manpage repurposes the historical fs(5) (V4, V6) and
 filsys(5)/dir(5) (V7, 32V) pages, which are distributed under the Caldera
 International "Ancient UNIX License" (January 23, 2002):
 

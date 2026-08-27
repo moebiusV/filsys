@@ -1,6 +1,6 @@
-/* kenfs 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* kenfsmount.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
+/* filsysmount.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
  * filesystem, selecting the on-disk edition at run time.
  *
  * One binary, every edition we care about:
@@ -14,11 +14,11 @@
  * The on-disk layout is the 1969 Thompson/Canaday/Ritchie design - a flat
  * i-list at a fixed offset, directories as ordinary files of 16-byte entries,
  * and device files - carried essentially unchanged from the PDP-7 through V6,
- * then widened in V7 (64-byte inode, 24-bit block numbers).  See kenfs.5.
+ * then widened in V7 (64-byte inode, 24-bit block numbers).  See filsys.5.
  *
  * Usage:
- *     kenfsmount -v <4|5|6|7|32> [-o offset=N[,uid=N,gid=N,...]] [-r] [-f] [-d] <image> <mountpoint>
- *     kenfsmount -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check
+ *     filsysmount -v <4|5|6|7|32> [-o offset=N[,uid=N,gid=N,...]] [-r] [-f] [-d] <image> <mountpoint>
+ *     filsysmount -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check
  *
  * `-o offset=N` mounts a filesystem that lives at byte offset N within the
  * file (a partition of a larger disk image), instead of one at block 0.
@@ -631,7 +631,7 @@ int main(int argc, char *argv[]) {
     k.gid = gid >= 0 ? gid : (int)getgid();
     int rc = kfs_fs_open(&k, image, readonly || check, offset);
     if (rc) {
-        fprintf(stderr, "kenfs: cannot open %s: %s\n", image, strerror(-rc));
+        fprintf(stderr, "filsys: cannot open %s: %s\n", image, strerror(-rc));
         return 1;
     }
 

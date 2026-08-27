@@ -1,4 +1,4 @@
-# Distro packaging for kenfs
+# Distro packaging for filsys
 
 Templates for the main package formats.  Each builds from the release tarball
 produced by `make dist` (or an upstream release download).
@@ -15,7 +15,7 @@ debuild -us -uc            # or: dpkg-buildpackage -us -uc
 
 ```sh
 # place the tarball where rpmbuild expects it, then:
-rpmbuild -ba packaging/kenfs.spec
+rpmbuild -ba packaging/filsys.spec
 ```
 
 ## Arch (PKGBUILD)
