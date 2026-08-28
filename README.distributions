@@ -1,0 +1,140 @@
+Packaging filsys for Distributions
+==================================
+
+This file is for distribution packagers who want to add filsys to their
+distro's package repository.  Template packaging files for several systems
+are provided under `packaging/`.  Each is roughly 90% complete — the packager
+fills in maintainer details, changelog, and distro-specific adjustments.
+
+What filsys Is
+--------------
+
+filsys is a FUSE driver that mounts Research Unix (V4 through V7, and 32V)
+filesystem images on a modern host.  It ships two tools: `filsysmount` (the
+FUSE mount) and `filsysfind` (locate filesystem superblocks/partitions on a
+raw disk image).
+
+Dependencies
+------------
+
+Build-time:
+  - a C17 compiler (gcc or clang)
+  - libfuse3 development headers, found via pkg-config (`fuse3.pc`):
+    Debian/Ubuntu `libfuse3-dev`, Fedora `fuse3-devel`, Arch/Alpine `fuse3`
+  - GNU make; autoconf/automake only to regenerate `configure` (which is
+    shipped)
+
+Runtime:
+  - libfuse3 (`libfuse3.so.3`)
+
+How the Build Works
+-------------------
+
+    ./configure && make && make check && make install
+
+Install layout (default prefix `/usr/local`):
+
+    $(bindir)/filsysmount     the FUSE mount driver
+    $(bindir)/filsysfind      the superblock/partition finder
+    $(mandir)/man5/filsys.5   the filesystem-format manual
+    $(mandir)/man1/filsysfind.1
+
+License
+-------
+
+filsys is dual-licensed, by file origin (see COPYING): the driver source is
+ISC, and the V7/32V filesystem-format code is under the Caldera "Ancient
+UNIX" license.  Record this as "ISC AND Caldera" in license metadata.
+
+Per-Distribution Notes
+======================
+
+RPM (Fedora / RHEL / CentOS)
+----------------------------
+
+  Files:  packaging/filsys.spec
+
+  Customize: URL/Source0, the %changelog entry.
+  Build:  rpmbuild -ba packaging/filsys.spec
+  Submit: Fedora Package Review process / EPEL.
+
+Debian / Ubuntu
+---------------
+
+  Files:  packaging/debian/
+
+  Customize: debian/changelog, debian/control Maintainer, debian/copyright.
+  Build:  dpkg-buildpackage -us -uc
+  Submit: File an ITP against wnpp.
+
+Arch Linux
+----------
+
+  Files:  packaging/PKGBUILD
+
+  Customize: Maintainer line, sha256sums (updpkgsums).
+  Build:  makepkg -si
+  Submit: AUR.
+
+Alpine Linux
+------------
+
+  Files:  packaging/alpine/APKBUILD
+
+  Customize: Maintainer line, sha512sums (abuild checksum).
+  Build:  abuild -r
+  Submit: MR against aports.git.
+
+FreeBSD
+-------
+
+  Files:  packaging/freebsd/
+
+  Customize: MAINTAINER email, distinfo (real SHA256/SIZE).
+  Build:  make -C packaging/freebsd install (in a ports tree)
+  Submit: FreeBSD bug / send-pr, category "ports".
+
+OpenBSD
+-------
+
+  Files:  packaging/openbsd/
+
+  Customize: MAINTAINER email, pkg/PLIST after a test install.
+  Build:  make -C packaging/openbsd install (in a ports tree)
+  Submit: diff to ports@openbsd.org.
+
+NetBSD
+------
+
+  Files:  packaging/netbsd/
+
+  Customize: MAINTAINER email, distinfo (make distinfo).
+  Build:  bmake install (in a pkgsrc tree)
+  Submit: diff to pkgsrc-wip / pkgsrc-changes.
+
+Gentoo
+------
+
+  Files:  packaging/gentoo/
+
+  Customize: metadata.xml maintainer, ebuild SRC_URI, KEYWORDS.
+  Build:  ebuild packaging/gentoo/filsys-1.0.0.ebuild manifest && emerge
+  Submit: bug at bugs.gentoo.org (category "Ebuild") or the GURU overlay.
+
+NixOS
+-----
+
+  Files:  packaging/nixos/default.nix
+
+  Customize: fetchFromGitHub owner/hash, meta.maintainers.
+  Build:  nix-build -E 'with import <nixpkgs> {}; callPackage ./packaging/nixos/default.nix {}'
+  Submit: PR against nixpkgs.
+
+Slackware
+---------
+
+  Files:  packaging/slackware/
+
+  Customize: filsys.SlackBuild copyright, filsys.info MD5SUM/MAINTAINER, slack-desc URL.
+  Build:  source filsys.info && sh filsys.SlackBuild
+  Submit: SlackBuilds.org (SBo).
