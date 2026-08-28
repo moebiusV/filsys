@@ -1,0 +1,4 @@
+bin/filsysmount
+bin/filsysfind
+man/man1/filsysfind.1
+man/man5/filsys.5

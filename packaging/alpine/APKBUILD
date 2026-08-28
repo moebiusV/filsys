@@ -1,0 +1,21 @@
+# Maintainer: maintainer <email>
+pkgname=filsys
+pkgver=1.0.0
+pkgrel=0
+pkgdesc="FUSE driver for Research Unix (V4-V7, 32V) filesystem images"
+url="https://github.com/moebiusV/filsys"
+arch="x86_64"
+license="ISC"
+makedepends="fuse3-dev build-base"
+depends="fuse3"
+source="https://github.com/moebiusV/filsys/archive/refs/tags/v$pkgver.tar.gz"
+sha512sums="SKIP"
+
+build() {
+	./configure --prefix=/usr || return 1
+	make || return 1
+}
+
+package() {
+	make DESTDIR="$pkgdir" install || return 1
+}
