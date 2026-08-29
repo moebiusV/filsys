@@ -16,7 +16,6 @@ BuildRequires:  pkgconfig(fuse3)
 Requires:       fuse3
 Recommends:     v7unix-toolchain
 Recommends:     prebsd
-Recommends:     simh
 
 %description
 filsys mounts a Seventh Edition Unix filesystem image (as used by a PDP-11)
