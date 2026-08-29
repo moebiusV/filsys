@@ -6,6 +6,6 @@ MD5SUM=""
 DOWNLOAD_x86_64=""
 MD5SUM_x86_64=""
 REQUIRES="fuse3"
-# recommended (optional): v7unix-toolchain prebsd simh
+# recommended (optional): v7unix-toolchain prebsd
 MAINTAINER="maintainer"
 EMAIL="maintainer@example.com"

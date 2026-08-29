@@ -11,6 +11,6 @@ LICENSE=	isc AND caldera-license
 GNU_CONFIGURE=	yes
 USE_TOOLS+=	gmake pkg-config
 
-# recommended (optional): ../../devel/v7unix-toolchain, ../../emulators/prebsd, ../../emulators/simh
+# recommended (optional): ../../devel/v7unix-toolchain, ../../emulators/prebsd
 .include "../../mk/fuse.buildlink3.mk"
 .include "../../mk/bsd.pkg.mk"

@@ -10,7 +10,7 @@ Rules-Requires-Root: no
 Package: filsys
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, fuse3
-Recommends: v7unix-toolchain, prebsd, simh
+Recommends: v7unix-toolchain, prebsd
 Description: FUSE driver for V7 (PDP-11) Unix filesystem images
  filsys mounts a Seventh Edition Unix filesystem image (as used by a PDP-11)
  as a FUSE filesystem, so files can be copied on and off the image for use

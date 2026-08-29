@@ -13,5 +13,5 @@ USE_GMAKE =	Yes
 CONFIGURE_STYLE =	gnu
 LIB_DEPENDS =	sysutils/fuse3
 
-# recommended (optional): devel/v7unix-toolchain, emulators/prebsd, emulators/simh
+# recommended (optional): devel/v7unix-toolchain, emulators/prebsd
 .include <bsd.port.mk>
