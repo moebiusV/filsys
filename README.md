@@ -23,8 +23,8 @@ Home: <https://github.com/moebiusV/filsys>
 - **libfuse3** (`libfuse3-dev` on Debian/Ubuntu, `fuse3-devel` on Fedora, `fuse3` on Arch)
 
 `mkfs` and `fsck` are not built here: they are ported in v7unix-toolchain
-(<https://github.com/moebiusV/v7unix-toolchain>), and filsys depends on that
-repo to provide them.
+(<https://github.com/moebiusV/v7unix-toolchain>), and filsys recommends
+it to provide them.
 
 If you can't install the dev package, `./fetch.sh` downloads and extracts the
 libfuse3 headers locally and the build falls back to linking the runtime

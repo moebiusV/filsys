@@ -8,6 +8,7 @@ arch="x86_64"
 license="ISC"
 makedepends="fuse3-dev build-base"
 depends="fuse3"
+# recommended (optional): v7unix-toolchain prebsd simh
 source="https://github.com/moebiusV/filsys/archive/refs/tags/v$pkgver.tar.gz"
 sha512sums="SKIP"
 
