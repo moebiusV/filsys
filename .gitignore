@@ -2,7 +2,6 @@
 filsysmount
 filsysfind
 *.o
-/Makefile
 config.log
 config.status
 config.h
