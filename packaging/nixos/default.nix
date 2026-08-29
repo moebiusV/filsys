@@ -13,6 +13,7 @@ stdenv.mkDerivation rec {
 
   nativeBuildInputs = [ pkg-config ];
   buildInputs = [ fuse3 ];
+  # recommended (optional): v7unix-toolchain, prebsd, simh
 
   meta = with lib; {
     description = "FUSE driver for Research Unix (V4-V7, 32V) filesystem images";

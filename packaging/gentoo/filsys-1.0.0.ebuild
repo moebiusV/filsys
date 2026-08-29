@@ -13,3 +13,4 @@ KEYWORDS="~amd64"
 RDEPEND="sys-fs/fuse:3"
 DEPEND="${RDEPEND}"
 BDEPEND="virtual/pkgconfig"
+# recommended (optional): dev-util/v7unix-toolchain, app-emulation/prebsd, app-emulation/simh

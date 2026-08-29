@@ -13,4 +13,5 @@ USES=		gmake pkgconfig
 GNU_CONFIGURE=	yes
 LIB_DEPENDS=	libfuse3.so:sysutils/fusefs-libs3
 
+# recommended (optional): devel/v7unix-toolchain, emulators/prebsd, emulators/simh
 .include <bsd.port.mk>
