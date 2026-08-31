@@ -28,18 +28,19 @@ EXTRA_DIST = test.sh fetch.sh reference packaging
 # files are installed with the package; pass one to `mkfs.filsys -b` to drop it
 # into block 0 (see mkfs.filsys(1)).  Regenerate them from source with the
 # ported V7 assembler:
-#   make boot V7AS=<path to the ported V7 assembler> \
-#             AS2=<path to its as2 second pass>
+#   make boot
+# (the assembler ships in v7unix-toolchain at $(libexecdir)/v7unix/as; it finds
+#  its as2 second pass next to itself, so no AS2 needs to be passed)
 bootdir = $(pkgdatadir)
 dist_boot_DATA = boot/hpuboot boot/rpuboot
 EXTRA_DIST += boot/hpuboot.s boot/rpuboot.s
 
-V7AS ?= as
-AS2 ?= as2
+V7AS ?= $(libexecdir)/v7unix/as
 .PHONY: boot
 boot:
-	AS2=$(AS2) $(V7AS) -o boot/hpuboot boot/hpuboot.s
-	AS2=$(AS2) $(V7AS) -o boot/rpuboot boot/rpuboot.s
+	$(V7AS) -o boot/hpuboot boot/hpuboot.s
+	$(V7AS) -o boot/rpuboot boot/rpuboot.s
+	chmod 644 boot/hpuboot boot/rpuboot
 
 # `make check` runs the end-to-end smoke test.  It needs a disk image
 # (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).
