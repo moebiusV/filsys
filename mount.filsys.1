@@ -1,7 +1,10 @@
 .\" mount.filsys.1 - part of filsys 1.0.0
+.\" Derived from the Seventh Edition mount(8) page (usr/man/man1/mount.1m),
+.\" distributed under the Caldera International "Ancient UNIX License" (2002).
+.\" The LICENSE section below retains that license's notice and terms.
 .TH MOUNT.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
 .SH NAME
-mount.filsys \- mount a Research Unix filesystem image via FUSE
+mount.filsys, umount.filsys \- mount and dismount a Research Unix filesystem image
 .SH SYNOPSIS
 .B mount.filsys
 .BI \-v " edition"
@@ -19,55 +22,134 @@ mount.filsys \- mount a Research Unix filesystem image via FUSE
 .BI \-c " image"
 .SH DESCRIPTION
 .B mount.filsys
-mounts a Research Unix (V4 through 32V) filesystem image as a FUSE filesystem.
-The on-disk edition is selected at run time with
-.BR \-v :
-4, 5, 6 (V6), 7 (V7), or 32 (32V, the little-endian VAX layout).
+announces to the system (via FUSE) that a removable Research Unix filesystem
+is present at
+.IR image .
+The file
+.I mountpoint
+must exist already; it must be a directory (unless the root of the mounted
+filesystem is not a directory).  It becomes the name of the newly mounted
+root.
 .PP
-A disk image may hold several filesystems
+A Research Unix disk image holds one or more filesystems
 .RI ( partitions ),
 selected by a partition table that is compiled into the kernel, not stored on
 the disk.  By default the filesystem at block 0 is mounted; the
 .B offset=
-option (a byte offset) mounts a filesystem that begins elsewhere in the file.
+option mounts a filesystem that begins at a byte offset elsewhere in the file.
 .PP
-With
-.BR \-c ,
-the filesystem is opened read-only and its integrity is checked
-.RB ( fsck.filsys (1))
-instead of mounting it.
+The on-disk edition is selected at run time with
+.BR \-v :
+4, 5, or 6 select the Sixth Edition format (V4 and V5 are byte-identical to
+V6 on disk); 7 selects Seventh Edition; 32 selects 32V (V7 recompiled for the
+VAX, whose multi-byte fields are little-endian rather than PDP-11
+middle-endian).  A leading
+.B v
+is accepted
+.RB ( v7 ,
+.BR v6 ,
+\&...), as is
+.BR 32v .
+.PP
+The second form
+.RB ( \-c )
+does not mount; it walks the free list and the inode table and reports any
+integrity problems on standard output, exiting non-zero if any are found.
+.PP
+.I Umount.filsys
+is the historical counterpart: it announced to the system that a mounted
+filesystem was to be removed.  With FUSE, unmounting is done with
+.BR fusermount3 (1)
+.BR \-u ,
+so no separate
+.B umount.filsys
+binary ships; the name is retained here as an alias for the command it
+supersedes.
 .SH OPTIONS
 .TP
 .BI \-v " edition"
 Filesystem edition: one of 4, 5, 6, 7, or 32.  Required.
 .TP
-.BI \-o " offset= N [, option ...]"
+.BI \-o " offset= N [, uid= N , gid= N ,...]"
 FUSE options.  The filsys-specific
 .B offset=
-is the byte offset of the filesystem within the image; the rest (uid, gid, and
-so on) are passed through to FUSE.
+is the byte offset of the filesystem within the image (a partition); the rest
+.RB ( uid ,
+.BR gid ,
+and so on) are passed through to FUSE.  Without
+.BR offset= ,
+the filesystem at block 0 is mounted.
 .TP
 .B \-r
 Mount read-only.
 .TP
 .B \-f
-Stay in the foreground.
+Stay in the foreground (do not daemonize).
 .TP
 .B \-d
-Enable FUSE debugging.
+Enable FUSE debug output (implies
+.BR \-f ).
 .TP
 .B \-c
-Check the filesystem instead of mounting.
+Run the integrity check instead of mounting (see
+.BR fsck.filsys (1)).
 .SH EXAMPLES
 .nf
 mount.filsys -v 7 rp06-0.disk /mnt/v7
 mount.filsys -v 7 -o offset=9416704 rp06-0.disk /mnt/usr
-mount.filsys -v 7 -c rp06-0.disk
+mount.filsys -v 6 v6root.dsk /mnt/v6        # V4/V5/V6 (identical on disk)
+mount.filsys -v 32 32v-root.disk /mnt/32v
+mount.filsys -v 7 -c rp06-0.disk            # check instead of mounting
 .fi
 .SH SEE ALSO
 .BR findfs.filsys (1),
 .BR mkfs.filsys (1),
 .BR fsck.filsys (1),
-.BR filsys (5)
+.BR filsys (5),
+.BR fusermount3 (1)
+.SH LICENSE
+This manpage is derived from the Seventh Edition
+.IR mount (8)
+page (distributed as
+.IR mount.1m ).
+The following notice, conditions and disclaimer are retained from that work,
+as its license requires.
+.PP
+Copyright (C) Caldera International Inc. 2001-2002. All rights reserved.
+.PP
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+.PP
+Redistributions of source code and documentation must retain the above
+copyright notice, this list of conditions and the following disclaimer.
+Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+.PP
+All advertising materials mentioning features or use of this software must
+display the following acknowledgement:
+.PP
+.RS
+This product includes software developed or owned by Caldera International,
+Inc.
+.RE
+.PP
+Neither the name of Caldera International, Inc. nor the names of other
+contributors may be used to endorse or promote products derived from this
+software without specific prior written permission.
+.PP
+USE OF THE SOFTWARE PROVIDED FOR UNDER THIS LICENSE BY CALDERA
+INTERNATIONAL, INC. AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+EVENT SHALL CALDERA INTERNATIONAL, INC. BE LIABLE FOR ANY DIRECT, INDIRECT
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .SH AUTHOR
-Written for the filsys project.
+Derived from the Seventh Edition
+.IR mount (8)
+manual, adapted for the filsys project.

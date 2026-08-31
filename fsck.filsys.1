@@ -1,31 +1,63 @@
 .\" fsck.filsys.1 - part of filsys 1.0.0
+.\" Derived from the Seventh Edition icheck(8) and dcheck(8) pages
+.\" (usr/man/man1/icheck.1m, usr/man/man1/dcheck.1m), distributed under the
+.\" Caldera International "Ancient UNIX License" (2002).  The LICENSE section
+.\" below retains that license's notice and terms.
 .TH FSCK.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
 .SH NAME
-fsck.filsys \- check a V7 filesystem on a raw disk image
+fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
 .B fsck.filsys
+.RB [ \-v
+.IR <4|5|6|7> ]
 .RB [ \-o
 .IR block ]
 .I image
 .SH DESCRIPTION
 .B fsck.filsys
-checks a Seventh Edition Unix filesystem inside a disk image: it validates the
-superblock, walks the free-block list checking for out-of-range or duplicated
-blocks and a non-terminating chain, and walks the i-list checking each inode's
+checks a Research Unix filesystem inside a disk image.  It validates the
+superblock; walks the free-block list checking for out-of-range or duplicated
+blocks and a non-terminating chain; and walks the i-list checking each inode's
 block pointers.
 .PP
-A Research Unix disk image holds one or more filesystems
+The Seventh Edition had no single
+.I fsck
+command: storage consistency was checked with
+.BR icheck (8)
+(which built a bit map of used blocks and compared it against the free list)
+and directory consistency with
+.BR dcheck (8)
+(which compared each inode's link count with the number of directory entries
+that reference it).  The
+.I fsck.filsys
+name is the modern
+.BR fsck (8)
+convention; the two checks are folded together and its report carries the
+same findings the V7 pair reported (duplicate blocks, bad blocks, blocks
+outside the filesystem, and link-count/disagreement diagnostics).
+.PP
+The edition is selected with
+.BR \-v :
+4, 5, or 6 select the Sixth Edition format (V4 and V5 are byte-identical to
+V6 on disk); 7 selects Seventh Edition.  The default is 7.  A Research Unix
+disk image holds one or more filesystems
 .RI ( partitions ),
-selected by a partition table that is compiled into the kernel, not stored on
-the disk.  By default
+selected by a partition table compiled into the kernel, not stored on the
+disk.  By default
 .B fsck.filsys
 checks the filesystem at block 0 (the first partition); the
 .B \-o
-option checks a filesystem at a different block offset within the image.
+option checks a filesystem at a different block offset.
 .PP
 The exit status is 0 if the filesystem is clean, 1 if errors were found, and 2
 on a usage error.
 .SH OPTIONS
+.TP
+.BI \-v " <4|5|6|7>"
+Filesystem edition.  4, 5 and 6 are byte-identical (the V6 format); 7 is V7.
+Default 7.  A leading
+.B v
+is accepted (v6, v7, ...).
 .TP
 .BI \-o " block"
 Check the filesystem at
@@ -33,8 +65,9 @@ Check the filesystem at
 (512-byte blocks) within the image, instead of block 0.
 .SH EXAMPLE
 .nf
-fsck.filsys rp06-0.disk           # check the root filesystem
-fsck.filsys -o 18392 rp06-0.disk  # check the filesystem at block 18392
+fsck.filsys image.dk                # check the filesystem at block 0 (V7)
+fsck.filsys -v 6 image.dk           # check a V6 (V4/V5) filesystem
+fsck.filsys -o 18392 image.dk       # check the filesystem at block 18392
 .fi
 .SH SEE ALSO
 .BR mkfs.filsys (1),
@@ -43,5 +76,55 @@ fsck.filsys -o 18392 rp06-0.disk  # check the filesystem at block 18392
 .BR filsys (5),
 .BR icheck (8),
 .BR dcheck (8)
+.SH LICENSE
+This manpage is derived from the Seventh Edition
+.IR icheck (8)
+and
+.IR dcheck (8)
+pages (distributed as
+.IR icheck.1m
+and
+.IR dcheck.1m ).
+The following notice, conditions and disclaimer are retained from those
+works, as their license requires.
+.PP
+Copyright (C) Caldera International Inc. 2001-2002. All rights reserved.
+.PP
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+.PP
+Redistributions of source code and documentation must retain the above
+copyright notice, this list of conditions and the following disclaimer.
+Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+.PP
+All advertising materials mentioning features or use of this software must
+display the following acknowledgement:
+.PP
+.RS
+This product includes software developed or owned by Caldera International,
+Inc.
+.RE
+.PP
+Neither the name of Caldera International, Inc. nor the names of other
+contributors may be used to endorse or promote products derived from this
+software without specific prior written permission.
+.PP
+USE OF THE SOFTWARE PROVIDED FOR UNDER THIS LICENSE BY CALDERA
+INTERNATIONAL, INC. AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+EVENT SHALL CALDERA INTERNATIONAL, INC. BE LIABLE FOR ANY DIRECT, INDIRECT
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .SH AUTHOR
-Written for the filsys project.
+Derived from the Seventh Edition
+.IR icheck (8)
+and
+.IR dcheck (8)
+manuals, adapted for the filsys project.

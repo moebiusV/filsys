@@ -1,9 +1,14 @@
 .\" mkfs.filsys.1 - part of filsys 1.0.0
+.\" Derived from the Seventh Edition mkfs(8) page (usr/man/man1/mkfs.1m),
+.\" distributed under the Caldera International "Ancient UNIX License" (2002).
+.\" The LICENSE section below retains that license's notice and terms.
 .TH MKFS.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
 .SH NAME
-mkfs.filsys \- create a V7 filesystem in a disk image
+mkfs.filsys \- construct a Research Unix filesystem in a disk image
 .SH SYNOPSIS
 .B mkfs.filsys
+.RB [ \-v
+.IR <4|5|6|7> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-b
@@ -12,10 +17,21 @@ mkfs.filsys \- create a V7 filesystem in a disk image
 .RI [ blocks ]
 .SH DESCRIPTION
 .B mkfs.filsys
-builds a fresh Seventh Edition Unix filesystem inside a disk image file: a
-superblock, a zeroed i-list, an interleaved free-block list, and an empty root
-directory.  The image is opened read-write, created if it does not exist, and
-grown to the filesystem size.
+constructs a Research Unix filesystem by writing on the image file
+.IR image .
+It builds a fresh superblock, a zeroed i-list, an interleaved free-block
+list, and an empty root directory, and grows the file to the filesystem
+size if needed.  The image is opened read-write and created if it does not
+already exist.
+.PP
+The edition of the filesystem is selected with
+.BR \-v :
+4, 5, or 6 select the Sixth Edition format (V4 and V5 are byte-identical to
+V6 on disk); 7 selects Seventh Edition.  The default is 7.  V6 and V7 differ
+on disk: V6 has 16 32-byte inodes per block, 16-bit block numbers, and an
+i-list whose size is stored as a block count; V7 has 8 64-byte inodes per
+block, 24-bit block numbers, and an i-list whose size is stored as the first
+data block.
 .PP
 A Research Unix disk image holds one or more filesystems
 .RI ( partitions ),
@@ -23,8 +39,16 @@ selected by a partition table that is compiled into the kernel, not stored on
 the disk.  By default the filesystem is written at block 0 (the first
 partition); the
 .B \-o
-option places it at a different block offset within the image.
+option places it at a different block offset within the image.  Block 0 of
+each filesystem is the boot block; block 1 is the superblock; blocks 2 onward
+are the i-list.
 .SH OPTIONS
+.TP
+.BI \-v " <4|5|6|7>"
+Filesystem edition.  4, 5 and 6 are byte-identical (the V6 format); 7 is V7.
+Default 7.  A leading
+.B v
+is accepted (v6, v7, ...).
 .TP
 .BI \-o " block"
 Place the filesystem at
@@ -36,9 +60,9 @@ Write
 .I boot
 (a PDP-11
 .BR a.out (5)
-program, V7 magic 0407) as block 0 of the filesystem, before the superblock at
-block 1.  This is the standard PDP-11 boot block: text plus data, at most one
-block (512 bytes).  Without
+program, V7 magic 0407) as block 0 of the filesystem, before the superblock
+at block 1.  This is the standard PDP-11 boot block: text plus data, at most
+one block (512 bytes).  Without
 .BR \-b ,
 block 0 is left untouched.
 .TP
@@ -47,12 +71,31 @@ Size of the filesystem in blocks.  If omitted, the size defaults to the image's
 own size (from block 0, or from
 .IR \-o ),
 with a minimum of a small usable volume.
+.SH HISTORICAL FORM
+The Seventh Edition
+.I mkfs
+was invoked as
+.B "/etc/mkfs special proto"
+and read a
+.I prototype
+file whose first token named a file to be copied onto block zero as the
+bootstrap program, whose second token was the filesystem size, whose third
+token was the i-list size, and whose remaining tokens described the root
+directory and its contents.  The V6/V7
+.I mkfs.filsys
+retains the notion of a boot block at block zero (now the
+.B \-b
+option) but drops the prototype file in favour of an empty root and an
+explicit
+.I blocks
+argument; the i-list is sized automatically.
 .SH EXAMPLES
 .nf
-mkfs.filsys rp06-0.disk          # size the fs to the whole image
-mkfs.filsys -o 18392 rp06-0.disk # a filesystem starting at block 18392
-mkfs.filsys disk.dk 5000         # a 5000-block filesystem
-mkfs.filsys -b /v7/mdec/rp06boot disk.dk   # install a boot block in block 0
+mkfs.filsys image.dk             # size the fs to the whole image (V7)
+mkfs.filsys -v 6 image.dk        # ...as a V6 (V4/V5) filesystem
+mkfs.filsys -o 18392 image.dk    # start the fs at block 18392 (a partition)
+mkfs.filsys -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block
+mkfs.filsys image.dk 5000        # an explicit 5000-block filesystem
 .fi
 .SH SEE ALSO
 .BR fsck.filsys (1),
@@ -60,5 +103,49 @@ mkfs.filsys -b /v7/mdec/rp06boot disk.dk   # install a boot block in block 0
 .BR mount.filsys (1),
 .BR filsys (5),
 .BR mkfs (8)
+.SH LICENSE
+This manpage is derived from the Seventh Edition
+.IR mkfs (8)
+page (distributed as
+.IR mkfs.1m ).
+The following notice, conditions and disclaimer are retained from that work,
+as its license requires.
+.PP
+Copyright (C) Caldera International Inc. 2001-2002. All rights reserved.
+.PP
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+.PP
+Redistributions of source code and documentation must retain the above
+copyright notice, this list of conditions and the following disclaimer.
+Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+.PP
+All advertising materials mentioning features or use of this software must
+display the following acknowledgement:
+.PP
+.RS
+This product includes software developed or owned by Caldera International,
+Inc.
+.RE
+.PP
+Neither the name of Caldera International, Inc. nor the names of other
+contributors may be used to endorse or promote products derived from this
+software without specific prior written permission.
+.PP
+USE OF THE SOFTWARE PROVIDED FOR UNDER THIS LICENSE BY CALDERA
+INTERNATIONAL, INC. AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED
+WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+EVENT SHALL CALDERA INTERNATIONAL, INC. BE LIABLE FOR ANY DIRECT, INDIRECT
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .SH AUTHOR
-Written for the filsys project.
+Derived from the Seventh Edition
+.IR mkfs (8)
+manual, adapted for the filsys project.
