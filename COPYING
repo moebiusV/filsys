@@ -20,12 +20,19 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ----------------------------------------------------------------------------
-2. filsys.5 manpage: derived from the ancient UNIX man pages
+2. Manpages derived from the ancient UNIX man pages
 ----------------------------------------------------------------------------
 
-The filsys.5 manpage repurposes the historical fs(5) (V4, V6) and
-filsys(5)/dir(5) (V7, 32V) pages, which are distributed under the Caldera
-International "Ancient UNIX License" (January 23, 2002):
+Several manpages are derived from the ancient UNIX manual and are distributed
+under the Caldera International "Ancient UNIX License" (January 23, 2002):
+
+  - filsys.5        repurposes fs(5) (V4, V6) and filsys(5)/dir(5) (V7, 32V).
+  - mount.filsys.1  repurposes mount(8) (V7, as mount.1m).
+  - mkfs.filsys.1   repurposes mkfs(8) (V7, as mkfs.1m).
+  - fsck.filsys.1   repurposes icheck(8) and dcheck(8) (V7, as icheck.1m and
+                    dcheck.1m).
+
+Each carries the notice, conditions and disclaimer below:
 
 Caldera International, Inc. hereby grants a fee free license that includes
 the rights use, modify and distribute this named source code, including

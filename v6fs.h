@@ -4,10 +4,13 @@
  *
  * The V6 filesystem lives on a PDP-11 disk image.  Block size is 512 bytes:
  *
- *     block 0             boot block
- *     block 1             superblock (struct filsys)
- *     blocks 2..s_isize-1 i-list (s_isize-2 blocks, 8 inodes each)
- *     blocks s_isize..    data blocks
+ *     block 0               boot block
+ *     block 1               superblock (struct filsys)
+ *     blocks 2..s_isize+1   i-list (s_isize blocks, 16 inodes each)
+ *     blocks s_isize+2..    data blocks
+ *
+ * NOTE: unlike V7, V6's s_isize is the NUMBER of i-list blocks, so the first
+ * data block is s_isize + 2 (see v6_data_start() below).
  *
  * Byte order is the PDP-11's "middle-endian" convention:
  *   - 16-bit quantities are little-endian (single word).
@@ -38,6 +41,7 @@
 
 /* i_mode type/mode bits (sys/ino.h).  V6 has no IFREG (regular = type 0)
  * and no IFMPC/IFMPB; bit 010000 is the ILARG large-file flag. */
+#define V6_IALLOC 0100000   /* allocated bit (set in every live inode) */
 #define V6_IFMT   0060000
 #define V6_IFCHR  0020000
 #define V6_IFDIR  0040000
@@ -128,6 +132,12 @@ int v6fs_write_block(v6fs_t *fs, uint32_t bno, const uint8_t *buf);
 /* itod / itoo: inode number -> block and offset (16 inodes per block). */
 static inline uint32_t v6_itod(uint32_t ino) { return (ino + 31) >> 4; }
 static inline uint32_t v6_itoo(uint32_t ino) { return (ino + 31) & 15; }
+
+/* V6 stores the NUMBER of i-list blocks in s_isize (unlike V7, which stores
+ * the first data block).  The i-list occupies blocks 2..s_isize+1, so the
+ * first data block is s_isize+2 and the inode count is s_isize*16. */
+static inline uint32_t v6_data_start(uint32_t isize) { return isize + 2; }
+static inline uint32_t v6_maxino(uint32_t isize) { return (uint32_t)isize * V6_INOPB; }
 
 int v6fs_read_inode(v6fs_t *fs, uint32_t ino, v6_inode_t *ip);
 int v6fs_write_inode(v6fs_t *fs, uint32_t ino, const v6_inode_t *ip);

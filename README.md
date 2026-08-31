@@ -173,6 +173,16 @@ One `-v 6` code path covers V4, V5 and V6, which are byte-identical on disk.
 - **Root inode differs by edition.**  V4/V5/V6 have `ROOTINO 1` and no
   bad-block file; V7/32V have `ROOTINO 2` and reserve inode 1.  Do not carry
   the V7 "root is 2 / inode 1 is bad blocks" convention back to V6.
+- **`s_isize` means two different things.**  In both editions block 0 is the
+  boot block and block 1 is the superblock, but what the superblock's `isize`
+  field *counts* changed silently between V6 and V7.  V6's `s_isize` is the
+  **number of i-list blocks**, so the i-list is blocks `2..s_isize+1` and the
+  first data block is `s_isize+2` (the V6 kernel's `ialloc` reads block `i+2`
+  for `i < s_isize`, and `badblock` rejects `bn < s_isize+2`).  V7's `s_isize`
+  is the **first data block**, so the i-list is blocks `2..s_isize-1`.  A tool
+  that reads `isize` with the wrong interpretation is silently off by two
+  blocks at the high end of the i-list — exactly the sort of thing that only
+  shows up on a full disk.
 - **The V7 bad-block file.**  Inode 1 is a regular file with `nlink = 0`
   (nameless), and its `di_addr` entries *are* the bad block numbers,
   marking them allocated.  The kernel's `badblock()` in `alloc.c` is
