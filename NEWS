@@ -11,6 +11,11 @@ read-only, feature complete and tested against real images.
 - Free-list and inode-table integrity check with -c.
 - Partition mounting with -o offset=, and nested mounts of two partitions of
   one disk.
-- filsysfind: locate filesystem superblocks (partitions) on a raw image.
+- findfs.filsys: locate filesystem superblocks (partitions) on a raw image.
 - No lock on the image, so several partitions of one disk can be mounted at
   once.
+- mkfs.filsys: create a V7 filesystem (superblock, i-list, free list, root
+  directory) inside an image, at an optional block offset (-o) and with an
+  optional PDP-11 boot block (-b).
+- fsck.filsys: check a V7 filesystem's free list and inode table (a thin
+  wrapper over the mount driver's -c check).

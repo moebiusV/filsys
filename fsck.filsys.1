@@ -1,0 +1,47 @@
+.\" fsck.filsys.1 - part of filsys 1.0.0
+.TH FSCK.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.SH NAME
+fsck.filsys \- check a V7 filesystem on a raw disk image
+.SH SYNOPSIS
+.B fsck.filsys
+.RB [ \-o
+.IR block ]
+.I image
+.SH DESCRIPTION
+.B fsck.filsys
+checks a Seventh Edition Unix filesystem inside a disk image: it validates the
+superblock, walks the free-block list checking for out-of-range or duplicated
+blocks and a non-terminating chain, and walks the i-list checking each inode's
+block pointers.
+.PP
+A Research Unix disk image holds one or more filesystems
+.RI ( partitions ),
+selected by a partition table that is compiled into the kernel, not stored on
+the disk.  By default
+.B fsck.filsys
+checks the filesystem at block 0 (the first partition); the
+.B \-o
+option checks a filesystem at a different block offset within the image.
+.PP
+The exit status is 0 if the filesystem is clean, 1 if errors were found, and 2
+on a usage error.
+.SH OPTIONS
+.TP
+.BI \-o " block"
+Check the filesystem at
+.I block
+(512-byte blocks) within the image, instead of block 0.
+.SH EXAMPLE
+.nf
+fsck.filsys rp06-0.disk           # check the root filesystem
+fsck.filsys -o 18392 rp06-0.disk  # check the filesystem at block 18392
+.fi
+.SH SEE ALSO
+.BR mkfs.filsys (1),
+.BR findfs.filsys (1),
+.BR mount.filsys (1),
+.BR filsys (5),
+.BR icheck (8),
+.BR dcheck (8)
+.SH AUTHOR
+Written for the filsys project.

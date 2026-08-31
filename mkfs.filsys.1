@@ -1,0 +1,64 @@
+.\" mkfs.filsys.1 - part of filsys 1.0.0
+.TH MKFS.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.SH NAME
+mkfs.filsys \- create a V7 filesystem in a disk image
+.SH SYNOPSIS
+.B mkfs.filsys
+.RB [ \-o
+.IR block ]
+.RB [ \-b
+.IR boot ]
+.I image
+.RI [ blocks ]
+.SH DESCRIPTION
+.B mkfs.filsys
+builds a fresh Seventh Edition Unix filesystem inside a disk image file: a
+superblock, a zeroed i-list, an interleaved free-block list, and an empty root
+directory.  The image is opened read-write, created if it does not exist, and
+grown to the filesystem size.
+.PP
+A Research Unix disk image holds one or more filesystems
+.RI ( partitions ),
+selected by a partition table that is compiled into the kernel, not stored on
+the disk.  By default the filesystem is written at block 0 (the first
+partition); the
+.B \-o
+option places it at a different block offset within the image.
+.SH OPTIONS
+.TP
+.BI \-o " block"
+Place the filesystem at
+.I block
+(512-byte blocks) within the image, instead of block 0.
+.TP
+.BI \-b " boot"
+Write
+.I boot
+(a PDP-11
+.BR a.out (5)
+program, V7 magic 0407) as block 0 of the filesystem, before the superblock at
+block 1.  This is the standard PDP-11 boot block: text plus data, at most one
+block (512 bytes).  Without
+.BR \-b ,
+block 0 is left untouched.
+.TP
+.I blocks
+Size of the filesystem in blocks.  If omitted, the size defaults to the image's
+own size (from block 0, or from
+.IR \-o ),
+with a minimum of a small usable volume.
+.SH EXAMPLES
+.nf
+mkfs.filsys rp06-0.disk          # size the fs to the whole image
+mkfs.filsys -o 18392 rp06-0.disk # a filesystem starting at block 18392
+mkfs.filsys disk.dk 5000         # a 5000-block filesystem
+mkfs.filsys -b /v7/mdec/rp06boot disk.dk   # install a boot block in block 0
+.fi
+.SH SEE ALSO
+.BR fsck.filsys (1),
+.BR findfs.filsys (1),
+.BR mount.filsys (1),
+.BR filsys (5),
+.BR mkfs (8)
+.SH AUTHOR
+Written for the filsys project.

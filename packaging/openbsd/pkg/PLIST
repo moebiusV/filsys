@@ -1,4 +1,9 @@
-@bin bin/filsysmount
-@bin bin/filsysfind
-man/man1/filsysfind.1
+@bin bin/mount.filsys
+@bin bin/findfs.filsys
+@bin bin/mkfs.filsys
+@bin bin/fsck.filsys
+man/man1/mount.filsys.1
+man/man1/findfs.filsys.1
+man/man1/mkfs.filsys.1
+man/man1/fsck.filsys.1
 man/man5/filsys.5

@@ -10,9 +10,9 @@ discipline), so files staged with it are seen by a running kernel after you
 boot the image.
 
 ```
-filsysmount -v 6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
-filsysmount -v 7 rp06-0.disk mnt       # V7 format
-filsysmount -v 32 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
+mount.filsys -v 6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
+mount.filsys -v 7 rp06-0.disk mnt       # V7 format
+mount.filsys -v 32 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
 ```
 
 Home: <https://github.com/moebiusV/filsys>
@@ -22,9 +22,8 @@ Home: <https://github.com/moebiusV/filsys>
 - a C17 compiler (`gcc` or `clang`)
 - **libfuse3** (`libfuse3-dev` on Debian/Ubuntu, `fuse3-devel` on Fedora, `fuse3` on Arch)
 
-`mkfs` and `fsck` are not built here: they are ported in v7unix-toolchain
-(<https://github.com/moebiusV/v7unix-toolchain>), and filsys recommends
-it to provide them.
+`mkfs.filsys` and `fsck.filsys` are built here too (see "Creating and checking
+filesystems" below); they need no extra dependencies beyond a C compiler.
 
 If you can't install the dev package, `./fetch.sh` downloads and extracts the
 libfuse3 headers locally and the build falls back to linking the runtime
@@ -35,7 +34,7 @@ SONAME directly.
 ```sh
 ./configure
 make
-sudo make install    # installs filsysmount, filsysfind + their manpages
+sudo make install    # installs mount.filsys, findfs.filsys, mkfs.filsys, fsck.filsys + manpages
 ```
 
 `./configure && make && make install` is the standard GNU flow; `configure` is
@@ -46,8 +45,8 @@ is compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
 ## Usage
 
 ```sh
-filsysmount -v <4|5|6|7|32> [options] <image> <mountpoint>
-filsysmount -v <4|5|6|7|32> -c <image>        # integrity check (no mount)
+mount.filsys -v <4|5|6|7|32> [options] <image> <mountpoint>
+mount.filsys -v <4|5|6|7|32> -c <image>        # integrity check (no mount)
 ```
 
 `-v` takes the Unix edition: `4`, `5`, `6`, `7` or `32` (a leading `v`, as in
@@ -71,16 +70,39 @@ they share one code path.
 
 ```sh
 mkdir mnt
-filsysmount -v 7 rp06-0.disk mnt        # read-write (make a copy first!)
+mount.filsys -v 7 rp06-0.disk mnt        # read-write (make a copy first!)
 ls mnt
 cp mnt/etc/passwd .             # copy a file off
 cp host.txt mnt/tmp/            # copy a file on
 fusermount3 -u mnt              # unmount
 
-filsysmount -v 6 -c v6root.dsk          # verify the free list + inode table
+mount.filsys -v 6 -c v6root.dsk          # verify the free list + inode table
 ```
 
 See `filsys.5` for both the tool and the on-disk format.
+
+## Creating and checking filesystems
+
+Two small tools ship alongside the mount driver for creating and checking V7
+filesystems on a disk image (`fsck.filsys` runs the same free-list/inode-table
+check that the mount driver's `-c` does):
+
+```sh
+mkfs.filsys image.dk             # size the fs to the whole image
+mkfs.filsys image.dk 5000        # ...or to an explicit block count
+mkfs.filsys -o 18392 image.dk    # start the fs at block 18392 (a partition)
+mkfs.filsys -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block first
+
+fsck.filsys image.dk             # check the filesystem at block 0
+fsck.filsys -o 18392 image.dk    # check a filesystem at block 18392
+```
+
+`mkfs.filsys` writes a superblock, a zeroed i-list, an interleaved free-block
+list, and an empty root directory (inode 1 is the empty bad-block file, inode 2
+is root, as V7 expects).  `-o` places the filesystem at a block offset for
+multi-partition images; `-b` installs a boot block (a PDP-11 `a.out`, V7 magic
+`0407`) into block 0 before the superblock.  `fsck.filsys` is a thin wrapper
+over the same check the mount driver's `-c` runs.
 
 ## Implementor's Notes
 
@@ -233,27 +255,27 @@ block device (major 6, minor 7 = `rp0h`).  So the "root smaller than the disk"
 is not waste; it is the normal V7 root/swap//usr split, and the `/usr`
 filesystem sits **intact** at block 18392 (superblock at 18393: `isize=8189`,
 `fsize=322278`, middle-endian).  Mount it in place with the byte offset
-(`18392 x 512 = 9416704`): `filsysmount -v 7 -o offset=9416704 rp06-0.disk mnt`,
+(`18392 x 512 = 9416704`): `mount.filsys -v 7 -o offset=9416704 rp06-0.disk mnt`,
 and `-c` reports 2064 used inodes, `errors=0`; it mounts as a complete
 May-1979 source tree (`/usr/src`, `/usr/sys`, man pages, games).
 
 To locate such a partition you read `/etc/rc` (for the *name*), read the
-driver's partition table (for the *offset*), or run **`filsysfind`** (see
+driver's partition table (for the *offset*), or run **`findfs.filsys`** (see
 below), which scans for superblocks at cylinder boundaries and, with `-i`,
 traces inode-table runs backwards to their superblocks.  Do not cap `isize`
 too low: this `/usr` has `isize=8189` (65,512 inodes), which a naive
 "small i-list" heuristic wrongly skips.
 
-`filsysmount -o offset=N` shifts the superblock read to byte `N`, so a
+`mount.filsys -o offset=N` shifts the superblock read to byte `N`, so a
 partition mounts in place without `dd`, and the root and `/usr` partitions
 can be mounted from the *same* file at once, nested:
 
 ```
-filsysmount -v 7 rp06-0.disk mnt/
-filsysmount -v 7 -o offset=9416704 rp06-0.disk mnt/usr
+mount.filsys -v 7 rp06-0.disk mnt/
+mount.filsys -v 7 -o offset=9416704 rp06-0.disk mnt/usr
 ```
 
-The second (nested) mount works because filsysmount reports files as the
+The second (nested) mount works because mount.filsys reports files as the
 mounting user (override with `-o uid=,gid=`), so the inner mount point is
 owned by you.
 
@@ -263,34 +285,34 @@ Copy-paste commands per image (images distributed by the
 [prebsd](https://github.com/moebiusV/prebsd) project):
 
     # V7 (rp06-0.disk): root 0-4999, swap 5000-18391, /usr 18392+
-    filsysmount -v 7  rp06-0.disk mnt
-    filsysmount -v 7  -o offset=9416704 rp06-0.disk mnt/usr
+    mount.filsys -v 7  rp06-0.disk mnt
+    mount.filsys -v 7  -o offset=9416704 rp06-0.disk mnt/usr
 
     # 32V (32v-rp06.disk): same layout as V7
-    filsysmount -v 32 32v-rp06.disk mnt
-    filsysmount -v 32 -o offset=9416704 32v-rp06.disk mnt/usr
+    mount.filsys -v 32 32v-rp06.disk mnt
+    mount.filsys -v 32 -o offset=9416704 32v-rp06.disk mnt/usr
 
     # single-filesystem images
-    filsysmount -v 32 32v-root.disk mnt       # 32V root only
-    filsysmount -v 6  rk0 mnt                 # V6 root only
+    mount.filsys -v 32 32v-root.disk mnt       # 32V root only
+    mount.filsys -v 6  rk0 mnt                 # V6 root only
 
 Mount the root first, then nest the `/usr` mount on top.
 
-### Finding partitions (filsysfind)
+### Finding partitions (findfs.filsys)
 
-`filsysfind` locates the filesystems on a raw image.  It scans for superblocks
+`findfs.filsys` locates the filesystems on a raw image.  It scans for superblocks
 (validating the edition, i-list and volume sizes, and that the free list holds
 only in-range blocks), and with `-i` also scans for inode-table runs and
 traces backwards to their superblocks.  Scan at cylinder boundaries to dodge
 the false positives a block-by-block sweep of file data produces:
 
 ```
-filsysfind -c 418 rp06-0.disk
+findfs.filsys -c 418 rp06-0.disk
 # fs @ block 0      (byte 0)       V7  isize=202  fsize=5000
 # fs @ block 18392  (byte 9416704) V7  isize=8189 fsize=322278
 ```
 
-Mount any hit with `filsysmount -o offset=<byte>`.
+Mount any hit with `mount.filsys -o offset=<byte>`.
 
 ## Verification
 
@@ -321,7 +343,7 @@ boot 32V, and install it from a tape image.
 > is to stage files while the system is *not* running, then boot it fresh.
 > (`sync` inside before halting flushes its buffers.)
 
-filsysmount deliberately takes **no lock** on the image: a V7 disk is a set of
+mount.filsys deliberately takes **no lock** on the image: a V7 disk is a set of
 partitions in one file, and mounting the root and `/usr` at two mount points
 from the same file at once requires both mounts to share it read-only.  The
 "don't edit a disk under a running kernel" rule above is the real protection;
@@ -332,9 +354,12 @@ emulator is running.
 
 - `v6fs.h` / `v6fs.c`: V4/V5/V6 on-disk access layer.
 - `v7fs.h` / `v7fs.c`: V7/32V on-disk access layer.
-- `filsysmount.c`: FUSE callbacks + the `-v` edition selector.
-- `filsysfind.c`: locate filesystem superblocks (partitions) on a raw image.
-- `filsys.5`, `filsysfind.1`: the format and tool manpages.
+- `mount.filsys.c`: FUSE callbacks + the `-v` edition selector.
+- `findfs.filsys.c`: locate filesystem superblocks (partitions) on a raw image.
+- `mkfs.filsys.c`: create a V7 filesystem in an image.
+- `fsck.filsys.c`: check a V7 filesystem (wraps `v7fs_check()`).
+- `filsys.5`, `mount.filsys.1`, `findfs.filsys.1`, `mkfs.filsys.1`,
+  `fsck.filsys.1`: the format and tool manpages.
 - `configure.ac`, `Makefile.am`: GNU autotools build.
 - `test.sh`, `fetch.sh`, `reference/`.
 
@@ -352,8 +377,9 @@ emulator is running.
 
 ## License
 
-The original code (`v6fs.c`, `v7fs.c`, `filsysmount.c`, and their headers) is
-licensed under the **ISC license**: Copyright (c) 2026 David Walther.
+The original code (`v6fs.c`, `v7fs.c`, `mount.filsys.c`, `findfs.filsys.c`,
+`mkfs.filsys.c`, `fsck.filsys.c`, and their headers) is licensed under the
+**ISC license**: Copyright (c) 2026 David Walther.
 
 The `filsys.5` manpage is derived from the ancient UNIX `fs(5)` (V4, V6) and
 `filsys(5)`/`dir(5)` (V7, 32V) pages, and retains the **Caldera International

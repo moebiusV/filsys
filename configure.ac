@@ -5,7 +5,7 @@
 
 AC_PREREQ([2.69])
 AC_INIT([filsys], [1.0.0], [david@clearbrookdistillery.com])
-AC_CONFIG_SRCDIR([filsysmount.c])
+AC_CONFIG_SRCDIR([mount.filsys.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE([-Wall])
 AM_SILENT_RULES([yes])

@@ -9,10 +9,11 @@ fills in maintainer details, changelog, and distro-specific adjustments.
 What filsys Is
 --------------
 
-filsys is a FUSE driver that mounts Research Unix (V4 through V7, and 32V)
-filesystem images on a modern host.  It ships two tools: `filsysmount` (the
-FUSE mount) and `filsysfind` (locate filesystem superblocks/partitions on a
-raw disk image).
+filsys is a FUSE driver and set of disk utilities for Research Unix (V4
+through V7, and 32V) filesystem images on a modern host.  It ships four tools:
+`mount.filsys` (the FUSE mount), `findfs.filsys` (locate filesystem
+superblocks/partitions on a raw disk image), `mkfs.filsys` (create a V7
+filesystem), and `fsck.filsys` (check one).
 
 Dependencies
 ------------
@@ -34,10 +35,12 @@ How the Build Works
 
 Install layout (default prefix `/usr/local`):
 
-    $(bindir)/filsysmount     the FUSE mount driver
-    $(bindir)/filsysfind      the superblock/partition finder
-    $(mandir)/man5/filsys.5   the filesystem-format manual
-    $(mandir)/man1/filsysfind.1
+    $(bindir)/mount.filsys     the FUSE mount driver
+    $(bindir)/findfs.filsys    the superblock/partition finder
+    $(bindir)/mkfs.filsys      create a V7 filesystem
+    $(bindir)/fsck.filsys      check a V7 filesystem
+    $(mandir)/man5/filsys.5    the filesystem-format manual
+    $(mandir)/man1/{mount,findfs,mkfs,fsck}.filsys.1
 
 License
 -------
