@@ -1,9 +1,9 @@
-.\" filsysfind.1 - part of filsys 1.0.0
-.TH FILSYSFIND 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.\" findfs.filsys.1 - part of filsys 1.0.0
+.TH FINDFS.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
 .SH NAME
-filsysfind \- locate filesystem superblocks (partitions) on a raw disk image
+findfs.filsys \- locate filesystem superblocks (partitions) on a raw disk image
 .SH SYNOPSIS
-.B filsysfind
+.B findfs.filsys
 .RB [ \-c
 .IR N ]
 .RB [ \-i ]
@@ -18,7 +18,7 @@ in one file, and the partition table is compiled into the kernel
 rather than stored on the disk.  So the offsets of the filesystems are not
 readable from the disk itself.
 .PP
-.B filsysfind
+.B findfs.filsys
 recovers them two ways.  First it scans every block (or every
 .IR N -th
 block) for a filesystem
@@ -41,7 +41,7 @@ fs @ block START  (byte BYTES)  V7  isize=N fsize=M
 .RE
 .PP
 Mount the partition in place with
-.BR filsysmount (1)
+.BR mount.filsys (1)
 using
 .BR "\-o offset=BYTES" .
 .SH OPTIONS
@@ -57,14 +57,14 @@ positives a block-by-block scan of file data produces.
 Also trace inode-table runs backwards to their superblocks.
 .SH EXAMPLE
 .nf
-filsysfind -c 418 rp06-0.disk
+findfs.filsys -c 418 rp06-0.disk
 # fs @ block 0      (byte 0)       V7  isize=202  fsize=5000
 # fs @ block 18392  (byte 9416704) V7  isize=8189 fsize=322278
 
-filsysmount -v 7 -o offset=9416704 rp06-0.disk /mnt/usr
+mount.filsys -v 7 -o offset=9416704 rp06-0.disk /mnt/usr
 .fi
 .SH SEE ALSO
-.BR filsysmount (1),
+.BR mount.filsys (1),
 .BR filsys (5),
 .BR icheck (8)
 .SH AUTHOR

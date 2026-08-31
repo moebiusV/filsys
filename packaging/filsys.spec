@@ -40,8 +40,15 @@ autoreconf -i
 %files
 %license COPYING
 %doc README.md AUTHORS NEWS ChangeLog
-%{_bindir}/filsysmount
-%{_mandir}/man1/filsysmount.1*
+%{_bindir}/mount.filsys
+%{_bindir}/findfs.filsys
+%{_bindir}/mkfs.filsys
+%{_bindir}/fsck.filsys
+%{_mandir}/man1/mount.filsys.1*
+%{_mandir}/man1/findfs.filsys.1*
+%{_mandir}/man1/mkfs.filsys.1*
+%{_mandir}/man1/fsck.filsys.1*
+%{_mandir}/man5/filsys.5*
 
 %changelog
 * Mon Aug 25 2026 David Walther <david@clearbrookdistillery.com> - 1.0.0-1

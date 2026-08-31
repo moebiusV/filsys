@@ -608,7 +608,7 @@ PACKAGE_STRING='filsys 1.0.0'
 PACKAGE_BUGREPORT='david@clearbrookdistillery.com'
 PACKAGE_URL=''
 
-ac_unique_file="filsysmount.c"
+ac_unique_file="mount.filsys.c"
 # Factoring default headers for most tests.
 ac_includes_default="\
 #include <stddef.h>

@@ -1,6 +1,6 @@
 /* filsys 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* filsysfind.c - locate filesystem superblocks on a raw disk image.
+/* findfs.filsys.c - locate filesystem superblocks on a raw disk image.
  *
  * A V7 (and V4/V5/V6/32V) disk is a set of *partitions* in one file, and the
  * partition table is compiled into the kernel, not stored on the disk.  This
@@ -11,7 +11,7 @@
  * filesystems even when a damaged superblock defeats the direct scan.
  *
  * Usage:
- *     filsysfind [-c N] [-i] <image>
+ *     findfs.filsys [-c N] [-i] <image>
  *
  * -c N   scan every N-th block (use the disk's blocks-per-cylinder, e.g. 418
  *        for an RP06, to speed up a big image)
@@ -19,7 +19,7 @@
  *
  * Each hit is printed as:
  *     fs @ block START  (byte BYTES)  V7  isize=N fsize=M
- * Mount the partition in place with filsysmount -o offset=BYTES.
+ * Mount the partition in place with mount.filsys -o offset=BYTES.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,12 +132,12 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "-c") && i + 1 < argc) { stride = atoi(argv[++i]); }
         else if (!strcmp(argv[i], "-i")) { backtrace = 1; }
         else if (argv[i][0] == '-' && argv[i][1]) {
-            fprintf(stderr, "usage: filsysfind [-c N] [-i] <image>\n");
+            fprintf(stderr, "usage: findfs.filsys [-c N] [-i] <image>\n");
             return 2;
         } else { image = argv[i]; }
     }
     if (!image || stride < 1) {
-        fprintf(stderr, "usage: filsysfind [-c N] [-i] <image>\n");
+        fprintf(stderr, "usage: findfs.filsys [-c N] [-i] <image>\n");
         return 2;
     }
 

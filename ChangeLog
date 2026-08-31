@@ -1,3 +1,16 @@
+2026-08-31  David Walther  <david@clearbrookdistillery.com>
+
+	* mount.filsys.c, findfs.filsys.c: renamed from filsysmount.c and
+	  filsysfind.c to match the `<verb>.filsys` binary names.
+	* mkfs.filsys.c: new tool; create a V7 filesystem (superblock, i-list,
+	  interleaved free list, root directory) in a disk image.  -o block
+	  offset; -b boot block (a PDP-11 a.out, V7 magic 0407).
+	* fsck.filsys.c: new tool; thin wrapper over v7fs_check().
+	* mkfs.filsys.1, fsck.filsys.1, findfs.filsys.1, mount.filsys.1:
+	  renamed man pages with .SH NAME lines so `man -k` finds them.
+	* Makefile.am, configure.ac, .gitignore, packaging/, README.distributions,
+	  COPYING, NEWS: updated for the new tool names and the two new tools.
+
 2026-08-26  David Walther  <david@clearbrookdistillery.com>
 
 	* configure.ac, Makefile.am: GNU autotools build (configure && make

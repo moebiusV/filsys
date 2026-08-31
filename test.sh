@@ -1,5 +1,5 @@
 #!/bin/bash
-# Smoke test for filsysmount: read, write, persist, and the emulator lock.
+# Smoke test for mount.filsys: read, write, persist, and the emulator lock.
 # Operates on a copy of the image so the pristine rp06-0.disk is untouched.
 set -eu
 
@@ -11,7 +11,7 @@ COPY=testcopy.disk
 MNT=mnt
 
 [ -f "$IMG" ] || { echo "run ./fetch.sh first"; exit 1; }
-[ -x ./filsysmount ] || { echo "run make first"; exit 1; }
+[ -x ./mount.filsys ] || { echo "run make first"; exit 1; }
 
 cleanup() {
     fusermount3 -uz "$MNT" 2>/dev/null || true
@@ -23,7 +23,7 @@ rm -f "$COPY"
 cp "$IMG" "$COPY"
 
 echo "== mount read-only on the pristine image =="
-./filsysmount -r -f "$IMG" "$MNT" >mount.log 2>&1 &
+./mount.filsys -r -f "$IMG" "$MNT" >mount.log 2>&1 &
 sleep 1.5
 [ -f "$MNT/etc/passwd" ] || { echo "FAIL: cannot read /etc/passwd"; exit 1; }
 grep -q '^root:' "$MNT/etc/passwd" && echo "  ok: read /etc/passwd"
@@ -31,7 +31,7 @@ ls "$MNT/bin" >/dev/null && echo "  ok: list /bin"
 fusermount3 -uz "$MNT"; sleep 0.5
 
 echo "== mount read-write on a copy =="
-./filsysmount -f "$COPY" "$MNT" >mount.log 2>&1 &
+./mount.filsys -f "$COPY" "$MNT" >mount.log 2>&1 &
 sleep 1.5
 echo "hello v7" > "$MNT/tmp/hosttest.txt"
 [ "$(cat "$MNT/tmp/hosttest.txt")" = "hello v7" ] && echo "  ok: write + read"
@@ -61,7 +61,7 @@ else
 fi
 
 echo "== persistence across remount =="
-./filsysmount -r -f "$COPY" "$MNT" >mount.log 2>&1 &
+./mount.filsys -r -f "$COPY" "$MNT" >mount.log 2>&1 &
 sleep 1.5
 if [ "$(cat "$MNT/tmp/persist.txt")" = "persist me" ]; then
     echo "  ok: file survived remount"

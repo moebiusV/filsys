@@ -1,7 +1,8 @@
 filsys is distributed under two licenses, by file origin.
 
 ----------------------------------------------------------------------------
-1. Original source code (v6fs.h, v6fs.c, v7fs.h, v7fs.c, filsysmount.c)
+1. Original source code (v6fs.h, v6fs.c, v7fs.h, v7fs.c, mount.filsys.c,
+   findfs.filsys.c, mkfs.filsys.c, fsck.filsys.c)
 ----------------------------------------------------------------------------
 
 Copyright (c) 2026 David Walther

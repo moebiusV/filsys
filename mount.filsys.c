@@ -1,6 +1,6 @@
 /* filsys 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* filsysmount.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
+/* mount.filsys.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
  * filesystem, selecting the on-disk edition at run time.
  *
  * One binary, every edition we care about:
@@ -17,8 +17,8 @@
  * then widened in V7 (64-byte inode, 24-bit block numbers).  See filsys.5.
  *
  * Usage:
- *     filsysmount -v <4|5|6|7|32> [-o offset=N[,uid=N,gid=N,...]] [-r] [-f] [-d] <image> <mountpoint>
- *     filsysmount -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check
+ *     mount.filsys -v <4|5|6|7|32> [-o offset=N[,uid=N,gid=N,...]] [-r] [-f] [-d] <image> <mountpoint>
+ *     mount.filsys -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check
  *
  * `-o offset=N` mounts a filesystem that lives at byte offset N within the
  * file (a partition of a larger disk image), instead of one at block 0.

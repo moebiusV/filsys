@@ -1,0 +1,73 @@
+.\" mount.filsys.1 - part of filsys 1.0.0
+.TH MOUNT.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.SH NAME
+mount.filsys \- mount a Research Unix filesystem image via FUSE
+.SH SYNOPSIS
+.B mount.filsys
+.BI \-v " edition"
+.RB [ \-o
+.IR offset= N [, uid= N , gid= N ,...]]
+.RB [ \-r ]
+.RB [ \-f ]
+.RB [ \-d ]
+.I image mountpoint
+.br
+.B mount.filsys
+.BI \-v " edition"
+.RB [ \-o
+.IR offset= N ]
+.BI \-c " image"
+.SH DESCRIPTION
+.B mount.filsys
+mounts a Research Unix (V4 through 32V) filesystem image as a FUSE filesystem.
+The on-disk edition is selected at run time with
+.BR \-v :
+4, 5, 6 (V6), 7 (V7), or 32 (32V, the little-endian VAX layout).
+.PP
+A disk image may hold several filesystems
+.RI ( partitions ),
+selected by a partition table that is compiled into the kernel, not stored on
+the disk.  By default the filesystem at block 0 is mounted; the
+.B offset=
+option (a byte offset) mounts a filesystem that begins elsewhere in the file.
+.PP
+With
+.BR \-c ,
+the filesystem is opened read-only and its integrity is checked
+.RB ( fsck.filsys (1))
+instead of mounting it.
+.SH OPTIONS
+.TP
+.BI \-v " edition"
+Filesystem edition: one of 4, 5, 6, 7, or 32.  Required.
+.TP
+.BI \-o " offset= N [, option ...]"
+FUSE options.  The filsys-specific
+.B offset=
+is the byte offset of the filesystem within the image; the rest (uid, gid, and
+so on) are passed through to FUSE.
+.TP
+.B \-r
+Mount read-only.
+.TP
+.B \-f
+Stay in the foreground.
+.TP
+.B \-d
+Enable FUSE debugging.
+.TP
+.B \-c
+Check the filesystem instead of mounting.
+.SH EXAMPLES
+.nf
+mount.filsys -v 7 rp06-0.disk /mnt/v7
+mount.filsys -v 7 -o offset=9416704 rp06-0.disk /mnt/usr
+mount.filsys -v 7 -c rp06-0.disk
+.fi
+.SH SEE ALSO
+.BR findfs.filsys (1),
+.BR mkfs.filsys (1),
+.BR fsck.filsys (1),
+.BR filsys (5)
+.SH AUTHOR
+Written for the filsys project.

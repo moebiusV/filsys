@@ -4,18 +4,18 @@
 .\" retains that license's copyright notice, conditions and disclaimer.
 .TH FILSYS 5 "August 2026" "filsys 1.0.0" "File Formats and Mounting"
 .SH NAME
-filsysmount, filsys \- mount a Research Unix filesystem image; filesystem format (V4 through 32V)
+mount.filsys, filsys \- mount a Research Unix filesystem image; filesystem format (V4 through 32V)
 .SH SYNOPSIS
-.B filsysmount
+.B mount.filsys
 \fB\-v\fR \fI<4|5|6|7|32>\fR [\fB\-o\fR \fIoffset=N\fR] [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
 .I image mountpoint
 .br
-.B filsysmount
+.B mount.filsys
 \fB\-v\fR \fI<4|5|6|7|32>\fR
 .B \-c
 .I image
 .SH DESCRIPTION
-.B filsysmount
+.B mount.filsys
 mounts a Research Unix filesystem image (as used by a PDP-11) as a FUSE
 filesystem, so files can be copied on and off the image for use with a
 simulator such as SIMH
@@ -88,7 +88,7 @@ Run the integrity check instead of mounting.  The image is opened read-only
 and the free list and inode table are walked; a non-zero exit status means
 problems were found.
 .SH SIMULATOR COORDINATION
-.B filsysmount
+.B mount.filsys
 deliberately takes
 .B no lock
 on the image file.  A Research Unix disk is a set of
@@ -108,13 +108,13 @@ inside the guest before halting flushes its buffers.
 .RS
 .nf
 mkdir mnt
-filsysmount -v 7 rp06-0.disk mnt         # V7 image
-filsysmount -v 6 v6root.dsk mnt2         # V6 (also V4/V5) image
+mount.filsys -v 7 rp06-0.disk mnt         # V7 image
+mount.filsys -v 6 v6root.dsk mnt2         # V6 (also V4/V5) image
 cp host.txt mnt/tmp/             # copy a file onto the image
 cp mnt/etc/passwd .              # copy a file off
 fusermount3 -u mnt               # unmount
 
-filsysmount -v 6 -c v6root.dsk           # free-list / inode-table check
+mount.filsys -v 6 -c v6root.dsk           # free-list / inode-table check
 .fi
 .RE
 .SH EXIT STATUS
@@ -330,7 +330,7 @@ entries are little-endian instead of middle-endian.  The two kernels'
 functions differ in exactly where the zero pad byte lands (byte 1 on the
 PDP-11, byte 3 on the VAX).  Only the 16-bit fields are byte-order neutral.
 Treat a 32V pack as little-endian throughout;
-.B filsysmount
+.B mount.filsys
 selects it with
 .BR "\-v 32" .
 .PP
@@ -419,10 +419,13 @@ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .SH SEE ALSO
+.BR findfs.filsys (1),
+.BR mkfs.filsys (1),
+.BR fsck.filsys (1),
 .BR fusermount3 (1),
 .BR mount.fuse3 (8),
 .BR pdp11 (1),
 .BR icheck (1),
 .BR stat (2)
 .SH AUTHOR
-Written for the filsys project .
+Written for the filsys project.
