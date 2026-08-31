@@ -17,6 +17,7 @@
 # Makefile.am - filsys, a FUSE driver and disk utilities for Research Unix
 # filesystem images.
 
+
 VPATH = @srcdir@
 am__is_gnu_make = { \
   if test -z '$(MAKELEVEL)'; then \
@@ -99,14 +100,14 @@ am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
-	$(am__configure_deps) $(am__DIST_COMMON)
+	$(am__configure_deps) $(dist_boot_DATA) $(am__DIST_COMMON)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" \
-	"$(DESTDIR)$(man5dir)"
+	"$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)"
 PROGRAMS = $(bin_PROGRAMS)
 am_findfs_filsys_OBJECTS = findfs_filsys-findfs.filsys.$(OBJEXT)
 findfs_filsys_OBJECTS = $(am_findfs_filsys_OBJECTS)
@@ -213,6 +214,7 @@ man1dir = $(mandir)/man1
 man5dir = $(mandir)/man5
 NROFF = nroff
 MANS = $(dist_man_MANS)
+DATA = $(dist_boot_DATA)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -366,7 +368,19 @@ mkfs_filsys_CFLAGS = -std=c17 -Wall -Wextra
 fsck_filsys_SOURCES = fsck.filsys.c v6fs.c v6fs.h v7fs.c v7fs.h
 fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
-EXTRA_DIST = test.sh fetch.sh reference packaging
+EXTRA_DIST = test.sh fetch.sh reference packaging boot/hpuboot.s \
+	boot/rpuboot.s
+
+# --- PDP-11 boot blocks -----------------------------------------------------
+# filsys ships two block-0 bootstraps assembled from the V7 /usr/mdec sources:
+# hpuboot (RP06/HP disk) and rpuboot (RP03/04/05/06 disk).  The prebuilt a.out
+# files are installed with the package; pass one to `mkfs.filsys -b` to drop it
+# into block 0 (see mkfs.filsys(1)).  Regenerate them from source with the
+# ported V7 assembler:
+#   make boot V7AS=<path to the ported V7 assembler> \
+#             AS2=<path to its as2 second pass>
+bootdir = $(pkgdatadir)
+dist_boot_DATA = boot/hpuboot boot/rpuboot
 all: all-am
 
 .SUFFIXES:
@@ -725,6 +739,27 @@ uninstall-man5:
 	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^5][0-9a-z]*$$,5,;x' \
 	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
 	dir='$(DESTDIR)$(man5dir)'; $(am__uninstall_files_from_dir)
+install-dist_bootDATA: $(dist_boot_DATA)
+	@$(NORMAL_INSTALL)
+	@list='$(dist_boot_DATA)'; test -n "$(bootdir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(bootdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(bootdir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(bootdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(bootdir)" || exit $$?; \
+	done
+
+uninstall-dist_bootDATA:
+	@$(NORMAL_UNINSTALL)
+	@list='$(dist_boot_DATA)'; test -n "$(bootdir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(bootdir)'; $(am__uninstall_files_from_dir)
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -966,9 +1001,9 @@ distcleancheck: distclean
 check-am: all-am
 	$(MAKE) $(AM_MAKEFLAGS) check-local
 check: check-am
-all-am: Makefile $(PROGRAMS) $(MANS)
+all-am: Makefile $(PROGRAMS) $(MANS) $(DATA)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man5dir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -1033,7 +1068,7 @@ info: info-am
 
 info-am:
 
-install-data-am: install-man
+install-data-am: install-dist_bootDATA install-man
 
 install-dvi: install-dvi-am
 
@@ -1089,7 +1124,8 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS uninstall-man
+uninstall-am: uninstall-binPROGRAMS uninstall-dist_bootDATA \
+	uninstall-man
 
 uninstall-man: uninstall-man1 uninstall-man5
 
@@ -1103,19 +1139,26 @@ uninstall-man: uninstall-man1 uninstall-man5
 	distclean-compile distclean-generic distclean-tags \
 	distcleancheck distdir distuninstallcheck dvi dvi-am html \
 	html-am info info-am install install-am install-binPROGRAMS \
-	install-data install-data-am install-dvi install-dvi-am \
-	install-exec install-exec-am install-html install-html-am \
-	install-info install-info-am install-man install-man1 \
-	install-man5 install-pdf install-pdf-am install-ps \
-	install-ps-am install-strip installcheck installcheck-am \
-	installdirs maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-compile mostlyclean-generic pdf pdf-am \
-	ps ps-am tags tags-am uninstall uninstall-am \
-	uninstall-binPROGRAMS uninstall-man uninstall-man1 \
-	uninstall-man5
+	install-data install-data-am install-dist_bootDATA install-dvi \
+	install-dvi-am install-exec install-exec-am install-html \
+	install-html-am install-info install-info-am install-man \
+	install-man1 install-man5 install-pdf install-pdf-am \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
+	uninstall-am uninstall-binPROGRAMS uninstall-dist_bootDATA \
+	uninstall-man uninstall-man1 uninstall-man5
 
 .PRECIOUS: Makefile
 
+
+V7AS ?= as
+AS2 ?= as2
+.PHONY: boot
+boot:
+	AS2=$(AS2) $(V7AS) -o boot/hpuboot boot/hpuboot.s
+	AS2=$(AS2) $(V7AS) -o boot/rpuboot boot/rpuboot.s
 
 # `make check` runs the end-to-end smoke test.  It needs a disk image
 # (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).
