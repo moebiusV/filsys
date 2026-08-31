@@ -22,6 +22,25 @@ dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsy
 
 EXTRA_DIST = test.sh fetch.sh reference packaging
 
+# --- PDP-11 boot blocks -----------------------------------------------------
+# filsys ships two block-0 bootstraps assembled from the V7 /usr/mdec sources:
+# hpuboot (RP06/HP disk) and rpuboot (RP03/04/05/06 disk).  The prebuilt a.out
+# files are installed with the package; pass one to `mkfs.filsys -b` to drop it
+# into block 0 (see mkfs.filsys(1)).  Regenerate them from source with the
+# ported V7 assembler:
+#   make boot V7AS=<path to the ported V7 assembler> \
+#             AS2=<path to its as2 second pass>
+bootdir = $(pkgdatadir)
+dist_boot_DATA = boot/hpuboot boot/rpuboot
+EXTRA_DIST += boot/hpuboot.s boot/rpuboot.s
+
+V7AS ?= as
+AS2 ?= as2
+.PHONY: boot
+boot:
+	AS2=$(AS2) $(V7AS) -o boot/hpuboot boot/hpuboot.s
+	AS2=$(AS2) $(V7AS) -o boot/rpuboot boot/rpuboot.s
+
 # `make check` runs the end-to-end smoke test.  It needs a disk image
 # (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).
 check-local:

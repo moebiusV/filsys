@@ -71,6 +71,28 @@ Size of the filesystem in blocks.  If omitted, the size defaults to the image's
 own size (from block 0, or from
 .IR \-o ),
 with a minimum of a small usable volume.
+.SH BOOT BLOCKS
+filsys ships two PDP-11 block-0 bootstraps, assembled from the Seventh Edition
+.I /usr/mdec
+sources and installed into the package data directory
+.RB ( share/filsys
+under the install prefix):
+.TP
+.B hpuboot
+the RP06 (HP controller) disk bootstrap.
+.TP
+.B rpuboot
+the RP03/04/05/06 disk bootstrap.
+.PP
+Pass one to
+.B \-b
+to write it into block 0 of a new filesystem, e.g.
+.PP
+.RS
+.nf
+mkfs.filsys -b /usr/local/share/filsys/hpuboot rp06-0.disk
+.fi
+.RE
 .SH HISTORICAL FORM
 The Seventh Edition
 .I mkfs
