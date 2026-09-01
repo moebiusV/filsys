@@ -35,6 +35,7 @@
 #define V7_NIADDR   13         /* total address slots per inode */
 #define V7_NINDIR   (V7_BSIZE / 4)  /* 4-byte addresses per indirect block */
 #define V7_DIRSIZ   14         /* chars per directory entry name */
+#define V7_DIRENTSZ (2 + V7_DIRSIZ)  /* bytes per on-disk directory entry */
 
 /* di_mode type/mode bits (sys/ino.h) */
 #define V7_IFMT   0170000
@@ -208,13 +209,30 @@ int v7fs_lookup(v7fs_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip);
 
 typedef struct {
     uint32_t free_blocks;    /* free blocks found by walking the free list */
+    uint32_t used_blocks;    /* data blocks referenced by inodes */
+    uint32_t missing_blocks; /* blocks in the data area referenced by neither */
+    uint32_t dup_blocks;     /* blocks referenced twice, or used + free */
     uint32_t inodes;         /* total inode slots */
     uint32_t used_inodes;    /* inodes with a non-zero mode */
     uint32_t errors;         /* number of integrity problems found */
 } v7_check_t;
 
-/* Walk the free list and the inode table; report findings to stdout.
- * Returns 0 if no errors were found, -1 otherwise. */
-int v7fs_check(v7fs_t *fs, v7_check_t *rep);
+/* Run the V7 equivalent of icheck(8) + dcheck(8): walk the inode table marking
+ * every referenced block, walk the free list, detect duplicates and missing
+ * blocks, and check directory link counts.  If `salvage` is set, rebuild the
+ * free list from the block-usage map (icheck -s) instead of checking it; the
+ * filesystem must have been opened read-write.  Reports to stdout; returns 0
+ * if no errors were found, -1 otherwise. */
+int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage);
+
+/* ---- maintenance (V7's ncheck / clri / salv -a) ------------------------ */
+
+/* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
+int v7fs_ncheck(v7fs_t *fs, uint32_t ino);
+/* Zero inode `ino` (clri).  Returns 0 or -errno. */
+int v7fs_clri(v7fs_t *fs, uint32_t ino);
+/* Resolve duplicate blocks (salv -a): give each second reference a private
+ * copy of the block, then rebuild the free list.  Returns 0 or -errno. */
+int v7fs_resolve_dups(v7fs_t *fs);
 
 #endif /* V7FS_H */

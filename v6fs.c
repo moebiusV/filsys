@@ -687,6 +687,11 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep) {
         if (ip.mode == 0)
             continue;
         rep->used_inodes++;
+        {
+            int t = ip.mode & V6_IFMT;
+            if (t == V6_IFCHR || t == V6_IFBLK)
+                continue;   /* device inode: addr[0] is a device number, not a block */
+        }
         for (int i = 0; i < V6_NIADDR; i++) {
             uint32_t a = ip.addr[i];
             if (a != 0 && a >= fs->fsize) {

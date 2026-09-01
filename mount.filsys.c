@@ -149,7 +149,8 @@ static int filsys_lookup(filsys_t *k, const char *path, uint32_t *ino, filsys_in
 }
 static int filsys_check(filsys_t *k, v6_check_t *rep) {
     if (k->ver == FILSYS_V6) return v6fs_check(&k->u.v6, rep);
-    return v7fs_check(&k->u.v7, (v7_check_t *)rep);   /* identical layout */
+    v7_check_t r;
+    return v7fs_check(&k->u.v7, &r, 0);   /* no salvage from the mount tool */
 }
 
 /* ---- helpers ------------------------------------------------------------- */
