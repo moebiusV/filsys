@@ -12,13 +12,27 @@ fsck.filsys \- filesystem storage and directory consistency check
 .IR <4|5|6|7> ]
 .RB [ \-o
 .IR block ]
+.RB [ \-s ]
+.RB [ \-r ]
+.I image
+.br
+.B fsck.filsys
+.RB [ \-v
+.IR 7 ]
+.RB [ \-o
+.IR block ]
+.RB { \-n
+.IR ino " | " \-c
+.IR ino }
 .I image
 .SH DESCRIPTION
 .B fsck.filsys
 checks a Research Unix filesystem inside a disk image.  It validates the
-superblock; walks the free-block list checking for out-of-range or duplicated
-blocks and a non-terminating chain; and walks the i-list checking each inode's
-block pointers.
+superblock; walks the i-list building a bit map of every referenced block
+(direct and indirect), flagging duplicates and out-of-range blocks; walks the
+free-block list against that map, flagging blocks that are both used and free;
+reports blocks that are neither used nor free ("missing"); and compares each
+inode's link count with the number of directory entries that reference it.
 .PP
 The Seventh Edition had no single
 .I fsck
@@ -32,9 +46,34 @@ that reference it).  The
 .I fsck.filsys
 name is the modern
 .BR fsck (8)
-convention; the two checks are folded together and its report carries the
-same findings the V7 pair reported (duplicate blocks, bad blocks, blocks
-outside the filesystem, and link-count/disagreement diagnostics).
+convention, and it folds in the V7 repair toolkit:
+.IR icheck ,
+.IR dcheck ,
+.IR ncheck ,
+and
+.IR clri ,
+plus the Fourth/Fifth Edition
+.BR salv (8).
+The
+.B \-s
+option is
+.IR icheck 's
+.B \-s
+free-list rebuild; the
+.B \-r
+option is
+.BR salv (8)
+.BR \-a ,
+which resolves duplicate blocks by copying each one to a freshly allocated
+block and re-pointing the second reference.  The
+.B \-n
+option is
+.BR ncheck (8)
+(print an inode's pathname) and
+.B \-c
+is
+.BR clri (8)
+(zero an inode).
 .PP
 The edition is selected with
 .BR \-v :
@@ -63,11 +102,43 @@ is accepted (v6, v7, ...).
 Check the filesystem at
 .I block
 (512-byte blocks) within the image, instead of block 0.
+.TP
+.B \-s
+Rebuild the free list from the block bit map (V7
+.IR icheck (8)
+.BR \-s ).
+This is the standard repair after
+.BR restor (8),
+which does not rebuild the free list.  V7 only.
+.TP
+.B \-r
+Resolve duplicate blocks: each block referenced by two inodes is copied to a
+freshly allocated block and the second reference re-pointed, then the free
+list is rebuilt
+.RI ( salv (8)
+.BR \-a ).
+V7 only.
+.TP
+.BI \-n " ino"
+Print the full pathname(s) of inode
+.I ino
+.RI ( ncheck (8)).
+V7 only.
+.TP
+.BI \-c " ino"
+Zero inode
+.I ino
+.RI ( clri (8)).
+V7 only.
 .SH EXAMPLE
 .nf
 fsck.filsys image.dk                # check the filesystem at block 0 (V7)
 fsck.filsys -v 6 image.dk           # check a V6 (V4/V5) filesystem
 fsck.filsys -o 18392 image.dk       # check the filesystem at block 18392
+fsck.filsys -s image.dk             # rebuild the free list (icheck -s)
+fsck.filsys -r image.dk             # resolve duplicate blocks (salv -a)
+fsck.filsys -n 128 image.dk         # print the pathname of inode 128
+fsck.filsys -c 128 image.dk         # clear inode 128
 .fi
 .SH SEE ALSO
 .BR mkfs.filsys (1),
@@ -75,7 +146,10 @@ fsck.filsys -o 18392 image.dk       # check the filesystem at block 18392
 .BR mount.filsys (1),
 .BR filsys (5),
 .BR icheck (8),
-.BR dcheck (8)
+.BR dcheck (8),
+.BR ncheck (8),
+.BR clri (8),
+.BR salv (8)
 .SH LICENSE
 This manpage is derived from the Seventh Edition
 .IR icheck (8)

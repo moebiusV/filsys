@@ -252,12 +252,12 @@ static void v7_mkroot(void)
     memset(db, 0, V7_BSIZE);
     v7_put16le(db, V7_ROOTINO);
     memcpy(db + 2, ".", 1);
-    v7_put16le(db + V7_DIRSIZ, V7_ROOTINO);
-    memcpy(db + V7_DIRSIZ + 2, "..", 2);
+    v7_put16le(db + V7_DIRENTSZ, V7_ROOTINO);
+    memcpy(db + V7_DIRENTSZ + 2, "..", 2);
     pblock(bno, db);
 
     addr[0] = bno;
-    v7_iput(V7_ROOTINO, V7_IFDIR | 0777, 2, 2 * V7_DIRSIZ, addr);
+    v7_iput(V7_ROOTINO, V7_IFDIR | 0777, 2, 2 * V7_DIRENTSZ, addr);
 }
 
 static void v7_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,

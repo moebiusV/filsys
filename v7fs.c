@@ -618,7 +618,127 @@ int v7fs_lookup(v7fs_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
 
 /* ---- integrity check ---------------------------------------------------- */
 
-int v7fs_check(v7fs_t *fs, v7_check_t *rep) {
+/* Context for the icheck(8) block-usage pass.  One bit per data block records
+ * whether the block is accounted for (referenced by an inode, or in the free
+ * list); a block reached twice is a duplicate, a block never reached is
+ * "missing". */
+typedef struct {
+    v7fs_t  *fs;
+    uint8_t *bmap;        /* bit i = data block (isize + i) */
+    uint32_t nblk;        /* number of data blocks (fsize - isize) */
+    uint32_t used_blocks;
+    uint32_t dup_blocks;
+    uint32_t errors;
+    uint32_t ino;         /* current inode, for messages */
+} v7_chkctx_t;
+
+/* Mark one data block as accounted-for.  Returns 1 if out of range. */
+static int v7_mark_block(v7_chkctx_t *cx, uint32_t bno)
+{
+    if (bno == 0)
+        return 0;
+    if (bno < cx->fs->isize || bno >= cx->fs->fsize) {
+        printf("block %u bad; inode=%u\n", bno, cx->ino);
+        cx->errors++;
+        return 1;
+    }
+    uint32_t d = bno - cx->fs->isize;
+    uint8_t  m = (uint8_t)(1u << (d & 7));
+    if (cx->bmap[d >> 3] & m) {
+        printf("block %u dup; inode=%u\n", bno, cx->ino);
+        cx->dup_blocks++;
+        cx->errors++;
+        return 0;
+    }
+    cx->bmap[d >> 3] |= m;
+    cx->used_blocks++;
+    return 0;
+}
+
+/* Mark an indirect block and everything beneath it.  level 0 = single
+ * indirect, 1 = double, 2 = triple. */
+static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
+{
+    if (blk == 0)
+        return;
+    if (v7_mark_block(cx, blk))
+        return;                       /* out of range: don't chase it */
+    uint8_t buf[V7_BSIZE];
+    if (v7fs_read_block(cx->fs, blk, buf)) {
+        printf("cannot read indirect block %u\n", blk);
+        cx->errors++;
+        return;
+    }
+    for (int i = 0; i < V7_NINDIR; i++) {
+        uint32_t nb = v7_get32(buf + 4 * i, cx->fs->le);
+        if (nb == 0)
+            continue;
+        if (level > 0)
+            v7_mark_tree(cx, nb, level - 1);
+        else
+            v7_mark_block(cx, nb);
+    }
+}
+
+/* Rebuild the free list from the block-usage map (icheck -s).  Returns the
+ * number of free blocks, or -1 if the superblock could not be read. */
+static int v7fs_makefree(v7fs_t *fs, v7_chkctx_t *cx)
+{
+    uint8_t sb[V7_BSIZE];
+    if (v7fs_read_block(fs, V7_SUPERB, sb))
+        return -1;
+    int m = v7_get16le(sb + 424);
+    int n = v7_get16le(sb + 426);
+    if (n <= 0 || n > 500)
+        n = 500;
+    if (m <= 0 || m > n)
+        m = 3;
+
+    int adr[500];
+    uint8_t flg[500] = {0};
+    int i, j;
+    i = 0;
+    for (j = 0; j < n; j++) {
+        while (flg[i])
+            i = (i + 1) % n;
+        adr[j] = i + 1;
+        flg[i]++;
+        i = (i + m) % n;
+    }
+
+    fs->nfree = 0;
+    fs->ninode = 0;
+    int nfree = 0;
+    uint32_t d = fs->fsize - 1;
+    while (d % n)
+        d++;
+    for (; d > 0; d -= n) {
+        for (i = 0; i < n; i++) {
+            int64_t f = (int64_t)d - adr[i];
+            if (f < (int64_t)fs->isize || f >= (int64_t)fs->fsize)
+                continue;
+            uint32_t off = (uint32_t)f - fs->isize;
+            if (!(cx->bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
+                v7fs_bfree(fs, (uint32_t)f);
+                nfree++;
+            }
+        }
+    }
+    super_write(fs);
+
+    /* super_write doesn't maintain s_tfree/s_tinode; fix them up (V7 layout). */
+    if (fs->le == 0) {
+        uint8_t sb2[V7_BSIZE];
+        if (v7fs_read_block(fs, V7_SUPERB, sb2) == 0) {
+            v7_put32(sb2 + 418, 0, (uint32_t)nfree);   /* s_tfree */
+            v7_put16le(sb2 + 422, 0);                  /* s_tinode */
+            v7fs_write_block(fs, V7_SUPERB, sb2);
+        }
+    }
+    return nfree;
+}
+
+int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage) {
     memset(rep, 0, sizeof(*rep));
 
     /* 1. superblock sanity */
@@ -635,10 +755,61 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep) {
         rep->errors++;
     }
 
-    /* 2. walk the free list exactly as alloc() would, checking integrity */
-    uint8_t *seen = calloc(fs->fsize ? fs->fsize : 1, 1);
-    if (!seen)
+    uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
+    rep->inodes = maxino;
+
+    uint32_t nblk = fs->fsize - fs->isize;
+    v7_chkctx_t cx;
+    memset(&cx, 0, sizeof(cx));
+    cx.fs = fs;
+    cx.nblk = nblk;
+    cx.bmap = calloc((nblk + 7) / 8, 1);
+    if (!cx.bmap)
         return -ENOMEM;
+
+    /* 2. icheck pass 1: mark every block referenced by an inode. */
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        v7_inode_t ip;
+        if (v7fs_read_inode(fs, ino, &ip)) {
+            printf("inode %u unreadable\n", ino);
+            rep->errors++;
+            continue;
+        }
+        if (ip.mode == 0)
+            continue;
+        rep->used_inodes++;
+        uint16_t fmt = ip.mode & V7_IFMT;
+        if (fmt == V7_IFCHR || fmt == V7_IFBLK ||
+            fmt == V7_IFMPC || fmt == V7_IFMPB)
+            continue;   /* device inode: addr[0] is a device number, not a block */
+        cx.ino = ino;
+        for (int i = 0; i < V7_NIADDR; i++) {
+            uint32_t a = ip.addr[i];
+            if (a == 0)
+                continue;
+            if (i < V7_NDADDR)
+                v7_mark_block(&cx, a);
+            else
+                v7_mark_tree(&cx, a, i - V7_NDADDR);
+        }
+    }
+
+    /* fold the mark-phase findings (dup/bad blocks) into the report */
+    rep->errors += cx.errors;
+
+    if (salvage) {
+        int nf = v7fs_makefree(fs, &cx);
+        printf("salvaged: free list rebuilt (%d free blocks)\n", nf);
+        free(cx.bmap);
+        return rep->errors ? -1 : 0;
+    }
+
+    /* 3. walk the free list exactly as alloc() would, marking free blocks. */
+    uint8_t *seen = calloc(fs->fsize ? fs->fsize : 1, 1);
+    if (!seen) {
+        free(cx.bmap);
+        return -ENOMEM;
+    }
     uint16_t n = fs->nfree;
     uint32_t cur[V7_NICFREE];
     memcpy(cur, fs->free, sizeof(cur));
@@ -660,13 +831,22 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep) {
         }
         seen[bno] = 1;
         rep->free_blocks++;
+        /* a free block that is also referenced by an inode is a duplicate */
+        uint32_t off = bno - fs->isize;
+        uint8_t m = (uint8_t)(1u << (off & 7));
+        if (cx.bmap[off >> 3] & m) {
+            printf("block %u dup; free-list\n", bno);
+            cx.dup_blocks++;
+            rep->errors++;
+        } else {
+            cx.bmap[off >> 3] |= m;
+        }
         if (++guard > fs->fsize + V7_NICFREE) {
             printf("free list does not terminate\n");
             rep->errors++;
             break;
         }
         if (n == 0) {
-            /* just popped the bottom: it is a dump block holding the next batch */
             uint8_t blk[V7_BSIZE];
             if (v7fs_read_block(fs, bno, blk)) {
                 printf("cannot read free-list block %u\n", bno);
@@ -685,29 +865,227 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep) {
     }
     free(seen);
 
-    /* 3. inode table walk */
+    /* 4. missing blocks: in the data area but neither used nor free. */
+    for (uint32_t off = 0; off < nblk; off++)
+        if (!(cx.bmap[off >> 3] & (uint8_t)(1u << (off & 7))))
+            rep->missing_blocks++;
+
+    rep->used_blocks = cx.used_blocks;
+    rep->dup_blocks = cx.dup_blocks;
+
+    /* 5. dcheck: directory link counts. */
+    uint8_t *ecount = calloc(maxino + 1, 1);
+    if (ecount) {
+        for (uint32_t ino = 1; ino <= maxino; ino++) {
+            v7_inode_t ip;
+            if (v7fs_read_inode(fs, ino, &ip))
+                continue;
+            if ((ip.mode & V7_IFMT) != V7_IFDIR)
+                continue;
+            v7_dirent_t *ents = NULL;
+            size_t cnt = 0;
+            if (v7fs_dir_read(fs, &ip, &ents, &cnt) == 0) {
+                for (size_t e = 0; e < cnt; e++) {
+                    uint32_t dno = ents[e].ino;
+                    if (dno == 0)
+                        continue;
+                    if (dno > maxino || dno <= 1) {
+                        printf("%u bad; %u/%.*s\n", dno, ino, V7_DIRSIZ, ents[e].name);
+                        rep->errors++;
+                        continue;
+                    }
+                    ecount[dno]++;
+                    if (ecount[dno] == 0)
+                        ecount[dno] = 0377;
+                }
+                v7fs_dirents_free(ents);
+            }
+        }
+        for (uint32_t ino = 1; ino <= maxino; ino++) {
+            v7_inode_t ip;
+            if (v7fs_read_inode(fs, ino, &ip))
+                continue;
+            int cnt = ecount[ino] & 0377;
+            if (cnt == ip.nlink)
+                continue;
+            if ((ip.mode & V7_IFMT) == 0 && cnt == 0)
+                continue;
+            printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
+            rep->errors++;
+        }
+        free(ecount);
+    }
+
+    free(cx.bmap);
+
+    printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
+           rep->used_blocks, rep->free_blocks, rep->missing_blocks,
+           rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
+    return rep->errors ? -1 : 0;
+}
+
+/* ---- maintenance: ncheck / clri / salv -a ------------------------------ */
+
+/* Recursively walk the directory tree from `dirino`, printing the pathname(s)
+ * of `target` and descending into subdirectories. */
+static void ncheck_dir(v7fs_t *fs, uint32_t dirino, const char *prefix,
+                       uint32_t target, int *found, int depth)
+{
+    if (depth > 64)
+        return;                       /* guard against a directory cycle */
+    v7_inode_t ip;
+    if (v7fs_read_inode(fs, dirino, &ip))
+        return;
+    if ((ip.mode & V7_IFMT) != V7_IFDIR)
+        return;
+    v7_dirent_t *ents = NULL;
+    size_t cnt = 0;
+    if (v7fs_dir_read(fs, &ip, &ents, &cnt))
+        return;
+    for (size_t i = 0; i < cnt; i++) {
+        uint32_t eino = ents[i].ino;
+        if (eino == 0)
+            continue;
+        if (ents[i].name[0] == '.' &&
+            (ents[i].name[1] == 0 ||
+             (ents[i].name[1] == '.' && ents[i].name[2] == 0)))
+            continue;                 /* skip "." and ".." */
+        char path[1024];
+        if (prefix[1] == 0)           /* prefix is "/" */
+            snprintf(path, sizeof(path), "/%s", ents[i].name);
+        else
+            snprintf(path, sizeof(path), "%s/%s", prefix, ents[i].name);
+        if (eino == target) {
+            printf("%u\t%s\n", target, path);
+            *found = 1;
+        }
+        v7_inode_t cip;
+        if (v7fs_read_inode(fs, eino, &cip) == 0 &&
+            (cip.mode & V7_IFMT) == V7_IFDIR)
+            ncheck_dir(fs, eino, path, target, found, depth + 1);
+    }
+    v7fs_dirents_free(ents);
+}
+
+int v7fs_ncheck(v7fs_t *fs, uint32_t ino)
+{
+    int found = 0;
+    ncheck_dir(fs, V7_ROOTINO, "/", ino, &found, 0);
+    if (!found)
+        printf("%u: not found\n", ino);
+    return 0;
+}
+
+int v7fs_clri(v7fs_t *fs, uint32_t ino)
+{
     uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
-    rep->inodes = maxino;
+    if (ino == 0 || ino > maxino)
+        return -EINVAL;
+    v7_inode_t ip;
+    memset(&ip, 0, sizeof(ip));
+    ip.ino = ino;
+    int rc = v7fs_write_inode(fs, ino, &ip);
+    if (rc == 0)
+        printf("cleared inode %u\n", ino);
+    return rc;
+}
+
+int v7fs_resolve_dups(v7fs_t *fs)
+{
+    uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
+    uint32_t nblk = fs->fsize - fs->isize;
+
+    v7_chkctx_t cx;
+    memset(&cx, 0, sizeof(cx));
+    cx.fs = fs;
+    cx.nblk = nblk;
+    cx.bmap = calloc((nblk + 7) / 8, 1);
+    if (!cx.bmap)
+        return -ENOMEM;
+
+    struct dup { uint32_t blk, ino, idx; };
+    struct dup *dups = NULL;
+    size_t ndup = 0, cap = 0;
+
     for (uint32_t ino = 1; ino <= maxino; ino++) {
         v7_inode_t ip;
-        if (v7fs_read_inode(fs, ino, &ip)) {
-            printf("inode %u unreadable\n", ino);
-            rep->errors++;
+        if (v7fs_read_inode(fs, ino, &ip))
             continue;
-        }
         if (ip.mode == 0)
             continue;
-        rep->used_inodes++;
+        uint16_t fmt = ip.mode & V7_IFMT;
+        if (fmt == V7_IFCHR || fmt == V7_IFBLK ||
+            fmt == V7_IFMPC || fmt == V7_IFMPB)
+            continue;   /* device inode: addr[0] is a device number, not a block */
         for (int i = 0; i < V7_NIADDR; i++) {
             uint32_t a = ip.addr[i];
-            if (a != 0 && a >= fs->fsize) {
-                printf("inode %u addr[%d]=%u out of range\n", ino, i, a);
-                rep->errors++;
+            if (a == 0)
+                continue;
+            if (i < V7_NDADDR) {
+                if (a < fs->isize || a >= fs->fsize) {
+                    printf("block %u bad; inode=%u\n", a, ino);
+                    continue;
+                }
+                uint32_t off = a - fs->isize;
+                uint8_t m = (uint8_t)(1u << (off & 7));
+                if (cx.bmap[off >> 3] & m) {
+                    if (ndup == cap) {
+                        cap = cap ? cap * 2 : 16;
+                        dups = realloc(dups, cap * sizeof(*dups));
+                    }
+                    dups[ndup].blk = a;
+                    dups[ndup].ino = ino;
+                    dups[ndup].idx = i;
+                    ndup++;
+                } else {
+                    cx.bmap[off >> 3] |= m;
+                    cx.used_blocks++;
+                }
+            } else {
+                cx.ino = ino;
+                v7_mark_tree(&cx, a, i - V7_NDADDR);
             }
         }
     }
 
-    printf("free blocks=%u  inodes=%u/%u used  errors=%u\n",
-           rep->free_blocks, rep->used_inodes, rep->inodes, rep->errors);
-    return rep->errors ? -1 : 0;
+    if (ndup == 0) {
+        printf("no duplicate blocks\n");
+        free(cx.bmap);
+        return 0;
+    }
+
+    printf("%zu duplicate block(s); rebuilding free list\n", ndup);
+    v7fs_makefree(fs, &cx);
+
+    int resolved = 0;
+    for (size_t k = 0; k < ndup; k++) {
+        uint32_t blk = dups[k].blk, ino = dups[k].ino, idx = dups[k].idx;
+        v7_inode_t ip;
+        if (v7fs_read_inode(fs, ino, &ip))
+            continue;
+        if (ip.addr[idx] != blk)
+            continue;
+        uint32_t nb;
+        if (v7fs_balloc(fs, &nb)) {
+            printf("block %u dup; inode=%u: out of space\n", blk, ino);
+            continue;
+        }
+        uint8_t buf[V7_BSIZE];
+        if (v7fs_read_block(fs, blk, buf) || v7fs_write_block(fs, nb, buf)) {
+            printf("block %u dup; inode=%u: copy failed\n", blk, ino);
+            continue;
+        }
+        ip.addr[idx] = nb;
+        v7fs_write_inode(fs, ino, &ip);
+        uint32_t off = nb - fs->isize;
+        cx.bmap[off >> 3] |= (uint8_t)(1u << (off & 7));
+        printf("block %u dup; inode=%u: copied to %u\n", blk, ino, nb);
+        resolved++;
+    }
+    free(dups);
+
+    printf("resolved %d/%zu duplicates; finalizing free list\n", resolved, ndup);
+    v7fs_makefree(fs, &cx);
+    free(cx.bmap);
+    return resolved == (int)ndup ? 0 : -1;
 }
