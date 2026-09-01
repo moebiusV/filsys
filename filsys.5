@@ -376,6 +376,60 @@ allocator never hands them out.  Root moves to i-number 2.  The stock V7
 .I mkfs
 creates an empty bad-block file; the list is supplied by a site's own disk
 analysis.
+.SH TAPE DUMP AND RESTORE
+The Seventh Edition backs a filesystem up to magtape with a pair of
+commands,
+.BR dump (8)
+and
+.BR restor (8).
+.I dump
+writes a filesystem to tape \-\- at
+.I "dump level"
+0 the whole filesystem, at levels 1\-9 only the files changed since the
+previous lower level, tracked in
+.IR /etc/ddate .
+.I restor
+reads the tape back: the
+.B r
+(or
+.BR R )
+key restores a complete dump onto a clear filesystem, and
+.B x
+extracts named files.
+.PP
+What matters for a filesystem image is what the tape
+.I carries :
+dump writes the i-list and the data blocks, but
+.B not the free list
+\-\- the dump format has no place for it.  A filesystem restored from a
+complete dump therefore comes up with its inodes and data blocks intact but
+its free-block chain empty: the superblock's
+.I s_tfree
+is left correct, but the chained
+.I df_free
+dump blocks and
+.I s_nfree
+are gone, so the allocator has no free blocks to hand out.  The
+.BR restor (8)
+page prescribes the repair,
+.BR "icheck \-s" ,
+and requires it before restarting an interrupted
+.BR "restor R" .
+.PP
+.B fsck.filsys
+reproduces that repair on the host: its
+.B \-s
+option rebuilds the free list from the block bit map, exactly what
+.B "icheck \-s"
+did in the guest.  This is why a Research Unix disk built from a distribution
+tape (run
+.BR mkfs ,
+then
+.BR restor )
+comes up with a broken free list until
+.B "fsck.filsys \-s"
+is run; see
+.BR fsck.filsys (1).
 .SH LICENSE
 This manpage is derived from the ancient UNIX
 .IR fs (5)
@@ -426,6 +480,8 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .BR mount.fuse3 (8),
 .BR pdp11 (1),
 .BR icheck (1),
+.BR dump (8),
+.BR restor (8),
 .BR stat (2)
 .SH AUTHOR
 Written for the filsys project.
