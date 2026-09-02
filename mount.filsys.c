@@ -157,6 +157,17 @@ static int fuse_release(const char *path, struct fuse_file_info *fi) {
     return 0;   /* no per-open state to release */
 }
 
+static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg) {
+    (void)conn;
+    cfg->kernel_cache = 0;   /* backing store is a plain file; don't cache pages */
+    cfg->use_ino = 1;        /* stable inode numbers are reported (see fill_stat) */
+    /* init's return value becomes private_data for every later callback (and for
+     * destroy()), overriding the handle we passed to fuse_main.  Inside init,
+     * fuse_get_context()->private_data still holds that original handle, so hand
+     * it back unchanged rather than clobbering it with NULL. */
+    return fuse_get_context()->private_data;
+}
+
 static void filsys_destroy(void *private_data) {
     filsys_sync((filsys_t *)private_data);   /* flush on unmount; main() closes */
 }
@@ -183,6 +194,7 @@ static struct fuse_operations filsys_ops = {
     .flush    = fuse_flush,
     .fsync    = fuse_fsync,
     .release  = fuse_release,
+    .init     = fuse_init,
     .destroy  = filsys_destroy,
 };
 
