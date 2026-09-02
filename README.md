@@ -396,7 +396,7 @@ emulator is running.
 - `filsys.5`, `mount.filsys.1`, `findfs.filsys.1`, `mkfs.filsys.1`,
   `fsck.filsys.1`: the format and tool manpages.
 - `configure.ac`, `Makefile.am`: GNU autotools build.
-- `test.sh`, `fetch.sh`, `reference/`.
+- `test.sh`, `fetch.sh`.
 
 ## Notes
 

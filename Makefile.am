@@ -41,7 +41,7 @@ fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
 
-EXTRA_DIST = test.sh fetch.sh reference packaging
+EXTRA_DIST = test.sh fetch.sh packaging
 
 # --- PDP-11 boot blocks -----------------------------------------------------
 # filsys ships two block-0 bootstraps assembled from the V7 /usr/mdec sources:
