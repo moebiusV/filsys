@@ -19,3 +19,7 @@ override_dh_auto_configure:
 # package build (a clean chroot has neither).
 override_dh_auto_test:
 	@echo "skipping 'make check' (integration test; run ./test.sh manually)"
+
+# Fail if `make install` produces a file that no .install routes into a package.
+override_dh_missing:
+	dh_missing --fail-missing
