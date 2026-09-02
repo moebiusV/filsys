@@ -1,5 +1,7 @@
 #!/bin/bash
-# Smoke test for mount.filsys: read, write, persist, and the emulator lock.
+# Smoke test for mount.filsys: read, write, persist, and truncate.
+# (flock was deliberately removed so root and /usr of one image can mount
+#  together, so there is no emulator-lock assertion here.)
 # Operates on a copy of the image so the pristine rp06-0.disk is untouched.
 set -eu
 
@@ -46,18 +48,21 @@ rmdir "$MNT/tmp/subdir" && echo "  ok: rmdir"
 cp "$MNT/bin/ls" ./ls-off
 [ -s ./ls-off ] && echo "  ok: copy binary off"
 
-echo "== emulator lock while mounted =="
-if timeout 2 flock "$COPY" -c "echo acquired" 2>/dev/null; then
-    echo "  FAIL: image not locked while mounted"; exit 1
-else
-    echo "  ok: image is locked while mounted"
-fi
-
 fusermount3 -uz "$MNT"; sleep 0.5
-if timeout 2 flock "$COPY" -c "echo acquired" 2>/dev/null; then
-    echo "  ok: lock released on unmount"
+
+echo "== truncate must not produce duplicate block references =="
+./mount.filsys -f "$COPY" "$MNT" >mount.log 2>&1 &
+sleep 1.5
+dd if=/dev/urandom of="$MNT/tmp/trunctest" bs=1024 count=64 2>/dev/null
+for sz in 60000 30000 45000 1000 40000; do
+    truncate -s "$sz" "$MNT/tmp/trunctest"
+done
+sync
+fusermount3 -uz "$MNT"; sleep 0.5
+if ./fsck.filsys -v 7 "$COPY" 2>&1 | grep -q 'dup=0'; then
+    echo "  ok: no duplicate blocks after truncate"
 else
-    echo "  FAIL: lock not released"; exit 1
+    echo "  FAIL: duplicate blocks after truncate"; exit 1
 fi
 
 echo "== persistence across remount =="

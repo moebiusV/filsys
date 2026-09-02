@@ -2,14 +2,14 @@
 .\" Derived from the Seventh Edition mount(8) page (usr/man/man1/mount.1m),
 .\" distributed under the Caldera International "Ancient UNIX License" (2002).
 .\" The LICENSE section below retains that license's notice and terms.
-.TH MOUNT.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.TH MOUNT.FILSYS 1 "August 26, 2026" "filsys 1.0.0" "File Format and Disk Utilities"
 .SH NAME
-mount.filsys, umount.filsys \- mount and dismount a Research Unix filesystem image
+mount.filsys, umount.filsys \- mount and dismount a Research Unix filesystem
 .SH SYNOPSIS
 .B mount.filsys
 .BI \-v " edition"
 .RB [ \-o
-.IR offset= N [, uid= N , gid= N ,...]]
+.IR offset= N [, version= N ][, uid= N , gid= N ,...]]
 .RB [ \-r ]
 .RB [ \-f ]
 .RB [ \-d ]
@@ -56,6 +56,32 @@ The second form
 does not mount; it walks the free list and the inode table and reports any
 integrity problems on standard output, exiting non-zero if any are found.
 .PP
+The mounted filesystem supports the full set of directory operations: creating
+and removing files and directories, renaming (with the
+.B ..
+and link-count bookkeeping a directory move requires), hard links, and
+.I mknod
+for device files (see
+.BR filsys (5)
+for the device-number encoding).  V7 permits the superuser to hard-link a
+directory; the driver honours that, though a Linux host's kernel refuses
+directory links before FUSE sees them.
+.PP
+.B mount.filsys
+is installed as
+.BR sbin/mount.filsys ,
+so
+.B mount -t filsys
+works: mount(8) calls
+.B mount.filsys
+.I device dir
+.RB [ \-o
+.IR opts ],
+with the edition in
+.B version=
+and the partition in
+.BR offset= .
+.PP
 .I Umount.filsys
 is the historical counterpart: it announced to the system that a mounted
 filesystem was to be removed.  With FUSE, unmounting is done with
@@ -70,13 +96,19 @@ supersedes.
 .BI \-v " edition"
 Filesystem edition: one of 4, 5, 6, 7, or 32.  Required.
 .TP
-.BI \-o " offset= N [, uid= N , gid= N ,...]"
-FUSE options.  The filsys-specific
+.BI \-o " offset= N [, version= N ][, uid= N , gid= N ,...]"
+Comma-separated options.  The filsys-specific
 .B offset=
-is the byte offset of the filesystem within the image (a partition); the rest
-.RB ( uid ,
-.BR gid ,
-and so on) are passed through to FUSE.  Without
+is the byte offset of the filesystem within the image (a partition);
+.B version=
+selects the edition (same values as
+.BR \-v );
+.B uid=
+and
+.B gid=
+override the reported ownership.  Any other option (for example
+.BR allow_other )
+is passed through to FUSE.  Without
 .BR offset= ,
 the filesystem at block 0 is mounted.
 .TP

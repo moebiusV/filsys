@@ -2,9 +2,9 @@
 .\" filsys(5)/dir(5) (V7, 32V) pages, distributed under the Caldera
 .\" International "Ancient UNIX License" (2002).  The LICENSE section below
 .\" retains that license's copyright notice, conditions and disclaimer.
-.TH FILSYS 5 "August 2026" "filsys 1.0.0" "File Formats and Mounting"
+.TH FILSYS 5 "August 26, 2026" "filsys 1.0.0" "File Formats and Mounting"
 .SH NAME
-mount.filsys, filsys \- mount a Research Unix filesystem image; filesystem format (V4 through 32V)
+mount.filsys, filsys \- mount a Research Unix filesystem image; format
 .SH SYNOPSIS
 .B mount.filsys
 \fB\-v\fR \fI<4|5|6|7|32>\fR [\fB\-o\fR \fIoffset=N\fR] [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
@@ -270,6 +270,29 @@ is encoded like
 The 40 address bytes hold 13 addresses of 3 bytes each, packed by
 .IR l3tol (3)
 specifically to be independent of host word order.
+.PP
+For a character or block device inode,
+.I addr[0]
+is not a block number but the device number, packed as
+.BR "(major << 8) | minor"
+(8-bit major, 8-bit minor, per
+.I makedev
+in
+.IR /usr/include/sys/types.h ):
+.B /dev/tty0
+is
+.B 0x300
+(major 3, minor 0) and
+.B /dev/rp3
+is
+.B 0x607
+(major 6, minor 7).  The remaining address slots are zero.  A block-ownership
+checker must treat a device inode as owning no data blocks.  This is the
+encoding
+.B mount.filsys
+writes when you
+.I mknod
+a device file on a mounted image.
 .SS File storage (block mapping)
 .I V6: small and large files
 .PP
@@ -358,7 +381,8 @@ is a 4-byte
 .B int
 on the VAX (2 bytes on the PDP-11), so
 .I df_free[]
-moves from +2 to +4.  The inode and the directory entry are unaffected (their fields already fall on 4-byte boundaries), so only
+moves from +2 to +4.  The inode and the directory entry are unaffected (their
+fields already fall on 4-byte boundaries), so only
 .I filsys
 and
 .I fblk

@@ -4,9 +4,9 @@
  * on a disk image.
  *
  * Usage:
- *     fsck.filsys [-v <4|5|6|7>] [-o block] [-s] [-r] image
- *     fsck.filsys [-v 7] [-o block] -n ino image
- *     fsck.filsys [-v 7] [-o block] -c ino image
+ *     fsck.filsys [-v <4|5|6|7>] [-o block] [-s] [-r] [-n] image
+ *     fsck.filsys [-v 7] [-o block] -N ino image
+ *     fsck.filsys [-v 7] [-o block] -C ino image
  *
  * A Research Unix disk image holds one or more filesystems ("partitions"); the
  * partition table is compiled into the kernel, not stored on the disk.  So by
@@ -22,10 +22,13 @@
  * repair after restor(8), which does not rebuild the free list.
  * -r resolves duplicate blocks (salv -a): each duplicate is copied to a fresh
  * block and the second reference re-pointed, then the free list is rebuilt.
- * -n ino prints the pathname(s) of an inode (ncheck).
- * -c ino zeroes an inode (clri).
- * The -s/-r/-n/-c maintenance modes are V7 only.
+ * -n report only, change nothing (the default; explicit, and refused together
+ * with the modifying flags -s/-r/-C).
+ * -N ino prints the pathname(s) of an inode (ncheck).
+ * -C ino zeroes an inode (clri).
+ * The -s/-r/-N/-C maintenance modes are V7 only.
  */
+#include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,11 +57,11 @@ int main(int argc, char **argv)
     const char *path;
     uint64_t offblock = 0;
     int edition = 7;   /* default: V7, matching mount.filsys's requirement */
-    int salvage = 0, resolve = 0, ncheck = 0, clri = 0;
+    int salvage = 0, resolve = 0, ncheck = 0, clri = 0, nochange = 0;
     uint32_t ino = 0;
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:sn:c:r")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:srnN:C:")) != -1) {
         switch (c) {
         case 'v':
             edition = parse_edition(optarg);
@@ -77,18 +80,21 @@ int main(int argc, char **argv)
             resolve = 1;
             break;
         case 'n':
+            nochange = 1;
+            break;
+        case 'N':
             ncheck = 1;
             ino = strtoul(optarg, NULL, 0);
             break;
-        case 'c':
+        case 'C':
             clri = 1;
             ino = strtoul(optarg, NULL, 0);
             break;
         default:
             fprintf(stderr,
-                "usage: fsck.filsys [-v <4|5|6|7>] [-o block] [-s] [-r] image\n"
-                "       fsck.filsys [-v 7] [-o block] -n ino image\n"
-                "       fsck.filsys [-v 7] [-o block] -c ino image\n");
+                "usage: fsck.filsys [-v <4|5|6|7>] [-o block] [-s] [-r] [-n] image\n"
+                "       fsck.filsys [-v 7] [-o block] -N ino image\n"
+                "       fsck.filsys [-v 7] [-o block] -C ino image\n");
             return 2;
         }
     }
@@ -101,9 +107,13 @@ int main(int argc, char **argv)
     }
     path = argv[optind];
 
-    /* -s/-r/-n/-c are V7-only maintenance modes */
+    /* -s/-r/-N/-C are V7-only maintenance modes */
     if (edition == 6 && (salvage || resolve || ncheck || clri)) {
-        fprintf(stderr, "fsck.filsys: -s/-r/-n/-c are V7 only\n");
+        fprintf(stderr, "fsck.filsys: -s/-r/-N/-C are V7 only\n");
+        return 2;
+    }
+    if (nochange && (salvage || resolve || clri)) {
+        fprintf(stderr, "fsck.filsys: -n (no change) conflicts with -s/-r/-C\n");
         return 2;
     }
 

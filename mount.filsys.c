@@ -17,15 +17,20 @@
  * then widened in V7 (64-byte inode, 24-bit block numbers).  See filsys.5.
  *
  * Usage:
- *     mount.filsys -v <4|5|6|7|32> [-o offset=N[,uid=N,gid=N,...]] [-r] [-f] [-d] <image> <mountpoint>
+ *     mount.filsys -v <4|5|6|7|32> [-o offset=N[,version=N][,uid=N,gid=N,...]]
+ *                    [-r] [-f] [-d] <image> <mountpoint>
  *     mount.filsys -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check
  *
  * `-o offset=N` mounts a filesystem that lives at byte offset N within the
  * file (a partition of a larger disk image), instead of one at block 0.
+ * `-o version=N` selects the edition (so `mount -t filsys` can pass it in `-o`
+ * rather than `-v`, which mount(8) has no generic way to supply).
  * `-o uid=N,gid=N` override the reported ownership (default: the mounting
  * user, so a nested mount point is writable).  Any other -o option is passed
- * through to FUSE (e.g. allow_other).
+ * through to FUSE (e.g. allow_other).  Installed as sbin/mount.filsys, so
+ * `mount -t filsys device dir -o version=7,offset=N` works.
  */
+#include <config.h>
 #include "v6fs.h"
 #include "v7fs.h"
 
@@ -37,6 +42,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -118,6 +124,10 @@ static void filsys_ifree(filsys_t *k, uint32_t ino) {
 static int filsys_itrunc(filsys_t *k, filsys_inode_t *ip) {
     if (k->ver == FILSYS_V6) return v6fs_itrunc(&k->u.v6, (v6_inode_t *)ip);
     return v7fs_itrunc(&k->u.v7, ip);
+}
+static int filsys_itrunc_from(filsys_t *k, filsys_inode_t *ip, uint32_t first_blk) {
+    if (k->ver == FILSYS_V6) return v6fs_itrunc_from(&k->u.v6, (v6_inode_t *)ip, first_blk);
+    return v7fs_itrunc_from(&k->u.v7, ip, first_blk);
 }
 static ssize_t filsys_file_read(filsys_t *k, filsys_inode_t *ip, uint8_t *buf, size_t sz, off_t off) {
     if (k->ver == FILSYS_V6) return v6fs_file_read(&k->u.v6, (v6_inode_t *)ip, buf, sz, off);
@@ -328,6 +338,37 @@ static int filsys_mkdir(const char *path, mode_t mode) {
     return 0;
 }
 
+static int filsys_mknod(const char *path, mode_t mode, dev_t rdev) {
+    filsys_t *k = FILSYS();
+    char dir[PATH_MAX], name[15];
+    int rc = split_path(path, dir, sizeof(dir), name, sizeof(name));
+    if (rc) return rc;
+    filsys_inode_t ddir;
+    uint32_t dino;
+    rc = filsys_lookup(k, dir, &dino, &ddir);
+    if (rc) return rc;
+    uint32_t nino;
+    rc = filsys_ialloc(k, &nino);
+    if (rc) return rc;
+    const struct fuse_context *ctx = fuse_get_context();
+    filsys_inode_t nip;
+    memset(&nip, 0, sizeof(nip));
+    nip.ino = nino;
+    int isblk = (mode & S_IFMT) == S_IFBLK;
+    if (k->ver == FILSYS_V6)
+        nip.mode = (isblk ? V6_IFBLK : V6_IFCHR) | filsys_perm_of(mode);
+    else
+        nip.mode = (isblk ? V7_IFBLK : V7_IFCHR) | filsys_perm_of(mode);
+    nip.nlink = 1;
+    nip.uid = (int16_t)ctx->uid;
+    nip.gid = (int16_t)ctx->gid;
+    nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
+    /* V7 device number: (major<<8)|minor (8-bit each), stored in di_addr[0]. */
+    nip.addr[0] = (uint32_t)(((major(rdev) & 0xff) << 8) | (minor(rdev) & 0xff));
+    filsys_write_inode(k, nino, &nip);
+    return filsys_dir_add(k, &ddir, nino, name);
+}
+
 static int filsys_do_unlink(filsys_t *k, const char *dirpath, const char *name) {
     filsys_inode_t ddir;
     uint32_t dino;
@@ -416,6 +457,19 @@ static int filsys_do_link(filsys_t *k, const char *dst, uint32_t src_ino) {
     return 0;
 }
 
+static int filsys_link(const char *from, const char *to) {
+    filsys_t *k = FILSYS();
+    filsys_inode_t ip;
+    uint32_t ino;
+    int rc = filsys_lookup(k, from, &ino, &ip);
+    if (rc) return rc;
+    /* V7's link(2) lets the superuser hard-link a directory, and the staging
+     * tool's mounting user is that superuser.  filsys_do_link only bumps the
+     * directory's nlink; its ".." still points at the original parent, so a
+     * cycle is the caller's own foot to shoot -- faithful to V7. */
+    return filsys_do_link(k, to, ino);
+}
+
 static int filsys_rename(const char *from, const char *to, unsigned int flags) {
     if (flags) return -EINVAL;
     if (!strcmp(from, to)) return 0;
@@ -424,20 +478,68 @@ static int filsys_rename(const char *from, const char *to, unsigned int flags) {
     uint32_t sino;
     int rc = filsys_lookup(k, from, &sino, &sip);
     if (rc) return rc;
+
+    uint16_t fmask = k->ver == FILSYS_V6 ? V6_IFMT : V7_IFMT;
+    uint16_t dirmode = k->ver == FILSYS_V6 ? V6_IFDIR : V7_IFDIR;
+    int isdir = (sip.mode & fmask) == dirmode;
+
+    char fdir[PATH_MAX], fname[15];
+    split_path(from, fdir, sizeof(fdir), fname, sizeof(fname));
     char tdir[PATH_MAX], tname[15];
     rc = split_path(to, tdir, sizeof(tdir), tname, sizeof(tname));
     if (rc) return rc;
+
     filsys_inode_t tdirip;
     uint32_t tdino;
     rc = filsys_lookup(k, tdir, &tdino, &tdirip);
     if (rc) return rc;
+
+    /* Overwrite an existing target: refuse to replace a non-empty directory,
+     * and do not let a directory be renamed over one. */
     uint32_t tino;
-    if (filsys_dir_lookup(k, &tdirip, tname, &tino) == 0)
+    if (filsys_dir_lookup(k, &tdirip, tname, &tino) == 0) {
+        if (tino == sino) return 0;   /* already there */
+        filsys_inode_t tip;
+        if (filsys_read_inode(k, tino, &tip)) return -EIO;
+        if ((tip.mode & fmask) == dirmode) {
+            filsys_dirent_t *ents = NULL; size_t count = 0;
+            if (filsys_dir_read(k, &tip, &ents, &count)) return -EIO;
+            for (size_t i = 0; i < count; i++)
+                if (strcmp(ents[i].name, ".") && strcmp(ents[i].name, "..")) { free(ents); return -ENOTEMPTY; }
+            free(ents);
+        }
         filsys_do_unlink(k, tdir, tname);
+    }
+
     filsys_do_link(k, to, sino);
-    char fdir[PATH_MAX], fname[15];
-    split_path(from, fdir, sizeof(fdir), fname, sizeof(fname));
-    return filsys_do_unlink(k, fdir, fname);
+    rc = filsys_do_unlink(k, fdir, fname);
+    if (rc) return rc;
+
+    if (isdir) {
+        /* Moving a directory: fix the two parents' link counts and rewrite the
+         * moved directory's '..' entry to point at its new parent. */
+        if (strcmp(fdir, tdir) != 0) {
+            filsys_inode_t fddir;
+            uint32_t fdino;
+            if (filsys_lookup(k, fdir, &fdino, &fddir) == 0) {
+                if (fddir.nlink > 1) fddir.nlink--;
+                filsys_write_inode(k, fdino, &fddir);
+            }
+            /* tdirip was read before filsys_do_link, which rewrote the target
+             * directory's inode (its size grew to hold the new entry).  Re-read
+             * it fresh so we bump nlink without clobbering that update. */
+            if (filsys_read_inode(k, tdino, &tdirip) == 0) {
+                tdirip.nlink++;
+                filsys_write_inode(k, tdino, &tdirip);
+            }
+        }
+        filsys_inode_t cip;
+        if (filsys_read_inode(k, sino, &cip) == 0) {
+            filsys_dir_remove(k, &cip, "..");
+            filsys_dir_add(k, &cip, tdino, "..");
+        }
+    }
+    return 0;
 }
 
 static int filsys_chmod(const char *path, mode_t mode, struct fuse_file_info *fi) {
@@ -477,15 +579,25 @@ static int filsys_truncate(const char *path, off_t size, struct fuse_file_info *
     if (rc) return rc;
     uint32_t newsize = (uint32_t)size, oldsize = ip.size;
     if (newsize == oldsize) return 0;
-    uint32_t keep = newsize < oldsize ? newsize : oldsize;
-    uint8_t *data = malloc(keep ? keep : 1);
-    if (!data) return -ENOMEM;
-    if (keep) filsys_file_read(k, &ip, data, keep, 0);
-    filsys_itrunc(k, &ip);
-    if (keep) filsys_file_write(k, &ip, data, keep, 0);
-    if (newsize != keep) { ip.size = newsize; filsys_write_inode(k, ino, &ip); }
-    free(data);
-    return 0;
+
+    /* Shrink in place: zero the partial tail of the last surviving block, free
+     * the blocks strictly past the new end, and leave everything else alone.
+     * (Extension is a no-op: holes read back as zero.) */
+    if (newsize < oldsize) {
+        uint32_t last = newsize ? (newsize - 1) / 512 : 0;
+        uint32_t off  = newsize % 512;
+        if (off) {
+            uint8_t z[512];
+            memset(z, 0, sizeof z);
+            rc = filsys_file_write(k, &ip, z, 512 - off, (off_t)newsize);
+            if (rc < 0) return rc;
+        }
+        rc = filsys_itrunc_from(k, &ip, newsize ? last + 1 : 0);
+        if (rc) return rc;
+    }
+
+    ip.size = newsize;
+    return filsys_write_inode(k, ino, &ip);
 }
 
 static int filsys_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) {
@@ -510,14 +622,14 @@ static int filsys_statfs(const char *path, struct statvfs *st) {
     st->f_bsize = st->f_frsize = 512;
     if (k->ver == FILSYS_V6) {
         st->f_blocks = k->u.v6.fsize;
-        st->f_bfree = st->f_bavail = k->u.v6.nfree;
-        st->f_files = (k->u.v6.isize - 2) * 16;
-        st->f_ffree = k->u.v6.ninode;
+        st->f_bfree = st->f_bavail = k->u.v6.tfree;
+        st->f_files = v6_maxino(k->u.v6.isize);
+        st->f_ffree = k->u.v6.tinode;
     } else {
         st->f_blocks = k->u.v7.fsize;
-        st->f_bfree = st->f_bavail = k->u.v7.nfree;
+        st->f_bfree = st->f_bavail = k->u.v7.tfree;
         st->f_files = (k->u.v7.isize - 2) * 8;
-        st->f_ffree = k->u.v7.ninode;
+        st->f_ffree = k->u.v7.tinode;
     }
     st->f_namemax = 14;
     return 0;
@@ -530,7 +642,9 @@ static struct fuse_operations filsys_ops = {
     .read     = filsys_read,
     .write    = filsys_write,
     .create   = filsys_create,
+    .link     = filsys_link,
     .mkdir    = filsys_mkdir,
+    .mknod    = filsys_mknod,
     .unlink   = filsys_unlink,
     .rmdir    = filsys_rmdir,
     .rename   = filsys_rename,
@@ -545,9 +659,22 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <4|5|6|7|32> [-o offset=N] [-r] [-f] [-d] <image> <mountpoint>\n"
+            "usage: %s -v <4|5|6|7|32> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
+            "                [-r] [-f] [-d] <image> <mountpoint>\n"
             "       %s -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check\n",
             p, p);
+}
+
+/* Parse a -v / -o version= argument.  Returns FILSYS_V6/V7/32V, or -1. */
+static int parse_version(const char *s) {
+    if (s[0] == 'v' || s[0] == 'V') s++;   /* accept "v7" and "7" alike */
+    if (!strcmp(s, "4") || !strcmp(s, "5") || !strcmp(s, "6"))
+        return FILSYS_V6;
+    if (!strcmp(s, "7"))
+        return FILSYS_V7;
+    if (!strcmp(s, "32") || !strcmp(s, "32v"))
+        return FILSYS_32V;
+    return -1;
 }
 
 int main(int argc, char *argv[]) {
@@ -555,35 +682,35 @@ int main(int argc, char *argv[]) {
     uint64_t offset = 0;
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
     char fuse_opts[512] = ""; /* -o options passed through to FUSE (allow_other, ...) */
-    int ai = 1;
-    for (; ai < argc && argv[ai][0] == '-'; ai++) {
-        const char *a = argv[ai];
-        if (!strcmp(a, "-v")) {
-            if (ai + 1 >= argc) { usage(argv[0]); return 2; }
-            const char *v = argv[++ai];
-            if (v[0] == 'v' || v[0] == 'V') v++;   /* accept "v7" and "7" alike */
-            if (!strcmp(v, "4") || !strcmp(v, "5") || !strcmp(v, "6"))
-                ver = FILSYS_V6;
-            else if (!strcmp(v, "7"))
-                ver = FILSYS_V7;
-            else if (!strcmp(v, "32") || !strcmp(v, "32v"))
-                ver = FILSYS_32V;
-            else {
-                fprintf(stderr, "%s: unknown Unix version \"%s\" (4, 5, 6, 7, 32)\n", argv[0], v);
+    int c;
+
+    /* getopt, not a hand-rolled loop, so the mount(8) argument order
+     * `mount.filsys image dir -o opts` parses (GNU getopt permutes operands to
+     * the front, so trailing options are fine). */
+    while ((c = getopt(argc, argv, "v:o:rfdc")) != -1) {
+        switch (c) {
+        case 'v': {
+            int v = parse_version(optarg);
+            if (v < 0) {
+                fprintf(stderr, "%s: unknown Unix version \"%s\" (4, 5, 6, 7, 32)\n",
+                        argv[0], optarg);
                 usage(argv[0]);
                 return 2;
             }
-            continue;
+            ver = v;
+            break;
         }
-        if (!strcmp(a, "-o")) {
-            if (ai + 1 >= argc) { usage(argv[0]); return 2; }
-            char *opts = strdup(argv[++ai]);
+        case 'o': {
+            char *opts = strdup(optarg);
             int bad = 0;
             for (char *tok = strtok(opts, ","); tok; tok = strtok(NULL, ",")) {
                 if (!strncmp(tok, "offset=", 7)) {
                     char *end = NULL;
                     offset = strtoull(tok + 7, &end, 0);
                     if (!end || *end) { bad = 1; break; }
+                } else if (!strncmp(tok, "version=", 8)) {
+                    int v = parse_version(tok + 8);
+                    if (v < 0) bad = 1; else ver = v;
                 } else if (!strncmp(tok, "uid=", 4)) {
                     uid = atoi(tok + 4);
                 } else if (!strncmp(tok, "gid=", 4)) {
@@ -596,22 +723,19 @@ int main(int argc, char *argv[]) {
             }
             free(opts);
             if (bad) { usage(argv[0]); return 2; }
-            continue;
+            break;
         }
-        for (const char *p = a + 1; *p; p++) {
-            switch (*p) {
-            case 'r': readonly = 1; break;
-            case 'f': foreground = 1; break;
-            case 'd': debug = 1; break;
-            case 'c': check = 1; break;
-            default: usage(argv[0]); return 2;
-            }
+        case 'r': readonly = 1; break;
+        case 'f': foreground = 1; break;
+        case 'd': debug = 1; break;
+        case 'c': check = 1; break;
+        default: usage(argv[0]); return 2;
         }
     }
-    if (check && (argc - ai != 1)) { fprintf(stderr, "usage: %s -c <image>\n", argv[0]); return 2; }
-    if (!check && (argc - ai != 2)) { usage(argv[0]); return 2; }
-    const char *image = argv[ai];
-    const char *mountpoint = check ? NULL : argv[ai + 1];
+    if (check && (argc - optind != 1)) { fprintf(stderr, "usage: %s -c <image>\n", argv[0]); return 2; }
+    if (!check && (argc - optind != 2)) { usage(argv[0]); return 2; }
+    const char *image = argv[optind];
+    const char *mountpoint = check ? NULL : argv[optind + 1];
 
     filsys_t k;
     memset(&k, 0, sizeof(k));

@@ -200,6 +200,29 @@ One `-v 6` code path covers V4, V5 and V6, which are byte-identical on disk.
   looked like a genuine "two files sharing a block" corruption on the V6
   image; it was always the device files.  A block-ownership audit must skip
   type `IFCHR`/`IFBLK` before reading `i_addr` as block pointers.
+- **The device number is `(major << 8) | minor`, and `mknod` stages `/dev`.**
+  V7 packs an 8-bit major and 8-bit minor into one 16-bit word —
+  `makedev(x,y) = (x<<8)|y` in `/usr/include/sys/types.h` — and that word is
+  what sits in `i_addr[0]` (`/dev/tty0` is `0x300` = major 3, minor 0; `/dev/rp3`
+  is `0x607` = major 6, minor 7).  `mount.filsys` implements the `mknod`
+  operation, so a bootable `/dev` can be staged by running `mknod` on the
+  mounted image: the driver re-encodes the host's `makedev(major, minor)` into
+  V7's `(major<<8)|minor` and drops it in `i_addr[0]`, leaving the rest of
+  `i_addr` zero exactly as V7's `mknod` does.  (The host needs `CAP_MKNOD`, so
+  stage as root.)
+- **Hard-linking a directory was legal in V7 — and modern Linux won't let a FUSE
+  driver even try.**  V7's `link(2)` guarded directory links with
+  `if ((ip->i_mode & IFMT) == IFDIR && !suser())`: the superuser could hand a
+  directory a second name, and the filesystem recorded it faithfully — nlink
+  bumped, `..` *not* rewritten, so the linked directory still points at its
+  original parent, which is exactly how you built a cycle.  It was a famous
+  footgun; `find`, `fsck`, and the dump/restore tools had no defence against a
+  directory cycle until later editions hardened `link()` against directories.
+  `mount.filsys` stays faithful: its `link` operation permits directory links.
+  But on a Linux host you cannot actually exercise it — the kernel's
+  `vfs_link()` returns `EPERM` for `S_ISDIR` *before* a FUSE filesystem's
+  `link` callback is ever reached.  The permissiveness survives in the driver
+  as archaeology, even where the host platform has since closed the door.
 - **V6 added `int pad[50]` to the superblock struct; V4/V5 have no pad.**  The
   V6 `filsys` is 516 bytes, 4 bytes *over* the 512-byte block.  It does
   **not** spill into block 2: V6's `bcopy` counts in 16-bit *words* (its body
@@ -317,7 +340,7 @@ traces backwards to their superblocks.  Scan at cylinder boundaries to dodge
 the false positives a block-by-block sweep of file data produces:
 
 ```
-findfs.filsys -c 418 rp06-0.disk
+findfs.filsys -s 418 rp06-0.disk
 # fs @ block 0      (byte 0)       V7  isize=202  fsize=5000
 # fs @ block 18392  (byte 9416704) V7  isize=8189 fsize=322278
 ```
