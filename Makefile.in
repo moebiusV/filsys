@@ -103,18 +103,18 @@ am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
-	$(am__configure_deps) $(dist_boot_DATA) $(include_HEADERS) \
-	$(am__DIST_COMMON)
+	$(am__configure_deps) $(dist_boot_DATA) \
+	$(filsysinclude_HEADERS) $(am__DIST_COMMON)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = config.h
-CONFIG_CLEAN_FILES =
+CONFIG_CLEAN_FILES = filsys.pc
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" \
 	"$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" \
 	"$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)" \
-	"$(DESTDIR)$(includedir)"
+	"$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(filsysincludedir)"
 PROGRAMS = $(bin_PROGRAMS) $(sbin_PROGRAMS)
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
@@ -235,8 +235,8 @@ man1dir = $(mandir)/man1
 man5dir = $(mandir)/man5
 NROFF = nroff
 MANS = $(dist_man_MANS)
-DATA = $(dist_boot_DATA)
-HEADERS = $(include_HEADERS)
+DATA = $(dist_boot_DATA) $(pkgconfig_DATA)
+HEADERS = $(filsysinclude_HEADERS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP) \
 	config.h.in
 # Read a list of newline-separated strings from the standard input,
@@ -257,8 +257,8 @@ am__define_uniq_tagged_files = \
   done | $(am__uniquify_input)`
 AM_RECURSIVE_TARGETS = cscope
 am__DIST_COMMON = $(dist_man_MANS) $(srcdir)/Makefile.in \
-	$(srcdir)/config.h.in $(top_srcdir)/build-aux/ar-lib \
-	$(top_srcdir)/build-aux/compile \
+	$(srcdir)/config.h.in $(srcdir)/filsys.pc.in \
+	$(top_srcdir)/build-aux/ar-lib $(top_srcdir)/build-aux/compile \
 	$(top_srcdir)/build-aux/depcomp \
 	$(top_srcdir)/build-aux/install-sh \
 	$(top_srcdir)/build-aux/missing AUTHORS COPYING ChangeLog \
@@ -387,11 +387,17 @@ top_srcdir = @top_srcdir@
 
 # The version-agnostic library: the facade (filsys.c) plus the two on-disk
 # backends.  Installed as libfilsys.a + filsys.h so other projects can link
-# ancient-filesystem access directly.
+# ancient-filesystem access directly.  The public header is namespaced to
+# filsys/filsys.h so it can't collide with a generic <filsys.h>; v6fs.h/v7fs.h
+# are the internal per-format layer and stay uninstalled.  filsys.pc lets a
+# consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
 libfilsys_a_SOURCES = filsys.c filsys.h v6fs.c v6fs.h v7fs.c v7fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
-include_HEADERS = filsys.h
+filsysincludedir = $(includedir)/filsys
+filsysinclude_HEADERS = filsys.h
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = filsys.pc
 
 # mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir.
 mount_filsys_SOURCES = mount.filsys.c
@@ -476,6 +482,8 @@ $(srcdir)/config.h.in: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 
 distclean-hdr:
 	-rm -f config.h stamp-h1
+filsys.pc: $(top_builddir)/config.status $(srcdir)/filsys.pc.in
+	cd $(top_builddir) && $(SHELL) ./config.status $@
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
@@ -911,27 +919,48 @@ uninstall-dist_bootDATA:
 	@list='$(dist_boot_DATA)'; test -n "$(bootdir)" || list=; \
 	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
 	dir='$(DESTDIR)$(bootdir)'; $(am__uninstall_files_from_dir)
-install-includeHEADERS: $(include_HEADERS)
+install-pkgconfigDATA: $(pkgconfig_DATA)
 	@$(NORMAL_INSTALL)
-	@list='$(include_HEADERS)'; test -n "$(includedir)" || list=; \
+	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
 	if test -n "$$list"; then \
-	  echo " $(MKDIR_P) '$(DESTDIR)$(includedir)'"; \
-	  $(MKDIR_P) "$(DESTDIR)$(includedir)" || exit 1; \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(pkgconfigdir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(pkgconfigdir)" || exit 1; \
 	fi; \
 	for p in $$list; do \
 	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
 	  echo "$$d$$p"; \
 	done | $(am__base_list) | \
 	while read files; do \
-	  echo " $(INSTALL_HEADER) $$files '$(DESTDIR)$(includedir)'"; \
-	  $(INSTALL_HEADER) $$files "$(DESTDIR)$(includedir)" || exit $$?; \
+	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(pkgconfigdir)'"; \
+	  $(INSTALL_DATA) $$files "$(DESTDIR)$(pkgconfigdir)" || exit $$?; \
 	done
 
-uninstall-includeHEADERS:
+uninstall-pkgconfigDATA:
 	@$(NORMAL_UNINSTALL)
-	@list='$(include_HEADERS)'; test -n "$(includedir)" || list=; \
+	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
 	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
-	dir='$(DESTDIR)$(includedir)'; $(am__uninstall_files_from_dir)
+	dir='$(DESTDIR)$(pkgconfigdir)'; $(am__uninstall_files_from_dir)
+install-filsysincludeHEADERS: $(filsysinclude_HEADERS)
+	@$(NORMAL_INSTALL)
+	@list='$(filsysinclude_HEADERS)'; test -n "$(filsysincludedir)" || list=; \
+	if test -n "$$list"; then \
+	  echo " $(MKDIR_P) '$(DESTDIR)$(filsysincludedir)'"; \
+	  $(MKDIR_P) "$(DESTDIR)$(filsysincludedir)" || exit 1; \
+	fi; \
+	for p in $$list; do \
+	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; \
+	done | $(am__base_list) | \
+	while read files; do \
+	  echo " $(INSTALL_HEADER) $$files '$(DESTDIR)$(filsysincludedir)'"; \
+	  $(INSTALL_HEADER) $$files "$(DESTDIR)$(filsysincludedir)" || exit $$?; \
+	done
+
+uninstall-filsysincludeHEADERS:
+	@$(NORMAL_UNINSTALL)
+	@list='$(filsysinclude_HEADERS)'; test -n "$(filsysincludedir)" || list=; \
+	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
+	dir='$(DESTDIR)$(filsysincludedir)'; $(am__uninstall_files_from_dir)
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -1176,7 +1205,7 @@ check: check-am
 all-am: Makefile $(PROGRAMS) $(LIBRARIES) $(MANS) $(DATA) $(HEADERS) \
 		config.h
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" "$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)" "$(DESTDIR)$(includedir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" "$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)" "$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(filsysincludedir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -1243,8 +1272,8 @@ info: info-am
 
 info-am:
 
-install-data-am: install-dist_bootDATA install-includeHEADERS \
-	install-man
+install-data-am: install-dist_bootDATA install-filsysincludeHEADERS \
+	install-man install-pkgconfigDATA
 
 install-dvi: install-dvi-am
 
@@ -1303,8 +1332,8 @@ ps: ps-am
 ps-am:
 
 uninstall-am: uninstall-binPROGRAMS uninstall-dist_bootDATA \
-	uninstall-includeHEADERS uninstall-libLIBRARIES uninstall-man \
-	uninstall-sbinPROGRAMS
+	uninstall-filsysincludeHEADERS uninstall-libLIBRARIES \
+	uninstall-man uninstall-pkgconfigDATA uninstall-sbinPROGRAMS
 
 uninstall-man: uninstall-man1 uninstall-man5
 
@@ -1320,17 +1349,19 @@ uninstall-man: uninstall-man1 uninstall-man5
 	distdir distuninstallcheck dvi dvi-am html html-am info \
 	info-am install install-am install-binPROGRAMS install-data \
 	install-data-am install-dist_bootDATA install-dvi \
-	install-dvi-am install-exec install-exec-am install-html \
-	install-html-am install-includeHEADERS install-info \
-	install-info-am install-libLIBRARIES install-man install-man1 \
-	install-man5 install-pdf install-pdf-am install-ps \
-	install-ps-am install-sbinPROGRAMS install-strip installcheck \
+	install-dvi-am install-exec install-exec-am \
+	install-filsysincludeHEADERS install-html install-html-am \
+	install-info install-info-am install-libLIBRARIES install-man \
+	install-man1 install-man5 install-pdf install-pdf-am \
+	install-pkgconfigDATA install-ps install-ps-am \
+	install-sbinPROGRAMS install-strip installcheck \
 	installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
 	uninstall-am uninstall-binPROGRAMS uninstall-dist_bootDATA \
-	uninstall-includeHEADERS uninstall-libLIBRARIES uninstall-man \
-	uninstall-man1 uninstall-man5 uninstall-sbinPROGRAMS
+	uninstall-filsysincludeHEADERS uninstall-libLIBRARIES \
+	uninstall-man uninstall-man1 uninstall-man5 \
+	uninstall-pkgconfigDATA uninstall-sbinPROGRAMS
 
 .PRECIOUS: Makefile
 

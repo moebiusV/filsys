@@ -8,11 +8,17 @@ sbin_PROGRAMS = mount.filsys
 
 # The version-agnostic library: the facade (filsys.c) plus the two on-disk
 # backends.  Installed as libfilsys.a + filsys.h so other projects can link
-# ancient-filesystem access directly.
+# ancient-filesystem access directly.  The public header is namespaced to
+# filsys/filsys.h so it can't collide with a generic <filsys.h>; v6fs.h/v7fs.h
+# are the internal per-format layer and stay uninstalled.  filsys.pc lets a
+# consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
 libfilsys_a_SOURCES = filsys.c filsys.h v6fs.c v6fs.h v7fs.c v7fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
-include_HEADERS = filsys.h
+filsysincludedir = $(includedir)/filsys
+filsysinclude_HEADERS = filsys.h
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = filsys.pc
 
 # mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir.
 mount_filsys_SOURCES = mount.filsys.c

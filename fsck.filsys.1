@@ -9,7 +9,7 @@ fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
 .B fsck.filsys
 .RB [ \-v
-.IR <4|5|6|7> ]
+.IR <v4|v5|v6|v7> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-s ]
@@ -81,8 +81,8 @@ together with the modifying flags).
 .PP
 The edition is selected with
 .BR \-v :
-4, 5, or 6 select the Sixth Edition format (V4 and V5 are byte-identical to
-V6 on disk); 7 selects Seventh Edition.  The default is 7.  A Research Unix
+v4, v5, or v6 select the Sixth Edition format (V4 and V5 are byte-identical to
+V6 on disk); v7 selects Seventh Edition.  The default is v7.  A Research Unix
 disk image holds one or more filesystems
 .RI ( partitions ),
 selected by a partition table compiled into the kernel, not stored on the
@@ -96,11 +96,12 @@ The exit status is 0 if the filesystem is clean, 1 if errors were found, and 2
 on a usage error.
 .SH OPTIONS
 .TP
-.BI \-v " <4|5|6|7>"
-Filesystem edition.  4, 5 and 6 are byte-identical (the V6 format); 7 is V7.
-Default 7.  A leading
-.B v
-is accepted (v6, v7, ...).
+.BI \-v " <v4|v5|v6|v7>"
+Filesystem edition.  v4, v5 and v6 are byte-identical (the V6 format); v7 is V7.
+Default v7.  A bare number
+.RB ( 4 ,
+.BR 5 ,
+\&...) is also accepted.
 .TP
 .BI \-o " block"
 Check the filesystem at
@@ -145,7 +146,7 @@ V7 only.
 .SH EXAMPLE
 .nf
 fsck.filsys image.dk                # check the filesystem at block 0 (V7)
-fsck.filsys -v 6 image.dk           # check a V6 (V4/V5) filesystem
+fsck.filsys -v v6 image.dk          # check a V6 (V4/V5) filesystem
 fsck.filsys -o 18392 image.dk       # check the filesystem at block 18392
 fsck.filsys -s image.dk             # rebuild the free list (icheck -s)
 fsck.filsys -r image.dk             # resolve duplicate blocks (salv -a)

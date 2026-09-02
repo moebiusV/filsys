@@ -2,20 +2,49 @@ Source: filsys
 Section: admin
 Priority: optional
 Maintainer: David Walther <david@clearbrookdistillery.com>
-Build-Depends: debhelper-compat (= 13), autoconf, automake, pkg-config, libfuse3-dev
-Standards-Version: 4.6.2
+Build-Depends:
+ debhelper-compat (= 13),
+ pkg-config,
+ libfuse3-dev
+Standards-Version: 4.7.0
 Homepage: https://github.com/moebiusV/filsys
+Vcs-Browser: https://github.com/moebiusV/filsys
+Vcs-Git: https://github.com/moebiusV/filsys.git
 Rules-Requires-Root: no
 
 Package: filsys
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, fuse3
-Recommends: v7unix-toolchain, prebsd
-Description: FUSE driver for V7 (PDP-11) Unix filesystem images
- filsys mounts a Seventh Edition Unix filesystem image (as used by a PDP-11)
- as a FUSE filesystem, so files can be copied on and off the image for use
- with a simulator such as SIMH pdp11.
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ fuse3
+Suggests:
+ prebsd,
+ v7unix-toolchain
+Description: FUSE driver and utilities for Research Unix filesystem images
+ filsys mounts a Research Unix (V4 through V7, and 32V) filesystem image —
+ the on-disk format used by the PDP-11 — as a FUSE filesystem, so files can
+ be copied on and off the image for use with a simulator such as SIMH pdp11.
  .
- It understands the V7 on-disk format exactly -- middle-endian byte order and
- the kernel's own free-list allocation discipline -- so files staged with it
- are seen by a running V7 kernel after the image is booted.
+ It ships four tools: mount.filsys (the FUSE mount), mkfs.filsys (create a
+ filesystem), fsck.filsys (check and repair one), and findfs.filsys (locate
+ a filesystem superblock on raw media).
+ .
+ It understands the on-disk format exactly — middle-endian byte order and the
+ kernel's own free-list allocation discipline — so files staged with it are
+ seen by a running V7 kernel after the image is booted.
+
+Package: libfilsys-dev
+Section: libdevel
+Priority: optional
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${misc:Depends}
+Description: Research Unix filesystem image access library (development files)
+ filsys provides a version-agnostic access layer for Research Unix (V4 through
+ V7, and 32V) filesystem images, independent of FUSE.
+ .
+ This package installs the static library (libfilsys.a), the public header
+ (filsys/filsys.h), and the pkg-config metadata (filsys.pc), so another
+ program can link ancient-filesystem access directly.

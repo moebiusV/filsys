@@ -40,16 +40,13 @@ option mounts a filesystem that begins at a byte offset elsewhere in the file.
 .PP
 The on-disk edition is selected at run time with
 .BR \-v :
-4, 5, or 6 select the Sixth Edition format (V4 and V5 are byte-identical to
-V6 on disk); 7 selects Seventh Edition; 32 selects 32V (V7 recompiled for the
+v4, v5, or v6 select the Sixth Edition format (V4 and V5 are byte-identical to
+V6 on disk); v7 selects Seventh Edition; 32v selects 32V (V7 recompiled for the
 VAX, whose multi-byte fields are little-endian rather than PDP-11
-middle-endian).  A leading
-.B v
-is accepted
-.RB ( v7 ,
-.BR v6 ,
-\&...), as is
-.BR 32v .
+middle-endian).  A bare number
+.RB ( 4 ,
+.BR 5 ,
+\&...) is also accepted.
 .PP
 The second form
 .RB ( \-c )
@@ -94,7 +91,7 @@ supersedes.
 .SH OPTIONS
 .TP
 .BI \-v " edition"
-Filesystem edition: one of 4, 5, 6, 7, or 32.  Required.
+Filesystem edition: one of v4, v5, v6, v7, or 32v.  Required.
 .TP
 .BI \-o " offset= N [, version= N ][, uid= N , gid= N ,...]"
 Comma-separated options.  The filsys-specific
@@ -127,11 +124,11 @@ Run the integrity check instead of mounting (see
 .BR fsck.filsys (1)).
 .SH EXAMPLES
 .nf
-mount.filsys -v 7 rp06-0.disk /mnt/v7
-mount.filsys -v 7 -o offset=9416704 rp06-0.disk /mnt/usr
-mount.filsys -v 6 v6root.dsk /mnt/v6        # V4/V5/V6 (identical on disk)
-mount.filsys -v 32 32v-root.disk /mnt/32v
-mount.filsys -v 7 -c rp06-0.disk            # check instead of mounting
+mount.filsys -v v7 rp06-0.disk /mnt/v7
+mount.filsys -v v7 -o offset=9416704 rp06-0.disk /mnt/usr
+mount.filsys -v v6 v6root.dsk /mnt/v6        # V4/V5/V6 (identical on disk)
+mount.filsys -v 32v 32v-root.disk /mnt/32v
+mount.filsys -v v7 -c rp06-0.disk            # check instead of mounting
 .fi
 .SH SEE ALSO
 .BR findfs.filsys (1),

@@ -9,6 +9,7 @@ fsck.filsys
 config.log
 config.status
 config.h
+filsys.pc
 stamp-h1
 .deps/
 .dirstamp

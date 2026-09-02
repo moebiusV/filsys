@@ -8,11 +8,11 @@
  *
  * One binary, every edition we care about:
  *
- *   -v 4     V4 format (byte-identical to V5/V6)
- *   -v 5     V5 format (byte-identical to V4/V6)
- *   -v 6     V6 format
- *   -v 7     V7 format
- *   -v 32    32V format (V7 for the VAX; little-endian 32-bit fields + addresses)
+ *   -v v4    V4 format (byte-identical to V5/V6)
+ *   -v v5    V5 format (byte-identical to V4/V6)
+ *   -v v6    V6 format
+ *   -v v7    V7 format
+ *   -v 32v   32V format (V7 for the VAX; little-endian 32-bit fields + addresses)
  *
  * The on-disk layout is the 1969 Thompson/Canaday/Ritchie design - a flat
  * i-list at a fixed offset, directories as ordinary files of 16-byte entries,
@@ -20,9 +20,9 @@
  * then widened in V7 (64-byte inode, 24-bit block numbers).  See filsys.5.
  *
  * Usage:
- *     mount.filsys -v <4|5|6|7|32> [-o offset=N[,version=N][,uid=N,gid=N,...]]
+ *     mount.filsys -v <v4|v5|v6|v7|32v> [-o offset=N[,version=N][,uid=N,gid=N,...]]
  *                    [-r] [-f] [-d] <image> <mountpoint>
- *     mount.filsys -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check
+ *     mount.filsys -v <v4|v5|v6|v7|32v> [-o offset=N] -c <image>   # integrity check
  *
  * `-o offset=N` mounts a filesystem that lives at byte offset N within the
  * file (a partition of a larger disk image), instead of one at block 0.
@@ -133,18 +133,41 @@ static int fuse_utimens(const char *path, const struct timespec tv[2], struct fu
 static int fuse_statfs(const char *path, struct statvfs *st) { (void)path; return filsys_statfs(K(), st); }
 
 static int fuse_access(const char *path, int mask) {
+    const struct fuse_context *ctx = fuse_get_context();
+    filsys_t *k = K();
     filsys_inode_t ip;
     uint32_t ino;
-    int rc = filsys_lookup(K(), path, &ino, &ip);
+    int rc = filsys_lookup(k, path, &ino, &ip);
     if (rc) return rc;
-    if ((mask & W_OK) && filsys_is_readonly(K()))
+    if ((mask & W_OK) && filsys_is_readonly(k))
         return -EROFS;
+    /* Check the rwx bits against the caller's ownership class.  The whole image
+     * is reported as owned by the mounting user (fill_stat st_uid/st_gid), so
+     * compare against that, not the on-disk V7 uids. */
+    int bits;
+    if (ctx->uid == 0) {
+        /* root: R/W always allowed; X_OK needs at least one exec bit set */
+        return (mask & X_OK) && !(ip.mode & 0111) ? -EACCES : 0;
+    }
+    if (ctx->uid == filsys_uid(k))
+        bits = (ip.mode >> 6) & 7;          /* owner */
+    else if (ctx->gid == filsys_gid(k))
+        bits = (ip.mode >> 3) & 7;          /* group (primary gid only) */
+    else
+        bits = ip.mode & 7;                 /* other */
+    if ((mask & R_OK) && !(bits & 4)) return -EACCES;
+    if ((mask & W_OK) && !(bits & 2)) return -EACCES;
+    if ((mask & X_OK) && !(bits & 1)) return -EACCES;
     return 0;
 }
 
 static int fuse_flush(const char *path, struct fuse_file_info *fi) {
     (void)path; (void)fi;
-    return 0;   /* no per-file state to flush; writes go straight to the image */
+    /* Data blocks go straight to the image, but the free list and superblock are
+     * batched in memory (see v6fs/v7fs_sync).  flush fires on every close(2), so
+     * it is the natural place to persist them rather than holding free-list state
+     * in memory until an explicit fsync or unmount. */
+    return filsys_sync(K());
 }
 
 static int fuse_fsync(const char *path, int isdatasync, struct fuse_file_info *fi) {
@@ -202,9 +225,9 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <4|5|6|7|32> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
+            "usage: %s -v <v4|v5|v6|v7|32v> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
             "                [-r] [-f] [-d] <image> <mountpoint>\n"
-            "       %s -v <4|5|6|7|32> [-o offset=N] -c <image>   # integrity check\n",
+            "       %s -v <v4|v5|v6|v7|32v> [-o offset=N] -c <image>   # integrity check\n",
             p, p);
 }
 
@@ -235,7 +258,7 @@ int main(int argc, char *argv[]) {
         case 'v': {
             int v = parse_version(optarg);
             if (v < 0) {
-                fprintf(stderr, "%s: unknown Unix version \"%s\" (4, 5, 6, 7, 32)\n",
+                fprintf(stderr, "%s: unknown Unix version \"%s\" (v4, v5, v6, v7, 32v)\n",
                         argv[0], optarg);
                 usage(argv[0]);
                 return 2;

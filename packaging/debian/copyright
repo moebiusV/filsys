@@ -1,30 +1,88 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: filsys
+Upstream-Contact: David Walther <david@clearbrookdistillery.com>
 Source: https://github.com/moebiusV/filsys
 
 Files: *
 Copyright: 2026 David Walther <david@clearbrookdistillery.com>
-License: LGPL-2.1+
- This package is free software: you can redistribute it and/or modify
- it under the terms of the GNU Lesser General Public License as published by
- the Free Software Foundation, either version 2.1 of the License, or
- (at your option) any later version.
- .
- This package is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU Lesser General Public License for more details.
- .
- You should have received a copy of the GNU Lesser General Public License
- along with this program.  If not, see <https://www.gnu.org/licenses/>.
- .
- On Debian systems, the complete text of the GNU Lesser General Public
- License version 2.1 can be found in "/usr/share/common-licenses/LGPL-2.1".
+License: ISC
+
+Files: filsys.5 mount.filsys.1 mkfs.filsys.1 fsck.filsys.1
+Copyright: 2001-2002 Caldera International Inc.
+           2026 David Walther <david@clearbrookdistillery.com>
+License: Caldera
+Comment: Derived from the Seventh Edition manual pages fs(5), filsys(5),
+ dir(5), mount(8), mkfs(8), icheck(8) and dcheck(8).
+
+Files: boot/*
+Copyright: 2001-2002 Caldera International Inc.
+License: Caldera
+Comment: PDP-11 boot blocks assembled from the Seventh Edition /usr/mdec
+ sources (hpuboot.s, rpuboot.s).
 
 Files: reference/*
-Copyright: Unix Heritage Society (original Seventh Edition Unix sources)
+Copyright: 2001-2002 Caldera International Inc.
 License: Caldera
- The Seventh Edition Unix sources were released under a permissive license
- by Caldera International; see https://www.tuhs.org/ for the distribution
- and its terms.  These files are excerpts included for reference only and
- are not compiled into filsys.
+Comment: Excerpts of the original Seventh Edition Unix sources, shipped for
+ reference only; not compiled into filsys.
+
+License: ISC
+ Permission to use, copy, modify, and/or distribute this software for any
+ purpose with or without fee is hereby granted, provided that the above
+ copyright notice and this permission notice appear in all copies.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+License: Caldera
+ Caldera International, Inc. hereby grants a fee free license that includes
+ the rights use, modify and distribute this named source code, including
+ creating derived binary products created from the source code.  The source
+ code for which Caldera International, Inc. grants rights are limited to the
+ following UNIX Operating Systems that operate on the 16-Bit PDP-11 CPU and
+ early versions of the 32-Bit UNIX Operating System, with specific exclusion
+ of UNIX System III and UNIX System V and successor operating systems:
+ .
+        32-bit 32V UNIX
+        16 bit UNIX Versions 1, 2, 3, 4, 5, 6, 7
+ .
+ Caldera International, Inc. makes no guarantees or commitments that any
+ source code is available from Caldera International, Inc.
+ .
+ Copyright (C) Caldera International Inc. 2001-2002. All rights reserved.
+ .
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ .
+ Redistributions of source code and documentation must retain the above
+ copyright notice, this list of conditions and the following disclaimer.
+ Redistributions in binary form must reproduce the above copyright notice,
+ this list of conditions and the following disclaimer in the documentation
+ and/or other materials provided with the distribution.
+ .
+ All advertising materials mentioning features or use of this software must
+ display the following acknowledgement:
+ .
+        This product includes software developed or owned by Caldera
+        International, Inc.
+ .
+ Neither the name of Caldera International, Inc. nor the names of other
+ contributors may be used to endorse or promote products derived from this
+ software without specific prior written permission.
+ .
+ USE OF THE SOFTWARE PROVIDED FOR UNDER THIS LICENSE BY CALDERA
+ INTERNATIONAL, INC. AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+ EVENT SHALL CALDERA INTERNATIONAL, INC. BE LIABLE FOR ANY DIRECT, INDIRECT
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
