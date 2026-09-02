@@ -23,3 +23,8 @@ override_dh_auto_test:
 # Fail if `make install` produces a file that no .install routes into a package.
 override_dh_missing:
 	dh_missing --fail-missing
+
+# Install the upstream changelog (ChangeLog) under its conventional name;
+# this debhelper no longer auto-detects it, so pass it explicitly.
+override_dh_installchangelogs:
+	dh_installchangelogs ChangeLog
