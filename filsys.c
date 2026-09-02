@@ -196,6 +196,14 @@ int filsys_edition(const filsys_t *fs) {
     return fs->ver;
 }
 
+uid_t filsys_uid(const filsys_t *fs) {
+    return (uid_t)fs->uid;
+}
+
+gid_t filsys_gid(const filsys_t *fs) {
+    return (gid_t)fs->gid;
+}
+
 int filsys_check(filsys_t *fs) {
     if (fs->ver == FILSYS_V6) {
         v6_check_t rep;

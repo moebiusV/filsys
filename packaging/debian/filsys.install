@@ -1,0 +1,11 @@
+usr/sbin/mount.filsys
+usr/bin/findfs.filsys
+usr/bin/mkfs.filsys
+usr/bin/fsck.filsys
+usr/share/man/man1/mount.filsys.1
+usr/share/man/man1/findfs.filsys.1
+usr/share/man/man1/mkfs.filsys.1
+usr/share/man/man1/fsck.filsys.1
+usr/share/man/man5/filsys.5
+usr/share/filsys/hpuboot
+usr/share/filsys/rpuboot

@@ -58,6 +58,11 @@ void filsys_close(filsys_t *fs);
 int filsys_sync(filsys_t *fs);
 int filsys_is_readonly(const filsys_t *fs);
 int filsys_edition(const filsys_t *fs);
+/* The ownership filsys_fill_stat reports for every file (the "mounting
+ * user").  Permission checks compare the caller against these, not the on-disk
+ * V7 uids, which are meaningless on the host. */
+uid_t filsys_uid(const filsys_t *fs);
+gid_t filsys_gid(const filsys_t *fs);
 /* Run the integrity check (icheck+dcheck); reports to stdout.  Returns 0 if
  * clean, -1 if problems were found. */
 int filsys_check(filsys_t *fs);

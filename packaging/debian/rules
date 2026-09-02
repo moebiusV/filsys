@@ -1,5 +1,15 @@
 #!/usr/bin/make -f
-# debian/rules for filsys - standard dh + autotools build.
+# debian/rules for filsys — standard dh + autotools build.
+
+include /usr/share/dpkg/default.mk
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 %:
-	dh $@
+	dh $@ --without autoreconf
+
+# configure ships upstream, so we don't run autoreconf.  Pin libdir to the
+# multiarch path so the static library (libfilsys.a) and filsys.pc land in
+# /usr/lib/<multiarch>/ rather than a plain /usr/lib.
+override_dh_auto_configure:
+	dh_auto_configure -- --libdir=/usr/lib/$(DEB_HOST_MULTIARCH)

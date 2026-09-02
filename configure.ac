@@ -19,6 +19,9 @@ AC_PROG_CC
 # pread/pwrite/flock want the platform extensions (_GNU_SOURCE on glibc);
 # must precede any macro that AC_COMPILE_IFELSEs (AM_PROG_AR below).
 AC_USE_SYSTEM_EXTENSIONS
+# 64-bit off_t (_FILE_OFFSET_BITS=64) so findfs.filsys can read a >2 GiB disk
+# image on a 32-bit host; also AC_COMPILE_IFELSEs, hence after the extensions.
+AC_SYS_LARGEFILE
 AM_PROG_AR
 AC_PROG_RANLIB
 
@@ -39,5 +42,6 @@ AS_IF([test "x$have_fuse3" = xno], [
 AC_SUBST([FUSE3_CFLAGS])
 AC_SUBST([FUSE3_LIBS])
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile
+                 filsys.pc])
 AC_OUTPUT

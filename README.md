@@ -12,9 +12,9 @@ discipline), so files staged with it are seen by a running kernel after you
 boot the image.
 
 ```
-mount.filsys -v 6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
-mount.filsys -v 7 rp06-0.disk mnt       # V7 format
-mount.filsys -v 32 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
+mount.filsys -v v6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
+mount.filsys -v v7 rp06-0.disk mnt       # V7 format
+mount.filsys -v 32v 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
 ```
 
 Home: <https://github.com/moebiusV/filsys>
@@ -47,21 +47,21 @@ is compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
 ## Usage
 
 ```sh
-mount.filsys -v <4|5|6|7|32> [options] <image> <mountpoint>
-mount.filsys -v <4|5|6|7|32> -c <image>        # integrity check (no mount)
+mount.filsys -v <v4|v5|v6|v7|32v> [options] <image> <mountpoint>
+mount.filsys -v <v4|v5|v6|v7|32v> -c <image>   # integrity check (no mount)
 ```
 
-`-v` takes the Unix edition: `4`, `5`, `6`, `7` or `32` (a leading `v`, as in
-`v7`, is accepted; so is `32v`).  `4` and `5` are byte-identical to `6`, so
-they share one code path.
+`-v` takes the Unix edition: `v4`, `v5`, `v6`, `v7` or `32v` (a bare number —
+`4`, `5`, `6`, `7`, `32` — is also accepted).  `v4` and `v5` are byte-identical
+to `v6`, so they share one code path.
 
 | option | meaning                          |
 |--------|----------------------------------|
-| `-v 4` | V4 format (byte-identical to V5/V6) |
-| `-v 5` | V5 format (byte-identical to V4/V6) |
-| `-v 6` | V6 format                          |
-| `-v 7` | V7 format                          |
-| `-v 32`| 32V format (little-endian V7)      |
+| `-v v4` | V4 format (byte-identical to V5/V6) |
+| `-v v5` | V5 format (byte-identical to V4/V6) |
+| `-v v6` | V6 format                          |
+| `-v v7` | V7 format                          |
+| `-v 32v`| 32V format (little-endian V7)      |
 | `-o offset=N` | mount a filesystem at byte offset N (a partition) |
 | `-o uid=N,gid=N` | override reported ownership (default: you) |
 | `-o allow_other,...` | pass a FUSE option through |
@@ -72,13 +72,13 @@ they share one code path.
 
 ```sh
 mkdir mnt
-mount.filsys -v 7 rp06-0.disk mnt        # read-write (make a copy first!)
+mount.filsys -v v7 rp06-0.disk mnt        # read-write (make a copy first!)
 ls mnt
 cp mnt/etc/passwd .             # copy a file off
 cp host.txt mnt/tmp/            # copy a file on
 fusermount3 -u mnt              # unmount
 
-mount.filsys -v 6 -c v6root.dsk          # verify the free list + inode table
+mount.filsys -v v6 -c v6root.dsk          # verify the free list + inode table
 ```
 
 See `filsys.5` for both the tool and the on-disk format.
@@ -164,7 +164,7 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 | bad-block file | none | inode 1 | inode 1 |
 | directory entry | 16 B (`d_ino` + 14-char) | 16 B | 16 B |
 
-One `-v 6` code path covers V4, V5 and V6, which are byte-identical on disk.
+One `-v v6` code path covers V4, V5 and V6, which are byte-identical on disk.
 
 ### Gotchas
 
@@ -241,7 +241,7 @@ One `-v 6` code path covers V4, V5 and V6, which are byte-identical on disk.
   exactly where the zero pad byte goes (byte 1 on the PDP-11, byte 3 on the
   VAX).  Only the 16-bit fields (`di_mode`, `di_nlink`, `di_uid`, `di_gid`,
   `s_isize`, `s_nfree`, `s_ninode`, `s_inode[]`) are byte-order neutral.
-  filsys handles this with a `-v 32` selector.
+  filsys handles this with a `-v 32v` selector.
 - **V3-and-earlier directories are 10 bytes**, so a reader for those editions
   needs a different directory walker.  Out of scope here (we floor at V4).
 
@@ -257,7 +257,7 @@ The PDP-11 is **middle-endian**:
 - V7 indirect blocks: 4-byte middle-endian `daddr_t`, 128 entries/block.
 - V6 indirect blocks: 2-byte little-endian block numbers, 256 entries/block.
 - **32V (VAX)** is little-endian throughout: 32-bit fields low word first, and
-  the 3-byte `di_addr` packed `[lo, mid, hi]`.  The `-v 32` selector flips all
+  the 3-byte `di_addr` packed `[lo, mid, hi]`.  The `-v 32v` selector flips all
   of these in `v7fs.c` (the `le` byte-order flag).
 - **32V also shifts several *superblock* fields two bytes later**: the VAX
   aligns `daddr_t`/`time_t` to 4 bytes, so `s_fsize` moves +2->+4, `s_nfree`
@@ -290,7 +290,7 @@ block device (major 6, minor 7 = `rp0h`).  So the "root smaller than the disk"
 is not waste; it is the normal V7 root/swap//usr split, and the `/usr`
 filesystem sits **intact** at block 18392 (superblock at 18393: `isize=8189`,
 `fsize=322278`, middle-endian).  Mount it in place with the byte offset
-(`18392 x 512 = 9416704`): `mount.filsys -v 7 -o offset=9416704 rp06-0.disk mnt`,
+(`18392 x 512 = 9416704`): `mount.filsys -v v7 -o offset=9416704 rp06-0.disk mnt`,
 and `-c` reports 2064 used inodes, `errors=0`; it mounts as a complete
 May-1979 source tree (`/usr/src`, `/usr/sys`, man pages, games).
 
@@ -306,8 +306,8 @@ partition mounts in place without `dd`, and the root and `/usr` partitions
 can be mounted from the *same* file at once, nested:
 
 ```
-mount.filsys -v 7 rp06-0.disk mnt/
-mount.filsys -v 7 -o offset=9416704 rp06-0.disk mnt/usr
+mount.filsys -v v7 rp06-0.disk mnt/
+mount.filsys -v v7 -o offset=9416704 rp06-0.disk mnt/usr
 ```
 
 The second (nested) mount works because mount.filsys reports files as the
@@ -320,16 +320,16 @@ Copy-paste commands per image (images distributed by the
 [prebsd](https://github.com/moebiusV/prebsd) project):
 
     # V7 (rp06-0.disk): root 0-4999, swap 5000-18391, /usr 18392+
-    mount.filsys -v 7  rp06-0.disk mnt
-    mount.filsys -v 7  -o offset=9416704 rp06-0.disk mnt/usr
+    mount.filsys -v v7  rp06-0.disk mnt
+    mount.filsys -v v7  -o offset=9416704 rp06-0.disk mnt/usr
 
     # 32V (32v-rp06.disk): same layout as V7
-    mount.filsys -v 32 32v-rp06.disk mnt
-    mount.filsys -v 32 -o offset=9416704 32v-rp06.disk mnt/usr
+    mount.filsys -v 32v 32v-rp06.disk mnt
+    mount.filsys -v 32v -o offset=9416704 32v-rp06.disk mnt/usr
 
     # single-filesystem images
-    mount.filsys -v 32 32v-root.disk mnt       # 32V root only
-    mount.filsys -v 6  rk0 mnt                 # V6 root only
+    mount.filsys -v 32v 32v-root.disk mnt       # 32V root only
+    mount.filsys -v v6  rk0 mnt                 # V6 root only
 
 Mount the root first, then nest the `/usr` mount on top.
 

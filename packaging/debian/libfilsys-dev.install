@@ -1,0 +1,3 @@
+usr/include/filsys/filsys.h
+usr/lib/*/libfilsys.a
+usr/lib/*/pkgconfig/filsys.pc
