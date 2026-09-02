@@ -4,6 +4,7 @@ findfs.filsys
 mkfs.filsys
 fsck.filsys
 *.o
+*.a
 /Makefile
 config.log
 config.status

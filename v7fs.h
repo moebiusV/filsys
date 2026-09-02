@@ -161,6 +161,8 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
               uint64_t offset);
 /* Flush the superblock and close. */
 void v7fs_close(v7fs_t *fs);
+/* Flush the superblock (and pending metadata) to the image without closing. */
+int v7fs_sync(v7fs_t *fs);
 
 /* ---- block / inode io -------------------------------------------------- */
 
