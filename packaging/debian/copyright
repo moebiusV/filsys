@@ -20,12 +20,6 @@ License: Caldera
 Comment: PDP-11 boot blocks assembled from the Seventh Edition /usr/mdec
  sources (hpuboot.s, rpuboot.s).
 
-Files: reference/*
-Copyright: 2001-2002 Caldera International Inc.
-License: Caldera
-Comment: Excerpts of the original Seventh Edition Unix sources, shipped for
- reference only; not compiled into filsys.
-
 License: ISC
  Permission to use, copy, modify, and/or distribute this software for any
  purpose with or without fee is hereby granted, provided that the above

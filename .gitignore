@@ -37,3 +37,6 @@ ls-off
 core
 core.*
 *~
+
+# --- local notes (never pushed to the remote) ---
+docs/
