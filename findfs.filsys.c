@@ -11,9 +11,9 @@
  * filesystems even when a damaged superblock defeats the direct scan.
  *
  * Usage:
- *     findfs.filsys [-c N] [-i] <image>
+ *     findfs.filsys [-s N] [-i] <image>
  *
- * -c N   scan every N-th block (use the disk's blocks-per-cylinder, e.g. 418
+ * -s N   scan every N-th block (use the disk's blocks-per-cylinder, e.g. 418
  *        for an RP06, to speed up a big image)
  * -i     also trace inode-table runs backwards to their superblocks
  *
@@ -21,6 +21,7 @@
  *     fs @ block START  (byte BYTES)  V7  isize=N fsize=M
  * Mount the partition in place with mount.filsys -o offset=BYTES.
  */
+#include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -128,18 +129,21 @@ static int inode_block(const uint8_t *b) {
 int main(int argc, char **argv) {
     int stride = 1, backtrace = 0;
     const char *image = NULL;
-    for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-c") && i + 1 < argc) { stride = atoi(argv[++i]); }
-        else if (!strcmp(argv[i], "-i")) { backtrace = 1; }
-        else if (argv[i][0] == '-' && argv[i][1]) {
-            fprintf(stderr, "usage: findfs.filsys [-c N] [-i] <image>\n");
+    int c;
+    while ((c = getopt(argc, argv, "s:i")) != -1) {
+        switch (c) {
+        case 's': stride = atoi(optarg); break;
+        case 'i': backtrace = 1; break;
+        default:
+            fprintf(stderr, "usage: findfs.filsys [-s N] [-i] <image>\n");
             return 2;
-        } else { image = argv[i]; }
+        }
     }
-    if (!image || stride < 1) {
-        fprintf(stderr, "usage: findfs.filsys [-c N] [-i] <image>\n");
+    if (optind >= argc || stride < 1) {
+        fprintf(stderr, "usage: findfs.filsys [-s N] [-i] <image>\n");
         return 2;
     }
+    image = argv[optind];
 
     int fd = open(image, O_RDONLY);
     if (fd < 0) { perror(image); return 1; }
@@ -165,13 +169,13 @@ int main(int argc, char **argv) {
         /* inode-table backtrace: is bno the first inode block of a filesystem
          * whose superblock is at bno-1? */
         if (backtrace && inode_block(buf)) {
-            const char *ed = NULL; uint16_t isz = 0; uint32_t fsz = 0;
+            const char *ed_bt = NULL; uint16_t isz_bt = 0; uint32_t fsz_bt = 0;
             if (bno >= 2 && pread(fd, buf, BSIZE, (off_t)(bno - 1) * BSIZE) == BSIZE &&
-                (super_v7(buf, bno - 1, nblocks, &ed, &isz, &fsz) ||
-                 super_v6(buf, bno - 1, nblocks, &isz, &fsz))) {
-                if (!ed) ed = "V6";
+                (super_v7(buf, bno - 1, nblocks, &ed_bt, &isz_bt, &fsz_bt) ||
+                 super_v6(buf, bno - 1, nblocks, &isz_bt, &fsz_bt))) {
+                if (!ed_bt) ed_bt = "V6";
                 printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u   [via inode backtrace]\n",
-                       bno - 2, (unsigned long long)(bno - 2) * BSIZE, ed, isz, fsz);
+                       bno - 2, (unsigned long long)(bno - 2) * BSIZE, ed_bt, isz_bt, fsz_bt);
                 found++;
             }
         }

@@ -147,6 +147,8 @@ typedef struct {
     uint16_t   ninode;
     uint16_t   inode[V7_NICINOD];
     uint32_t   time;           /* last superblock update */
+    uint32_t   tfree;          /* total free blocks (s_tfree) */
+    uint32_t   tinode;         /* total free inodes (s_tinode) */
 } v7fs_t;
 
 /* ---- lifecycle --------------------------------------------------------- */
@@ -182,6 +184,8 @@ int v7fs_ialloc(v7fs_t *fs, uint32_t *ino);
 void v7fs_ifree(v7fs_t *fs, uint32_t ino);
 /* Free every data block referenced by an inode (truncate to 0). */
 int v7fs_itrunc(v7fs_t *fs, v7_inode_t *ip);
+/* Free blocks [first_blk, ...) only; first_blk == 0 == v7fs_itrunc. */
+int v7fs_itrunc_from(v7fs_t *fs, v7_inode_t *ip, uint32_t first_blk);
 
 /* ---- file / directory data --------------------------------------------- */
 

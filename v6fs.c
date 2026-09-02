@@ -7,6 +7,7 @@
  * (balloc/bfree/ialloc/ifree) mirror the V6 kernel's sys/alloc.c so the free
  * list stays interchangeable with what a running V6 kernel expects.
  */
+#include <config.h>
 #include "v6fs.h"
 
 #include <errno.h>
@@ -19,6 +20,7 @@
 #include <sys/stat.h>
 
 static int super_write(v6fs_t *fs);
+static void v6_count_free(v6fs_t *fs, uint32_t *nblk, uint32_t *nino);
 
 /* ---- lifecycle --------------------------------------------------------- */
 
@@ -47,20 +49,61 @@ int v6fs_open(v6fs_t *fs, const char *path, int readonly, uint64_t offset) {
     fs->time   = v6_get32me(sb + 412);
 
     /* Reject a superblock that claims more disk than the image file actually
-     * holds, or one with no data area (see the same check in v7fs_open). */
+     * holds, or one with no data area (see the same check in v7fs_open).  The
+     * fstat guard is `!= 0` so a failed fstat rejects rather than skipping
+     * validation (which would then read an uninitialized st_size). */
     struct stat st;
-    if (fstat(fs->fd, &st) == 0 &&
-        (fs->base + (uint64_t)fs->fsize * V6_BSIZE > (uint64_t)st.st_size ||
-         fs->fsize <= v6_data_start(fs->isize))) {
+    if (fstat(fs->fd, &st) != 0 ||
+        fs->isize < 1 ||
+        fs->base + (uint64_t)fs->fsize * V6_BSIZE > (uint64_t)st.st_size ||
+        fs->fsize <= v6_data_start(fs->isize)) {
         close(fs->fd);
         fs->fd = -1;
         return -EINVAL;
     }
+    /* V6's superblock has no s_tfree/s_tinode; compute the totals here so
+     * statfs can report real free space. */
+    v6_count_free(fs, &fs->tfree, &fs->tinode);
     return 0;
+}
+
+/* Count free blocks (walking the free list) and free inodes (scanning the
+ * i-list).  Used to seed fs->tfree/fs->tinode on open. */
+static void v6_count_free(v6fs_t *fs, uint32_t *nblk, uint32_t *nino) {
+    uint32_t n = fs->nfree;
+    uint32_t cur[V6_NICFREE];
+    memcpy(cur, fs->free, sizeof(cur));
+    uint32_t blocks = 0, guard = 0;
+    while (n > 0) {
+        uint32_t bno = cur[--n];
+        if (bno == 0)
+            break;
+        blocks++;
+        if (n == 0) {
+            uint8_t blk[V6_BSIZE];
+            if (v6fs_read_block(fs, bno, blk))
+                break;
+            n = v6_get16le(blk + 0);
+            for (int i = 0; i < V6_NICFREE; i++)
+                cur[i] = v6_get16le(blk + 2 + 2 * i);
+        }
+        if (++guard > fs->fsize + V6_NICFREE)
+            break;
+    }
+    *nblk = blocks;
+
+    uint32_t maxino = v6_maxino(fs->isize), used = 0;
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        v6_inode_t ip;
+        if (v6fs_read_inode(fs, ino, &ip) == 0 && (ip.mode & V6_IALLOC))
+            used++;
+    }
+    *nino = maxino - used;
 }
 
 void v6fs_close(v6fs_t *fs) {
     if (fs->fd >= 0) {
+        /* Superblock flushed once here, not per alloc/free (see v7fs_close). */
         if (!fs->readonly)
             super_write(fs);
         close(fs->fd);
@@ -173,6 +216,10 @@ int v6fs_balloc(v6fs_t *fs, uint32_t *bno) {
     if (blk == 0)
         return -ENOSPC;
 
+    /* Range-check before touching the free list (see v7fs_balloc). */
+    if (blk < v6_data_start(fs->isize) || blk >= fs->fsize)
+        return -EIO;   /* badblock: refuse garbage */
+
     if (fs->nfree == 0) {
         /* Just popped the bottom of the stack: it is a free-list block. */
         uint8_t buf[V6_BSIZE];
@@ -182,9 +229,12 @@ int v6fs_balloc(v6fs_t *fs, uint32_t *bno) {
         for (int i = 0; i < V6_NICFREE; i++)
             fs->free[i] = v6_get16le(buf + 2 + 2 * i);
     }
-    if (blk < v6_data_start(fs->isize) || blk >= fs->fsize)
-        return -EIO;   /* badblock: refuse garbage */
-    super_write(fs);
+    /* Zero the freshly-allocated block (V6 alloc() clrbuf()s it). */
+    uint8_t z[V6_BSIZE];
+    memset(z, 0, V6_BSIZE);
+    if (v6fs_write_block(fs, blk, z))
+        return -EIO;
+    if (fs->tfree) fs->tfree--;
     *bno = blk;
     return 0;
 }
@@ -206,7 +256,7 @@ void v6fs_bfree(v6fs_t *fs, uint32_t bno) {
             fs->nfree = 0;
     }
     fs->free[fs->nfree++] = bno;
-    super_write(fs);
+    fs->tfree++;
 }
 
 int v6fs_ialloc(v6fs_t *fs, uint32_t *ino) {
@@ -221,7 +271,7 @@ int v6fs_ialloc(v6fs_t *fs, uint32_t *ino) {
                 memset(&ip, 0, sizeof(ip));
                 ip.ino = cand;
                 v6fs_write_inode(fs, cand, &ip);
-                super_write(fs);
+                if (fs->tinode) fs->tinode--;
                 *ino = cand;
                 return 0;
             }
@@ -236,10 +286,8 @@ int v6fs_ialloc(v6fs_t *fs, uint32_t *ino) {
             if (ip.mode == 0)
                 fs->inode[fs->ninode++] = (uint16_t)in;
         }
-        if (fs->ninode == 0) {
-            super_write(fs);
+        if (fs->ninode == 0)
             return -ENOSPC;
-        }
     }
 }
 
@@ -247,7 +295,7 @@ void v6fs_ifree(v6fs_t *fs, uint32_t ino) {
     if (fs->ninode >= V6_NICINOD)
         return;   /* kernel discards beyond the cache */
     fs->inode[fs->ninode++] = (uint16_t)ino;
-    super_write(fs);
+    fs->tinode++;
 }
 
 /* ---- truncate ----------------------------------------------------------- */
@@ -286,6 +334,65 @@ int v6fs_itrunc(v6fs_t *fs, v6_inode_t *ip) {
         }
     }
     ip->size = 0;
+    return 0;
+}
+
+/* Free leaf blocks [skip, ...) of an indirect subtree (see v7fs tloop_from). */
+static void tloop_from(v6fs_t *fs, uint32_t blk, int level, uint32_t skip) {
+    uint8_t buf[V6_BSIZE];
+    if (v6fs_read_block(fs, blk, buf))
+        return;
+    uint32_t sub = 1;
+    for (int l = 0; l < level; l++) sub *= V6_NINDIR;
+    uint32_t se = skip / sub;
+    uint32_t sp = skip % sub;
+    for (int i = V6_NINDIR - 1; i >= 0; i--) {
+        uint32_t nb = v6_get16le(buf + 2 * i);
+        if (nb == 0)
+            continue;
+        if ((uint32_t)i < se)
+            continue;
+        if ((uint32_t)i == se && sp > 0) {
+            tloop_from(fs, nb, level - 1, sp);           /* partial: entry kept */
+        } else {
+            if (level == 0) v6fs_bfree(fs, nb);
+            else tloop(fs, nb, level - 1);
+            v6_put16le(buf + 2 * i, 0);                  /* drop the freed entry */
+        }
+    }
+    if (skip == 0)
+        v6fs_bfree(fs, blk);
+    else
+        v6fs_write_block(fs, blk, buf);                  /* persist dropped entries */
+}
+
+/* Free blocks [first_blk, ...); first_blk == 0 == v6fs_itrunc. */
+int v6fs_itrunc_from(v6fs_t *fs, v6_inode_t *ip, uint32_t first_blk) {
+    if (ip->mode & V6_ILARG) {
+        uint32_t rem = first_blk;
+        uint32_t slot = rem / V6_NINDIR;      /* which of the 7 single-indirect slots */
+        uint32_t within = rem % V6_NINDIR;
+        if (slot < 7) {
+            for (int i = 6; i > (int)slot; i--) {
+                if (ip->addr[i]) { tloop(fs, ip->addr[i], 0); ip->addr[i] = 0; }
+            }
+            if (ip->addr[slot]) {
+                if (within == 0) { tloop(fs, ip->addr[slot], 0); ip->addr[slot] = 0; }
+                else tloop_from(fs, ip->addr[slot], 0, within);
+            }
+            if (ip->addr[7]) { tloop(fs, ip->addr[7], 1); ip->addr[7] = 0; }
+        } else {
+            uint32_t drem = rem - 7 * V6_NINDIR;
+            if (ip->addr[7]) {
+                if (drem == 0) { tloop(fs, ip->addr[7], 1); ip->addr[7] = 0; }
+                else tloop_from(fs, ip->addr[7], 1, drem);
+            }
+        }
+    } else {
+        for (int i = V6_NIADDR - 1; i >= (int)first_blk; i--) {
+            if (ip->addr[i]) { v6fs_bfree(fs, ip->addr[i]); ip->addr[i] = 0; }
+        }
+    }
     return 0;
 }
 

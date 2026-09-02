@@ -3,7 +3,7 @@
 .\" (usr/man/man1/icheck.1m, usr/man/man1/dcheck.1m), distributed under the
 .\" Caldera International "Ancient UNIX License" (2002).  The LICENSE section
 .\" below retains that license's notice and terms.
-.TH FSCK.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.TH FSCK.FILSYS 1 "August 26, 2026" "filsys 1.0.0" "File Format and Disk Utilities"
 .SH NAME
 fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
@@ -14,6 +14,7 @@ fsck.filsys \- filesystem storage and directory consistency check
 .IR block ]
 .RB [ \-s ]
 .RB [ \-r ]
+.RB [ \-n ]
 .I image
 .br
 .B fsck.filsys
@@ -21,8 +22,8 @@ fsck.filsys \- filesystem storage and directory consistency check
 .IR 7 ]
 .RB [ \-o
 .IR block ]
-.RB { \-n
-.IR ino " | " \-c
+.RB { \-N
+.IR ino " | " \-C
 .IR ino }
 .I image
 .SH DESCRIPTION
@@ -66,14 +67,17 @@ option is
 .BR \-a ,
 which resolves duplicate blocks by copying each one to a freshly allocated
 block and re-pointing the second reference.  The
-.B \-n
+.B \-N
 option is
 .BR ncheck (8)
 (print an inode's pathname) and
-.B \-c
+.B \-C
 is
 .BR clri (8)
-(zero an inode).
+(zero an inode);
+.B \-n
+means "report only, change nothing" (the default, made explicit, and refused
+together with the modifying flags).
 .PP
 The edition is selected with
 .BR \-v :
@@ -119,13 +123,21 @@ list is rebuilt
 .BR \-a ).
 V7 only.
 .TP
-.BI \-n " ino"
+.B \-n
+Report only; change nothing.  This is the default, but makes read-only intent
+explicit, and is refused together with
+.BR \-s ,
+.BR \-r ,
+or
+.BR \-C .
+.TP
+.BI \-N " ino"
 Print the full pathname(s) of inode
 .I ino
 .RI ( ncheck (8)).
 V7 only.
 .TP
-.BI \-c " ino"
+.BI \-C " ino"
 Zero inode
 .I ino
 .RI ( clri (8)).
@@ -137,8 +149,8 @@ fsck.filsys -v 6 image.dk           # check a V6 (V4/V5) filesystem
 fsck.filsys -o 18392 image.dk       # check the filesystem at block 18392
 fsck.filsys -s image.dk             # rebuild the free list (icheck -s)
 fsck.filsys -r image.dk             # resolve duplicate blocks (salv -a)
-fsck.filsys -n 128 image.dk         # print the pathname of inode 128
-fsck.filsys -c 128 image.dk         # clear inode 128
+fsck.filsys -N 128 image.dk         # print the pathname of inode 128
+fsck.filsys -C 128 image.dk         # clear inode 128
 .fi
 .SH SEE ALSO
 .BR mkfs.filsys (1),

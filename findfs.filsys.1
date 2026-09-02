@@ -1,10 +1,10 @@
 .\" findfs.filsys.1 - part of filsys 1.0.0
-.TH FINDFS.FILSYS 1 "August 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.TH FINDFS.FILSYS 1 "August 26, 2026" "filsys 1.0.0" "File Format and Disk Utilities"
 .SH NAME
 findfs.filsys \- locate filesystem superblocks (partitions) on a raw disk image
 .SH SYNOPSIS
 .B findfs.filsys
-.RB [ \-c
+.RB [ \-s
 .IR N ]
 .RB [ \-i ]
 .I image
@@ -46,7 +46,7 @@ using
 .BR "\-o offset=BYTES" .
 .SH OPTIONS
 .TP
-.B \-c N
+.B \-s N
 Scan every
 .IR N -th
 block instead of every block.  Use the disk's blocks-per-cylinder (418 for an
@@ -57,7 +57,7 @@ positives a block-by-block scan of file data produces.
 Also trace inode-table runs backwards to their superblocks.
 .SH EXAMPLE
 .nf
-findfs.filsys -c 418 rp06-0.disk
+findfs.filsys -s 418 rp06-0.disk
 # fs @ block 0      (byte 0)       V7  isize=202  fsize=5000
 # fs @ block 18392  (byte 9416704) V7  isize=8189 fsize=322278
 

@@ -8,6 +8,7 @@
  * sys/alloc.c so the free list stays interchangeable with what a running
  * kernel expects.
  */
+#include <config.h>
 #include "v7fs.h"
 
 #include <errno.h>
@@ -59,14 +60,22 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
     for (int i = 0; i < V7_NICINOD; i++)
         fs->inode[i] = v7_get16le(sb + sb_inode_off(fs->le) + 2 * i);
     fs->time   = v7_get32(sb + sb_time_off(fs->le), fs->le);
+    /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
+     * them); the 50/100-entry caches are only the in-core spill.  Read them so
+     * statfs can report real free space rather than the cache depth. */
+    fs->tfree  = (fs->le == 0) ? v7_get32(sb + 418, fs->le) : 0;
+    fs->tinode = (fs->le == 0) ? v7_get16le(sb + 422) : 0;
 
     /* Reject a superblock that claims more disk than the image file actually
-     * holds, or one with no data area.  Without this, a corrupt image can make
+     * holds, one with no data area, or an i-list too small to subtract 2 from
+     * (`(isize - 2)` underflows when isize is 0 or 1, turning the inode walk
+     * into a multi-gigabyte loop).  Without this, a corrupt image can make
      * the checker (and directory readers) allocate gigabytes. */
     struct stat st;
-    if (fstat(fs->fd, &st) == 0 &&
-        (fs->base + (uint64_t)fs->fsize * V7_BSIZE > (uint64_t)st.st_size ||
-         fs->fsize <= fs->isize)) {
+    if (fstat(fs->fd, &st) != 0 ||
+        fs->isize < 2 ||
+        fs->base + (uint64_t)fs->fsize * V7_BSIZE > (uint64_t)st.st_size ||
+        fs->fsize <= fs->isize) {
         close(fs->fd);
         fs->fd = -1;
         return -EINVAL;
@@ -76,6 +85,9 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
 
 void v7fs_close(v7fs_t *fs) {
     if (fs->fd >= 0) {
+        /* The superblock is flushed once here, not per alloc/free: V7's kernel
+         * syncs the superblock periodically rather than on every block handoff,
+         * and batching avoids one 512-byte pwrite per freed block on truncate. */
         if (!fs->readonly)
             super_write(fs);
         close(fs->fd);
@@ -120,6 +132,10 @@ static int super_write(v7fs_t *fs) {
     for (int i = 0; i < V7_NICINOD; i++)
         v7_put16le(sb + sb_inode_off(fs->le) + 2 * i, fs->inode[i]);
     v7_put32(sb + sb_time_off(fs->le), fs->le, (uint32_t)time(NULL));  /* s_time */
+    if (fs->le == 0) {
+        v7_put32(sb + 418, fs->le, fs->tfree);             /* s_tfree */
+        v7_put16le(sb + 422, (uint16_t)fs->tinode);        /* s_tinode */
+    }
     return v7fs_write_block(fs, V7_SUPERB, sb);
 }
 
@@ -185,6 +201,12 @@ int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
     if (blk == 0)
         return -ENOSPC;
 
+    /* Range-check before touching the free list: on a corrupt image a bogus
+     * block number must be rejected here, not after it has been used to reload
+     * the in-core free list with garbage. */
+    if (blk < fs->isize || blk >= fs->fsize)
+        return -EIO;   /* badblock: refuse garbage */
+
     if (fs->nfree == 0) {
         /* Just popped the bottom of the stack: it is a free-list block. */
         uint8_t buf[V7_BSIZE];
@@ -194,9 +216,13 @@ int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
         for (int i = 0; i < V7_NICFREE; i++)
             fs->free[i] = v7_get32(buf + fb_free_off(fs->le) + 4 * i, fs->le);
     }
-    if (blk < fs->isize || blk >= fs->fsize)
-        return -EIO;   /* badblock: refuse garbage */
-    super_write(fs);
+    /* Zero the freshly-allocated block: V7's alloc() clrbuf()s it, and without
+     * this the previous file's data leaks into a new file. */
+    uint8_t z[V7_BSIZE];
+    memset(z, 0, V7_BSIZE);
+    if (v7fs_write_block(fs, blk, z))
+        return -EIO;
+    if (fs->tfree) fs->tfree--;
     *bno = blk;
     return 0;
 }
@@ -218,7 +244,7 @@ void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
             fs->nfree = 0;
     }
     fs->free[fs->nfree++] = bno;
-    super_write(fs);
+    fs->tfree++;
 }
 
 int v7fs_ialloc(v7fs_t *fs, uint32_t *ino) {
@@ -233,7 +259,7 @@ int v7fs_ialloc(v7fs_t *fs, uint32_t *ino) {
                 memset(&ip, 0, sizeof(ip));
                 ip.ino = cand;
                 v7fs_write_inode(fs, cand, &ip);
-                super_write(fs);
+                if (fs->tinode) fs->tinode--;
                 *ino = cand;
                 return 0;
             }
@@ -248,10 +274,8 @@ int v7fs_ialloc(v7fs_t *fs, uint32_t *ino) {
             if (ip.mode == 0)
                 fs->inode[fs->ninode++] = (uint16_t)in;
         }
-        if (fs->ninode == 0) {
-            super_write(fs);
+        if (fs->ninode == 0)
             return -ENOSPC;
-        }
     }
 }
 
@@ -259,7 +283,7 @@ void v7fs_ifree(v7fs_t *fs, uint32_t ino) {
     if (fs->ninode >= V7_NICINOD)
         return;   /* kernel discards beyond the cache */
     fs->inode[fs->ninode++] = (uint16_t)ino;
-    super_write(fs);
+    fs->tinode++;
 }
 
 /* ---- truncate ----------------------------------------------------------- */
@@ -297,6 +321,82 @@ int v7fs_itrunc(v7fs_t *fs, v7_inode_t *ip) {
         }
     }
     ip->size = 0;
+    return 0;
+}
+
+/* Free the leaf blocks at indices [skip, ...) of the subtree rooted at `blk`
+ * (which has `level` levels of indirection below it).  When skip == 0 the whole
+ * subtree and `blk` itself are freed. */
+static void tloop_from(v7fs_t *fs, uint32_t blk, int level, uint32_t skip) {
+    uint8_t buf[V7_BSIZE];
+    if (v7fs_read_block(fs, blk, buf))
+        return;
+    uint32_t sub = 1;
+    for (int l = 0; l < level; l++) sub *= V7_NINDIR;   /* leaves per entry */
+    uint32_t se = skip / sub;                            /* whole entries to skip */
+    uint32_t sp = skip % sub;                            /* partial skip within entry se */
+    for (int i = V7_NINDIR - 1; i >= 0; i--) {
+        uint32_t nb = v7_get32(buf + 4 * i, fs->le);
+        if (nb == 0)
+            continue;
+        if ((uint32_t)i < se)
+            continue;                                    /* whole entry kept */
+        if ((uint32_t)i == se && sp > 0) {
+            tloop_from(fs, nb, level - 1, sp);           /* partial: entry kept */
+        } else {
+            if (level == 0) v7fs_bfree(fs, nb);
+            else tloop(fs, nb, level - 1);
+            v7_put32(buf + 4 * i, fs->le, 0);            /* drop the freed entry */
+        }
+    }
+    if (skip == 0)
+        v7fs_bfree(fs, blk);
+    else
+        v7fs_write_block(fs, blk, buf);                  /* persist dropped entries */
+}
+
+/* Free every block from logical block `first_blk` onwards, leaving the first
+ * `first_blk` blocks in place.  `first_blk == 0` is equivalent to itrunc. */
+int v7fs_itrunc_from(v7fs_t *fs, v7_inode_t *ip, uint32_t first_blk) {
+    uint32_t rem = first_blk;
+
+    /* Direct blocks [0, V7_NDADDR) */
+    if (rem < V7_NDADDR) {
+        for (int i = V7_NDADDR - 1; i >= (int)rem; i--) {
+            if (ip->addr[i]) { v7fs_bfree(fs, ip->addr[i]); ip->addr[i] = 0; }
+        }
+        rem = 0;
+    } else {
+        rem -= V7_NDADDR;
+    }
+
+    /* Single indirect [V7_NDADDR, V7_NDADDR+V7_NINDIR) */
+    if (rem < V7_NINDIR) {
+        if (ip->addr[V7_NDADDR]) {
+            if (rem == 0) { tloop(fs, ip->addr[V7_NDADDR], 0); ip->addr[V7_NDADDR] = 0; }
+            else tloop_from(fs, ip->addr[V7_NDADDR], 0, rem);
+        }
+        rem = 0;
+    } else {
+        rem -= V7_NINDIR;
+    }
+
+    /* Double indirect [V7_NDADDR+V7_NINDIR, ...+V7_NINDIR^2) */
+    if (rem < (uint32_t)V7_NINDIR * V7_NINDIR) {
+        if (ip->addr[V7_NDADDR + 1]) {
+            if (rem == 0) { tloop(fs, ip->addr[V7_NDADDR + 1], 1); ip->addr[V7_NDADDR + 1] = 0; }
+            else tloop_from(fs, ip->addr[V7_NDADDR + 1], 1, rem);
+        }
+        rem = 0;
+    } else {
+        rem -= (uint32_t)V7_NINDIR * V7_NINDIR;
+    }
+
+    /* Triple indirect [V7_NDADDR+V7_NINDIR+V7_NINDIR^2, ...) */
+    if (ip->addr[V7_NDADDR + 2]) {
+        if (rem == 0) { tloop(fs, ip->addr[V7_NDADDR + 2], 2); ip->addr[V7_NDADDR + 2] = 0; }
+        else tloop_from(fs, ip->addr[V7_NDADDR + 2], 2, rem);
+    }
     return 0;
 }
 

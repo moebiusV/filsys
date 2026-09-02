@@ -114,6 +114,8 @@ typedef struct {
     uint16_t   ninode;
     uint16_t   inode[V6_NICINOD];
     uint32_t   time;           /* last superblock update */
+    uint32_t   tfree;          /* total free blocks */
+    uint32_t   tinode;         /* total free inodes */
 } v6fs_t;
 
 /* ---- lifecycle --------------------------------------------------------- */
@@ -152,6 +154,8 @@ int v6fs_ialloc(v6fs_t *fs, uint32_t *ino);
 void v6fs_ifree(v6fs_t *fs, uint32_t ino);
 /* Free every data block referenced by an inode (truncate to 0). */
 int v6fs_itrunc(v6fs_t *fs, v6_inode_t *ip);
+/* Free blocks [first_blk, ...) only; first_blk == 0 == v6fs_itrunc. */
+int v6fs_itrunc_from(v6fs_t *fs, v6_inode_t *ip, uint32_t first_blk);
 
 /* ---- file / directory data --------------------------------------------- */
 

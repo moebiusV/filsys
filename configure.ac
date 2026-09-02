@@ -6,8 +6,13 @@
 AC_PREREQ([2.69])
 AC_INIT([filsys], [1.0.0], [david@clearbrookdistillery.com])
 AC_CONFIG_SRCDIR([mount.filsys.c])
+AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE([-Wall])
+# Don't try to regenerate Makefile.in from Makefile.am unless a maintainer
+# explicitly asks; otherwise `git clone && ./configure && make` fails on a
+# host without (the exact) automake installed.
+AM_MAINTAINER_MODE([disable])
 AM_SILENT_RULES([yes])
 
 AC_PROG_CC

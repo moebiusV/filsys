@@ -27,6 +27,7 @@
  *
  * Sizes default to the image's own size, or `blocks` when given.
  */
+#include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -311,7 +312,11 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
     v7_sb_put16(424, 3);      /* s_m  */
     v7_sb_put16(426, 500);    /* s_n  */
 
-    printf("m/n = 3 500, isize = %u, fsize = %u\n", v7_isize * V7_INOPB, v7_fsize);
+    /* s_isize is the first data block (not the i-list size), so the i-list is
+     * blocks 2..s_isize-1 and the inode count is (s_isize-2) * 8.  V7's own
+     * mkfs prints (n)*NIPB for n = s_isize-2; print the same, not isize*8. */
+    printf("m/n = 3 500, isize = %u, fsize = %u\n",
+           (v7_isize - 2) * V7_INOPB, v7_fsize);
 
     uint8_t zb[V7_BSIZE] = {0};
     for (uint32_t b = 2; b < v7_isize; b++) {
