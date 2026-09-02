@@ -2,7 +2,9 @@
 
 Mount a **Research Unix** filesystem image (PDP-11) as a FUSE filesystem on
 Linux, so files can be copied on and off the disk for use with a simulator
-(SIMH `pdp11`).
+(SIMH `pdp11`).  Linux's own `sysv`/`v7` kernel driver was removed in 6.15
+(2025) and never handled V4/V5, V6, or 32V to begin with, so this is now the
+only way to mount these filesystems — see "Linux kernel support" below.
 
 One binary, every edition we care about: the on-disk format is understood
 (middle-endian byte order and the kernel's own free-list allocation
@@ -407,6 +409,109 @@ emulator is running.
   cannot trigger a multi-gigabyte `malloc` or an unbounded loop.  (libFuzzer +
   ASan/UBSan found this class of bug before it shipped; the read path fuzzes
   clean, and `gcc -fanalyzer` / `clang --analyze` are quiet.)
+
+## Linux kernel support
+
+A short history of how the mainline kernel handled (and then stopped handling)
+these filesystems, and why filsys is a FUSE driver rather than a kernel module.
+
+### The driver was removed in 6.15
+
+The `sysv`/`v7` driver had been orphaned since 2023 with nobody willing to
+maintain it, and Jan Kara's removal patch landed in the VFS branch for the 6.15
+merge window.  The commit is `sysv: Remove the filesystem` (2025-02-21),
+dropping ~3.4k lines.
+
+The rationale is worth reading in full, because it bears directly on this
+project:
+
+> Since 2002 (change "Replace BKL for chain locking with sysvfs-private rwlock")
+> the sysv filesystem was doing IO under a rwlock in its get_block() function
+> (yes, a non-sleepable lock hold over a function used to read inode metadata
+> for all reads and writes).  Nobody noticed until syzbot in 2023.  This shows
+> nobody is using the filesystem.  Just drop it.
+
+Twenty-three years of sleeping under a spinlock on every read and write,
+discovered by a fuzzer rather than a user.  The last kernel with it is 6.14; the
+driver registry confirms `fs/sysv/super.c` covering 2.5.45 through 6.14 for both
+the `sysv` and `v7` type names.
+
+### What it supported: V7 only
+
+`CONFIG_SYSV_FS` registered two filesystem types from one driver.  `-t sysv`,
+`-t xenix`, and `-t coherent` were interchangeable names for the SysV family;
+`-t v7` was a separate `file_system_type` for Seventh Edition.
+
+V6, V5, and V4 were never supported.  The layouts differ in ways the driver had
+no code for — `NICFREE` is 100 rather than 50, the inode is 32 bytes with 8
+`addr[]` entries rather than 64 with 40, and `s_isize` counts something
+different.  32V was never supported either, for the reason the rest of this
+README makes so much of: the 32-bit fields are middle-endian, and the driver's
+`fs32_to_cpu` only handled straight LE and BE.
+
+### How it told them apart: magic for SysV, guesswork for V7
+
+Xenix, SysV, and Coherent each have a superblock magic (`0x2b5544`, `0xfd187e20`,
+and a `s_fname`/`s_fpack` check respectively), tried in sequence with
+byte-swapped variants to determine endianness.
+
+V7 has no magic number at all, so `v7_sanity_check()` guessed.  Roughly:
+
+- superblock plausibility — `s_nfree <= 50`, `s_ninode <= 100`, `s_fsize` under
+  the V7 maximum;
+- then read block 2 and inspect the root inode at offset 64: it must be a
+  directory, non-zero size, size a multiple of 16, and no larger than
+  `V7_NFILES` entries.
+
+Because that's a heuristic rather than a magic check, `v7` was never in the
+autodetect chain.  You had to name it explicitly with `-t v7`, or nothing
+happened — and the heuristic false-negatived on real disks (Lubomir Rintel's
+2010 commit is literally titled "fs/sysv: v7: adjust sanity checks for some
+volumes").
+
+The detection story outlived the driver only partway.  libblkid still probes
+`sysv` and `xenix`, but there is no `v7` prober — same reason: nothing to match
+on.
+
+### mkfs and fsck: never existed
+
+Not removed — never written.  util-linux ships exactly these:
+
+```
+/sbin/mkfs.{bfs,cramfs,ext2,ext3,ext4,minix}
+/sbin/fsck.{cramfs,ext2,ext3,ext4,minix}
+```
+
+No `mkfs.sysv`, no `fsck.sysv`, no `v7` variants.  fsck(8)'s own SEE ALSO lists
+ext2/ext3, cramfs, jfs, nfs, minix, msdos, vfat, xfs and reiserfsck — nothing in
+the family.  So even in 6.14 you could mount a V7 image read-write with a driver
+carrying a 23-year-old locking bug, and had no way to create one or check one.
+
+### What this means for filsys
+
+Mainline ever handled **one** of the five editions, guessed at it, couldn't
+create it, couldn't check it, and dropped it in 6.15.  filsys handles V4, V5,
+V6, V7, and 32V, has `findfs` for locating a superblock on a raw image, and has
+both `mkfs` and `fsck`.  That is not an incremental improvement on what the
+kernel had — it is the only implementation that exists.
+
+Two things follow.
+
+**The removal rationale is the argument for FUSE.**  What got `sysv` killed was
+in-kernel complexity nobody could justify maintaining for a handful of users — a
+sleeping-under-spinlock bug only a fuzzer would find.  A userspace FUSE driver
+has no `get_block()`, no BKL legacy, no locking contract with the VFS, and
+cannot wedge a kernel when it hits a corrupt superblock.  It can only be wrong
+in ways that hurt the person who ran it.  That is the correct place for a
+filesystem with maybe two hundred users worldwide, and it is why a FUSE version
+can survive where the kernel's could not.
+
+**But take the warning too.**  The proximate cause of death was a fuzzer finding
+the bug first when no human had in twenty-three years.  The read path here fuzzes
+clean under libFuzzer and ASan (see "Notes"); extending that to `fsck` and to
+liveness assertions — not just sanitizer trips — is cheap insurance against
+being the author of the *second* Research Unix filesystem implementation that a
+fuzzer had to audit.
 
 ## License
 
