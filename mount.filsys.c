@@ -162,6 +162,30 @@ static int filsys_check(filsys_t *k, v6_check_t *rep) {
     v7_check_t r;
     return v7fs_check(&k->u.v7, &r, 0);   /* no salvage from the mount tool */
 }
+static int filsys_bmap(filsys_t *k, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
+    if (k->ver == FILSYS_V6) return v6fs_bmap(&k->u.v6, (v6_inode_t *)ip, lbn, create, bno);
+    return v7fs_bmap(&k->u.v7, ip, lbn, create, bno);
+}
+static int filsys_read_block(filsys_t *k, uint32_t bno, uint8_t *buf) {
+    if (k->ver == FILSYS_V6) return v6fs_read_block(&k->u.v6, bno, buf);
+    return v7fs_read_block(&k->u.v7, bno, buf);
+}
+static int filsys_write_block(filsys_t *k, uint32_t bno, const uint8_t *buf) {
+    if (k->ver == FILSYS_V6) return v6fs_write_block(&k->u.v6, bno, buf);
+    return v7fs_write_block(&k->u.v7, bno, buf);
+}
+
+/* Largest file the selected edition can address, in bytes.  V6 (ILARG): 7
+ * single-indirect (256 each) + 1 double-indirect (256^2).  V7/32V: 10 direct
+ * + single + double + triple indirect (128 each). */
+static uint64_t filsys_maxfile(const filsys_t *k) {
+    if (k->ver == FILSYS_V6) {
+        uint64_t n = V6_NINDIR;
+        return (7u * n + n * n) * V6_BSIZE;
+    }
+    uint64_t n = V7_NINDIR;
+    return ((uint64_t)V7_NDADDR + n + n*n + n*n*n) * V7_BSIZE;
+}
 
 /* ---- helpers ------------------------------------------------------------- */
 
@@ -304,7 +328,14 @@ static int filsys_create(const char *path, mode_t mode, struct fuse_file_info *f
     nip.gid = (int16_t)ctx->gid;
     nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
     filsys_write_inode(k, nino, &nip);
-    return filsys_dir_add(k, &ddir, nino, name);
+    rc = filsys_dir_add(k, &ddir, nino, name);
+    if (rc) {
+        /* The directory entry never landed: put the inode back. */
+        nip.mode = 0;
+        filsys_write_inode(k, nino, &nip);
+        filsys_ifree(k, nino);
+    }
+    return rc;
 }
 
 static int filsys_mkdir(const char *path, mode_t mode) {
@@ -332,7 +363,15 @@ static int filsys_mkdir(const char *path, mode_t mode) {
     filsys_dir_add(k, &nip, nino, ".");
     filsys_dir_add(k, &nip, dino, "..");
     rc = filsys_dir_add(k, &ddir, nino, name);
-    if (rc) return rc;
+    if (rc) {
+        /* The parent entry never landed: free the new directory's "." and ".."
+         * blocks, then its inode, so it isn't left orphaned. */
+        filsys_itrunc(k, &nip);
+        nip.mode = 0;
+        filsys_write_inode(k, nino, &nip);
+        filsys_ifree(k, nino);
+        return rc;
+    }
     ddir.nlink++;
     filsys_write_inode(k, dino, &ddir);
     return 0;
@@ -340,6 +379,19 @@ static int filsys_mkdir(const char *path, mode_t mode) {
 
 static int filsys_mknod(const char *path, mode_t mode, dev_t rdev) {
     filsys_t *k = FILSYS();
+    /* V7 has only character and block devices; there is no on-disk type for a
+     * FIFO or socket (named pipes arrived in System III).  Reject them up front
+     * so mkfifo fails cleanly instead of depositing a bogus char device. */
+    int ischr = (mode & S_IFMT) == S_IFCHR;
+    int isblk = (mode & S_IFMT) == S_IFBLK;
+    if (!ischr && !isblk)
+        return -EPERM;
+    /* V7 device numbers are 8-bit major + 8-bit minor packed into one word.
+     * Reject rather than mask: a modern major like 300 would otherwise
+     * silently become 44. */
+    if (major(rdev) > 255 || minor(rdev) > 255)
+        return -EINVAL;
+
     char dir[PATH_MAX], name[15];
     int rc = split_path(path, dir, sizeof(dir), name, sizeof(name));
     if (rc) return rc;
@@ -354,7 +406,6 @@ static int filsys_mknod(const char *path, mode_t mode, dev_t rdev) {
     filsys_inode_t nip;
     memset(&nip, 0, sizeof(nip));
     nip.ino = nino;
-    int isblk = (mode & S_IFMT) == S_IFBLK;
     if (k->ver == FILSYS_V6)
         nip.mode = (isblk ? V6_IFBLK : V6_IFCHR) | filsys_perm_of(mode);
     else
@@ -363,10 +414,18 @@ static int filsys_mknod(const char *path, mode_t mode, dev_t rdev) {
     nip.uid = (int16_t)ctx->uid;
     nip.gid = (int16_t)ctx->gid;
     nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
-    /* V7 device number: (major<<8)|minor (8-bit each), stored in di_addr[0]. */
-    nip.addr[0] = (uint32_t)(((major(rdev) & 0xff) << 8) | (minor(rdev) & 0xff));
+    /* V7 device number: (major<<8)|minor, stored in di_addr[0]. */
+    nip.addr[0] = (uint32_t)((major(rdev) << 8) | minor(rdev));
     filsys_write_inode(k, nino, &nip);
-    return filsys_dir_add(k, &ddir, nino, name);
+    rc = filsys_dir_add(k, &ddir, nino, name);
+    if (rc) {
+        /* The directory entry never landed: return the inode to the free list
+         * so it isn't left orphaned with nlink=1 for fsck to find. */
+        nip.mode = 0;
+        filsys_write_inode(k, nino, &nip);
+        filsys_ifree(k, nino);
+    }
+    return rc;
 }
 
 static int filsys_do_unlink(filsys_t *k, const char *dirpath, const char *name) {
@@ -463,10 +522,11 @@ static int filsys_link(const char *from, const char *to) {
     uint32_t ino;
     int rc = filsys_lookup(k, from, &ino, &ip);
     if (rc) return rc;
-    /* V7's link(2) lets the superuser hard-link a directory, and the staging
-     * tool's mounting user is that superuser.  filsys_do_link only bumps the
-     * directory's nlink; its ".." still points at the original parent, so a
-     * cycle is the caller's own foot to shoot -- faithful to V7. */
+    /* No directory check here, on purpose: V7's link(2) lets the superuser
+     * hard-link a directory.  That path is unreachable through .link on Linux
+     * -- the kernel's vfs_link() refuses directory links before FUSE is
+     * consulted -- but filsys_do_link is also rename()'s implementation, so it
+     * must keep handling directories. */
     return filsys_do_link(k, to, ino);
 }
 
@@ -577,6 +637,10 @@ static int filsys_truncate(const char *path, off_t size, struct fuse_file_info *
     uint32_t ino;
     int rc = filsys_lookup(k, path, &ino, &ip);
     if (rc) return rc;
+    /* Reject sizes the format cannot address, rather than wrap a 5 GiB request
+     * to 1 GiB via the uint32_t cast below (V7's ceiling is ~1.08 GB). */
+    if (size < 0 || (uint64_t)size > filsys_maxfile(k))
+        return -EFBIG;
     uint32_t newsize = (uint32_t)size, oldsize = ip.size;
     if (newsize == oldsize) return 0;
 
@@ -587,10 +651,20 @@ static int filsys_truncate(const char *path, off_t size, struct fuse_file_info *
         uint32_t last = newsize ? (newsize - 1) / 512 : 0;
         uint32_t off  = newsize % 512;
         if (off) {
-            uint8_t z[512];
-            memset(z, 0, sizeof z);
-            rc = filsys_file_write(k, &ip, z, 512 - off, (off_t)newsize);
-            if (rc < 0) return rc;
+            /* Zero the partial tail through the block layer, not file_write:
+             * file_write would bump ip.size past the old EOF and, if the tail
+             * block is a hole, allocate a block only to discard it. */
+            uint32_t bno;
+            rc = filsys_bmap(k, &ip, last, 0, &bno);
+            if (rc) return rc;
+            if (bno) {
+                uint8_t blk[512];
+                rc = filsys_read_block(k, bno, blk);
+                if (rc) return rc;
+                memset(blk + off, 0, 512 - off);
+                rc = filsys_write_block(k, bno, blk);
+                if (rc) return rc;
+            }
         }
         rc = filsys_itrunc_from(k, &ip, newsize ? last + 1 : 0);
         if (rc) return rc;

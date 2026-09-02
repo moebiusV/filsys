@@ -360,10 +360,9 @@ static void tloop_from(v6fs_t *fs, uint32_t blk, int level, uint32_t skip) {
             v6_put16le(buf + 2 * i, 0);                  /* drop the freed entry */
         }
     }
-    if (skip == 0)
-        v6fs_bfree(fs, blk);
-    else
-        v6fs_write_block(fs, blk, buf);                  /* persist dropped entries */
+    /* skip > 0 by construction (see v7fs tloop_from); the whole-block case is
+     * handled by tloop() at the call sites. */
+    v6fs_write_block(fs, blk, buf);                      /* persist dropped entries */
 }
 
 /* Free blocks [first_blk, ...); first_blk == 0 == v6fs_itrunc. */
