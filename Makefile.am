@@ -6,14 +6,23 @@
 bin_PROGRAMS = findfs.filsys mkfs.filsys fsck.filsys
 sbin_PROGRAMS = mount.filsys
 
-mount_filsys_SOURCES = mount.filsys.c v6fs.c v6fs.h v7fs.c v7fs.h
+# The version-agnostic library: the facade (filsys.c) plus the two on-disk
+# backends.  Installed as libfilsys.a + filsys.h so other projects can link
+# ancient-filesystem access directly.
+lib_LIBRARIES = libfilsys.a
+libfilsys_a_SOURCES = filsys.c filsys.h v6fs.c v6fs.h v7fs.c v7fs.h
+libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
+include_HEADERS = filsys.h
+
+# mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir.
+mount_filsys_SOURCES = mount.filsys.c
 # C17, not C23: Microsoft's toolchain tops out at C17, so we match.
 mount_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 mount_filsys_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
 # FUSE's high-level API runs single-threaded here (main passes -s) because the
 # in-core superblock is shared state; a second thread would race on nfree/free[].
 # No -lpthread is needed.
-mount_filsys_LDADD = $(FUSE3_LIBS)
+mount_filsys_LDADD = $(FUSE3_LIBS) libfilsys.a
 
 findfs_filsys_SOURCES = findfs.filsys.c
 findfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow

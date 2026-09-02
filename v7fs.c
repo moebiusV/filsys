@@ -95,6 +95,12 @@ void v7fs_close(v7fs_t *fs) {
     }
 }
 
+int v7fs_sync(v7fs_t *fs) {
+    if (fs->readonly)
+        return 0;
+    return super_write(fs);
+}
+
 /* ---- block io ---------------------------------------------------------- */
 
 int v7fs_read_block(v7fs_t *fs, uint32_t bno, uint8_t *buf) {

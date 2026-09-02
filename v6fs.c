@@ -111,6 +111,12 @@ void v6fs_close(v6fs_t *fs) {
     }
 }
 
+int v6fs_sync(v6fs_t *fs) {
+    if (fs->readonly)
+        return 0;
+    return super_write(fs);
+}
+
 /* ---- block io ---------------------------------------------------------- */
 
 int v6fs_read_block(v6fs_t *fs, uint32_t bno, uint8_t *buf) {

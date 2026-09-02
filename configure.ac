@@ -16,8 +16,11 @@ AM_MAINTAINER_MODE([disable])
 AM_SILENT_RULES([yes])
 
 AC_PROG_CC
-# pread/pwrite/flock want the platform extensions (_GNU_SOURCE on glibc)
+# pread/pwrite/flock want the platform extensions (_GNU_SOURCE on glibc);
+# must precede any macro that AC_COMPILE_IFELSEs (AM_PROG_AR below).
 AC_USE_SYSTEM_EXTENSIONS
+AM_PROG_AR
+AC_PROG_RANLIB
 
 # ---------------------------------------------------------------------------
 # libfuse3.

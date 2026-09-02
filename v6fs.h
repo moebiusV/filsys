@@ -125,6 +125,8 @@ typedef struct {
 int v6fs_open(v6fs_t *fs, const char *path, int readonly, uint64_t offset);
 /* Flush the superblock and close. */
 void v6fs_close(v6fs_t *fs);
+/* Flush the superblock (and pending metadata) to the image without closing. */
+int v6fs_sync(v6fs_t *fs);
 
 /* ---- block / inode io -------------------------------------------------- */
 
