@@ -349,10 +349,10 @@ static void tloop_from(v7fs_t *fs, uint32_t blk, int level, uint32_t skip) {
             v7_put32(buf + 4 * i, fs->le, 0);            /* drop the freed entry */
         }
     }
-    if (skip == 0)
-        v7fs_bfree(fs, blk);
-    else
-        v7fs_write_block(fs, blk, buf);                  /* persist dropped entries */
+    /* skip > 0 by construction: itrunc_from calls tloop_from only for a partial
+     * (non-zero) count, and recursion fires only when sp > 0.  The whole-block
+     * case is handled by tloop() at the call sites. */
+    v7fs_write_block(fs, blk, buf);                      /* persist dropped entries */
 }
 
 /* Free every block from logical block `first_blk` onwards, leaving the first
