@@ -6,6 +6,7 @@
  */
 #include <config.h>
 #include "filsys.h"
+#include "filsys_ops.h"
 #include "v6fs.h"
 #include "v7fs.h"
 
@@ -17,9 +18,10 @@
 #include <time.h>
 
 struct filsys {
+    const struct filsys_ops *ops;
+    void *fs;                  /* backend state (v6fs_t / v7fs_t / ...) */
     int ver;
     int uid, gid;              /* reported ownership (default: the mounting user) */
-    union { v6fs_t v6; v7fs_t v7; } u;
 };
 
 /* ---- mode conversion (edition-aware) ------------------------------------ */
@@ -49,83 +51,60 @@ static uint16_t perm_of(mode_t m) {
     return (uint16_t)(m & 07777);
 }
 
-/* ---- dispatch wrappers (internal) ---------------------------------------- */
+/* ---- dispatch (internal): forward through the backend ops table ---------- */
 
 static int read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
-    if (fs->ver == FILSYS_V6) return v6fs_read_inode(&fs->u.v6, ino, (v6_inode_t *)ip);
-    return v7fs_read_inode(&fs->u.v7, ino, (v7_inode_t *)ip);
+    return fs->ops->read_inode(fs->fs, ino, ip);
 }
 static int write_inode(filsys_t *fs, uint32_t ino, const filsys_inode_t *ip) {
-    if (fs->ver == FILSYS_V6) return v6fs_write_inode(&fs->u.v6, ino, (const v6_inode_t *)ip);
-    return v7fs_write_inode(&fs->u.v7, ino, (const v7_inode_t *)ip);
+    return fs->ops->write_inode(fs->fs, ino, ip);
 }
 static int ialloc(filsys_t *fs, uint32_t *ino) {
-    if (fs->ver == FILSYS_V6) return v6fs_ialloc(&fs->u.v6, ino);
-    return v7fs_ialloc(&fs->u.v7, ino);
+    return fs->ops->ialloc(fs->fs, ino);
 }
 static void ifree(filsys_t *fs, uint32_t ino) {
-    if (fs->ver == FILSYS_V6) v6fs_ifree(&fs->u.v6, ino);
-    else v7fs_ifree(&fs->u.v7, ino);
+    fs->ops->ifree(fs->fs, ino);
 }
 static int itrunc(filsys_t *fs, filsys_inode_t *ip) {
-    if (fs->ver == FILSYS_V6) return v6fs_itrunc(&fs->u.v6, (v6_inode_t *)ip);
-    return v7fs_itrunc(&fs->u.v7, (v7_inode_t *)ip);
+    return fs->ops->itrunc(fs->fs, ip);
 }
 static int itrunc_from(filsys_t *fs, filsys_inode_t *ip, uint32_t first_blk) {
-    if (fs->ver == FILSYS_V6) return v6fs_itrunc_from(&fs->u.v6, (v6_inode_t *)ip, first_blk);
-    return v7fs_itrunc_from(&fs->u.v7, (v7_inode_t *)ip, first_blk);
+    return fs->ops->itrunc_from(fs->fs, ip, first_blk);
 }
 static ssize_t file_read(filsys_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t sz, off_t off) {
-    if (fs->ver == FILSYS_V6) return v6fs_file_read(&fs->u.v6, (v6_inode_t *)ip, buf, sz, off);
-    return v7fs_file_read(&fs->u.v7, (v7_inode_t *)ip, buf, sz, off);
+    return fs->ops->file_read(fs->fs, ip, buf, sz, off);
 }
 static ssize_t file_write(filsys_t *fs, filsys_inode_t *ip, const uint8_t *buf, size_t sz, off_t off) {
-    if (fs->ver == FILSYS_V6) return v6fs_file_write(&fs->u.v6, (v6_inode_t *)ip, buf, sz, off);
-    return v7fs_file_write(&fs->u.v7, (v7_inode_t *)ip, buf, sz, off);
+    return fs->ops->file_write(fs->fs, ip, buf, sz, off);
 }
 static int dir_read(filsys_t *fs, filsys_inode_t *ip, filsys_dirent_t **e, size_t *n) {
-    if (fs->ver == FILSYS_V6) return v6fs_dir_read(&fs->u.v6, (v6_inode_t *)ip, (v6_dirent_t **)e, n);
-    return v7fs_dir_read(&fs->u.v7, (v7_inode_t *)ip, (v7_dirent_t **)e, n);
+    return fs->ops->dir_read(fs->fs, ip, e, n);
 }
 static int dir_lookup(filsys_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino) {
-    if (fs->ver == FILSYS_V6) return v6fs_dir_lookup(&fs->u.v6, (v6_inode_t *)ip, name, ino);
-    return v7fs_dir_lookup(&fs->u.v7, (v7_inode_t *)ip, name, ino);
+    return fs->ops->dir_lookup(fs->fs, ip, name, ino);
 }
 static int dir_add(filsys_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name) {
-    if (fs->ver == FILSYS_V6) return v6fs_dir_add(&fs->u.v6, (v6_inode_t *)ip, ino, name);
-    return v7fs_dir_add(&fs->u.v7, (v7_inode_t *)ip, ino, name);
+    return fs->ops->dir_add(fs->fs, ip, ino, name);
 }
 static int dir_remove(filsys_t *fs, filsys_inode_t *ip, const char *name) {
-    if (fs->ver == FILSYS_V6) return v6fs_dir_remove(&fs->u.v6, (v6_inode_t *)ip, name);
-    return v7fs_dir_remove(&fs->u.v7, (v7_inode_t *)ip, name);
+    return fs->ops->dir_remove(fs->fs, ip, name);
 }
 static int lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip) {
-    if (fs->ver == FILSYS_V6) return v6fs_lookup(&fs->u.v6, path, ino, (v6_inode_t *)ip);
-    return v7fs_lookup(&fs->u.v7, path, ino, (v7_inode_t *)ip);
+    return fs->ops->lookup(fs->fs, path, ino, ip);
 }
 static int bmap(filsys_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    if (fs->ver == FILSYS_V6) return v6fs_bmap(&fs->u.v6, (v6_inode_t *)ip, lbn, create, bno);
-    return v7fs_bmap(&fs->u.v7, (v7_inode_t *)ip, lbn, create, bno);
+    return fs->ops->bmap(fs->fs, ip, lbn, create, bno);
 }
 static int read_block(filsys_t *fs, uint32_t bno, uint8_t *buf) {
-    if (fs->ver == FILSYS_V6) return v6fs_read_block(&fs->u.v6, bno, buf);
-    return v7fs_read_block(&fs->u.v7, bno, buf);
+    return fs->ops->read_block(fs->fs, bno, buf);
 }
 static int write_block(filsys_t *fs, uint32_t bno, const uint8_t *buf) {
-    if (fs->ver == FILSYS_V6) return v6fs_write_block(&fs->u.v6, bno, buf);
-    return v7fs_write_block(&fs->u.v7, bno, buf);
+    return fs->ops->write_block(fs->fs, bno, buf);
 }
 
-/* Largest file the selected edition can address, in bytes.  V6 (ILARG): 7
- * single-indirect (256 each) + 1 double-indirect (256^2).  V7/32V: 10 direct
- * + single + double + triple indirect (128 each). */
+/* Largest file the selected edition can address, in bytes. */
 static uint64_t maxfile(const filsys_t *fs) {
-    if (fs->ver == FILSYS_V6) {
-        uint64_t n = V6_NINDIR;
-        return (7u * n + n * n) * V6_BSIZE;
-    }
-    uint64_t n = V7_NINDIR;
-    return ((uint64_t)V7_NDADDR + n + n*n + n*n*n) * V7_BSIZE;
+    return fs->ops->max_file(fs->fs);
 }
 
 /* ---- helpers ------------------------------------------------------------- */
@@ -162,12 +141,20 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
     fs->ver = edition;
     fs->uid = uid;
     fs->gid = gid;
-    int rc;
-    if (edition == FILSYS_V6)
-        rc = v6fs_open(&fs->u.v6, path, readonly, offset);
-    else
-        rc = v7fs_open(&fs->u.v7, path, readonly, edition == FILSYS_32V, offset);
+    if (edition == FILSYS_V6) {
+        fs->ops = &v6fs_ops;
+        fs->fs  = calloc(1, sizeof(v6fs_t));
+    } else {
+        fs->ops = &v7fs_ops;
+        fs->fs  = calloc(1, sizeof(v7fs_t));
+    }
+    if (!fs->fs) {
+        free(fs);
+        return -ENOMEM;
+    }
+    int rc = fs->ops->open(fs->fs, path, readonly, edition == FILSYS_32V, offset);
     if (rc) {
+        free(fs->fs);
         free(fs);
         return rc;
     }
@@ -178,18 +165,19 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
 void filsys_close(filsys_t *fs) {
     if (!fs)
         return;
-    if (fs->ver == FILSYS_V6) v6fs_close(&fs->u.v6);
-    else v7fs_close(&fs->u.v7);
+    if (fs->fs)
+        fs->ops->close(fs->fs);
+    free(fs->fs);
     free(fs);
 }
 
 int filsys_sync(filsys_t *fs) {
-    if (fs->ver == FILSYS_V6) return v6fs_sync(&fs->u.v6);
-    return v7fs_sync(&fs->u.v7);
+    return fs->ops->sync(fs->fs);
 }
 
 int filsys_is_readonly(const filsys_t *fs) {
-    return fs->ver == FILSYS_V6 ? fs->u.v6.readonly : fs->u.v7.readonly;
+    return fs->ver == FILSYS_V6 ? ((const v6fs_t *)fs->fs)->readonly
+                                : ((const v7fs_t *)fs->fs)->readonly;
 }
 
 int filsys_edition(const filsys_t *fs) {
@@ -205,12 +193,7 @@ gid_t filsys_gid(const filsys_t *fs) {
 }
 
 int filsys_check(filsys_t *fs) {
-    if (fs->ver == FILSYS_V6) {
-        v6_check_t rep;
-        return v6fs_check(&fs->u.v6, &rep) ? -1 : 0;
-    }
-    v7_check_t rep;
-    return v7fs_check(&fs->u.v7, &rep, 0) ? -1 : 0;
+    return fs->ops->check(fs->fs);
 }
 
 int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip) {
@@ -642,15 +625,17 @@ int filsys_statfs(filsys_t *fs, struct statvfs *st) {
     memset(st, 0, sizeof(*st));
     st->f_bsize = st->f_frsize = 512;
     if (fs->ver == FILSYS_V6) {
-        st->f_blocks = fs->u.v6.fsize;
-        st->f_bfree = st->f_bavail = fs->u.v6.tfree;
-        st->f_files = v6_maxino(fs->u.v6.isize);
-        st->f_ffree = fs->u.v6.tinode;
+        const v6fs_t *v6 = fs->fs;
+        st->f_blocks = v6->fsize;
+        st->f_bfree = st->f_bavail = v6->tfree;
+        st->f_files = v6_maxino(v6->isize);
+        st->f_ffree = v6->tinode;
     } else {
-        st->f_blocks = fs->u.v7.fsize;
-        st->f_bfree = st->f_bavail = fs->u.v7.tfree;
-        st->f_files = (fs->u.v7.isize - 2) * 8;
-        st->f_ffree = fs->u.v7.tinode;
+        const v7fs_t *v7 = fs->fs;
+        st->f_blocks = v7->fsize;
+        st->f_bfree = st->f_bavail = v7->tfree;
+        st->f_files = (v7->isize - 2) * 8;
+        st->f_ffree = v7->tinode;
     }
     st->f_namemax = 14;
     return 0;
