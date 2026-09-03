@@ -1,13 +1,11 @@
-{ lib, stdenv, fetchFromGitHub, pkg-config, fuse3 }:
+{ lib, stdenv, fetchurl, pkg-config, fuse3 }:
 
 stdenv.mkDerivation rec {
   pname = "filsys";
   version = "1.0.0";
 
-  src = fetchFromGitHub {
-    owner = "moebiusV";
-    repo = "filsys";
-    rev = "v${version}";
+  src = fetchurl {
+    url = "https://github.com/moebiusV/filsys/releases/download/v${version}/filsys-${version}.tar.gz";
     hash = "";  # leave empty; nix reports the correct hash on first build
   };
 
@@ -18,7 +16,7 @@ stdenv.mkDerivation rec {
   meta = with lib; {
     description = "FUSE driver for Research Unix (V4-V7, 32V) filesystem images";
     homepage = "https://github.com/moebiusV/filsys";
-    license = licenses.isc;
+    license = [ licenses.isc ];  # ISC + Caldera Ancient UNIX (see COPYING)
     maintainers = [ maintainers.maintainer ];
     platforms = platforms.linux;
   };

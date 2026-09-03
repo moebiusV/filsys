@@ -64,6 +64,7 @@ boot:
 	chmod 644 boot/hpuboot boot/rpuboot
 
 # `make check` runs the end-to-end smoke test.  It needs a disk image
-# (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).
-check-local:
-	$(srcdir)/test.sh
+# (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).  Without the
+# image test.sh exits 77, which automake's test harness reports as SKIP, so a
+# build from the tarball (make distcheck) passes in any environment.
+TESTS = test.sh
