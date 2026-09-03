@@ -14,12 +14,6 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 override_dh_auto_configure:
 	dh_auto_configure -- --libdir=/usr/lib/$(DEB_HOST_MULTIARCH)
 
-# `make check` runs test.sh, which needs a fetched disk image (./fetch.sh) and
-# a live /dev/fuse -- an integration test, not a build-time one.  Skip it in the
-# package build (a clean chroot has neither).
-override_dh_auto_test:
-	@echo "skipping 'make check' (integration test; run ./test.sh manually)"
-
 # Fail if `make install` produces a file that no .install routes into a package.
 override_dh_missing:
 	dh_missing --fail-missing

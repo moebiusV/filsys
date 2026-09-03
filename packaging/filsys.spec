@@ -3,13 +3,11 @@ Version:        1.0.0
 Release:        1%{?dist}
 Summary:        FUSE driver for V7 (PDP-11) Unix filesystem images
 
-License:        LGPL-2.1-or-later
+License:        ISC AND Caldera
 URL:            https://github.com/moebiusV/filsys
-Source0:        %{name}-%{version}.tar.gz
+Source0:        https://github.com/moebiusV/filsys/releases/download/v%{version}/%{name}-%{version}.tar.gz
 
 BuildRequires:  gcc
-BuildRequires:  autoconf
-BuildRequires:  automake
 BuildRequires:  make
 BuildRequires:  pkgconfig(fuse3)
 
@@ -30,7 +28,6 @@ seen by a running V7 kernel after the image is booted.
 %autosetup
 
 %build
-autoreconf -i
 %configure
 %make_build
 

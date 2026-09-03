@@ -7,7 +7,10 @@ MAINTAINER=	maintainer@example.com
 COMMENT=	FUSE driver for Research Unix (V4-V7, 32V) filesystem images
 WWW=		https://github.com/moebiusV/filsys
 
-LICENSE=	ISCL
+LICENSE=	ISCL CALDERA
+LICENSE_COMB=	dual
+# CALDERA = Caldera Ancient UNIX License (see COPYING); for a full ports entry
+# also define LICENSE_NAME_CALDERA and LICENSE_FILE_CALDERA.
 
 USES=		gmake pkgconfig
 GNU_CONFIGURE=	yes

@@ -5,16 +5,15 @@ pkgrel=1
 pkgdesc="FUSE driver for V7 (PDP-11) Unix filesystem images"
 arch=('x86_64')
 url="https://github.com/moebiusV/filsys"
-license=('LGPL2.1')
+license=('ISC' 'Caldera')
 depends=('fuse3')
 optdepends=('prebsd: boot the images on simh')
-makedepends=('autoconf' 'automake' 'pkg-config')
-source=("$pkgname-$pkgver.tar.gz")
+makedepends=('pkg-config')
+source=("https://github.com/moebiusV/filsys/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
   cd "$pkgname-$pkgver"
-  autoreconf -i
   ./configure --prefix=/usr
   make
 }

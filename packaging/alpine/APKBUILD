@@ -5,11 +5,11 @@ pkgrel=0
 pkgdesc="FUSE driver for Research Unix (V4-V7, 32V) filesystem images"
 url="https://github.com/moebiusV/filsys"
 arch="x86_64"
-license="ISC"
+license="ISC AND Caldera"
 makedepends="fuse3-dev build-base"
 depends="fuse3"
 # recommended (optional): v7unix-toolchain prebsd
-source="https://github.com/moebiusV/filsys/archive/refs/tags/v$pkgver.tar.gz"
+source="https://github.com/moebiusV/filsys/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz"
 sha512sums="SKIP"
 
 build() {
