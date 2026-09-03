@@ -225,15 +225,17 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <v4|v5|v6|v7|32v> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
+            "usage: %s -v <v1|v4|v5|v6|v7|32v> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
             "                [-r] [-f] [-d] <image> <mountpoint>\n"
-            "       %s -v <v4|v5|v6|v7|32v> [-o offset=N] -c <image>   # integrity check\n",
+            "       %s -v <v1|v4|v5|v6|v7|32v> [-o offset=N] -c <image>   # integrity check\n",
             p, p);
 }
 
 /* Parse a -v / -o version= argument.  Returns FILSYS_V6/V7/32V, or -1. */
 static int parse_version(const char *s) {
     if (s[0] == 'v' || s[0] == 'V') s++;   /* accept "v7" and "7" alike */
+    if (!strcmp(s, "1"))
+        return FILSYS_V1;
     if (!strcmp(s, "4") || !strcmp(s, "5") || !strcmp(s, "6"))
         return FILSYS_V6;
     if (!strcmp(s, "7"))
