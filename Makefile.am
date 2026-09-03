@@ -13,7 +13,7 @@ sbin_PROGRAMS = mount.filsys
 # are the internal per-format layer and stay uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h v6fs.c v6fs.h v7fs.c v7fs.h
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h v6fs.c v6fs.h v7fs.c v7fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
@@ -33,10 +33,10 @@ mount_filsys_LDADD = $(FUSE3_LIBS) libfilsys.a
 findfs_filsys_SOURCES = findfs.filsys.c
 findfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
-mkfs_filsys_SOURCES = mkfs.filsys.c v6fs.c v6fs.h v7fs.c v7fs.h
+mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h v6fs.c v6fs.h v7fs.c v7fs.h
 mkfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
-fsck_filsys_SOURCES = fsck.filsys.c v6fs.c v6fs.h v7fs.c v7fs.h
+fsck_filsys_SOURCES = fsck.filsys.c filsys_ops.h v6fs.c v6fs.h v7fs.c v7fs.h
 fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1

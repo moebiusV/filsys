@@ -9,6 +9,7 @@
  */
 #include <config.h>
 #include "v6fs.h"
+#include "filsys_ops.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -817,3 +818,49 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep) {
            rep->free_blocks, rep->used_inodes, rep->inodes, rep->errors);
     return rep->errors ? -1 : 0;
 }
+
+/* ---- ops table ---------------------------------------------------------- */
+
+static int v6fs_open_ops(void *fs, const char *path, int readonly, int le,
+                         uint64_t offset) {
+    (void)le;   /* V6 has no little-endian variant */
+    return v6fs_open((v6fs_t *)fs, path, readonly, offset);
+}
+
+static int v6fs_check_ops(void *fs) {
+    v6_check_t rep;
+    return v6fs_check((v6fs_t *)fs, &rep);
+}
+
+static uint64_t v6fs_max_file(void *fs) {
+    (void)fs;
+    uint64_t n = V6_NINDIR;
+    return (7u * n + n * n) * V6_BSIZE;
+}
+
+/* The casts are safe: the first argument is an object pointer, and v6_inode_t /
+ * v6_dirent_t are layout-identical to filsys_inode_t / filsys_dirent_t. */
+const struct filsys_ops v6fs_ops = {
+    .name        = "v6",
+    .open        = v6fs_open_ops,
+    .close       = (void (*)(void *)) v6fs_close,
+    .sync        = (int (*)(void *)) v6fs_sync,
+    .read_block  = (int (*)(void *, uint32_t, uint8_t *)) v6fs_read_block,
+    .write_block = (int (*)(void *, uint32_t, const uint8_t *)) v6fs_write_block,
+    .read_inode  = (int (*)(void *, uint32_t, filsys_inode_t *)) v6fs_read_inode,
+    .write_inode = (int (*)(void *, uint32_t, const filsys_inode_t *)) v6fs_write_inode,
+    .ialloc      = (int (*)(void *, uint32_t *)) v6fs_ialloc,
+    .ifree       = (void (*)(void *, uint32_t)) v6fs_ifree,
+    .bmap        = (int (*)(void *, filsys_inode_t *, uint32_t, int, uint32_t *)) v6fs_bmap,
+    .itrunc      = (int (*)(void *, filsys_inode_t *)) v6fs_itrunc,
+    .itrunc_from = (int (*)(void *, filsys_inode_t *, uint32_t)) v6fs_itrunc_from,
+    .file_read   = (ssize_t (*)(void *, filsys_inode_t *, uint8_t *, size_t, off_t)) v6fs_file_read,
+    .file_write  = (ssize_t (*)(void *, filsys_inode_t *, const uint8_t *, size_t, off_t)) v6fs_file_write,
+    .dir_read    = (int (*)(void *, filsys_inode_t *, filsys_dirent_t **, size_t *)) v6fs_dir_read,
+    .dir_lookup  = (int (*)(void *, filsys_inode_t *, const char *, uint32_t *)) v6fs_dir_lookup,
+    .dir_add     = (int (*)(void *, filsys_inode_t *, uint32_t, const char *)) v6fs_dir_add,
+    .dir_remove  = (int (*)(void *, filsys_inode_t *, const char *)) v6fs_dir_remove,
+    .lookup      = (int (*)(void *, const char *, uint32_t *, filsys_inode_t *)) v6fs_lookup,
+    .check       = v6fs_check_ops,
+    .max_file    = v6fs_max_file,
+};
