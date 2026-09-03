@@ -64,5 +64,6 @@ struct filsys_ops {
 
 extern const struct filsys_ops v6fs_ops;
 extern const struct filsys_ops v7fs_ops;
+extern const struct filsys_ops v1fs_ops;
 
 #endif /* FILSYS_OPS_H */

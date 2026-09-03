@@ -23,9 +23,12 @@ extern "C" {
 #endif
 
 /* Edition selectors passed to filsys_open(). */
-#define FILSYS_V6 6
-#define FILSYS_V7 7
-#define FILSYS_32V 32
+enum {
+    FILSYS_V1  = 1,
+    FILSYS_V6  = 6,
+    FILSYS_V7  = 7,
+    FILSYS_32V = 32
+};
 
 /* Decoded inode -- one shape for every edition (V6 fills only addr[0..7]).
  * Matches the internal v6fs/v7fs in-core inode layout. */

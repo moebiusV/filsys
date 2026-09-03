@@ -24,33 +24,39 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#define V7_BSIZE    512
-#define V7_INOPB    8          /* inodes per block */
-#define V7_INODESZ  64         /* sizeof(struct dinode) */
-#define V7_NICFREE  50         /* superblock free-block cache size */
-#define V7_NICINOD  100        /* superblock free-inode cache size */
-#define V7_ROOTINO  2
-#define V7_SUPERB   1          /* block number of superblock */
-#define V7_NDADDR   10         /* direct addresses per inode */
-#define V7_NIADDR   13         /* total address slots per inode */
-#define V7_NINDIR   (V7_BSIZE / 4)  /* 4-byte addresses per indirect block */
-#define V7_DIRSIZ   14         /* chars per directory entry name */
-#define V7_DIRENTSZ (2 + V7_DIRSIZ)  /* bytes per on-disk directory entry */
+#include "filsys.h"
+
+enum {
+    V7_BSIZE    = 512,
+    V7_INOPB    = 8,           /* inodes per block */
+    V7_INODESZ  = 64,          /* sizeof(struct dinode) */
+    V7_NICFREE  = 50,          /* superblock free-block cache size */
+    V7_NICINOD  = 100,         /* superblock free-inode cache size */
+    V7_ROOTINO  = 2,
+    V7_SUPERB   = 1,           /* block number of superblock */
+    V7_NDADDR   = 10,          /* direct addresses per inode */
+    V7_NIADDR   = 13,          /* total address slots per inode */
+    V7_NINDIR   = V7_BSIZE / 4, /* 4-byte addresses per indirect block */
+    V7_DIRSIZ   = 14,          /* chars per directory entry name */
+    V7_DIRENTSZ = 2 + V7_DIRSIZ /* bytes per on-disk directory entry */
+};
 
 /* di_mode type/mode bits (sys/ino.h) */
-#define V7_IFMT   0170000
-#define V7_IFCHR  0020000
-#define V7_IFDIR  0040000
-#define V7_IFBLK  0060000
-#define V7_IFREG  0100000
-#define V7_IFMPC  0030000
-#define V7_IFMPB  0070000
-#define V7_ISUID  0004000
-#define V7_ISGID  0002000
-#define V7_ISVTX  0001000
-#define V7_IREAD  0000400
-#define V7_IWRITE 0000200
-#define V7_IEXEC  0000100
+enum {
+    V7_IFMT   = 0170000,
+    V7_IFCHR  = 0020000,
+    V7_IFDIR  = 0040000,
+    V7_IFBLK  = 0060000,
+    V7_IFREG  = 0100000,
+    V7_IFMPC  = 0030000,
+    V7_IFMPB  = 0070000,
+    V7_ISUID  = 0004000,
+    V7_ISGID  = 0002000,
+    V7_ISVTX  = 0001000,
+    V7_IREAD  = 0000400,
+    V7_IWRITE = 0000200,
+    V7_IEXEC  = 0000100
+};
 
 /* ---- byte-order primitives --------------------------------------------- */
 
@@ -117,22 +123,10 @@ static inline void v7_put24(uint8_t *p, int le, uint32_t v) {
 
 /* ---- core types -------------------------------------------------------- */
 
-/* Decoded on-disk inode. */
-typedef struct {
-    uint32_t ino;              /* inode number (0 = not yet bound) */
-    uint16_t mode;
-    int16_t  nlink;
-    int16_t  uid;
-    int16_t  gid;
-    uint32_t size;
-    uint32_t addr[V7_NIADDR];  /* block numbers, 0 = absent */
-    uint32_t atime, mtime, ctime;
-} v7_inode_t;
-
-typedef struct {
-    uint16_t ino;
-    char     name[V7_DIRSIZ + 1];
-} v7_dirent_t;
+/* Decoded inode/dirent are the public filsys types (no per-backend copy, so
+ * the ops table needs no type-punning cast). */
+typedef filsys_inode_t  v7_inode_t;
+typedef filsys_dirent_t v7_dirent_t;
 
 typedef struct {
     int        fd;             /* open disk image */

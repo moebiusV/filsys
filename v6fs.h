@@ -27,32 +27,38 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#define V6_BSIZE    512
-#define V6_INOPB    16         /* inodes per block */
-#define V6_INODESZ  32         /* sizeof(struct inode on disk) */
-#define V6_NICFREE  100        /* superblock free-block cache size */
-#define V6_NICINOD  100        /* superblock free-inode cache size */
-#define V6_ROOTINO  1
-#define V6_SUPERB   1          /* block number of superblock */
-#define V6_NIADDR   8          /* total address slots per inode */
-#define V6_NDADDR   8          /* direct blocks in a small file */
-#define V6_NINDIR   (V6_BSIZE / 2)  /* 2-byte addresses per indirect block */
-#define V6_DIRSIZ   14         /* chars per directory entry name */
+#include "filsys.h"
+
+enum {
+    V6_BSIZE   = 512,
+    V6_INOPB   = 16,           /* inodes per block */
+    V6_INODESZ = 32,           /* sizeof(struct inode on disk) */
+    V6_NICFREE = 100,          /* superblock free-block cache size */
+    V6_NICINOD = 100,          /* superblock free-inode cache size */
+    V6_ROOTINO = 1,
+    V6_SUPERB  = 1,            /* block number of superblock */
+    V6_NIADDR  = 8,            /* total address slots per inode */
+    V6_NDADDR  = 8,            /* direct blocks in a small file */
+    V6_NINDIR  = V6_BSIZE / 2, /* 2-byte addresses per indirect block */
+    V6_DIRSIZ  = 14            /* chars per directory entry name */
+};
 
 /* i_mode type/mode bits (sys/ino.h).  V6 has no IFREG (regular = type 0)
  * and no IFMPC/IFMPB; bit 010000 is the ILARG large-file flag. */
-#define V6_IALLOC 0100000   /* allocated bit (set in every live inode) */
-#define V6_IFMT   0060000
-#define V6_IFCHR  0020000
-#define V6_IFDIR  0040000
-#define V6_IFBLK  0060000
-#define V6_ILARG  0010000
-#define V6_ISUID  0004000
-#define V6_ISGID  0002000
-#define V6_ISVTX  0001000
-#define V6_IREAD  0000400
-#define V6_IWRITE 0000200
-#define V6_IEXEC  0000100
+enum {
+    V6_IALLOC = 0100000,   /* allocated bit (set in every live inode) */
+    V6_IFMT   = 0060000,
+    V6_IFCHR  = 0020000,
+    V6_IFDIR  = 0040000,
+    V6_IFBLK  = 0060000,
+    V6_ILARG  = 0010000,
+    V6_ISUID  = 0004000,
+    V6_ISGID  = 0002000,
+    V6_ISVTX  = 0001000,
+    V6_IREAD  = 0000400,
+    V6_IWRITE = 0000200,
+    V6_IEXEC  = 0000100
+};
 
 /* ---- byte-order primitives --------------------------------------------- */
 
@@ -85,22 +91,10 @@ static inline void v6_put24me(uint8_t *p, uint32_t v) {
 
 /* ---- core types -------------------------------------------------------- */
 
-/* Decoded on-disk inode. */
-typedef struct {
-    uint32_t ino;              /* inode number (0 = not yet bound) */
-    uint16_t mode;
-    int16_t  nlink;
-    int16_t  uid;
-    int16_t  gid;
-    uint32_t size;
-    uint32_t addr[13];         /* block numbers (V6 uses 8); 13 for V6 parity */
-    uint32_t atime, mtime, ctime;
-} v6_inode_t;
-
-typedef struct {
-    uint16_t ino;
-    char     name[V6_DIRSIZ + 1];
-} v6_dirent_t;
+/* Decoded inode/dirent are the public filsys types (no per-backend copy, so
+ * the ops table needs no type-punning cast). */
+typedef filsys_inode_t  v6_inode_t;
+typedef filsys_dirent_t v6_dirent_t;
 
 typedef struct {
     int        fd;             /* open disk image */

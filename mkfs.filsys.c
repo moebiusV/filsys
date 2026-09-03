@@ -42,7 +42,7 @@
 #include "v6fs.h"
 #include "v7fs.h"
 
-#define A_MAGIC1 0407  /* V7 normal a.out magic (boot block) */
+enum { A_MAGIC1 = 0407 };  /* V7 normal a.out magic (boot block) */
 
 static int      fd;
 static uint64_t base;   /* byte offset of the filesystem in the image */

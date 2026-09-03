@@ -7,6 +7,7 @@
 #include <config.h>
 #include "filsys.h"
 #include "filsys_ops.h"
+#include "v1fs.h"
 #include "v6fs.h"
 #include "v7fs.h"
 
@@ -27,6 +28,19 @@ struct filsys {
 /* ---- mode conversion (edition-aware) ------------------------------------ */
 
 static mode_t to_posix_mode(int ver, uint16_t mode) {
+    if (ver == FILSYS_V1) {
+        /* V1's compact two-class permission model: owner r/w/x, non-owner r/w,
+         * setuid, plus a single directory bit.  No char/block type bits --
+         * devices are identified by inode number (< 41). */
+        mode_t m = (mode & V1_IFDIR) ? S_IFDIR : S_IFREG;
+        if (mode & V1_IREAD)  m |= S_IRUSR;
+        if (mode & V1_IWRITE) m |= S_IWUSR;
+        if (mode & V1_IEXEC)  m |= S_IXUSR | S_IXGRP | S_IXOTH;
+        if (mode & V1_OREAD)  m |= S_IRGRP | S_IROTH;
+        if (mode & V1_OWRITE) m |= S_IWGRP | S_IWOTH;
+        if (mode & V1_ISUID)  m |= S_ISUID;
+        return m;
+    }
     mode_t m = mode & 07777;
     if (ver == FILSYS_V6) {
         switch (mode & V6_IFMT) {
@@ -144,6 +158,9 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
     if (edition == FILSYS_V6) {
         fs->ops = &v6fs_ops;
         fs->fs  = calloc(1, sizeof(v6fs_t));
+    } else if (edition == FILSYS_V1) {
+        fs->ops = &v1fs_ops;
+        fs->fs  = calloc(1, sizeof(v1fs_t));
     } else {
         fs->ops = &v7fs_ops;
         fs->fs  = calloc(1, sizeof(v7fs_t));
@@ -176,8 +193,9 @@ int filsys_sync(filsys_t *fs) {
 }
 
 int filsys_is_readonly(const filsys_t *fs) {
-    return fs->ver == FILSYS_V6 ? ((const v6fs_t *)fs->fs)->readonly
-                                : ((const v7fs_t *)fs->fs)->readonly;
+    if (fs->ver == FILSYS_V6) return ((const v6fs_t *)fs->fs)->readonly;
+    if (fs->ver == FILSYS_V1) return ((const v1fs_t *)fs->fs)->readonly;
+    return ((const v7fs_t *)fs->fs)->readonly;
 }
 
 int filsys_edition(const filsys_t *fs) {
@@ -212,10 +230,15 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     st->st_uid   = fs->uid;
     st->st_gid   = fs->gid;
     st->st_size  = ip->size;
-    uint16_t t = fs->ver == FILSYS_V6 ? (ip->mode & V6_IFMT) : (ip->mode & V7_IFMT);
-    int isdev = (fs->ver == FILSYS_V6) ? (t == V6_IFCHR || t == V6_IFBLK)
-                                   : (t == V7_IFCHR || t == V7_IFBLK ||
-                                      t == V7_IFMPC || t == V7_IFMPB);
+    int isdev;
+    if (fs->ver == FILSYS_V1) {
+        isdev = (ip->ino < V1_ROOTINO);   /* V1: devices by inode number */
+    } else {
+        uint16_t t = fs->ver == FILSYS_V6 ? (ip->mode & V6_IFMT) : (ip->mode & V7_IFMT);
+        isdev = (fs->ver == FILSYS_V6) ? (t == V6_IFCHR || t == V6_IFBLK)
+                                       : (t == V7_IFCHR || t == V7_IFBLK ||
+                                          t == V7_IFMPC || t == V7_IFMPB);
+    }
     if (isdev)
         st->st_rdev = ip->addr[0];
     st->st_atime   = ip->atime;
@@ -630,6 +653,12 @@ int filsys_statfs(filsys_t *fs, struct statvfs *st) {
         st->f_bfree = st->f_bavail = v6->tfree;
         st->f_files = v6_maxino(v6->isize);
         st->f_ffree = v6->tinode;
+    } else if (fs->ver == FILSYS_V1) {
+        const v1fs_t *v1 = fs->fs;
+        st->f_blocks = v1->fsize;
+        st->f_bfree = st->f_bavail = v1->tfree;
+        st->f_files = v1->maxino;
+        st->f_ffree = v1->tinode;
     } else {
         const v7fs_t *v7 = fs->fs;
         st->f_blocks = v7->fsize;
@@ -637,6 +666,6 @@ int filsys_statfs(filsys_t *fs, struct statvfs *st) {
         st->f_files = (v7->isize - 2) * 8;
         st->f_ffree = v7->tinode;
     }
-    st->f_namemax = 14;
+    st->f_namemax = fs->ver == FILSYS_V1 ? V1_DIRSIZ : 14;
     return 0;
 }

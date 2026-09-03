@@ -30,11 +30,13 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#define BSIZE 512
-#define V6_NICFREE 100
-#define V6_NICINOD 100
-#define V7_NICFREE 50
-#define V7_NICINOD 100
+enum {
+    BSIZE      = 512,
+    V6_NICFREE = 100,
+    V6_NICINOD = 100,
+    V7_NICFREE = 50,
+    V7_NICINOD = 100
+};
 
 static uint16_t get16le(const uint8_t *p) {
     return (uint16_t)(p[0] | (p[1] << 8));

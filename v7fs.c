@@ -1197,47 +1197,76 @@ int v7fs_resolve_dups(v7fs_t *fs)
     return resolved == (int)ndup ? 0 : -1;
 }
 
-/* ---- ops table ---------------------------------------------------------- */
+/* ---- ops table ----------------------------------------------------------
+ * Each op takes `void *` (the backend state).  The adapters forward to the
+ * typed backend function; the `void *` argument converts implicitly to
+ * v7fs_t*, so there is no cast anywhere. */
 
-static int v7fs_open_ops(void *fs, const char *path, int readonly, int le,
-                         uint64_t offset) {
-    return v7fs_open((v7fs_t *)fs, path, readonly, le, offset);
+static int v7fs_open_op(void *fs, const char *path, int readonly, int le,
+                        uint64_t offset) {
+    return v7fs_open(fs, path, readonly, le, offset);
 }
-
-static int v7fs_check_ops(void *fs) {
-    v7_check_t rep;
-    return v7fs_check((v7fs_t *)fs, &rep, 0);
-}
-
-static uint64_t v7fs_max_file(void *fs) {
+static void v7fs_close_op(void *fs) { v7fs_close(fs); }
+static int v7fs_sync_op(void *fs) { return v7fs_sync(fs); }
+static int v7fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
+{ return v7fs_read_block(fs, bno, buf); }
+static int v7fs_write_block_op(void *fs, uint32_t bno, const uint8_t *buf)
+{ return v7fs_write_block(fs, bno, buf); }
+static int v7fs_read_inode_op(void *fs, uint32_t ino, filsys_inode_t *ip)
+{ return v7fs_read_inode(fs, ino, ip); }
+static int v7fs_write_inode_op(void *fs, uint32_t ino, const filsys_inode_t *ip)
+{ return v7fs_write_inode(fs, ino, ip); }
+static int v7fs_ialloc_op(void *fs, uint32_t *ino)
+{ return v7fs_ialloc(fs, ino); }
+static void v7fs_ifree_op(void *fs, uint32_t ino) { v7fs_ifree(fs, ino); }
+static int v7fs_bmap_op(void *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno)
+{ return v7fs_bmap(fs, ip, lbn, create, bno); }
+static int v7fs_itrunc_op(void *fs, filsys_inode_t *ip)
+{ return v7fs_itrunc(fs, ip); }
+static int v7fs_itrunc_from_op(void *fs, filsys_inode_t *ip, uint32_t first_blk)
+{ return v7fs_itrunc_from(fs, ip, first_blk); }
+static ssize_t v7fs_file_read_op(void *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off)
+{ return v7fs_file_read(fs, ip, buf, size, off); }
+static ssize_t v7fs_file_write_op(void *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off)
+{ return v7fs_file_write(fs, ip, buf, size, off); }
+static int v7fs_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
+{ return v7fs_dir_read(fs, ip, ents, count); }
+static int v7fs_dir_lookup_op(void *fs, filsys_inode_t *ip, const char *name, uint32_t *ino)
+{ return v7fs_dir_lookup(fs, ip, name, ino); }
+static int v7fs_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
+{ return v7fs_dir_add(fs, ip, ino, name); }
+static int v7fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
+{ return v7fs_dir_remove(fs, ip, name); }
+static int v7fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
+{ return v7fs_lookup(fs, path, ino, ip); }
+static int v7fs_check_op(void *fs) { v7_check_t rep; return v7fs_check(fs, &rep, 0); }
+static uint64_t v7fs_max_file_op(void *fs) {
     (void)fs;
     uint64_t n = V7_NINDIR;
     return ((uint64_t)V7_NDADDR + n + n * n + n * n * n) * V7_BSIZE;
 }
 
-/* The casts are safe: the first argument is an object pointer, and v7_inode_t /
- * v7_dirent_t are layout-identical to filsys_inode_t / filsys_dirent_t. */
 const struct filsys_ops v7fs_ops = {
     .name        = "v7",
-    .open        = v7fs_open_ops,
-    .close       = (void (*)(void *)) v7fs_close,
-    .sync        = (int (*)(void *)) v7fs_sync,
-    .read_block  = (int (*)(void *, uint32_t, uint8_t *)) v7fs_read_block,
-    .write_block = (int (*)(void *, uint32_t, const uint8_t *)) v7fs_write_block,
-    .read_inode  = (int (*)(void *, uint32_t, filsys_inode_t *)) v7fs_read_inode,
-    .write_inode = (int (*)(void *, uint32_t, const filsys_inode_t *)) v7fs_write_inode,
-    .ialloc      = (int (*)(void *, uint32_t *)) v7fs_ialloc,
-    .ifree       = (void (*)(void *, uint32_t)) v7fs_ifree,
-    .bmap        = (int (*)(void *, filsys_inode_t *, uint32_t, int, uint32_t *)) v7fs_bmap,
-    .itrunc      = (int (*)(void *, filsys_inode_t *)) v7fs_itrunc,
-    .itrunc_from = (int (*)(void *, filsys_inode_t *, uint32_t)) v7fs_itrunc_from,
-    .file_read   = (ssize_t (*)(void *, filsys_inode_t *, uint8_t *, size_t, off_t)) v7fs_file_read,
-    .file_write  = (ssize_t (*)(void *, filsys_inode_t *, const uint8_t *, size_t, off_t)) v7fs_file_write,
-    .dir_read    = (int (*)(void *, filsys_inode_t *, filsys_dirent_t **, size_t *)) v7fs_dir_read,
-    .dir_lookup  = (int (*)(void *, filsys_inode_t *, const char *, uint32_t *)) v7fs_dir_lookup,
-    .dir_add     = (int (*)(void *, filsys_inode_t *, uint32_t, const char *)) v7fs_dir_add,
-    .dir_remove  = (int (*)(void *, filsys_inode_t *, const char *)) v7fs_dir_remove,
-    .lookup      = (int (*)(void *, const char *, uint32_t *, filsys_inode_t *)) v7fs_lookup,
-    .check       = v7fs_check_ops,
-    .max_file    = v7fs_max_file,
+    .open        = v7fs_open_op,
+    .close       = v7fs_close_op,
+    .sync        = v7fs_sync_op,
+    .read_block  = v7fs_read_block_op,
+    .write_block = v7fs_write_block_op,
+    .read_inode  = v7fs_read_inode_op,
+    .write_inode = v7fs_write_inode_op,
+    .ialloc      = v7fs_ialloc_op,
+    .ifree       = v7fs_ifree_op,
+    .bmap        = v7fs_bmap_op,
+    .itrunc      = v7fs_itrunc_op,
+    .itrunc_from = v7fs_itrunc_from_op,
+    .file_read   = v7fs_file_read_op,
+    .file_write  = v7fs_file_write_op,
+    .dir_read    = v7fs_dir_read_op,
+    .dir_lookup  = v7fs_dir_lookup_op,
+    .dir_add     = v7fs_dir_add_op,
+    .dir_remove  = v7fs_dir_remove_op,
+    .lookup      = v7fs_lookup_op,
+    .check       = v7fs_check_op,
+    .max_file    = v7fs_max_file_op,
 };

@@ -819,48 +819,73 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep) {
     return rep->errors ? -1 : 0;
 }
 
-/* ---- ops table ---------------------------------------------------------- */
+/* ---- ops table ----------------------------------------------------------
+ * Each op takes `void *` (the backend state).  The adapters forward to the
+ * typed backend function; the `void *` argument converts implicitly to
+ * v6fs_t*, so there is no cast anywhere. */
 
-static int v6fs_open_ops(void *fs, const char *path, int readonly, int le,
-                         uint64_t offset) {
+static int v6fs_open_op(void *fs, const char *path, int readonly, int le,
+                        uint64_t offset) {
     (void)le;   /* V6 has no little-endian variant */
-    return v6fs_open((v6fs_t *)fs, path, readonly, offset);
+    return v6fs_open(fs, path, readonly, offset);
 }
+static void v6fs_close_op(void *fs) { v6fs_close(fs); }
+static int v6fs_sync_op(void *fs) { return v6fs_sync(fs); }
+static int v6fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
+{ return v6fs_read_block(fs, bno, buf); }
+static int v6fs_write_block_op(void *fs, uint32_t bno, const uint8_t *buf)
+{ return v6fs_write_block(fs, bno, buf); }
+static int v6fs_read_inode_op(void *fs, uint32_t ino, filsys_inode_t *ip)
+{ return v6fs_read_inode(fs, ino, ip); }
+static int v6fs_write_inode_op(void *fs, uint32_t ino, const filsys_inode_t *ip)
+{ return v6fs_write_inode(fs, ino, ip); }
+static int v6fs_ialloc_op(void *fs, uint32_t *ino)
+{ return v6fs_ialloc(fs, ino); }
+static void v6fs_ifree_op(void *fs, uint32_t ino) { v6fs_ifree(fs, ino); }
+static int v6fs_bmap_op(void *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno)
+{ return v6fs_bmap(fs, ip, lbn, create, bno); }
+static int v6fs_itrunc_op(void *fs, filsys_inode_t *ip)
+{ return v6fs_itrunc(fs, ip); }
+static int v6fs_itrunc_from_op(void *fs, filsys_inode_t *ip, uint32_t first_blk)
+{ return v6fs_itrunc_from(fs, ip, first_blk); }
+static ssize_t v6fs_file_read_op(void *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off)
+{ return v6fs_file_read(fs, ip, buf, size, off); }
+static ssize_t v6fs_file_write_op(void *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off)
+{ return v6fs_file_write(fs, ip, buf, size, off); }
+static int v6fs_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
+{ return v6fs_dir_read(fs, ip, ents, count); }
+static int v6fs_dir_lookup_op(void *fs, filsys_inode_t *ip, const char *name, uint32_t *ino)
+{ return v6fs_dir_lookup(fs, ip, name, ino); }
+static int v6fs_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
+{ return v6fs_dir_add(fs, ip, ino, name); }
+static int v6fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
+{ return v6fs_dir_remove(fs, ip, name); }
+static int v6fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
+{ return v6fs_lookup(fs, path, ino, ip); }
+static int v6fs_check_op(void *fs) { v6_check_t rep; return v6fs_check(fs, &rep); }
+static uint64_t v6fs_max_file_op(void *fs) { (void)fs; uint64_t n = V6_NINDIR; return (7u * n + n * n) * V6_BSIZE; }
 
-static int v6fs_check_ops(void *fs) {
-    v6_check_t rep;
-    return v6fs_check((v6fs_t *)fs, &rep);
-}
-
-static uint64_t v6fs_max_file(void *fs) {
-    (void)fs;
-    uint64_t n = V6_NINDIR;
-    return (7u * n + n * n) * V6_BSIZE;
-}
-
-/* The casts are safe: the first argument is an object pointer, and v6_inode_t /
- * v6_dirent_t are layout-identical to filsys_inode_t / filsys_dirent_t. */
 const struct filsys_ops v6fs_ops = {
     .name        = "v6",
-    .open        = v6fs_open_ops,
-    .close       = (void (*)(void *)) v6fs_close,
-    .sync        = (int (*)(void *)) v6fs_sync,
-    .read_block  = (int (*)(void *, uint32_t, uint8_t *)) v6fs_read_block,
-    .write_block = (int (*)(void *, uint32_t, const uint8_t *)) v6fs_write_block,
-    .read_inode  = (int (*)(void *, uint32_t, filsys_inode_t *)) v6fs_read_inode,
-    .write_inode = (int (*)(void *, uint32_t, const filsys_inode_t *)) v6fs_write_inode,
-    .ialloc      = (int (*)(void *, uint32_t *)) v6fs_ialloc,
-    .ifree       = (void (*)(void *, uint32_t)) v6fs_ifree,
-    .bmap        = (int (*)(void *, filsys_inode_t *, uint32_t, int, uint32_t *)) v6fs_bmap,
-    .itrunc      = (int (*)(void *, filsys_inode_t *)) v6fs_itrunc,
-    .itrunc_from = (int (*)(void *, filsys_inode_t *, uint32_t)) v6fs_itrunc_from,
-    .file_read   = (ssize_t (*)(void *, filsys_inode_t *, uint8_t *, size_t, off_t)) v6fs_file_read,
-    .file_write  = (ssize_t (*)(void *, filsys_inode_t *, const uint8_t *, size_t, off_t)) v6fs_file_write,
-    .dir_read    = (int (*)(void *, filsys_inode_t *, filsys_dirent_t **, size_t *)) v6fs_dir_read,
-    .dir_lookup  = (int (*)(void *, filsys_inode_t *, const char *, uint32_t *)) v6fs_dir_lookup,
-    .dir_add     = (int (*)(void *, filsys_inode_t *, uint32_t, const char *)) v6fs_dir_add,
-    .dir_remove  = (int (*)(void *, filsys_inode_t *, const char *)) v6fs_dir_remove,
-    .lookup      = (int (*)(void *, const char *, uint32_t *, filsys_inode_t *)) v6fs_lookup,
-    .check       = v6fs_check_ops,
-    .max_file    = v6fs_max_file,
+    .open        = v6fs_open_op,
+    .close       = v6fs_close_op,
+    .sync        = v6fs_sync_op,
+    .read_block  = v6fs_read_block_op,
+    .write_block = v6fs_write_block_op,
+    .read_inode  = v6fs_read_inode_op,
+    .write_inode = v6fs_write_inode_op,
+    .ialloc      = v6fs_ialloc_op,
+    .ifree       = v6fs_ifree_op,
+    .bmap        = v6fs_bmap_op,
+    .itrunc      = v6fs_itrunc_op,
+    .itrunc_from = v6fs_itrunc_from_op,
+    .file_read   = v6fs_file_read_op,
+    .file_write  = v6fs_file_write_op,
+    .dir_read    = v6fs_dir_read_op,
+    .dir_lookup  = v6fs_dir_lookup_op,
+    .dir_add     = v6fs_dir_add_op,
+    .dir_remove  = v6fs_dir_remove_op,
+    .lookup      = v6fs_lookup_op,
+    .check       = v6fs_check_op,
+    .max_file    = v6fs_max_file_op,
 };
