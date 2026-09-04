@@ -171,21 +171,16 @@ backends.
 
 ### Format table
 
-The table below covers the 512-byte-block editions (V4 through 32V), whose
-inodes and block pointers share one shape.  The word-addressed PDP-7 (v0) and
-the bitmap-allocated V1–V3 layouts differ enough to be described separately,
-under "History" above and "Limits" below.
-
-| | V4 / V5 / V6 (identical) | V7 | 32V |
-|---|---|---|---|
-| block size | 512 | 512 | 512 |
-| inode size | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) |
-| block addresses | 8 x 16-bit | 13 x 24-bit (3-byte packed) | same |
-| file size | 24-bit | 32-bit | 32-bit |
-| superblock free list | `free[100]`, 16-bit | `s_free[50]`, 24-bit | same |
-| root inode | 1 | 2 | 2 |
-| bad-block file | none | inode 1 | inode 1 |
-| directory entry | 16 B (`d_ino` + 14-char) | 16 B | 16 B |
+| | PDP-7 (v0) | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V |
+|---|---|---|---|---|---|
+| block size | 64 words (256 B) | 512 | 512 | 512 | 512 |
+| inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) |
+| block addresses | 7 words | 8 × 16-bit | 8 × 16-bit | 13 × 24-bit (3-byte packed) | 13 × 24-bit (LE) |
+| allocator | free list | bitmap (in superblock) | free list | free list | free list |
+| file size | 56 KB | 64 KB (16-bit) | 24-bit | 32-bit | 32-bit |
+| root inode | 4 | 41 | 1 | 2 | 2 |
+| bad-block file | none | none | none | inode 1 | inode 1 |
+| directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B |
 
 Four code paths cover the whole range: `pdp7fs.c` (`-v v0`, word-addressed),
 `v1fs.c` (`-v v1`/`v2`/`v3`, one bitmap format), `v6fs.c` (`-v v4`/`v5`/`v6`,
@@ -400,11 +395,16 @@ Mount any hit with `mount.filsys -o offset=<byte>`.
 ## Verification
 
 The read path and the write path were both exercised against real images of
-the V4-through-32V editions; the V1–V3 layout is verified against Yufeng Gao's
-V2-beta RF image (see "History"):
+the V4-through-32V editions.  The earlier editions have no original media
+surviving, so the PDP-7 (v0) layout is verified against the pdp7-unix
+reconstruction and V1–V3 against Yufeng Gao's "V2 beta" RF image; the
+create/write/delete path for every edition is additionally run by
+`test_matrix` under `make check`:
 
 | edition | image | `-c` | mount | create/write | chmod/chown | delete |
 |---|---|---|---|---|---|---|
+| PDP-7 (v0) | pdp7-unix reconstruction | yes | yes | yes | yes | yes |
+| V1 / V2 / V3 | Gao's `V2 beta` RF (reconstruction) | yes | yes | yes | yes | yes |
 | V4 | TUHS `Utah_v4/disk.rk` | yes | yes | yes | yes (on-disk bytes verified) | yes |
 | V5 | TUHS `Dennis_v5/v5root` | yes | yes | yes | yes | yes |
 | V6 | pcollinson `rk0` / SIMH `uv6swre` | yes | yes | yes | yes | yes |

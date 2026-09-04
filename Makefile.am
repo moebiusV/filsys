@@ -1,6 +1,14 @@
 # Makefile.am - filsys, a FUSE driver and disk utilities for Research Unix
 # filesystem images.
 
+# Reproducible `make dist`: a byte-identical tarball no matter when or where it
+# is built.  `-n` drops the gzip header timestamp; the dist-hook pins every file
+# and directory mtime to a fixed epoch (set SOURCE_DATE_EPOCH to the commit
+# time for a release, or leave it unset to fall back to 0).
+GZIP_ENV = --best -n
+dist-hook:
+	@find $(distdir) -exec touch -h -d @$${SOURCE_DATE_EPOCH:-0} {} +
+
 # mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir;
 # the disk utilities are ordinary user commands.
 bin_PROGRAMS = findfs.filsys mkfs.filsys fsck.filsys
@@ -76,3 +84,20 @@ check_PROGRAMS = test_matrix
 test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
+
+# Rebuild the dist tarball and check its sha256 against the value pinned in the
+# FreeBSD port.  This is the mechanical guard against the tag/checksum drift
+# that bit us twice: `make dist` is reproducible (see GZIP_ENV + dist-hook
+# above), so a clean build must always reproduce the committed hash.
+.PHONY: release-check
+release-check: dist
+	@actual=$$(sha256sum $(distdir).tar.gz | awk '{print $$1}'); \
+	pinned=$$(awk '/^SHA256 \(/{print $$4}' packaging/freebsd/distinfo); \
+	if [ "$$actual" = "$$pinned" ]; then \
+		echo "release-check: OK ($$actual)"; \
+	else \
+		echo "release-check: MISMATCH" >&2; \
+		echo "  tarball: $$actual" >&2; \
+		echo "  distinfo: $$pinned" >&2; \
+		exit 1; \
+	fi
