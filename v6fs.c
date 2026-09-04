@@ -1,4 +1,4 @@
-/* filsys 1.2.5 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.6 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v6fs.c - Sixth Edition Unix filesystem, on-disk access layer.
  *
@@ -48,6 +48,7 @@ int v6fs_open(v6fs_t *fs, const char *path, int readonly, uint64_t offset) {
     for (int i = 0; i < V6_NICINOD; i++)
         fs->inode[i] = v6_get16le(sb + 208 + 2 * i);
     fs->time   = v6_get32me(sb + 412);
+    fs->fmod   = sb[410];              /* s_fmod */
 
     /* Reject a superblock that claims more disk than the image file actually
      * holds, or one with no data area (see the same check in v7fs_open).  The
@@ -104,9 +105,12 @@ static void v6_count_free(v6fs_t *fs, uint32_t *nblk, uint32_t *nino) {
 
 void v6fs_close(v6fs_t *fs) {
     if (fs->fd >= 0) {
-        /* Superblock flushed once here, not per alloc/free (see v7fs_close). */
-        if (!fs->readonly)
+        /* Superblock flushed once here, not per alloc/free (see v7fs_close).
+         * A clean close clears s_fmod: the image is now consistent. */
+        if (!fs->readonly) {
+            fs->fmod = 0;
             super_write(fs);
+        }
         close(fs->fd);
         fs->fd = -1;
     }
@@ -115,6 +119,13 @@ void v6fs_close(v6fs_t *fs) {
 int v6fs_sync(v6fs_t *fs) {
     if (fs->readonly)
         return 0;
+    return super_write(fs);
+}
+
+int v6fs_mark_dirty(v6fs_t *fs) {
+    if (fs->readonly)
+        return 0;
+    fs->fmod = 1;
     return super_write(fs);
 }
 
@@ -155,6 +166,7 @@ static int super_write(v6fs_t *fs) {
     for (int i = 0; i < V6_NICINOD; i++)
         v6_put16le(sb + 208 + 2 * i, fs->inode[i]);
     v6_put32me(sb + 412, (uint32_t)time(NULL));  /* s_time[2] */
+    sb[410] = (uint8_t)(fs->fmod != 0);           /* s_fmod */
     return v6fs_write_block(fs, V6_SUPERB, sb);
 }
 
@@ -830,8 +842,86 @@ static int v6fs_makefree(v6fs_t *fs, v6_chkctx_t *cx)
     return nfree;
 }
 
-int v6fs_check(v6fs_t *fs, v6_check_t *rep, int salvage) {
+/* Preen (FILSYS_CK_PREEN): fix link counts and reconnect unreferenced inodes
+ * to lost+found.  `ecount[ino]` is the number of directory references; `alloc`
+ * marks allocated inodes.  Only regular files are reconnected -- a directory
+ * orphan needs its ".." re-pointed, which is left to a human. */
+static void v6fs_preen(v6fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
+                       uint32_t maxino)
+{
+    v6_inode_t root;
+    uint32_t lf_ino = 0;
+    if (v6fs_read_inode(fs, V6_ROOTINO, &root) == 0 &&
+        v6fs_dir_lookup(fs, &root, "lost+found", &lf_ino) != 0) {
+        /* create lost+found: an empty directory named after itself */
+        v6_inode_t lf;
+        if (v6fs_ialloc(fs, &lf_ino) == 0) {
+            memset(&lf, 0, sizeof(lf));
+            lf.ino = lf_ino;
+            lf.mode = 0777 | V6_IFDIR;
+            lf.nlink = 2;
+            v6fs_write_inode(fs, lf_ino, &lf);
+            v6fs_dir_add(fs, &lf, lf_ino, ".");
+            v6fs_dir_add(fs, &lf, V6_ROOTINO, "..");
+            v6fs_dir_add(fs, &root, lf_ino, "lost+found");
+            root.nlink++;
+            v6fs_write_inode(fs, V6_ROOTINO, &root);
+            printf("created lost+found (inode %u)\n", lf_ino);
+        }
+    }
+
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        int cnt = ecount[ino] & 0377;
+        v6_inode_t ip;
+        if (v6fs_read_inode(fs, ino, &ip) != 0)
+            continue;
+        int allocd = alloc[ino >> 3] & (uint8_t)(1u << (ino & 7));
+        if (!allocd) {
+            /* referenced but free: clri it */
+            if (cnt != 0) {
+                ip.mode = 0;
+                ip.nlink = 0;
+                v6fs_write_inode(fs, ino, &ip);
+                printf("cleared free-but-referenced inode %u\n", ino);
+            }
+            continue;
+        }
+        if (cnt == ip.nlink)
+            continue;
+        if (ino == V6_ROOTINO || ino == lf_ino)
+            continue;   /* nlink just set by lost+found creation; ecount is stale */
+        if (cnt == 0) {
+            /* unreferenced: reconnect a regular file to lost+found */
+            if (lf_ino == 0)
+                continue;
+            if ((ip.mode & V6_IFMT) != 0)   /* dir or device: leave it */
+                continue;
+            v6_inode_t lf;
+            char name[16];
+            snprintf(name, sizeof(name), "%u", ino);
+            if (v6fs_read_inode(fs, lf_ino, &lf) == 0 &&
+                v6fs_dir_add(fs, &lf, ino, name) == 0) {
+                ip.nlink = 1;
+                v6fs_write_inode(fs, ino, &ip);
+                v6fs_write_inode(fs, lf_ino, &lf);
+                printf("reconnected inode %u to lost+found\n", ino);
+            }
+        } else {
+            int old = ip.nlink;
+            ip.nlink = (int16_t)(cnt & 0377);
+            v6fs_write_inode(fs, ino, &ip);
+            printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+        }
+    }
+}
+
+int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
     memset(rep, 0, sizeof(*rep));
+
+    if (fs->fmod == 0 && !(mode & (FILSYS_CK_SALVAGE | FILSYS_CK_FORCE))) {
+        printf("filesystem clean; skipped (use -f to force)\n");
+        return 0;
+    }
 
     if (v6_data_start(fs->isize) >= fs->fsize || fs->fsize == 0) {
         printf("bad superblock: isize=%u fsize=%u\n", fs->isize, fs->fsize);
@@ -859,6 +949,13 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int salvage) {
     if (!cx.bmap)
         return -ENOMEM;
 
+    /* which inodes are allocated (mode != 0), for the dcheck pass */
+    uint8_t *alloc = calloc((maxino + 8) / 8, 1);
+    if (!alloc) {
+        free(cx.bmap);
+        return -ENOMEM;
+    }
+
     /* icheck pass 1: mark every block referenced by an inode. */
     for (uint32_t ino = 1; ino <= maxino; ino++) {
         v6_inode_t ip;
@@ -870,6 +967,7 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int salvage) {
         if (ip.mode == 0)
             continue;
         rep->used_inodes++;
+        alloc[ino >> 3] |= (uint8_t)(1u << (ino & 7));
         int t = ip.mode & V6_IFMT;
         if (t == V6_IFCHR || t == V6_IFBLK)
             continue;   /* device inode: addr[0] is a device number */
@@ -886,9 +984,10 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int salvage) {
     }
     rep->errors += cx.errors;
 
-    if (salvage) {
+    if (mode & FILSYS_CK_SALVAGE) {
         int nf = v6fs_makefree(fs, &cx);
         printf("salvaged: free list rebuilt (%d free blocks)\n", nf);
+        free(alloc);
         free(cx.bmap);
         return rep->errors ? -1 : 0;
     }
@@ -977,6 +1076,10 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int salvage) {
                     uint32_t dno = ents[e].ino;
                     if (dno == 0 || dno > maxino)
                         continue;   /* V6 root is inode 1, not skipped */
+                    if (!(alloc[dno >> 3] & (uint8_t)(1u << (dno & 7)))) {
+                        printf("dir %u references free inode %u\n", ino, dno);
+                        rep->errors++;
+                    }
                     ecount[dno]++;
                 }
                 v6fs_dirents_free(ents);
@@ -994,9 +1097,12 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int salvage) {
             printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
             rep->errors++;
         }
+        if (mode & FILSYS_CK_PREEN)
+            v6fs_preen(fs, ecount, alloc, maxino);
         free(ecount);
     }
 
+    free(alloc);
     free(cx.bmap);
 
     printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
@@ -1181,6 +1287,7 @@ static int v6fs_open_op(void *fs, const char *path, int readonly, int le,
 }
 static void v6fs_close_op(void *fs) { v6fs_close(fs); }
 static int v6fs_sync_op(void *fs) { return v6fs_sync(fs); }
+static int v6fs_mark_dirty_op(void *fs) { return v6fs_mark_dirty(fs); }
 static int v6fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
 { return v6fs_read_block(fs, bno, buf); }
 static int v6fs_write_block_op(void *fs, uint32_t bno, const uint8_t *buf)
@@ -1226,6 +1333,7 @@ const struct filsys_ops v6fs_ops = {
     .open        = v6fs_open_op,
     .close       = v6fs_close_op,
     .sync        = v6fs_sync_op,
+    .mark_dirty  = v6fs_mark_dirty_op,
     .read_block  = v6fs_read_block_op,
     .write_block = v6fs_write_block_op,
     .read_inode  = v6fs_read_inode_op,

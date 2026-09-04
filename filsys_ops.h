@@ -16,6 +16,15 @@
 
 #include "filsys.h"
 
+/* fsck check modes passed to the per-edition *_check functions.  A bitmask so
+ * salvage (rebuild the free list) and preen (auto-fix the safe subset) are
+ * independent knobs rather than another boolean in the signature. */
+enum {
+    FILSYS_CK_SALVAGE = 1,  /* rebuild the free list / free map */
+    FILSYS_CK_PREEN   = 2,  /* auto-fix the safe subset (needs rw open) */
+    FILSYS_CK_FORCE   = 4   /* check even if the superblock is marked clean */
+};
+
 struct filsys_ops {
     const char *name;
     uint32_t blocksize;   /* logical block size in bytes (bmap/truncate unit) */
@@ -25,6 +34,9 @@ struct filsys_ops {
                  uint64_t offset);
     void (*close)(void *fs);
     int  (*sync)(void *fs);
+    /* Mark the superblock dirty (s_fmod) and flush.  Optional: only the V6/V7
+     * formats carry an s_fmod byte; other backends leave it NULL. */
+    int  (*mark_dirty)(void *fs);
 
     /* block io */
     int  (*read_block)(void *fs, uint32_t bno, uint8_t *buf);

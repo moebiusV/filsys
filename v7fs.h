@@ -1,4 +1,4 @@
-/* filsys 1.2.5 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.6 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v7fs.h - Seventh Edition (V7) Unix filesystem, on-disk access layer.
  *
@@ -155,6 +155,7 @@ typedef struct {
     uint32_t   time;           /* last superblock update */
     uint32_t   tfree;          /* total free blocks (s_tfree) */
     uint32_t   tinode;         /* total free inodes (s_tinode) */
+    int        fmod;           /* s_fmod: superblock modified flag (dirty) */
 } v7fs_t;
 
 /* ---- lifecycle --------------------------------------------------------- */
@@ -169,6 +170,9 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
 void v7fs_close(v7fs_t *fs);
 /* Flush the superblock (and pending metadata) to the image without closing. */
 int v7fs_sync(v7fs_t *fs);
+/* Mark the filesystem dirty (s_fmod) and flush: a read-write mount is dirty
+ * until a clean close clears it, so a crash leaves the image flagged for fsck. */
+int v7fs_mark_dirty(v7fs_t *fs);
 
 /* ---- block / inode io -------------------------------------------------- */
 
@@ -231,11 +235,11 @@ typedef struct {
 
 /* Run the V7 equivalent of icheck(8) + dcheck(8): walk the inode table marking
  * every referenced block, walk the free list, detect duplicates and missing
- * blocks, and check directory link counts.  If `salvage` is set, rebuild the
+ * blocks, and check directory link counts.  If mode has FILSYS_CK_SALVAGE set, rebuild the
  * free list from the block-usage map (icheck -s) instead of checking it; the
  * filesystem must have been opened read-write.  Reports to stdout; returns 0
  * if no errors were found, -1 otherwise. */
-int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage);
+int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode);
 
 /* ---- maintenance (V7's ncheck / clri / salv -a) ------------------------ */
 

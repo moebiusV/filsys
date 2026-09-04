@@ -129,7 +129,7 @@ typedef struct {
     uint32_t errors;
 } p7_check_t;
 
-int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage);
+int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode);
 /* Resolve duplicate blocks (salv -a): copy each block referenced twice to a
  * fresh block and re-point the second reference, then rebuild the free list. */
 int p7fs_resolve_dups(p7fs_t *fs);

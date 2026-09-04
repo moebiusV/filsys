@@ -1,4 +1,4 @@
-/* filsys 1.2.5 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.6 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v1fs.c - First Edition (V1) Unix filesystem, on-disk access layer.
  *
@@ -697,7 +697,75 @@ static void v1fs_makefree(v1fs_t *fs, v1_chkctx_t *cx)
     super_write(fs);
 }
 
-int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
+static void v1fs_preen(v1fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
+                       uint32_t maxino)
+{
+    v1_inode_t root;
+    uint32_t lf_ino = 0;
+    /* V1 names are 8 chars, so the recovery directory is "lost" (the canonical
+     * "lost+found" name postdates the 8-char era). */
+    if (v1fs_read_inode(fs, V1_ROOTINO, &root) == 0 &&
+        v1fs_dir_lookup(fs, &root, "lost", &lf_ino) != 0) {
+        v1_inode_t lf;
+        if (v1fs_ialloc(fs, &lf_ino) == 0) {
+            memset(&lf, 0, sizeof(lf));
+            lf.ino = lf_ino;
+            lf.mode = V1_IALLOC | V1_IFDIR | V1_IREAD | V1_IWRITE | V1_IEXEC | V1_OREAD;
+            lf.nlink = 2;
+            v1fs_write_inode(fs, lf_ino, &lf);
+            v1fs_dir_add(fs, &lf, lf_ino, ".");
+            v1fs_dir_add(fs, &lf, V1_ROOTINO, "..");
+            v1fs_dir_add(fs, &root, lf_ino, "lost");
+            root.nlink++;
+            v1fs_write_inode(fs, V1_ROOTINO, &root);
+            printf("created lost+found (inode %u)\n", lf_ino);
+        }
+    }
+
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        int cnt = ecount[ino] & 0377;
+        v1_inode_t ip;
+        if (v1fs_read_inode(fs, ino, &ip) != 0)
+            continue;
+        int allocd = alloc[ino >> 3] & (uint8_t)(1u << (ino & 7));
+        if (!allocd) {
+            if (cnt != 0) {
+                ip.mode = 0;
+                ip.nlink = 0;
+                v1fs_write_inode(fs, ino, &ip);
+                printf("cleared free-but-referenced inode %u\n", ino);
+            }
+            continue;
+        }
+        if (cnt == ip.nlink)
+            continue;
+        if (ino == V1_ROOTINO || ino == lf_ino || ino < V1_ROOTINO)
+            continue;   /* root/lost+found nlink just set; devices have no dirents */
+        if (cnt == 0) {
+            if (lf_ino == 0)
+                continue;
+            if (ip.mode & V1_IFDIR)   /* directory: leave it */
+                continue;
+            v1_inode_t lf;
+            char name[16];
+            snprintf(name, sizeof(name), "%u", ino);
+            if (v1fs_read_inode(fs, lf_ino, &lf) == 0 &&
+                v1fs_dir_add(fs, &lf, ino, name) == 0) {
+                ip.nlink = 1;
+                v1fs_write_inode(fs, ino, &ip);
+                v1fs_write_inode(fs, lf_ino, &lf);
+                printf("reconnected inode %u to lost+found\n", ino);
+            }
+        } else {
+            int old = ip.nlink;
+            ip.nlink = (int16_t)(cnt & 0377);
+            v1fs_write_inode(fs, ino, &ip);
+            printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+        }
+    }
+}
+
+int v1fs_check(v1fs_t *fs, v1_check_t *rep, int mode) {
     memset(rep, 0, sizeof(*rep));
     rep->inodes = fs->maxino;
 
@@ -717,6 +785,12 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
     if (!cx.bmap)
         return -ENOMEM;
 
+    uint8_t *alloc = calloc((fs->maxino + 8) / 8, 1);
+    if (!alloc) {
+        free(cx.bmap);
+        return -ENOMEM;
+    }
+
     /* icheck pass 1: mark every block referenced by an inode. */
     for (uint32_t ino = 1; ino <= fs->maxino; ino++) {
         v1_inode_t ip;
@@ -728,6 +802,7 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
         if (ip.mode == 0)
             continue;
         rep->used_inodes++;
+        alloc[ino >> 3] |= (uint8_t)(1u << (ino & 7));
         if (ino < V1_ROOTINO)       /* reserved device inode: addr is a device no. */
             continue;
         cx.ino = ino;
@@ -744,9 +819,10 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
     rep->errors += cx.errors;
     rep->dup_blocks = cx.dup_blocks;
 
-    if (salvage) {
+    if (mode & FILSYS_CK_SALVAGE) {
         v1fs_makefree(fs, &cx);
         printf("salvaged: free map rebuilt (%u free blocks)\n", fs->tfree);
+        free(alloc);
         free(cx.bmap);
         return rep->errors ? -1 : 0;
     }
@@ -769,6 +845,49 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
             rep->free_blocks++;
     }
 
+    /* dcheck: directory link counts + pathname validation. */
+    uint8_t *ecount = calloc(fs->maxino + 1, 1);
+    if (ecount) {
+        for (uint32_t ino = V1_ROOTINO; ino <= fs->maxino; ino++) {
+            v1_inode_t ip;
+            if (v1fs_read_inode(fs, ino, &ip))
+                continue;
+            if (!(ip.mode & V1_IFDIR))
+                continue;
+            v1_dirent_t *ents = NULL;
+            size_t cnt = 0;
+            if (v1fs_dir_read(fs, &ip, &ents, &cnt) == 0) {
+                for (size_t e = 0; e < cnt; e++) {
+                    uint32_t dno = ents[e].ino;
+                    if (dno == 0 || dno > fs->maxino)
+                        continue;
+                    if (!(alloc[dno >> 3] & (uint8_t)(1u << (dno & 7)))) {
+                        printf("dir %u references free inode %u\n", ino, dno);
+                        rep->errors++;
+                    }
+                    ecount[dno]++;
+                }
+                v1fs_dirents_free(ents);
+            }
+        }
+        for (uint32_t ino = 1; ino <= fs->maxino; ino++) {
+            v1_inode_t ip;
+            if (v1fs_read_inode(fs, ino, &ip))
+                continue;
+            int cnt = ecount[ino] & 0377;
+            if (cnt == ip.nlink)
+                continue;
+            if (ip.mode == 0 && cnt == 0)
+                continue;
+            printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
+            rep->errors++;
+        }
+        if (mode & FILSYS_CK_PREEN)
+            v1fs_preen(fs, ecount, alloc, fs->maxino);
+        free(ecount);
+    }
+
+    free(alloc);
     free(cx.bmap);
     printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
            cx.used_blocks, rep->free_blocks, rep->missing_blocks, rep->dup_blocks,
