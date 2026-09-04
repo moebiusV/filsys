@@ -323,7 +323,24 @@ int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, o
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
     if (rc) return rc;
-    return (int)file_write(fs, &ip, (const uint8_t *)buf, size, off);
+    if (off < 0)
+        return -EINVAL;
+    /* A write past the per-format file-size ceiling can never succeed; reject
+     * it before the first block is allocated so there is nothing to unwind. */
+    if ((uint64_t)off + (uint64_t)size > maxfile(fs))
+        return -EFBIG;
+
+    uint32_t oldsize = ip.size;
+    ssize_t n = file_write(fs, &ip, (const uint8_t *)buf, size, off);
+    if (n < 0) {
+        /* A legal-sized write can still fail partway (ENOSPC, EIO): free the
+         * blocks it allocated past the original size, then reset the inode. */
+        uint32_t bsize = fs->ops->blocksize;
+        uint32_t first_blk = oldsize ? (oldsize - 1) / bsize + 1 : 0;
+        itrunc_from(fs, &ip, first_blk);
+        write_inode(fs, ino, &ip);
+    }
+    return (int)n;
 }
 
 int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
