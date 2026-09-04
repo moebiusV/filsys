@@ -4,7 +4,7 @@
 # `./configure && make && make install`.
 
 AC_PREREQ([2.69])
-AC_INIT([filsys], [1.2.1], [david@clearbrookdistillery.com])
+AC_INIT([filsys], [1.2.2], [david@clearbrookdistillery.com])
 AC_CONFIG_SRCDIR([mount.filsys.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR([build-aux])

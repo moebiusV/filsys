@@ -1,4 +1,4 @@
-/* filsys 1.2.1 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.2 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v1fs.c - First Edition (V1) Unix filesystem, on-disk access layer.
  *
@@ -202,6 +202,11 @@ int v1fs_balloc(v1fs_t *fs, uint32_t *bno) {
             fs->freemap[b >> 3] &= (uint8_t)~(1u << (b & 7)); /* mark used */
             if (fs->tfree) fs->tfree--;
             *bno = b;
+            /* Zero the freshly-allocated block so a deleted file's data
+             * doesn't leak into a new one (V7's alloc() clrbuf()s). */
+            uint8_t z[V1_BSIZE] = {0};
+            if (v1fs_write_block(fs, b, z))
+                return -EIO;
             return 0;
         }
     }
@@ -345,6 +350,23 @@ static int ind1(v1fs_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *
 }
 
 int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
+    /* A write past the eight direct slots promotes a small file to a large one:
+     * the eight direct block numbers move into the first indirect block. */
+    if (!(ip->mode & V1_ILARG) && create && lbn >= V1_NDADDR) {
+        uint32_t iblk;
+        if (v1fs_balloc(fs, &iblk))
+            return -ENOSPC;
+        uint8_t buf[V1_BSIZE] = {0};
+        for (int i = 0; i < V1_NDADDR; i++)
+            v1_put16le(buf + 2 * i, (uint16_t)ip->addr[i]);
+        if (v1fs_write_block(fs, iblk, buf))
+            return -EIO;
+        for (int i = 0; i < V1_NDADDR; i++)
+            ip->addr[i] = 0;
+        ip->addr[0] = iblk;
+        ip->mode |= V1_ILARG;
+    }
+
     if (ip->mode & V1_ILARG) {
         if (lbn >= V1_NIADDR * V1_NINDIR) {   /* 8 single-indirect slots */
             *bno = 0;
@@ -720,6 +742,7 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
         }
     }
     rep->errors += cx.errors;
+    rep->dup_blocks = cx.dup_blocks;
 
     if (salvage) {
         v1fs_makefree(fs, &cx);
@@ -739,6 +762,7 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
             rep->errors++;
         } else if (!used && !fre) {
             printf("block %u missing\n", b);
+            rep->missing_blocks++;
             rep->errors++;
         }
         if (fre)
@@ -746,8 +770,9 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
     }
 
     free(cx.bmap);
-    printf("free blocks=%u  inodes=%u/%u used  errors=%u\n",
-           rep->free_blocks, rep->used_inodes, rep->inodes, rep->errors);
+    printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
+           cx.used_blocks, rep->free_blocks, rep->missing_blocks, rep->dup_blocks,
+           rep->used_inodes, rep->inodes, rep->errors);
     return rep->errors ? -1 : 0;
 }
 

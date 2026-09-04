@@ -1,6 +1,6 @@
-/* filsys 1.2.1 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.2 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* pdp7fs.c - PDP-7 Unix filesystem, on-disk access layer (read-only).
+/* pdp7fs.c - PDP-7 Unix filesystem, on-disk access layer.
  *
  * The first Unix filesystem (Bell Labs, 1969) is word-addressed: 18-bit words,
  * 64-word blocks.  This backend unpacks the SimH RB09 image (one word per
@@ -8,8 +8,6 @@
  * presents the result through the byte-oriented filsys ops table -- file sizes
  * and offsets are doubled (two 9-bit characters per word) so text files read
  * back as plain ASCII.  See pdp7fs.h and pdp7-unix's tools/mkfs7.
- *
- * Read-only for now: every mutating op returns -EROFS.
  */
 #include <config.h>
 #include "pdp7fs.h"
@@ -202,6 +200,15 @@ int p7fs_read_inode(p7fs_t *fs, uint32_t ino, p7_inode_t *ip) {
     ip->size  = d[10] * 2;          /* words -> bytes (two chars per word) */
     for (int i = 0; i < P7_NIADDR; i++)
         ip->addr[i] = d[1 + i];
+    /* mkfs7 stores the size in words and NUL-pads the low half of the last word
+     * for an odd byte count; recover the byte-exact size for regular files
+     * (directories are always a whole number of 8-word dirents). */
+    if (!(ip->mode & (P7_IDIR | P7_ISPEC)) && ip->size > 0) {
+        uint32_t lastw;
+        if (inode_read_word(fs, ip, (uint32_t)(ip->size / 2 - 1), &lastw) == 0 &&
+            (lastw & 0x1ff) == 0)
+            ip->size--;
+    }
     ip->atime = ip->mtime = ip->ctime = 0;   /* PDP-7 has no timestamps */
     return 0;
 }
@@ -220,7 +227,7 @@ int p7fs_write_inode(p7fs_t *fs, uint32_t ino, const p7_inode_t *ip) {
         d[1 + i] = ip->addr[i] & P7_MAXWORD;
     d[8]  = (uint32_t)(uint16_t)ip->uid & P7_MAXWORD;
     d[9]  = (uint32_t)(-(int32_t)ip->nlink) & P7_MAXWORD;   /* stored negative */
-    d[10] = (ip->size / 2) & P7_MAXWORD;                    /* bytes -> words */
+    d[10] = ((ip->size + 1) / 2) & P7_MAXWORD;              /* bytes -> words (round up) */
     /* d[11] (uniq) is left untouched */
     return write_words(fs, p7_itod(ino), words);
 }
@@ -244,11 +251,16 @@ int p7fs_balloc(p7fs_t *fs, uint32_t *bno) {
         /* node exhausted: its own block is the free block now */
         fs->freelist = words[0] & P7_MAXWORD;
         *bno = h;
-        return 0;
+    } else {
+        *bno = words[last];
+        words[last] = 0;
+        if (write_words(fs, h, words))
+            return -EIO;
     }
-    *bno = words[last];
-    words[last] = 0;
-    return write_words(fs, h, words);
+    /* Zero the freshly-allocated block so a deleted file's data doesn't leak
+     * into a new one (V7's alloc() clrbuf()s). */
+    uint32_t z[P7_WSIZE] = {0};
+    return write_words(fs, *bno, z);
 }
 
 void p7fs_bfree(p7fs_t *fs, uint32_t bno) {
@@ -376,6 +388,23 @@ int p7fs_itrunc_from(p7fs_t *fs, p7_inode_t *ip, uint32_t first_blk) {
 /* ---- block mapping ------------------------------------------------------ */
 
 int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
+    /* A write past the seven direct slots promotes a small file to a large one:
+     * the seven direct block numbers move into the first indirect block. */
+    if (!(ip->mode & P7_ILARG) && create && lbn >= P7_NIADDR) {
+        uint32_t iblk;
+        if (p7fs_balloc(fs, &iblk))
+            return -ENOSPC;
+        uint32_t words[P7_WSIZE] = {0};
+        for (int i = 0; i < P7_NIADDR; i++)
+            words[i] = ip->addr[i];
+        if (write_words(fs, iblk, words))
+            return -EIO;
+        for (int i = 0; i < P7_NIADDR; i++)
+            ip->addr[i] = 0;
+        ip->addr[0] = iblk;
+        ip->mode |= P7_ILARG;
+    }
+
     if (ip->mode & P7_ILARG) {
         if (lbn >= P7_NIADDR * P7_NINDIR) {
             *bno = 0;
@@ -766,6 +795,7 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage) {
         }
     }
     rep->errors += cx.errors;
+    rep->dup_blocks = cx.dup_blocks;
 
     if (salvage) {
         p7fs_makefree(fs, &cx);
@@ -821,14 +851,16 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage) {
             rep->errors++;
         } else if (!used && !fre) {
             printf("block %u missing\n", b);
+            rep->missing_blocks++;
             rep->errors++;
         }
     }
 
     free(freeb);
     free(cx.bmap);
-    printf("free blocks=%u  inodes=%u/%u used  errors=%u\n",
-           rep->free_blocks, rep->used_inodes, rep->inodes, rep->errors);
+    printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
+           cx.used_blocks, rep->free_blocks, rep->missing_blocks, rep->dup_blocks,
+           rep->used_inodes, rep->inodes, rep->errors);
     return rep->errors ? -1 : 0;
 }
 
