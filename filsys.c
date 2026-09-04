@@ -163,12 +163,6 @@ static int lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t 
 static int bmap(filsys_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
     return fs->ops->bmap(fs->fs, ip, lbn, create, bno);
 }
-static int read_block(filsys_t *fs, uint32_t bno, uint8_t *buf) {
-    return fs->ops->read_block(fs->fs, bno, buf);
-}
-static int write_block(filsys_t *fs, uint32_t bno, const uint8_t *buf) {
-    return fs->ops->write_block(fs->fs, bno, buf);
-}
 
 /* Largest file the selected edition can address, in bytes. */
 static uint64_t maxfile(const filsys_t *fs) {
@@ -647,22 +641,20 @@ int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
      * the blocks strictly past the new end, and leave everything else alone.
      * (Extension is a no-op: holes read back as zero.) */
     if (newsize < oldsize) {
-        uint32_t last = newsize ? (newsize - 1) / 512 : 0;
-        uint32_t off  = newsize % 512;
-        if (off) {
-            /* Zero the partial tail through the block layer, not file_write:
-             * file_write would bump ip.size past the old EOF and, if the tail
-             * block is a hole, allocate a block only to discard it. */
+        uint32_t bsize = fs->ops->blocksize;
+        uint32_t last  = newsize ? (newsize - 1) / bsize : 0;
+        uint32_t blk_end = newsize ? (last + 1) * bsize : 0;
+        uint32_t tail = oldsize < blk_end ? oldsize : blk_end;
+        /* Zero the partial tail of the last surviving block through the file
+         * layer, so word-addressed backends (PDP-7, 128-byte logical blocks)
+         * pack the zeros correctly.  Skip it if that block is a hole -- it
+         * already reads as zero and file_write would only allocate it. */
+        if (newsize < tail) {
             uint32_t bno;
-            rc = bmap(fs, &ip, last, 0, &bno);
-            if (rc) return rc;
-            if (bno) {
-                uint8_t blk[512];
-                rc = read_block(fs, bno, blk);
-                if (rc) return rc;
-                memset(blk + off, 0, 512 - off);
-                rc = write_block(fs, bno, blk);
-                if (rc) return rc;
+            if (bmap(fs, &ip, last, 0, &bno) == 0 && bno != 0) {
+                uint8_t zeros[512] = {0};
+                ssize_t w = file_write(fs, &ip, zeros, tail - newsize, newsize);
+                if (w < 0) return (int)w;
             }
         }
         rc = itrunc_from(fs, &ip, newsize ? last + 1 : 0);

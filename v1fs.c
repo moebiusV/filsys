@@ -694,6 +694,7 @@ static uint64_t v1fs_max_file_op(void *fs) {
 
 const struct filsys_ops v1fs_ops = {
     .name        = "v1",
+    .blocksize   = V1_BSIZE,
     .open        = v1fs_open_op,
     .close       = v1fs_close_op,
     .sync        = v1fs_sync_op,

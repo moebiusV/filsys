@@ -1248,6 +1248,7 @@ static uint64_t v7fs_max_file_op(void *fs) {
 
 const struct filsys_ops v7fs_ops = {
     .name        = "v7",
+    .blocksize   = V7_BSIZE,
     .open        = v7fs_open_op,
     .close       = v7fs_close_op,
     .sync        = v7fs_sync_op,
