@@ -9,7 +9,7 @@ fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
 .B fsck.filsys
 .RB [ \-v
-.IR <v4|v5|v6|v7> ]
+.IR <v0|v1|v4|v5|v6|v7|32v> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-s ]
@@ -81,6 +81,7 @@ together with the modifying flags).
 .PP
 The edition is selected with
 .BR \-v :
+v0 selects the word-addressed PDP-7 filesystem; v1 selects the First Edition;
 v4, v5, or v6 select the Sixth Edition format (V4 and V5 are byte-identical to
 V6 on disk); v7 selects Seventh Edition.  The default is v7.  A Research Unix
 disk image holds one or more filesystems
@@ -96,11 +97,13 @@ The exit status is 0 if the filesystem is clean, 1 if errors were found, and 2
 on a usage error.
 .SH OPTIONS
 .TP
-.BI \-v " <v4|v5|v6|v7>"
-Filesystem edition.  v4, v5 and v6 are byte-identical (the V6 format); v7 is V7.
+.BI \-v " <v0|v1|v4|v5|v6|v7|32v>"
+Filesystem edition.  v0 is the word-addressed PDP-7; v1 is First Edition;
+v4, v5 and v6 are byte-identical (the V6 format); v7 is V7.
 Default v7.  A bare number
-.RB ( 4 ,
-.BR 5 ,
+.RB ( 0 ,
+.BR 1 ,
+.BR 4 ,
 \&...) is also accepted.
 .TP
 .BI \-o " block"

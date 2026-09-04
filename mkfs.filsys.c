@@ -39,8 +39,11 @@
 #include <time.h>
 #include <stdarg.h>
 
+#include "filsys.h"
+#include "v1fs.h"
 #include "v6fs.h"
 #include "v7fs.h"
+#include "pdp7fs.h"
 
 enum { A_MAGIC1 = 0407 };  /* V7 normal a.out magic (boot block) */
 
@@ -93,10 +96,17 @@ static int parse_edition(const char *s)
 {
     if (s[0] == 'v' || s[0] == 'V')
         s++;
+    if (strcmp(s, "v0") == 0 || strcmp(s, "0") == 0 ||
+        strcmp(s, "pdp7") == 0 || strcmp(s, "p7") == 0)
+        return FILSYS_PDP7;
+    if (strcmp(s, "1") == 0)
+        return FILSYS_V1;
     if (strcmp(s, "4") == 0 || strcmp(s, "5") == 0 || strcmp(s, "6") == 0)
-        return 6;
+        return FILSYS_V6;
     if (strcmp(s, "7") == 0)
-        return 7;
+        return FILSYS_V7;
+    if (strcmp(s, "32") == 0 || strcmp(s, "32v") == 0)
+        return FILSYS_32V;
     return -1;
 }
 
@@ -501,6 +511,209 @@ static void mkfs_v6(const char *path, uint32_t blocks, const char *bootfile)
            v6_isize * V6_INOPB);
 }
 
+/* ---- V1 ------------------------------------------------------------------ */
+
+static uint32_t v1_fsize, v1_maxino, v1_dstart;
+static uint8_t  v1_sb[V1_BSIZE * 2];   /* superblock spans blocks 0 and 1 */
+static uint32_t v1_imap_off;           /* byte offset of the inode map */
+
+static uint32_t v1_balloc(void)
+{
+    for (uint32_t b = v1_dstart; b < v1_fsize; b++) {
+        if (v1_sb[2 + (b >> 3)] & (1u << (b & 7))) {   /* bit=1 free */
+            v1_sb[2 + (b >> 3)] &= (uint8_t)~(1u << (b & 7));
+            return b;
+        }
+    }
+    die("out of free space\n");
+    return 0;
+}
+
+static void v1_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
+                    const uint32_t *addr)
+{
+    uint32_t bno = v1_itod(ino);
+    uint32_t off = v1_itoo(ino);
+    uint8_t ib[V1_BSIZE];
+    if (pread(fd, ib, V1_BSIZE, (off_t)(base + (uint64_t)bno * V1_BSIZE)) != V1_BSIZE)
+        die("read error at inode block %u\n", bno);
+
+    uint8_t *ip = ib + off * V1_INODESZ;
+    memset(ip, 0, V1_INODESZ);
+    v1_put16le(ip + 0, mode);
+    ip[2] = (uint8_t)nlink;
+    /* i_uid = 0 */
+    v1_put16le(ip + 4, (uint16_t)size);
+    for (int i = 0; i < V1_NIADDR; i++)
+        v1_put16le(ip + 6 + 2 * i, (uint16_t)addr[i]);
+    v1_put32me(ip + 22, (uint32_t)time(NULL) * 60u);   /* ctime (60ths) */
+    v1_put32me(ip + 26, (uint32_t)time(NULL) * 60u);   /* mtime (60ths) */
+
+    pblock(bno, ib);
+}
+
+static void mkfs_v1(const char *path, uint32_t blocks, const char *bootfile)
+{
+    (void)bootfile;   /* no boot-block install for V1 */
+
+    v1_fsize = blocks;
+    uint32_t freemap_bytes = (v1_fsize + 7) / 8;
+    if (freemap_bytes & 1)
+        freemap_bytes++;   /* always even */
+
+    /* ~1 inode per 4 blocks, minimum 48 (so root inode 41 exists), a multiple
+     * of 16 so the inode-map byte count is even. */
+    v1_maxino = v1_fsize / 4;
+    if (v1_maxino < 48)
+        v1_maxino = 48;
+    v1_maxino = (v1_maxino + 15) & ~15u;
+    uint32_t inodemap_bytes = v1_maxino / 8;
+
+    v1_dstart = (v1_maxino + 31) / 16 + 1;
+    if (v1_dstart >= v1_fsize)
+        die("%s: %u blocks too small\n", path, blocks);
+
+    v1_imap_off = 2 + freemap_bytes + 2;
+    if (v1_imap_off + inodemap_bytes > sizeof(v1_sb))
+        die("%s: superblock overflow\n", path);
+
+    memset(v1_sb, 0, sizeof(v1_sb));
+    v1_put16le(v1_sb + 0, (uint16_t)freemap_bytes);
+    v1_put16le(v1_sb + 2 + freemap_bytes, (uint16_t)inodemap_bytes);
+
+    /* free map: data blocks are free (bit=1) */
+    for (uint32_t b = v1_dstart; b < v1_fsize; b++)
+        v1_sb[2 + (b >> 3)] |= (uint8_t)(1u << (b & 7));
+
+    /* inode map: all free (0); root inode 41 is used (bit 0 = 1) */
+    v1_sb[v1_imap_off] |= 1u;
+
+    pblock(0, v1_sb);
+    pblock(1, v1_sb + V1_BSIZE);
+
+    /* zero the i-list: blocks 2 .. v1_dstart-1 */
+    uint8_t zb[V1_BSIZE] = {0};
+    for (uint32_t b = 2; b < v1_dstart; b++)
+        pblock(b, zb);
+
+    /* root directory: inode 41, "." and ".." (10-byte entries) */
+    uint32_t rb = v1_balloc();
+    uint8_t db[V1_BSIZE] = {0};
+    v1_put16le(db + 0, V1_ROOTINO);
+    memcpy(db + 2, ".", 1);
+    v1_put16le(db + V1_DIRENTSZ, V1_ROOTINO);
+    memcpy(db + V1_DIRENTSZ + 2, "..", 2);
+    pblock(rb, db);
+
+    uint32_t addr[V1_NIADDR] = {0};
+    addr[0] = rb;
+    uint16_t mode = V1_IALLOC | V1_IFDIR | V1_IREAD | V1_IWRITE | V1_IEXEC | V1_OREAD;
+    v1_iput(V1_ROOTINO, mode, 2, 2 * V1_DIRENTSZ, addr);
+
+    /* persist the superblock (the free map changed when the root block was
+     * allocated) */
+    pblock(0, v1_sb);
+    pblock(1, v1_sb + V1_BSIZE);
+
+    if (ftruncate(fd, (off_t)(base + (uint64_t)v1_fsize * V1_BSIZE)) < 0)
+        die("%s: ftruncate: %s\n", path, strerror(errno));
+
+    printf("%s: %u blocks, %u inodes written\n", path, v1_fsize, v1_maxino);
+}
+
+/* ---- PDP-7 --------------------------------------------------------------- */
+
+static uint32_t p7_pool[P7_NBLOCKS];   /* free data-block pool */
+static uint32_t p7_nfree;
+static uint32_t p7_free_count;         /* free blocks listed in the free list */
+
+static void p7_pblock(uint32_t bno, const uint32_t *words)
+{
+    uint8_t raw[P7_BLOCKBYTES];
+    for (int i = 0; i < P7_WSIZE; i++)
+        p7_putword(raw + i * P7_WORDBYTES, words[i]);
+    off_t pos = (off_t)P7_SURFACE1 + (off_t)bno * P7_BLOCKBYTES;
+    if (pwrite(fd, raw, P7_BLOCKBYTES, pos) != P7_BLOCKBYTES)
+        die("write error at block %u\n", bno);
+}
+
+static uint32_t p7_take_free(void)
+{
+    if (p7_nfree == 0)
+        die("out of free space\n");
+    return p7_pool[--p7_nfree];
+}
+
+/* Build the free-list chain: each free-list block holds nine free block
+ * numbers (words 1..9) and a next pointer (word 0).  The free-list blocks
+ * themselves are drawn from the pool, so they are not returned as free. */
+static uint32_t p7_build_freelist(void)
+{
+    uint32_t head = 0;
+    p7_free_count = 0;
+    while (p7_nfree > 0) {
+        uint32_t fb = p7_take_free();
+        uint32_t words[P7_WSIZE] = {0};
+        words[0] = head;
+        for (int i = 1; i <= 9 && p7_nfree > 0; i++) {
+            words[i] = p7_take_free();
+            p7_free_count++;
+        }
+        p7_pblock(fb, words);
+        head = fb;
+    }
+    return head;
+}
+
+static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile)
+{
+    (void)blocks;    /* PDP-7 is a fixed 8000-block/surface RB09 */
+    (void)bootfile;
+
+    fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0)
+        die("%s: cannot create: %s\n", path, strerror(errno));
+    if (ftruncate(fd, (off_t)(P7_SURFACE1 * 2)) < 0)
+        die("%s: ftruncate: %s\n", path, strerror(errno));
+
+    /* free data blocks: 712 .. 6399 (the kernel area 6400..7999 is reserved) */
+    p7_nfree = 0;
+    for (uint32_t b = 712; b <= 6399; b++)
+        p7_pool[p7_nfree++] = b;
+
+    /* root directory data block, drawn before the free list is built */
+    uint32_t rb = p7_take_free();
+    uint32_t empty[P7_WSIZE] = {0};
+    p7_pblock(rb, empty);
+
+    uint32_t head = p7_build_freelist();
+
+    /* superblock: block 0 word 0 = free-list head */
+    uint32_t sb[P7_WSIZE] = {0};
+    sb[0] = head;
+    p7_pblock(0, sb);
+
+    /* zero the i-list: blocks 2 .. 711 */
+    uint32_t z[P7_WSIZE] = {0};
+    for (uint32_t b = P7_FIRSTINOBLK; b < P7_FIRSTINOBLK + P7_NINOBLKS; b++)
+        p7_pblock(b, z);
+
+    /* root "dd" directory: inode 4 (I_DIRECTORY, owner rw / world r) */
+    uint32_t ino_block = p7_itod(P7_ROOTINO);
+    uint32_t ino_off   = p7_itoo(P7_ROOTINO);
+    uint32_t ib[P7_WSIZE] = {0};
+    ib[ino_off + 0]  = P7_IUSED | P7_IDIR | P7_IOREAD | P7_IOWRITE | P7_IWREAD;
+    ib[ino_off + 1]  = rb;          /* first (only) disk pointer */
+    ib[ino_off + 8]  = 0;           /* uid */
+    ib[ino_off + 9]  = P7_MAXWORD;  /* nlink = -1 */
+    ib[ino_off + 10] = 0;           /* size (empty) */
+    ib[ino_off + 11] = 1;           /* uniq */
+    p7_pblock(ino_block, ib);
+
+    printf("%s: PDP-7 filesystem written (%u free blocks, root inode %u)\n",
+           path, p7_free_count, P7_ROOTINO);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(int argc, char **argv)
@@ -509,7 +722,7 @@ int main(int argc, char **argv)
     const char *bootfile = NULL;
     uint32_t blocks = 0;
     uint64_t offblock = 0;
-    int edition = 7;
+    int edition = FILSYS_V7;
     int c;
 
     while ((c = getopt(argc, argv, "v:o:b:")) != -1) {
@@ -517,7 +730,7 @@ int main(int argc, char **argv)
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want 4|5|6|7)\n", optarg);
+                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want v0|1|4|5|6|7|32v)\n", optarg);
                 return 1;
             }
             break;
@@ -536,10 +749,19 @@ int main(int argc, char **argv)
     if (optind + 1 < argc)
         blocks = (uint32_t)strtoul(argv[optind + 1], NULL, 0);
 
+    if (edition == FILSYS_PDP7) {
+        /* PDP-7 opens its own 2-surface image (fixed RB09 geometry). */
+        mkfs_pdp7(path, blocks, bootfile);
+        close(fd);
+        return 0;
+    }
+
     blocks = resolve_blocks(path, offblock, blocks);
 
-    if (edition == 6)
+    if (edition == FILSYS_V6)
         mkfs_v6(path, blocks, bootfile);
+    else if (edition == FILSYS_V1)
+        mkfs_v1(path, blocks, bootfile);
     else
         mkfs_v7(path, blocks, bootfile);
 
