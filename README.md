@@ -3,7 +3,7 @@
 Mount a **Research Unix** filesystem image (PDP-11) as a FUSE filesystem on
 Linux, so files can be copied on and off the disk for use with a simulator
 (SIMH `pdp11`).  Linux's own `sysv`/`v7` kernel driver was removed in 6.15
-(2025) and never handled V4/V5, V6, or 32V to begin with, so this is now the
+(2025) and never handled V0–V6 or 32V to begin with, so this is now the
 only way to mount these filesystems — see "Linux kernel support" below.
 
 One binary, every edition we care about: the on-disk format is understood
@@ -12,6 +12,8 @@ discipline), so files staged with it are seen by a running kernel after you
 boot the image.
 
 ```
+mount.filsys -v v0 pdp7.dsk mnt          # PDP-7 (v0) format, word-addressed
+mount.filsys -v v1 v1root.dsk mnt        # V1 format (also V2 and V3, identical on disk)
 mount.filsys -v v6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
 mount.filsys -v v7 rp06-0.disk mnt       # V7 format
 mount.filsys -v 32v 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
@@ -59,6 +61,10 @@ paths.
 
 | option | meaning                          |
 |--------|----------------------------------|
+| `-v v0` | PDP-7 (v0) format, word-addressed |
+| `-v v1` | V1 format (also V2/V3, identical on disk) |
+| `-v v2` | V2 format (identical to V1/V3)   |
+| `-v v3` | V3 format (identical to V1/V2)   |
 | `-v v4` | V4 format (byte-identical to V5/V6) |
 | `-v v5` | V5 format (byte-identical to V4/V6) |
 | `-v v6` | V6 format                          |
@@ -87,9 +93,9 @@ See `filsys.5` for both the tool and the on-disk format.
 
 ## Creating and checking filesystems
 
-Two small tools ship alongside the mount driver for creating and checking V7
-filesystems on a disk image (`fsck.filsys` runs the same free-list/inode-table
-check that the mount driver's `-c` does):
+Two small tools ship alongside the mount driver for creating and checking a
+filesystem of any edition on a disk image (`fsck.filsys` runs the same
+free-list/inode-table check that the mount driver's `-c` does):
 
 ```sh
 mkfs.filsys image.dk             # size the fs to the whole image
@@ -102,17 +108,20 @@ fsck.filsys -o 18392 image.dk    # check a filesystem at block 18392
 ```
 
 `mkfs.filsys` writes a superblock, a zeroed i-list, an interleaved free-block
-list, and an empty root directory (inode 1 is the empty bad-block file, inode 2
-is root, as V7 expects).  `-o` places the filesystem at a block offset for
-multi-partition images; `-b` installs a boot block (a PDP-11 `a.out`, V7 magic
-`0407`) into block 0 before the superblock.  `fsck.filsys` is a thin wrapper
-over the same check the mount driver's `-c` runs.
+list, and an empty root directory, laying out the root inode (and, for V7/32V,
+the empty bad-block file) exactly as that edition expects — root is inode 1 in
+V6, inode 2 in V7/32V, inode 41 in V1–V3, and inode 4 on the PDP-7.  `-o`
+places the filesystem at a block offset for multi-partition images; `-b`
+installs a boot block (a PDP-11 `a.out`, V7 magic `0407`) into block 0 before
+the superblock.  `fsck.filsys` is a thin wrapper over the same check the mount
+driver's `-c` runs.
 
 ## Implementor's Notes
 
 These are the format facts learned the hard way while building this, folded
 together with the history of the filesystem itself.  They are the
-documentation of record for the `v6fs.c` / `v7fs.c` backends.
+documentation of record for the `pdp7fs.c` / `v1fs.c` / `v6fs.c` / `v7fs.c`
+backends.
 
 ### History
 
@@ -162,6 +171,11 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 
 ### Format table
 
+The table below covers the 512-byte-block editions (V4 through 32V), whose
+inodes and block pointers share one shape.  The word-addressed PDP-7 (v0) and
+the bitmap-allocated V1–V3 layouts differ enough to be described separately,
+under "History" above and "Limits" below.
+
 | | V4 / V5 / V6 (identical) | V7 | 32V |
 |---|---|---|---|
 | block size | 512 | 512 | 512 |
@@ -173,8 +187,10 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 | bad-block file | none | inode 1 | inode 1 |
 | directory entry | 16 B (`d_ino` + 14-char) | 16 B | 16 B |
 
-One `-v v6` code path covers V4, V5 and V6, which are byte-identical on disk,
-and one `-v v1` code path covers V1, V2 and V3.
+Four code paths cover the whole range: `pdp7fs.c` (`-v v0`, word-addressed),
+`v1fs.c` (`-v v1`/`v2`/`v3`, one bitmap format), `v6fs.c` (`-v v4`/`v5`/`v6`,
+byte-identical on disk), and `v7fs.c` (`-v v7`/`32v`, the two byte orders of
+one format).
 
 ### Limits
 
@@ -272,8 +288,10 @@ large-file flag can address a megabyte of blocks.
   VAX).  Only the 16-bit fields (`di_mode`, `di_nlink`, `di_uid`, `di_gid`,
   `s_isize`, `s_nfree`, `s_ninode`, `s_inode[]`) are byte-order neutral.
   filsys handles this with a `-v 32v` selector.
-- **V3-and-earlier directories are 10 bytes**, so a reader for those editions
-  needs a different directory walker.  Out of scope here (we floor at V4).
+- **V3-and-earlier directories are 10 bytes** (V1–V3: a 2-byte i-number and an
+  8-character name), and the PDP-7's are 8 words, so readers for those editions
+  use a different directory walker than the 16-byte-entry V4-and-later
+  editions.
 
 ### Byte order (PDP-11)
 
@@ -382,7 +400,8 @@ Mount any hit with `mount.filsys -o offset=<byte>`.
 ## Verification
 
 The read path and the write path were both exercised against real images of
-every edition:
+the V4-through-32V editions; the V1–V3 layout is verified against Yufeng Gao's
+V2-beta RF image (see "History"):
 
 | edition | image | `-c` | mount | create/write | chmod/chown | delete |
 |---|---|---|---|---|---|---|
@@ -417,12 +436,17 @@ emulator is running.
 
 ## Layout
 
+- `pdp7fs.h` / `pdp7fs.c`: PDP-7 (V0) word-addressed on-disk access layer.
+- `v1fs.h` / `v1fs.c`: V1/V2/V3 on-disk access layer.
 - `v6fs.h` / `v6fs.c`: V4/V5/V6 on-disk access layer.
 - `v7fs.h` / `v7fs.c`: V7/32V on-disk access layer.
+- `filsys.h` / `filsys.c`: the shared `filsys_ops` table and the
+  format-independent path walker.
 - `mount.filsys.c`: FUSE callbacks + the `-v` edition selector.
 - `findfs.filsys.c`: locate filesystem superblocks (partitions) on a raw image.
-- `mkfs.filsys.c`: create a V7 filesystem in an image.
-- `fsck.filsys.c`: check a V7 filesystem (wraps `v7fs_check()`).
+- `mkfs.filsys.c`: create a filesystem of any edition in an image.
+- `fsck.filsys.c`: check a filesystem of any edition (dispatches to the
+  backend's `*_check()`).
 - `filsys.5`, `mount.filsys.1`, `findfs.filsys.1`, `mkfs.filsys.1`,
   `fsck.filsys.1`: the format and tool manpages.
 - `configure.ac`, `Makefile.am`: GNU autotools build.
@@ -519,9 +543,9 @@ carrying a 23-year-old locking bug, and had no way to create one or check one.
 
 ### What this means for filsys
 
-Mainline ever handled **one** of the five editions, guessed at it, couldn't
-create it, couldn't check it, and dropped it in 6.15.  filsys handles V4, V5,
-V6, V7, and 32V, has `findfs` for locating a superblock on a raw image, and has
+Mainline ever handled **one** edition — V7 — guessed at it, couldn't create it,
+couldn't check it, and dropped it in 6.15.  filsys handles the PDP-7 (V0)
+through 32V, has `findfs` for locating a superblock on a raw image, and has
 both `mkfs` and `fsck`.  That is not an incremental improvement on what the
 kernel had — it is the only implementation that exists.
 
@@ -584,20 +608,34 @@ source off paper and tape into a form we could study:
 - The **Living Computer Museum** ran the restored system on a real PDP-7,
   proving the reconstruction faithful.
 
+The V6 and V7 disk images that filsys verifies every edition against came from
+two more people, further down the preservation chain:
+
+- **Keith Bostic** supplied the V7 tape now preserved as TUHS's
+  *Keith_Bostic_v7* archive — the tape from which the V7 test image was
+  unpacked.
+- **Paul Collinson** (the `pcollinson` of the `unixv6-extras` and
+  `unixv7-extras` projects) unpacked that tape into the `rp06-0.disk` image and
+  built the V6 `rk0` image, then hosted them so a filesystem can be fetched with
+  a single `curl` instead of a tape drive.
+
 Every format table in this document was read out of code, tape, or image that
 these people recovered; our project would not exist without their work.
 
 - pdp7-unix restoration: <https://github.com/DoctorWkt/pdp7-unix>
 - Norman Wilson's scans: <https://www.tuhs.org/Archive/Distributions/Research/McIlroy_v0/>
 - The V1–V3 archive: <https://www.tuhs.org/Archive/Distributions/Research/Dennis_v1/>
+- Keith Bostic's V7 tape: <https://www.tuhs.org/Archive/Distributions/Research/Keith_Bostic_v7>
+- Paul Collinson's V6/V7 images: <https://github.com/pcollinson/unixv7-extras>
 - The Unix Heritage Society: <https://www.tuhs.org/>
 - Ritchie's history: <https://www.bell-labs.com/usr/dmr/www/hist.html>
 
 ## License
 
-The original code (`v6fs.c`, `v7fs.c`, `mount.filsys.c`, `findfs.filsys.c`,
-`mkfs.filsys.c`, `fsck.filsys.c`, and their headers) is licensed under the
-**ISC license**: Copyright (c) 2026 David Walther.
+The original code (`pdp7fs.c`, `v1fs.c`, `v6fs.c`, `v7fs.c`, `filsys.c`,
+`mount.filsys.c`, `findfs.filsys.c`, `mkfs.filsys.c`, `fsck.filsys.c`, and
+their headers) is licensed under the **ISC license**: Copyright (c) 2026 David
+Walther.
 
 The `filsys.5` manpage is derived from the ancient UNIX `fs(5)` (V4, V6) and
 `filsys(5)`/`dir(5)` (V7, 32V) pages, and retains the **Caldera International

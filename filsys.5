@@ -2,7 +2,7 @@
 .\" filsys(5)/dir(5) (V7, 32V) pages, distributed under the Caldera
 .\" International "Ancient UNIX License" (2002).  The LICENSE section below
 .\" retains that license's copyright notice, conditions and disclaimer.
-.TH FILSYS 5 "August 26, 2026" "filsys 1.2.4" "File Formats and Mounting"
+.TH FILSYS 5 "September 4, 2026" "filsys 1.2.4" "File Formats and Mounting"
 .SH NAME
 mount.filsys, filsys \- mount a Research Unix filesystem image; format
 .SH SYNOPSIS
@@ -572,6 +572,22 @@ archive.
 Living Computer Museum
 ran the restored system on a real PDP-7, proving the reconstruction
 faithful.
+.TP
+Keith Bostic
+supplied the V7 tape preserved as TUHS's
+.I Keith_Bostic_v7
+archive, the tape from which the V7 test image was unpacked.
+.TP
+Paul Collinson
+unpacked Bostic's tape into the
+.I rp06-0.disk
+image and built the V6
+.I rk0
+image, then hosted them (the
+.I unixv6-extras
+and
+.I unixv7-extras
+projects).
 .RE
 .PP
 Their work lives at:
@@ -584,6 +600,12 @@ Their work lives at:
 .IP \(bu 3n
 .I https://www.tuhs.org/Archive/Distributions/Research/Dennis_v1/
 (the V1\(enV3 archive),
+.IP \(bu 3n
+.I https://www.tuhs.org/Archive/Distributions/Research/Keith_Bostic_v7
+(Keith Bostic's V7 tape),
+.IP \(bu 3n
+.I https://github.com/pcollinson/unixv7-extras
+(Paul Collinson's V6/V7 images),
 .IP \(bu 3n
 .I https://www.tuhs.org/
 (The Unix Heritage Society).

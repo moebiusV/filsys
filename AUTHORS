@@ -1,5 +1,6 @@
 filsys was written by David Walther <david@clearbrookdistillery.com>.
 
-The on-disk filesystem layout and the allocation algorithms (balloc/bfree/
-ialloc/ifree/itrunc) mirror the Seventh Edition Unix kernel sources published
-by the Unix Heritage Society (TUHS); see reference/ for the excerpts consulted.
+The on-disk filesystem layouts and the allocation algorithms (balloc/bfree/
+ialloc/ifree/itrunc) mirror the Research Unix kernel sources published by the
+Unix Heritage Society (TUHS); the Acknowledgments section of README.md credits
+the people who recovered them.
