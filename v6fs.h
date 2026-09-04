@@ -178,14 +178,24 @@ int v6fs_lookup(v6fs_t *fs, const char *path, uint32_t *ino, v6_inode_t *ip);
 /* ---- integrity check ---------------------------------------------------- */
 
 typedef struct {
-    uint32_t free_blocks;    /* free blocks found by walking the free list */
+    uint32_t free_blocks;
+    uint32_t used_blocks;    /* data blocks referenced by inodes */
+    uint32_t missing_blocks; /* data blocks referenced by neither inode nor free list */
+    uint32_t dup_blocks;     /* blocks referenced twice, or used + free */
     uint32_t inodes;         /* total inode slots */
     uint32_t used_inodes;    /* inodes with a non-zero mode */
     uint32_t errors;         /* number of integrity problems found */
 } v6_check_t;
 
-/* Walk the free list and the inode table; report findings to stdout.
- * Returns 0 if no errors were found, -1 otherwise. */
-int v6fs_check(v6fs_t *fs, v6_check_t *rep);
+/* icheck + dcheck.  If salvage is set, rebuild the free list from the
+ * block-usage map (icheck -s) instead of checking it.  Returns 0 if clean. */
+int v6fs_check(v6fs_t *fs, v6_check_t *rep, int salvage);
+/* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
+int v6fs_ncheck(v6fs_t *fs, uint32_t ino);
+/* Zero inode `ino` (clri).  Returns 0 or -errno. */
+int v6fs_clri(v6fs_t *fs, uint32_t ino);
+/* Resolve duplicate blocks (salv -a): give each second reference a private
+ * copy, then rebuild the free list.  Returns 0 or -errno. */
+int v6fs_resolve_dups(v6fs_t *fs);
 
 #endif /* V6FS_H */

@@ -141,4 +141,9 @@ typedef struct {
 
 int v1fs_check(v1fs_t *fs, v1_check_t *rep);
 
+/* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
+int v1fs_ncheck(v1fs_t *fs, uint32_t ino);
+/* Zero inode `ino` (clri).  Returns 0 or -errno. */
+int v1fs_clri(v1fs_t *fs, uint32_t ino);
+
 #endif /* V1FS_H */

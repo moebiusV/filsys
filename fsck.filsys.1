@@ -19,7 +19,7 @@ fsck.filsys \- filesystem storage and directory consistency check
 .br
 .B fsck.filsys
 .RB [ \-v
-.IR 7 ]
+.IR <edition> ]
 .RB [ \-o
 .IR block ]
 .RB { \-N
@@ -83,7 +83,7 @@ The edition is selected with
 .BR \-v :
 v0 selects the word-addressed PDP-7 filesystem; v1 selects the First Edition;
 v4, v5, or v6 select the Sixth Edition format (V4 and V5 are byte-identical to
-V6 on disk); v7 selects Seventh Edition.  The default is v7.  A Research Unix
+V6 on disk); v7 selects Seventh Edition; 32v selects 32V.  The default is v7.  A Research Unix
 disk image holds one or more filesystems
 .RI ( partitions ),
 selected by a partition table compiled into the kernel, not stored on the
@@ -99,7 +99,7 @@ on a usage error.
 .TP
 .BI \-v " <v0|v1|v4|v5|v6|v7|32v>"
 Filesystem edition.  v0 is the word-addressed PDP-7; v1 is First Edition;
-v4, v5 and v6 are byte-identical (the V6 format); v7 is V7.
+v4, v5 and v6 are byte-identical (the V6 format); v7 is V7; 32v is 32V.
 Default v7.  A bare number
 .RB ( 0 ,
 .BR 1 ,
@@ -117,7 +117,8 @@ Rebuild the free list from the block bit map (V7
 .BR \-s ).
 This is the standard repair after
 .BR restor (8),
-which does not rebuild the free list.  V7 only.
+which does not rebuild the free list.  V7 and V6 only (V1 uses a bitmap
+allocator, and PDP-7's rebuild is not implemented).
 .TP
 .B \-r
 Resolve duplicate blocks: each block referenced by two inodes is copied to a
@@ -125,7 +126,7 @@ freshly allocated block and the second reference re-pointed, then the free
 list is rebuilt
 .RI ( salv (8)
 .BR \-a ).
-V7 only.
+V7 and V6 only.
 .TP
 .B \-n
 Report only; change nothing.  This is the default, but makes read-only intent
@@ -139,13 +140,13 @@ or
 Print the full pathname(s) of inode
 .I ino
 .RI ( ncheck (8)).
-V7 only.
+Every edition.
 .TP
 .BI \-C " ino"
 Zero inode
 .I ino
 .RI ( clri (8)).
-V7 only.
+Every edition.
 .SH EXAMPLE
 .nf
 fsck.filsys image.dk                # check the filesystem at block 0 (V7)

@@ -127,4 +127,9 @@ typedef struct {
 
 int p7fs_check(p7fs_t *fs, p7_check_t *rep);
 
+/* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
+int p7fs_ncheck(p7fs_t *fs, uint32_t ino);
+/* Zero inode `ino` (clri).  Returns 0 or -errno. */
+int p7fs_clri(p7fs_t *fs, uint32_t ino);
+
 #endif /* PDP7FS_H */
