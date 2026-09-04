@@ -96,7 +96,7 @@ static void run(const struct fmt *f) {
     free(back);
 
     /* fsck: clean, no missing or duplicate blocks. */
-    snprintf(cmd, sizeof cmd, "./fsck.filsys -v %s %s 2>&1", f->name, img);
+    snprintf(cmd, sizeof cmd, "./fsck.filsys -f -v %s %s 2>&1", f->name, img);
     FILE *p = popen(cmd, "r");
     char out[4096] = "";
     if (p) {
@@ -142,7 +142,7 @@ static void mkfs_cleanliness(void) {
             snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
                      f->name, img);
             if (system(cmd) != 0) { ok("v0 mkfs", 0); unlink(img); continue; }
-            snprintf(cmd, sizeof cmd, "./fsck.filsys -v %s %s 2>&1", f->name, img);
+            snprintf(cmd, sizeof cmd, "./fsck.filsys -f -v %s %s 2>&1", f->name, img);
             char out[4096] = "";
             FILE *p = popen(cmd, "r");
             if (p) { (void)!fread(out, 1, sizeof out - 1, p); pclose(p); }
@@ -164,7 +164,7 @@ static void mkfs_cleanliness(void) {
                 unlink(img);
                 continue;
             }
-            snprintf(cmd, sizeof cmd, "./fsck.filsys -v %s %s 2>&1", f->name, img);
+            snprintf(cmd, sizeof cmd, "./fsck.filsys -f -v %s %s 2>&1", f->name, img);
             char out[4096] = "";
             FILE *p = popen(cmd, "r");
             if (p) { (void)!fread(out, 1, sizeof out - 1, p); pclose(p); }

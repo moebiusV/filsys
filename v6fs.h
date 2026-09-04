@@ -1,4 +1,4 @@
-/* filsys 1.2.5 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.6 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v6fs.h - Sixth Edition (V6) Unix filesystem, on-disk access layer.
  *
@@ -110,6 +110,7 @@ typedef struct {
     uint32_t   time;           /* last superblock update */
     uint32_t   tfree;          /* total free blocks */
     uint32_t   tinode;         /* total free inodes */
+    int        fmod;           /* s_fmod: superblock modified flag (dirty) */
 } v6fs_t;
 
 /* ---- lifecycle --------------------------------------------------------- */
@@ -121,6 +122,9 @@ int v6fs_open(v6fs_t *fs, const char *path, int readonly, uint64_t offset);
 void v6fs_close(v6fs_t *fs);
 /* Flush the superblock (and pending metadata) to the image without closing. */
 int v6fs_sync(v6fs_t *fs);
+/* Mark the filesystem dirty (s_fmod) and flush: a read-write mount is dirty
+ * until a clean close clears it, so a crash leaves the image flagged for fsck. */
+int v6fs_mark_dirty(v6fs_t *fs);
 
 /* ---- block / inode io -------------------------------------------------- */
 
@@ -187,9 +191,9 @@ typedef struct {
     uint32_t errors;         /* number of integrity problems found */
 } v6_check_t;
 
-/* icheck + dcheck.  If salvage is set, rebuild the free list from the
+/* icheck + dcheck.  If mode has FILSYS_CK_SALVAGE set, rebuild the free list from the
  * block-usage map (icheck -s) instead of checking it.  Returns 0 if clean. */
-int v6fs_check(v6fs_t *fs, v6_check_t *rep, int salvage);
+int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode);
 /* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
 int v6fs_ncheck(v6fs_t *fs, uint32_t ino);
 /* Zero inode `ino` (clri).  Returns 0 or -errno. */

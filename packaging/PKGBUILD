@@ -1,6 +1,6 @@
 # Maintainer: David Walther <david@clearbrookdistillery.com>
 pkgname=filsys
-pkgver=1.2.5
+pkgver=1.2.6
 pkgrel=1
 pkgdesc="FUSE driver for Research Unix (V0-V7, 32V) filesystem images"
 arch=('x86_64')

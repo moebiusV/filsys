@@ -59,7 +59,7 @@ for sz in 60000 30000 45000 1000 40000; do
 done
 sync
 fusermount3 -uz "$MNT"; sleep 0.5
-if ./fsck.filsys -v 7 "$COPY" 2>&1 | grep -q 'dup=0'; then
+if ./fsck.filsys -f -v 7 "$COPY" 2>&1 | grep -q 'dup=0'; then
     echo "  ok: no duplicate blocks after truncate"
 else
     echo "  FAIL: duplicate blocks after truncate"; exit 1

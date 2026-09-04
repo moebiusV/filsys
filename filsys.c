@@ -226,6 +226,10 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
         free(fs);
         return rc;
     }
+    /* A read-write open is dirty until a clean close clears s_fmod (see the
+     * backends' close); stamp it now so a crash before close is flagged. */
+    if (!readonly && fs->ops->mark_dirty)
+        fs->ops->mark_dirty(fs->fs);
     *out = fs;
     return 0;
 }

@@ -1,4 +1,4 @@
-/* filsys 1.2.5 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.6 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* pdp7fs.c - PDP-7 Unix filesystem, on-disk access layer.
  *
@@ -758,7 +758,75 @@ static void p7fs_makefree(p7fs_t *fs, p7_chkctx_t *cx)
     super_write(fs);
 }
 
-int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage) {
+/* Preen for the PDP-7: fix link counts and reconnect orphaned regular files to
+ * lost+found.  The PDP-7 directory has no on-disk "." and ".." (dir_read
+ * synthesizes them), so lost+found is created empty -- its "." and ".." are
+ * synthesized on read. */
+static void p7fs_preen(p7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
+                       uint32_t maxino)
+{
+    p7_inode_t root;
+    uint32_t lf_ino = 0;
+    /* PDP-7 names are 8 chars, so the recovery directory is "lost" (the
+     * canonical "lost+found" name postdates the 8-char era). */
+    if (p7fs_read_inode(fs, P7_ROOTINO, &root) == 0 &&
+        p7fs_dir_lookup(fs, &root, "lost", &lf_ino) != 0) {
+        p7_inode_t lf;
+        if (p7fs_ialloc(fs, &lf_ino) == 0) {
+            memset(&lf, 0, sizeof(lf));
+            lf.ino = lf_ino;
+            lf.mode = P7_IUSED | P7_IDIR | P7_IOREAD | P7_IOWRITE | P7_IWREAD;
+            lf.nlink = 2;
+            p7fs_write_inode(fs, lf_ino, &lf);
+            p7fs_dir_add(fs, &root, lf_ino, "lost");
+            root.nlink++;
+            p7fs_write_inode(fs, P7_ROOTINO, &root);
+            printf("created lost+found (inode %u)\n", lf_ino);
+        }
+    }
+
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        int cnt = ecount[ino] & 0377;
+        p7_inode_t ip;
+        if (p7fs_read_inode(fs, ino, &ip) != 0)
+            continue;
+        int allocd = alloc[ino >> 3] & (uint8_t)(1u << (ino & 7));
+        if (!allocd) {
+            if (cnt != 0) {
+                ip.mode = 0;
+                ip.nlink = 0;
+                p7fs_write_inode(fs, ino, &ip);
+                printf("cleared free-but-referenced inode %u\n", ino);
+            }
+            continue;
+        }
+        if (cnt == ip.nlink)
+            continue;
+        if (ip.mode & (P7_IDIR | P7_ISPEC))   /* dir or device: nlink is synthesized; leave it */
+            continue;
+        if (cnt == 0) {
+            if (lf_ino == 0 || ino == P7_ROOTINO || ino == lf_ino)
+                continue;
+            p7_inode_t lf;
+            char name[16];
+            snprintf(name, sizeof(name), "%u", ino);
+            if (p7fs_read_inode(fs, lf_ino, &lf) == 0 &&
+                p7fs_dir_add(fs, &lf, ino, name) == 0) {
+                ip.nlink = 1;
+                p7fs_write_inode(fs, ino, &ip);
+                p7fs_write_inode(fs, lf_ino, &lf);
+                printf("reconnected inode %u to lost+found\n", ino);
+            }
+        } else {
+            int old = ip.nlink;
+            ip.nlink = (int16_t)(cnt & 0377);
+            p7fs_write_inode(fs, ino, &ip);
+            printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+        }
+    }
+}
+
+int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
     memset(rep, 0, sizeof(*rep));
     rep->inodes = P7_MAXINO;
 
@@ -772,6 +840,13 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage) {
     if (!cx.bmap)
         return -ENOMEM;
 
+    /* which inodes are allocated (P7_IUSED), for the dcheck pass */
+    uint8_t *alloc = calloc((P7_MAXINO + 8) / 8, 1);
+    if (!alloc) {
+        free(cx.bmap);
+        return -ENOMEM;
+    }
+
     for (uint32_t ino = 1; ino <= P7_MAXINO; ino++) {
         p7_inode_t ip;
         if (p7fs_read_inode(fs, ino, &ip)) {
@@ -781,6 +856,7 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage) {
         if (!(ip.mode & P7_IUSED))
             continue;
         rep->used_inodes++;
+        alloc[ino >> 3] |= (uint8_t)(1u << (ino & 7));
         if (ip.mode & P7_ISPEC)         /* device: addr[0] is a device no. */
             continue;
         cx.ino = ino;
@@ -797,9 +873,10 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage) {
     rep->errors += cx.errors;
     rep->dup_blocks = cx.dup_blocks;
 
-    if (salvage) {
+    if (mode & FILSYS_CK_SALVAGE) {
         p7fs_makefree(fs, &cx);
         printf("salvaged: free list rebuilt (%u free blocks)\n", fs->tfree);
+        free(alloc);
         free(cx.bmap);
         return rep->errors ? -1 : 0;
     }
@@ -808,6 +885,7 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage) {
      * flag blocks both used and free, and blocks missing. */
     uint8_t *freeb = calloc(nblk ? nblk : 1, 1);
     if (!freeb) {
+        free(alloc);
         free(cx.bmap);
         return -ENOMEM;
     }
@@ -857,6 +935,68 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage) {
     }
 
     free(freeb);
+
+    /* dcheck: validate directory entries and count links.  The PDP-7 has no
+     * on-disk "." and ".." (dir_read synthesizes them), so those are skipped;
+     * directory and root link counts are synthesized too, so only regular-file
+     * link counts are checked. */
+    uint8_t *ecount = calloc(P7_MAXINO + 1, 1);
+    if (ecount) {
+        for (uint32_t ino = 1; ino <= P7_MAXINO; ino++) {
+            p7_inode_t ip;
+            if (p7fs_read_inode(fs, ino, &ip))
+                continue;
+            if (!(ip.mode & P7_IDIR))
+                continue;
+            p7_dirent_t *ents = NULL;
+            size_t cnt = 0;
+            if (p7fs_dir_read(fs, &ip, &ents, &cnt) == 0) {
+                for (size_t e = 0; e < cnt; e++) {
+                    if (ents[e].name[0] == '.' &&
+                        (ents[e].name[1] == 0 ||
+                         (ents[e].name[1] == '.' && ents[e].name[2] == 0)))
+                        continue;   /* synthesized "." / ".." */
+                    uint32_t dno = ents[e].ino;
+                    if (dno == 0)
+                        continue;
+                    if (dno > P7_MAXINO) {
+                        printf("%u bad; %u/%s\n", dno, ino, ents[e].name);
+                        rep->errors++;
+                        continue;
+                    }
+                    if (!(alloc[dno >> 3] & (uint8_t)(1u << (dno & 7)))) {
+                        printf("dir %u references free inode %u\n", ino, dno);
+                        rep->errors++;
+                    }
+                    ecount[dno]++;
+                    if (ecount[dno] == 0)
+                        ecount[dno] = 0377;
+                }
+                p7fs_dirents_free(ents);
+            }
+        }
+        for (uint32_t ino = 1; ino <= P7_MAXINO; ino++) {
+            p7_inode_t ip;
+            if (p7fs_read_inode(fs, ino, &ip))
+                continue;
+            if (ino == P7_ROOTINO)
+                continue;   /* root's own link is a synthesized mount point */
+            if (ip.mode & (P7_IDIR | P7_ISPEC))
+                continue;   /* directory/device link counts are synthesized */
+            int cnt = ecount[ino] & 0377;
+            if (cnt == ip.nlink)
+                continue;
+            if (!(ip.mode & P7_IUSED) && cnt == 0)
+                continue;
+            printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
+            rep->errors++;
+        }
+        if (mode & FILSYS_CK_PREEN)
+            p7fs_preen(fs, ecount, alloc, P7_MAXINO);
+        free(ecount);
+    }
+
+    free(alloc);
     free(cx.bmap);
     printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
            cx.used_blocks, rep->free_blocks, rep->missing_blocks, rep->dup_blocks,

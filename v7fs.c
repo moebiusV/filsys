@@ -1,4 +1,4 @@
-/* filsys 1.2.5 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.6 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v7fs.c - Seventh Edition Unix filesystem, on-disk access layer.
  *
@@ -49,6 +49,7 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
     for (int i = 0; i < V7_NICINOD; i++)
         fs->inode[i] = v7_get16le(sb + sb_inode_off(fs->le) + 2 * i);
     fs->time   = v7_get32(sb + sb_time_off(fs->le), fs->le);
+    fs->fmod   = sb[sb_time_off(fs->le) - 2];   /* s_fmod (s_flock,s_ilock,fmod,s_ronly precede s_time) */
     /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
      * them); the 50/100-entry caches are only the in-core spill.  Read them so
      * statfs can report real free space rather than the cache depth. */
@@ -76,9 +77,12 @@ void v7fs_close(v7fs_t *fs) {
     if (fs->fd >= 0) {
         /* The superblock is flushed once here, not per alloc/free: V7's kernel
          * syncs the superblock periodically rather than on every block handoff,
-         * and batching avoids one 512-byte pwrite per freed block on truncate. */
-        if (!fs->readonly)
+         * and batching avoids one 512-byte pwrite per freed block on truncate.
+         * A clean close clears s_fmod: the image is now consistent. */
+        if (!fs->readonly) {
+            fs->fmod = 0;
             super_write(fs);
+        }
         close(fs->fd);
         fs->fd = -1;
     }
@@ -87,6 +91,13 @@ void v7fs_close(v7fs_t *fs) {
 int v7fs_sync(v7fs_t *fs) {
     if (fs->readonly)
         return 0;
+    return super_write(fs);
+}
+
+int v7fs_mark_dirty(v7fs_t *fs) {
+    if (fs->readonly)
+        return 0;
+    fs->fmod = 1;
     return super_write(fs);
 }
 
@@ -127,6 +138,7 @@ static int super_write(v7fs_t *fs) {
     for (int i = 0; i < V7_NICINOD; i++)
         v7_put16le(sb + sb_inode_off(fs->le) + 2 * i, fs->inode[i]);
     v7_put32(sb + sb_time_off(fs->le), fs->le, (uint32_t)time(NULL));  /* s_time */
+    sb[sb_time_off(fs->le) - 2] = (uint8_t)(fs->fmod != 0);            /* s_fmod */
     if (fs->le == 0) {
         v7_put32(sb + 418, fs->le, fs->tfree);             /* s_tfree */
         v7_put16le(sb + 422, (uint16_t)fs->tinode);        /* s_tinode */
@@ -833,8 +845,79 @@ static int v7fs_makefree(v7fs_t *fs, v7_chkctx_t *cx)
     return nfree;
 }
 
-int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage) {
+static void v7fs_preen(v7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
+                       uint32_t maxino)
+{
+    v7_inode_t root;
+    uint32_t lf_ino = 0;
+    if (v7fs_read_inode(fs, V7_ROOTINO, &root) == 0 &&
+        v7fs_dir_lookup(fs, &root, "lost+found", &lf_ino) != 0) {
+        v7_inode_t lf;
+        if (v7fs_ialloc(fs, &lf_ino) == 0) {
+            memset(&lf, 0, sizeof(lf));
+            lf.ino = lf_ino;
+            lf.mode = 0777 | V7_IFDIR;
+            lf.nlink = 2;
+            v7fs_write_inode(fs, lf_ino, &lf);
+            v7fs_dir_add(fs, &lf, lf_ino, ".");
+            v7fs_dir_add(fs, &lf, V7_ROOTINO, "..");
+            v7fs_dir_add(fs, &root, lf_ino, "lost+found");
+            root.nlink++;
+            v7fs_write_inode(fs, V7_ROOTINO, &root);
+            printf("created lost+found (inode %u)\n", lf_ino);
+        }
+    }
+
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        int cnt = ecount[ino] & 0377;
+        v7_inode_t ip;
+        if (v7fs_read_inode(fs, ino, &ip) != 0)
+            continue;
+        int allocd = alloc[ino >> 3] & (uint8_t)(1u << (ino & 7));
+        if (!allocd) {
+            if (cnt != 0) {
+                ip.mode = 0;
+                ip.nlink = 0;
+                v7fs_write_inode(fs, ino, &ip);
+                printf("cleared free-but-referenced inode %u\n", ino);
+            }
+            continue;
+        }
+        if (cnt == ip.nlink)
+            continue;
+        if (ino == V7_ROOTINO || ino == lf_ino)
+            continue;   /* nlink just set by lost+found creation; ecount is stale */
+        if (cnt == 0) {
+            if (lf_ino == 0)
+                continue;
+            if ((ip.mode & V7_IFMT) != 0)   /* dir or device: leave it */
+                continue;
+            v7_inode_t lf;
+            char name[16];
+            snprintf(name, sizeof(name), "%u", ino);
+            if (v7fs_read_inode(fs, lf_ino, &lf) == 0 &&
+                v7fs_dir_add(fs, &lf, ino, name) == 0) {
+                ip.nlink = 1;
+                v7fs_write_inode(fs, ino, &ip);
+                v7fs_write_inode(fs, lf_ino, &lf);
+                printf("reconnected inode %u to lost+found\n", ino);
+            }
+        } else {
+            int old = ip.nlink;
+            ip.nlink = (int16_t)(cnt & 0377);
+            v7fs_write_inode(fs, ino, &ip);
+            printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+        }
+    }
+}
+
+int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
     memset(rep, 0, sizeof(*rep));
+
+    if (fs->fmod == 0 && !(mode & (FILSYS_CK_SALVAGE | FILSYS_CK_FORCE))) {
+        printf("filesystem clean; skipped (use -f to force)\n");
+        return 0;
+    }
 
     /* 1. superblock sanity */
     if (fs->isize >= fs->fsize || fs->fsize == 0) {
@@ -862,6 +945,12 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage) {
     if (!cx.bmap)
         return -ENOMEM;
 
+    uint8_t *alloc = calloc((maxino + 8) / 8, 1);
+    if (!alloc) {
+        free(cx.bmap);
+        return -ENOMEM;
+    }
+
     /* 2. icheck pass 1: mark every block referenced by an inode. */
     for (uint32_t ino = 1; ino <= maxino; ino++) {
         v7_inode_t ip;
@@ -873,6 +962,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage) {
         if (ip.mode == 0)
             continue;
         rep->used_inodes++;
+        alloc[ino >> 3] |= (uint8_t)(1u << (ino & 7));
         uint16_t fmt = ip.mode & V7_IFMT;
         if (fmt == V7_IFCHR || fmt == V7_IFBLK ||
             fmt == V7_IFMPC || fmt == V7_IFMPB)
@@ -892,9 +982,10 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage) {
     /* fold the mark-phase findings (dup/bad blocks) into the report */
     rep->errors += cx.errors;
 
-    if (salvage) {
+    if (mode & FILSYS_CK_SALVAGE) {
         int nf = v7fs_makefree(fs, &cx);
         printf("salvaged: free list rebuilt (%d free blocks)\n", nf);
+        free(alloc);
         free(cx.bmap);
         return rep->errors ? -1 : 0;
     }
@@ -991,6 +1082,10 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage) {
                         rep->errors++;
                         continue;
                     }
+                    if (!(alloc[dno >> 3] & (uint8_t)(1u << (dno & 7)))) {
+                        printf("dir %u references free inode %u\n", ino, dno);
+                        rep->errors++;
+                    }
                     ecount[dno]++;
                     if (ecount[dno] == 0)
                         ecount[dno] = 0377;
@@ -1010,9 +1105,12 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage) {
             printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
             rep->errors++;
         }
+        if (mode & FILSYS_CK_PREEN)
+            v7fs_preen(fs, ecount, alloc, maxino);
         free(ecount);
     }
 
+    free(alloc);
     free(cx.bmap);
 
     printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
@@ -1198,6 +1296,7 @@ static int v7fs_open_op(void *fs, const char *path, int readonly, int le,
 }
 static void v7fs_close_op(void *fs) { v7fs_close(fs); }
 static int v7fs_sync_op(void *fs) { return v7fs_sync(fs); }
+static int v7fs_mark_dirty_op(void *fs) { return v7fs_mark_dirty(fs); }
 static int v7fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
 { return v7fs_read_block(fs, bno, buf); }
 static int v7fs_write_block_op(void *fs, uint32_t bno, const uint8_t *buf)
@@ -1242,6 +1341,7 @@ const struct filsys_ops v7fs_ops = {
     .open        = v7fs_open_op,
     .close       = v7fs_close_op,
     .sync        = v7fs_sync_op,
+    .mark_dirty  = v7fs_mark_dirty_op,
     .read_block  = v7fs_read_block_op,
     .write_block = v7fs_write_block_op,
     .read_inode  = v7fs_read_inode_op,
