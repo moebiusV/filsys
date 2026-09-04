@@ -1,4 +1,4 @@
-/* filsys 1.2.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.1 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v7fs.c - Seventh Edition Unix filesystem, on-disk access layer.
  *
@@ -22,18 +22,6 @@
 #include <sys/stat.h>
 
 static int super_write(v7fs_t *fs);
-
-/* 32V (VAX) aligns daddr_t/time_t to 4 bytes, so in the superblock and the
- * free-list dump block the fields that follow such a type sit 2 bytes later
- * than they do in V7 (PDP-11, 2-byte alignment).  The inode is unaffected
- * (di_size already lands on a 4-byte boundary). */
-static inline int sb_fsize_off(int le)  { return le ? 4 : 2; }
-static inline int sb_nfree_off(int le)  { return le ? 8 : 6; }
-static inline int sb_free_off(int le)   { return le ? 12 : 8; }
-static inline int sb_ninode_off(int le) { return le ? 212 : 208; }
-static inline int sb_inode_off(int le)  { return le ? 214 : 210; }
-static inline int sb_time_off(int le)   { return le ? 420 : 414; }
-static inline int fb_free_off(int le)   { return le ? 4 : 2; }
 
 /* ---- lifecycle --------------------------------------------------------- */
 

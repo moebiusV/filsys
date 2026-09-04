@@ -1,4 +1,4 @@
-/* filsys 1.2.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.1 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v1fs.c - First Edition (V1) Unix filesystem, on-disk access layer.
  *
@@ -602,7 +602,80 @@ int v1fs_lookup(v1fs_t *fs, const char *path, uint32_t *ino, v1_inode_t *ip) {
 
 /* ---- integrity check ---------------------------------------------------- */
 
-int v1fs_check(v1fs_t *fs, v1_check_t *rep) {
+/* ---- check / salvage / resolve-dups -------------------------------------- */
+
+typedef struct {
+    v1fs_t   *fs;
+    uint8_t  *bmap;        /* bit i = data block (dstart + i) */
+    uint32_t  nblk;
+    uint32_t  used_blocks;
+    uint32_t  dup_blocks;
+    uint32_t  errors;
+    uint32_t  ino;
+} v1_chkctx_t;
+
+static int v1_mark_block(v1_chkctx_t *cx, uint32_t bno)
+{
+    if (bno == 0)
+        return 0;
+    uint32_t dstart = v1_data_start(cx->fs->maxino);
+    if (bno < dstart || bno >= cx->fs->fsize) {
+        printf("block %u bad; inode=%u\n", bno, cx->ino);
+        cx->errors++;
+        return 1;
+    }
+    uint32_t d = bno - dstart;
+    uint8_t  m = (uint8_t)(1u << (d & 7));
+    if (cx->bmap[d >> 3] & m) {
+        printf("block %u dup; inode=%u\n", bno, cx->ino);
+        cx->dup_blocks++;
+        cx->errors++;
+        return 0;
+    }
+    cx->bmap[d >> 3] |= m;
+    cx->used_blocks++;
+    return 0;
+}
+
+/* V1 large file: all 8 slots are single-indirect (256 16-bit pointers). */
+static void v1_mark_tree(v1_chkctx_t *cx, uint32_t blk)
+{
+    if (blk == 0)
+        return;
+    if (v1_mark_block(cx, blk))
+        return;
+    uint8_t buf[V1_BSIZE];
+    if (v1fs_read_block(cx->fs, blk, buf)) {
+        printf("cannot read indirect block %u\n", blk);
+        cx->errors++;
+        return;
+    }
+    for (int i = 0; i < V1_NINDIR; i++) {
+        uint32_t nb = v1_get16le(buf + 2 * i);
+        if (nb != 0)
+            v1_mark_block(cx, nb);
+    }
+}
+
+/* Rebuild the free-block map from the usage bitmap (icheck -s).  Only the
+ * data area can be free; the superblock, i-list and device slots stay used. */
+static void v1fs_makefree(v1fs_t *fs, v1_chkctx_t *cx)
+{
+    uint32_t dstart = v1_data_start(fs->maxino);
+    uint32_t nfree = 0;
+    memset(fs->freemap, 0, fs->freemap_bytes);
+    for (uint32_t b = dstart; b < fs->fsize; b++) {
+        uint32_t off = b - dstart;
+        if (!(cx->bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
+            fs->freemap[b >> 3] |= (uint8_t)(1u << (b & 7));
+            nfree++;
+        }
+    }
+    fs->tfree = nfree;
+    super_write(fs);
+}
+
+int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage) {
     memset(rep, 0, sizeof(*rep));
     rep->inodes = fs->maxino;
 
@@ -611,12 +684,18 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep) {
         rep->errors++;
     }
 
-    /* Count free blocks from the free map (bits in the data area only). */
-    for (uint32_t b = v1_data_start(fs->maxino); b < fs->fsize; b++)
-        if (fs->freemap[b >> 3] & (1u << (b & 7)))
-            rep->free_blocks++;
+    uint32_t dstart = v1_data_start(fs->maxino);
+    uint32_t nblk = fs->fsize - dstart;
 
-    /* Walk the inode table, flagging out-of-range block references. */
+    v1_chkctx_t cx;
+    memset(&cx, 0, sizeof(cx));
+    cx.fs = fs;
+    cx.nblk = nblk;
+    cx.bmap = calloc((nblk + 7) / 8, 1);
+    if (!cx.bmap)
+        return -ENOMEM;
+
+    /* icheck pass 1: mark every block referenced by an inode. */
     for (uint32_t ino = 1; ino <= fs->maxino; ino++) {
         v1_inode_t ip;
         if (v1fs_read_inode(fs, ino, &ip)) {
@@ -629,18 +708,145 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep) {
         rep->used_inodes++;
         if (ino < V1_ROOTINO)       /* reserved device inode: addr is a device no. */
             continue;
+        cx.ino = ino;
         for (int i = 0; i < V1_NIADDR; i++) {
             uint32_t a = ip.addr[i];
-            if (a != 0 && a >= fs->fsize) {
-                printf("inode %u addr[%d]=%u out of range\n", ino, i, a);
-                rep->errors++;
+            if (a == 0)
+                continue;
+            if (ip.mode & V1_ILARG)
+                v1_mark_tree(&cx, a);
+            else
+                v1_mark_block(&cx, a);
+        }
+    }
+    rep->errors += cx.errors;
+
+    if (salvage) {
+        v1fs_makefree(fs, &cx);
+        printf("salvaged: free map rebuilt (%u free blocks)\n", fs->tfree);
+        free(cx.bmap);
+        return rep->errors ? -1 : 0;
+    }
+
+    /* Compare the free map against the usage map: blocks both used and free,
+     * and blocks neither used nor free ("missing"). */
+    for (uint32_t b = dstart; b < fs->fsize; b++) {
+        uint32_t off = b - dstart;
+        int used = cx.bmap[off >> 3] & (uint8_t)(1u << (off & 7));
+        int fre  = fs->freemap[b >> 3] & (uint8_t)(1u << (b & 7));
+        if (used && fre) {
+            printf("block %u used and free\n", b);
+            rep->errors++;
+        } else if (!used && !fre) {
+            printf("block %u missing\n", b);
+            rep->errors++;
+        }
+        if (fre)
+            rep->free_blocks++;
+    }
+
+    free(cx.bmap);
+    printf("free blocks=%u  inodes=%u/%u used  errors=%u\n",
+           rep->free_blocks, rep->used_inodes, rep->inodes, rep->errors);
+    return rep->errors ? -1 : 0;
+}
+
+int v1fs_resolve_dups(v1fs_t *fs)
+{
+    uint32_t dstart = v1_data_start(fs->maxino);
+    uint32_t nblk = fs->fsize - dstart;
+
+    v1_chkctx_t cx;
+    memset(&cx, 0, sizeof(cx));
+    cx.fs = fs;
+    cx.nblk = nblk;
+    cx.bmap = calloc((nblk + 7) / 8, 1);
+    if (!cx.bmap)
+        return -ENOMEM;
+
+    struct dup { uint32_t blk, ino, idx; };
+    struct dup *dups = NULL;
+    size_t ndup = 0, cap = 0;
+
+    for (uint32_t ino = 1; ino <= fs->maxino; ino++) {
+        v1_inode_t ip;
+        if (v1fs_read_inode(fs, ino, &ip))
+            continue;
+        if (ip.mode == 0)
+            continue;
+        if (ino < V1_ROOTINO)
+            continue;
+        cx.ino = ino;
+        for (int i = 0; i < V1_NIADDR; i++) {
+            uint32_t a = ip.addr[i];
+            if (a == 0)
+                continue;
+            if (ip.mode & V1_ILARG) {
+                v1_mark_tree(&cx, a);
+                continue;
+            }
+            if (a < dstart || a >= fs->fsize) {
+                printf("block %u bad; inode=%u\n", a, ino);
+                continue;
+            }
+            uint32_t off = a - dstart;
+            uint8_t  m = (uint8_t)(1u << (off & 7));
+            if (cx.bmap[off >> 3] & m) {
+                if (ndup == cap) {
+                    cap = cap ? cap * 2 : 16;
+                    dups = realloc(dups, cap * sizeof(*dups));
+                }
+                dups[ndup].blk = a;
+                dups[ndup].ino = ino;
+                dups[ndup].idx = i;
+                ndup++;
+            } else {
+                cx.bmap[off >> 3] |= m;
+                cx.used_blocks++;
             }
         }
     }
 
-    printf("free blocks=%u  inodes=%u/%u used  errors=%u\n",
-           rep->free_blocks, rep->used_inodes, rep->inodes, rep->errors);
-    return rep->errors ? -1 : 0;
+    if (ndup == 0) {
+        printf("no duplicate blocks\n");
+        free(cx.bmap);
+        return 0;
+    }
+
+    printf("%zu duplicate block(s); rebuilding free map\n", ndup);
+    v1fs_makefree(fs, &cx);
+
+    int resolved = 0;
+    for (size_t k = 0; k < ndup; k++) {
+        uint32_t blk = dups[k].blk, ino = dups[k].ino, idx = dups[k].idx;
+        v1_inode_t ip;
+        if (v1fs_read_inode(fs, ino, &ip))
+            continue;
+        if (ip.addr[idx] != blk)
+            continue;
+        uint32_t nb;
+        if (v1fs_balloc(fs, &nb)) {
+            printf("block %u dup; inode=%u: out of space\n", blk, ino);
+            continue;
+        }
+        uint8_t buf[V1_BSIZE];
+        if (v1fs_read_block(fs, blk, buf) || v1fs_write_block(fs, nb, buf)) {
+            printf("block %u dup; inode=%u: copy failed\n", blk, ino);
+            continue;
+        }
+        ip.addr[idx] = nb;
+        v1fs_write_inode(fs, ino, &ip);
+        uint32_t off = nb - dstart;
+        cx.bmap[off >> 3] |= (uint8_t)(1u << (off & 7));
+        printf("block %u dup; inode=%u: copied to %u\n", blk, ino, nb);
+        resolved++;
+    }
+    free(dups);
+
+    printf("resolved %d/%zu duplicates; finalizing free map\n", resolved, ndup);
+    v1fs_makefree(fs, &cx);
+    free(cx.bmap);
+    return resolved == (int)ndup ? 0 : -1;
 }
 
 /* ---- maintenance: ncheck / clri ---------------------------------------- */
@@ -748,7 +954,7 @@ static int v1fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
 { return v1fs_dir_remove(fs, ip, name); }
 static int v1fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
 { return v1fs_lookup(fs, path, ino, ip); }
-static int v1fs_check_op(void *fs) { v1_check_t rep; return v1fs_check(fs, &rep); }
+static int v1fs_check_op(void *fs) { v1_check_t rep; return v1fs_check(fs, &rep, 0); }
 static uint64_t v1fs_max_file_op(void *fs) {
     (void)fs;
     return (uint64_t)V1_NIADDR * V1_NINDIR * V1_BSIZE;   /* 8 * 256 * 512 */

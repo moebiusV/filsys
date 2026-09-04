@@ -1,4 +1,4 @@
-/* filsys 1.2.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.1 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* fsck.filsys.c - check and repair a Research Unix (PDP-7 through V7)
  * filesystem on a disk image.
@@ -18,11 +18,11 @@
  * fsck -- it used icheck(8) + dcheck(8); the check folds both in.)
  *
  * -s rebuilds the free list from the block scan (icheck -s), the standard
- * repair after restor(8), which does not rebuild the free list.  V7/V6 only
- * (V1 has a bitmap allocator, and PDP-7's rebuild is not implemented).
+ * repair after restor(8), which does not rebuild the free list.  V7/V6 and
+ * PDP-7 rebuild their free list; V1 rebuilds its free map.
  * -r resolves duplicate blocks (salv -a): each duplicate is copied to a fresh
  * block and the second reference re-pointed, then the free list is rebuilt.
- * V7/V6 only.
+ * Every edition.
  * -n report only, change nothing (the default; explicit, and refused together
  * with the modifying flags -s/-r/-C).
  * -N ino prints the pathname(s) of an inode (ncheck).  Every edition.
@@ -117,13 +117,8 @@ int main(int argc, char **argv)
     }
     path = argv[optind];
 
-    /* -s (salvage) and -r (resolve dups) are V7/V6-only: V1 uses a bitmap
-     * allocator and PDP-7's free-list rebuild is not implemented.  -N (ncheck)
-     * and -C (clri) work on every edition. */
-    if ((edition == FILSYS_V1 || edition == FILSYS_PDP7) && (salvage || resolve)) {
-        fprintf(stderr, "fsck.filsys: -s/-r are V7/V6 only\n");
-        return 2;
-    }
+    /* -s (salvage), -r (resolve dups), -N (ncheck) and -C (clri) all work on
+     * every edition: V1 rebuilds its free map, PDP-7 its free list. */
     if (nochange && (salvage || resolve || clri)) {
         fprintf(stderr, "fsck.filsys: -n (no change) conflicts with -s/-r/-C\n");
         return 2;
@@ -158,7 +153,7 @@ int main(int argc, char **argv)
     }
 
     if (edition == FILSYS_V1) {
-        int readonly = !clri;
+        int readonly = !(salvage || resolve || clri);
         v1fs_t fs;
         int rc = v1fs_open(&fs, path, readonly, offblock * V1_BSIZE);
         if (rc < 0) {
@@ -170,16 +165,18 @@ int main(int argc, char **argv)
             err = v1fs_ncheck(&fs, ino);
         else if (clri)
             err = v1fs_clri(&fs, ino);
+        else if (resolve)
+            err = v1fs_resolve_dups(&fs);
         else {
             v1_check_t rep;
-            err = v1fs_check(&fs, &rep);
+            err = v1fs_check(&fs, &rep, salvage);
         }
         v1fs_close(&fs);
         return err ? 1 : 0;
     }
 
     if (edition == FILSYS_PDP7) {
-        int readonly = !clri;
+        int readonly = !(salvage || resolve || clri);
         p7fs_t fs;
         int rc = p7fs_open(&fs, path, readonly, offblock * P7_BLOCKBYTES);
         if (rc < 0) {
@@ -191,9 +188,11 @@ int main(int argc, char **argv)
             err = p7fs_ncheck(&fs, ino);
         else if (clri)
             err = p7fs_clri(&fs, ino);
+        else if (resolve)
+            err = p7fs_resolve_dups(&fs);
         else {
             p7_check_t rep;
-            err = p7fs_check(&fs, &rep);
+            err = p7fs_check(&fs, &rep, salvage);
         }
         p7fs_close(&fs);
         return err ? 1 : 0;

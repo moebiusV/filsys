@@ -1,9 +1,9 @@
-.\" fsck.filsys.1 - part of filsys 1.2.0
+.\" fsck.filsys.1 - part of filsys 1.2.1
 .\" Derived from the Seventh Edition icheck(8) and dcheck(8) pages
 .\" (usr/man/man1/icheck.1m, usr/man/man1/dcheck.1m), distributed under the
 .\" Caldera International "Ancient UNIX License" (2002).  The LICENSE section
 .\" below retains that license's notice and terms.
-.TH FSCK.FILSYS 1 "August 26, 2026" "filsys 1.2.0" "File Format and Disk Utilities"
+.TH FSCK.FILSYS 1 "August 26, 2026" "filsys 1.2.1" "File Format and Disk Utilities"
 .SH NAME
 fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
@@ -119,8 +119,8 @@ Rebuild the free list from the block bit map (V7
 .BR \-s ).
 This is the standard repair after
 .BR restor (8),
-which does not rebuild the free list.  V7 and V6 only (V1 uses a bitmap
-allocator, and PDP-7's rebuild is not implemented).
+which does not rebuild the free list.  Every edition: V7, V6 and PDP-7 rebuild
+their free list; V1 rebuilds its free-block map.
 .TP
 .B \-r
 Resolve duplicate blocks: each block referenced by two inodes is copied to a
@@ -128,7 +128,7 @@ freshly allocated block and the second reference re-pointed, then the free
 list is rebuilt
 .RI ( salv (8)
 .BR \-a ).
-V7 and V6 only.
+Every edition.
 .TP
 .B \-n
 Report only; change nothing.  This is the default, but makes read-only intent

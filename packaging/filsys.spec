@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        1.2.0
+Version:        1.2.1
 Release:        1%{?dist}
 Summary:        FUSE driver for V7 (PDP-11) Unix filesystem images
 
@@ -48,5 +48,5 @@ seen by a running V7 kernel after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
-* Mon Aug 25 2026 David Walther <david@clearbrookdistillery.com> - 1.2.0-1
+* Mon Aug 25 2026 David Walther <david@clearbrookdistillery.com> - 1.2.1-1
 - Initial release
