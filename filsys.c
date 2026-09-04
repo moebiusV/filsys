@@ -10,6 +10,7 @@
 #include "v1fs.h"
 #include "v6fs.h"
 #include "v7fs.h"
+#include "pdp7fs.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -27,7 +28,18 @@ struct filsys {
 
 /* ---- mode conversion (edition-aware) ------------------------------------ */
 
-static mode_t to_posix_mode(int ver, uint16_t mode) {
+static mode_t to_posix_mode(int ver, uint32_t mode) {
+    if (ver == FILSYS_PDP7) {
+        /* PDP-7 has four permission bits (owner r/w, world r/w) and no execute
+         * bit; devices are I_SPECIAL inodes, not a type field. */
+        mode_t m = (mode & P7_IDIR)  ? S_IFDIR :
+                   (mode & P7_ISPEC) ? S_IFCHR : S_IFREG;
+        if (mode & P7_IOREAD)  m |= S_IRUSR;
+        if (mode & P7_IOWRITE) m |= S_IWUSR;
+        if (mode & P7_IWREAD)  m |= S_IRGRP | S_IROTH;
+        if (mode & P7_IWWRITE) m |= S_IWGRP | S_IWOTH;
+        return m;
+    }
     if (ver == FILSYS_V1) {
         /* V1's compact two-class permission model: owner r/w/x, non-owner r/w,
          * setuid, plus a single directory bit.  No char/block type bits --
@@ -85,7 +97,9 @@ static uint16_t to_v1_mode(mode_t m, int isdir) {
 /* Is this on-disk mode word a directory?  V1 sets V1_IFDIR alongside the
  * always-present IALLOC bit, so masking with V6/V7's IFMT (0170000) would
  * misread it; V6/V7 use the type field. */
-static int is_dir(int ver, uint16_t mode) {
+static int is_dir(int ver, uint32_t mode) {
+    if (ver == FILSYS_PDP7)
+        return (mode & P7_IDIR) != 0;
     if (ver == FILSYS_V1)
         return (mode & V1_IFDIR) != 0;
     uint16_t fmask = (ver == FILSYS_V6) ? V6_IFMT : V7_IFMT;
@@ -189,6 +203,9 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
     } else if (edition == FILSYS_V1) {
         fs->ops = &v1fs_ops;
         fs->fs  = calloc(1, sizeof(v1fs_t));
+    } else if (edition == FILSYS_PDP7) {
+        fs->ops = &p7fs_ops;
+        fs->fs  = calloc(1, sizeof(p7fs_t));
     } else {
         fs->ops = &v7fs_ops;
         fs->fs  = calloc(1, sizeof(v7fs_t));
@@ -223,6 +240,7 @@ int filsys_sync(filsys_t *fs) {
 int filsys_is_readonly(const filsys_t *fs) {
     if (fs->ver == FILSYS_V6) return ((const v6fs_t *)fs->fs)->readonly;
     if (fs->ver == FILSYS_V1) return ((const v1fs_t *)fs->fs)->readonly;
+    if (fs->ver == FILSYS_PDP7) return ((const p7fs_t *)fs->fs)->readonly;
     return ((const v7fs_t *)fs->fs)->readonly;
 }
 
@@ -261,8 +279,10 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     int isdev;
     if (fs->ver == FILSYS_V1) {
         isdev = (ip->ino < V1_ROOTINO);   /* V1: devices by inode number */
+    } else if (fs->ver == FILSYS_PDP7) {
+        isdev = (ip->mode & P7_ISPEC) != 0;   /* PDP-7: I_SPECIAL inode */
     } else {
-        uint16_t t = fs->ver == FILSYS_V6 ? (ip->mode & V6_IFMT) : (ip->mode & V7_IFMT);
+        uint32_t t = fs->ver == FILSYS_V6 ? (ip->mode & V6_IFMT) : (ip->mode & V7_IFMT);
         isdev = (fs->ver == FILSYS_V6) ? (t == V6_IFCHR || t == V6_IFBLK)
                                        : (t == V7_IFCHR || t == V7_IFBLK ||
                                           t == V7_IFMPC || t == V7_IFMPB);
@@ -705,6 +725,12 @@ int filsys_statfs(filsys_t *fs, struct statvfs *st) {
         st->f_bfree = st->f_bavail = v1->tfree;
         st->f_files = v1->maxino;
         st->f_ffree = v1->tinode;
+    } else if (fs->ver == FILSYS_PDP7) {
+        const p7fs_t *p7 = fs->fs;
+        st->f_blocks = P7_NBLOCKS;
+        st->f_bfree = st->f_bavail = p7->tfree;
+        st->f_files = P7_MAXINO;
+        st->f_ffree = 0;   /* not tracked (read-only) */
     } else {
         const v7fs_t *v7 = fs->fs;
         st->f_blocks = v7->fsize;
@@ -712,6 +738,7 @@ int filsys_statfs(filsys_t *fs, struct statvfs *st) {
         st->f_files = (v7->isize - 2) * 8;
         st->f_ffree = v7->tinode;
     }
-    st->f_namemax = fs->ver == FILSYS_V1 ? V1_DIRSIZ : 14;
+    st->f_namemax = fs->ver == FILSYS_V1 ? V1_DIRSIZ :
+                    fs->ver == FILSYS_PDP7 ? P7_DIRSIZ : 14;
     return 0;
 }
