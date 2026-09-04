@@ -38,5 +38,11 @@ core
 core.*
 *~
 
+# --- automake test harness artifacts (make check) ---
+test_matrix
+test-suite.log
+*.log
+*.trs
+
 # --- local notes (never pushed to the remote) ---
 docs/

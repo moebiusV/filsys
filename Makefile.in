@@ -97,6 +97,8 @@ POST_UNINSTALL = :
 bin_PROGRAMS = findfs.filsys$(EXEEXT) mkfs.filsys$(EXEEXT) \
 	fsck.filsys$(EXEEXT)
 sbin_PROGRAMS = mount.filsys$(EXEEXT)
+TESTS = test.sh test_matrix$(EXEEXT)
+check_PROGRAMS = test_matrix$(EXEEXT)
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -180,6 +182,11 @@ am__DEPENDENCIES_1 =
 mount_filsys_DEPENDENCIES = $(am__DEPENDENCIES_1) libfilsys.a
 mount_filsys_LINK = $(CCLD) $(mount_filsys_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+am_test_matrix_OBJECTS = test_matrix-test_matrix.$(OBJEXT)
+test_matrix_OBJECTS = $(am_test_matrix_OBJECTS)
+test_matrix_DEPENDENCIES = libfilsys.a
+test_matrix_LINK = $(CCLD) $(test_matrix_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -211,7 +218,8 @@ am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po \
 	./$(DEPDIR)/mkfs_filsys-v1fs.Po \
 	./$(DEPDIR)/mkfs_filsys-v6fs.Po \
 	./$(DEPDIR)/mkfs_filsys-v7fs.Po \
-	./$(DEPDIR)/mount_filsys-mount.filsys.Po
+	./$(DEPDIR)/mount_filsys-mount.filsys.Po \
+	./$(DEPDIR)/test_matrix-test_matrix.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -231,10 +239,10 @@ am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libfilsys_a_SOURCES) $(findfs_filsys_SOURCES) \
 	$(fsck_filsys_SOURCES) $(mkfs_filsys_SOURCES) \
-	$(mount_filsys_SOURCES)
+	$(mount_filsys_SOURCES) $(test_matrix_SOURCES)
 DIST_SOURCES = $(libfilsys_a_SOURCES) $(findfs_filsys_SOURCES) \
 	$(fsck_filsys_SOURCES) $(mkfs_filsys_SOURCES) \
-	$(mount_filsys_SOURCES)
+	$(mount_filsys_SOURCES) $(test_matrix_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -621,12 +629,9 @@ EXTRA_DIST = test.sh fetch.sh boot/hpuboot.s boot/rpuboot.s
 #  its as2 second pass next to itself, so no AS2 needs to be passed)
 bootdir = $(pkgdatadir)
 dist_boot_DATA = boot/hpuboot boot/rpuboot
-
-# `make check` runs the end-to-end smoke test.  It needs a disk image
-# (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).  Without the
-# image test.sh exits 77, which automake's test harness reports as SKIP, so a
-# build from the tarball (make distcheck) passes in any environment.
-TESTS = test.sh
+test_matrix_SOURCES = test_matrix.c
+test_matrix_LDADD = libfilsys.a
+test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -724,6 +729,9 @@ uninstall-binPROGRAMS:
 
 clean-binPROGRAMS:
 	-$(am__rm_f) $(bin_PROGRAMS)
+
+clean-checkPROGRAMS:
+	-$(am__rm_f) $(check_PROGRAMS)
 install-sbinPROGRAMS: $(sbin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	@list='$(sbin_PROGRAMS)'; test -n "$(sbindir)" || list=; \
@@ -819,6 +827,10 @@ mount.filsys$(EXEEXT): $(mount_filsys_OBJECTS) $(mount_filsys_DEPENDENCIES) $(EX
 	@rm -f mount.filsys$(EXEEXT)
 	$(AM_V_CCLD)$(mount_filsys_LINK) $(mount_filsys_OBJECTS) $(mount_filsys_LDADD) $(LIBS)
 
+test_matrix$(EXEEXT): $(test_matrix_OBJECTS) $(test_matrix_DEPENDENCIES) $(EXTRA_test_matrix_DEPENDENCIES) 
+	@rm -f test_matrix$(EXEEXT)
+	$(AM_V_CCLD)$(test_matrix_LINK) $(test_matrix_OBJECTS) $(test_matrix_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -842,6 +854,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-v6fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-v7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-mount.filsys.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_matrix-test_matrix.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -1100,6 +1113,20 @@ mount_filsys-mount.filsys.obj: mount.filsys.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mount.filsys.c' object='mount_filsys-mount.filsys.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mount_filsys_CPPFLAGS) $(CPPFLAGS) $(mount_filsys_CFLAGS) $(CFLAGS) -c -o mount_filsys-mount.filsys.obj `if test -f 'mount.filsys.c'; then $(CYGPATH_W) 'mount.filsys.c'; else $(CYGPATH_W) '$(srcdir)/mount.filsys.c'; fi`
+
+test_matrix-test_matrix.o: test_matrix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -MT test_matrix-test_matrix.o -MD -MP -MF $(DEPDIR)/test_matrix-test_matrix.Tpo -c -o test_matrix-test_matrix.o `test -f 'test_matrix.c' || echo '$(srcdir)/'`test_matrix.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/test_matrix-test_matrix.Tpo $(DEPDIR)/test_matrix-test_matrix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_matrix.c' object='test_matrix-test_matrix.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -c -o test_matrix-test_matrix.o `test -f 'test_matrix.c' || echo '$(srcdir)/'`test_matrix.c
+
+test_matrix-test_matrix.obj: test_matrix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -MT test_matrix-test_matrix.obj -MD -MP -MF $(DEPDIR)/test_matrix-test_matrix.Tpo -c -o test_matrix-test_matrix.obj `if test -f 'test_matrix.c'; then $(CYGPATH_W) 'test_matrix.c'; else $(CYGPATH_W) '$(srcdir)/test_matrix.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/test_matrix-test_matrix.Tpo $(DEPDIR)/test_matrix-test_matrix.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_matrix.c' object='test_matrix-test_matrix.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -c -o test_matrix-test_matrix.obj `if test -f 'test_matrix.c'; then $(CYGPATH_W) 'test_matrix.c'; else $(CYGPATH_W) '$(srcdir)/test_matrix.c'; fi`
 install-man1: $(dist_man_MANS)
 	@$(NORMAL_INSTALL)
 	@list1=''; \
@@ -1455,7 +1482,7 @@ echo "information.  Thanks.";                                                \
 	fi;								\
 	$$success || exit 1
 
-check-TESTS: 
+check-TESTS: $(check_PROGRAMS)
 	@$(am__rm_f) $(RECHECK_LOGS)
 	@$(am__rm_f) $(RECHECK_LOGS:.log=.trs)
 	@$(am__rm_f) $(TEST_SUITE_LOG)
@@ -1464,7 +1491,7 @@ check-TESTS:
 	log_list=`echo $$log_list`; \
 	$(MAKE) $(AM_MAKEFLAGS) $(TEST_SUITE_LOG) TEST_LOGS="$$log_list"; \
 	exit $$?;
-recheck: all 
+recheck: all $(check_PROGRAMS)
 	@$(am__rm_f) $(TEST_SUITE_LOG)
 	@set +e; $(am__set_TESTS_bases); \
 	bases=`for i in $$bases; do echo $$i; done \
@@ -1478,6 +1505,13 @@ recheck: all
 test.sh.log: test.sh
 	@p='test.sh'; \
 	b='test.sh'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
+test_matrix.log: test_matrix$(EXEEXT)
+	@p='test_matrix$(EXEEXT)'; \
+	b='test_matrix'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
@@ -1676,6 +1710,7 @@ distcleancheck: distclean
 	       $(distcleancheck_listfiles) ; \
 	       exit 1; } >&2
 check-am: all-am
+	$(MAKE) $(AM_MAKEFLAGS) $(check_PROGRAMS)
 	$(MAKE) $(AM_MAKEFLAGS) check-TESTS
 check: check-am
 all-am: Makefile $(PROGRAMS) $(LIBRARIES) $(MANS) $(DATA) $(HEADERS) \
@@ -1719,8 +1754,8 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-binPROGRAMS clean-generic clean-libLIBRARIES \
-	clean-sbinPROGRAMS mostlyclean-am
+clean-am: clean-binPROGRAMS clean-checkPROGRAMS clean-generic \
+	clean-libLIBRARIES clean-sbinPROGRAMS mostlyclean-am
 
 distclean: distclean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
@@ -1741,6 +1776,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v6fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
+	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-hdr distclean-tags
@@ -1807,6 +1843,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v6fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
+	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
@@ -1831,14 +1868,15 @@ uninstall-man: uninstall-man1 uninstall-man5
 .MAKE: all check-am install-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am am--depfiles am--refresh check \
-	check-TESTS check-am clean clean-binPROGRAMS clean-cscope \
-	clean-generic clean-libLIBRARIES clean-sbinPROGRAMS cscope \
-	cscopelist-am ctags ctags-am dist dist-all dist-bzip2 \
-	dist-bzip3 dist-gzip dist-lzip dist-shar dist-tarZ dist-xz \
-	dist-zip dist-zstd distcheck distclean distclean-compile \
-	distclean-generic distclean-hdr distclean-tags distcleancheck \
-	distdir distuninstallcheck dvi dvi-am html html-am info \
-	info-am install install-am install-binPROGRAMS install-data \
+	check-TESTS check-am clean clean-binPROGRAMS \
+	clean-checkPROGRAMS clean-cscope clean-generic \
+	clean-libLIBRARIES clean-sbinPROGRAMS cscope cscopelist-am \
+	ctags ctags-am dist dist-all dist-bzip2 dist-bzip3 dist-gzip \
+	dist-lzip dist-shar dist-tarZ dist-xz dist-zip dist-zstd \
+	distcheck distclean distclean-compile distclean-generic \
+	distclean-hdr distclean-tags distcleancheck distdir \
+	distuninstallcheck dvi dvi-am html html-am info info-am \
+	install install-am install-binPROGRAMS install-data \
 	install-data-am install-dist_bootDATA install-dvi \
 	install-dvi-am install-exec install-exec-am \
 	install-filsysincludeHEADERS install-html install-html-am \

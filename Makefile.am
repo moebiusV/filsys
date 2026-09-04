@@ -67,4 +67,12 @@ boot:
 # (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).  Without the
 # image test.sh exits 77, which automake's test harness reports as SKIP, so a
 # build from the tarball (make distcheck) passes in any environment.
-TESTS = test.sh
+# `make check` also builds and runs test_matrix, which exercises every backend
+# through the library (no FUSE): create/write/read/truncate/delete at sizes
+# straddling each format's direct-block and max-file boundaries, then fsck and
+# require errors=0.  It runs wherever the tools build.
+TESTS = test.sh test_matrix
+check_PROGRAMS = test_matrix
+test_matrix_SOURCES = test_matrix.c
+test_matrix_LDADD = libfilsys.a
+test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
