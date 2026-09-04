@@ -136,6 +136,8 @@ typedef struct {
     uint32_t free_blocks;
     uint32_t inodes;
     uint32_t used_inodes;
+    uint32_t missing_blocks;
+    uint32_t dup_blocks;
     uint32_t errors;
 } v1_check_t;
 
