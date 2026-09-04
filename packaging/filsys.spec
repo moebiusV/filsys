@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        1.2.4
+Version:        1.2.5
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (V0-V7, 32V) filesystem images
 
@@ -48,5 +48,5 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
-* Fri Sep 04 2026 David Walther <david@clearbrookdistillery.com> - 1.2.4-1
+* Fri Sep 04 2026 David Walther <david@clearbrookdistillery.com> - 1.2.5-1
 - Support V0 (PDP-7) through V7 and 32V; fsck/mkfs validation fixes.

@@ -1,4 +1,4 @@
-/* filsys 1.2.4 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.5 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v7fs.c - Seventh Edition Unix filesystem, on-disk access layer.
  *
