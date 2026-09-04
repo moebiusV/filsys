@@ -1,4 +1,4 @@
-/* filsys 1.2.2 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.3 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v1fs.c - First Edition (V1) Unix filesystem, on-disk access layer.
  *
@@ -982,7 +982,9 @@ static int v1fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inod
 static int v1fs_check_op(void *fs) { v1_check_t rep; return v1fs_check(fs, &rep, 0); }
 static uint64_t v1fs_max_file_op(void *fs) {
     (void)fs;
-    return (uint64_t)V1_NIADDR * V1_NINDIR * V1_BSIZE;   /* 8 * 256 * 512 */
+    /* The large-file flag can address a megabyte of blocks, but the 16-bit
+     * size field caps a file at 65535 bytes (past that it wraps to zero). */
+    return (1u << 16) - 1;
 }
 
 const struct filsys_ops v1fs_ops = {

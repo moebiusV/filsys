@@ -1,6 +1,6 @@
 # Maintainer: David Walther <david@clearbrookdistillery.com>
 pkgname=filsys
-pkgver=1.2.2
+pkgver=1.2.3
 pkgrel=1
 pkgdesc="FUSE driver for V7 (PDP-11) Unix filesystem images"
 arch=('x86_64')

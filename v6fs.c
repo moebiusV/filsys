@@ -1,4 +1,4 @@
-/* filsys 1.2.2 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.3 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v6fs.c - Sixth Edition Unix filesystem, on-disk access layer.
  *
@@ -1194,7 +1194,12 @@ static int v6fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
 static int v6fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
 { return v6fs_lookup(fs, path, ino, ip); }
 static int v6fs_check_op(void *fs) { v6_check_t rep; return v6fs_check(fs, &rep, 0); }
-static uint64_t v6fs_max_file_op(void *fs) { (void)fs; uint64_t n = V6_NINDIR; return (7u * n + n * n) * V6_BSIZE; }
+static uint64_t v6fs_max_file_op(void *fs) {
+    (void)fs;
+    /* The large-file layout can address ~32 MB, but the 24-bit size field
+     * caps a file at 16777215 bytes. */
+    return (1u << 24) - 1;
+}
 
 const struct filsys_ops v6fs_ops = {
     .name        = "v6",

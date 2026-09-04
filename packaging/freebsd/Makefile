@@ -1,5 +1,5 @@
 PORTNAME=	filsys
-PORTVERSION=	1.2.2
+PORTVERSION=	1.2.3
 CATEGORIES=	sysutils
 MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v${PORTVERSION}/
 
