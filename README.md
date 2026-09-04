@@ -184,14 +184,17 @@ disk image holds:
 | edition | max filesystem size | max files (inodes) | max file size |
 |---|---|---|---|
 | PDP-7 (v0) | 64 MB (2¹⁸ blocks × 256 B) | 262,144 (18-bit i-number) | 56 KB (7 × 64 × 64 words) |
-| V1 / V2 / V3 | 32 MB (2¹⁶ blocks × 512 B) | 65,536 (16-bit i-number) | 64 KB (16-bit size field) |
+| V1 / V2 / V3 | 6528 blocks × 512 B (~3.3 MB) | 65,536 (16-bit i-number) | 64 KB (16-bit size field) |
 | V4 / V5 / V6 | 32 MB | 65,536 | 1 MB (8 single-indirect × 256 blocks) |
 | V7 | 8 GB (2²⁴ blocks × 512 B) | 65,536 | ~1.08 GB (triple indirect) |
 | 32V | 8 GB | 65,536 | ~1.08 GB |
 
 The PDP-7's real RB09 disk held only 8000 blocks (2 MB) per surface; 64 MB is
-the 18-bit block-number ceiling.  V1's 16-bit size field caps a file at 64 KB
-even though the large-file flag can address a megabyte of blocks.
+the 18-bit block-number ceiling.  V1's 16-bit block numbers could address 32 MB,
+but its free-block and inode bitmaps live *inside the two-block superblock*, so
+a V1 volume is capped at 6528 blocks (~3.3 MB) — the bitmaps cannot fit past
+that.  V1's 16-bit size field separately caps a file at 64 KB even though the
+large-file flag can address a megabyte of blocks.
 
 ### Gotchas
 

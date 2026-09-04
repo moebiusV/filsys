@@ -2,7 +2,7 @@
 .\" filsys(5)/dir(5) (V7, 32V) pages, distributed under the Caldera
 .\" International "Ancient UNIX License" (2002).  The LICENSE section below
 .\" retains that license's copyright notice, conditions and disclaimer.
-.TH FILSYS 5 "August 26, 2026" "filsys 1.2.3" "File Formats and Mounting"
+.TH FILSYS 5 "August 26, 2026" "filsys 1.2.4" "File Formats and Mounting"
 .SH NAME
 mount.filsys, filsys \- mount a Research Unix filesystem image; format
 .SH SYNOPSIS
@@ -161,6 +161,14 @@ name), so a reader for those editions must use a different directory
 walker.  The 16-byte entry dates from V4, and is the same struct that
 survives verbatim into V7's
 .IR dir.h .)
+.PP
+V1 stores its free-block and inode bitmaps
+.I inside the two-block superblock,
+so a V1 volume cannot exceed 6528 blocks (~3.3 MB): past that the bitmaps do
+not fit.  The 16-bit block numbers would allow 32 MB, but the bitmap capacity
+is the binding limit.
+.BR mkfs.filsys (1)
+rejects anything larger.
 .SS The super block (block 1)
 .I V4, V5, V6: all 16-bit fields
 .PP

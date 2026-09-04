@@ -1,4 +1,4 @@
-/* filsys 1.2.3 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.4 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v7fs.c - Seventh Edition Unix filesystem, on-disk access layer.
  *
@@ -962,8 +962,10 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int salvage) {
 
     /* 4. missing blocks: in the data area but neither used nor free. */
     for (uint32_t off = 0; off < nblk; off++)
-        if (!(cx.bmap[off >> 3] & (uint8_t)(1u << (off & 7))))
+        if (!(cx.bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
             rep->missing_blocks++;
+            rep->errors++;
+        }
 
     rep->used_blocks = cx.used_blocks;
     rep->dup_blocks = cx.dup_blocks;

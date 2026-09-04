@@ -1,4 +1,4 @@
-/* filsys 1.2.3 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.4 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* mount.filsys.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
  * filesystem, selecting the on-disk edition at run time.
