@@ -14,6 +14,8 @@ fsck.filsys \- filesystem storage and directory consistency check
 .IR block ]
 .RB [ \-s ]
 .RB [ \-r ]
+.RB [ \-p ]
+.RB [ \-f ]
 .RB [ \-n ]
 .I image
 .br
@@ -77,7 +79,11 @@ is
 (zero an inode);
 .B \-n
 means "report only, change nothing" (the default, made explicit, and refused
-together with the modifying flags).
+together with the modifying flags).  The
+.B \-p
+option preens (fixes the safe subset without prompting), and
+.B \-f
+forces a check even when the superblock is marked clean (V6, V7 and 32V only).
 .PP
 The edition is selected with
 .BR \-v :
@@ -130,11 +136,30 @@ list is rebuilt
 .BR \-a ).
 Every edition.
 .TP
+.B \-p
+Preen: fix the safe subset without prompting.  Unreferenced regular files are
+reconnected to a recovery directory, link counts are corrected, and
+free-but-referenced inodes are cleared.  The recovery directory is
+.I lost+found ,
+except on V1 and PDP-7, whose 8-char names are too short for it; there it is
+.IR lostfils .
+Every edition.
+.TP
+.B \-f
+Force a check even when the superblock is marked clean.  V6, V7 and 32V carry
+the
+.I s_fmod
+flag: a read-write mount stamps it dirty and a clean unmount clears it, so a
+bare fsck skips a clean filesystem unless
+.B \-f
+is given.  V1 and PDP-7 have no such flag and are always checked.
+.TP
 .B \-n
 Report only; change nothing.  This is the default, but makes read-only intent
 explicit, and is refused together with
 .BR \-s ,
 .BR \-r ,
+.BR \-p ,
 or
 .BR \-C .
 .TP
