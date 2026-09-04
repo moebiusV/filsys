@@ -1,8 +1,8 @@
-.\" mount.filsys.1 - part of filsys 1.0.0
+.\" mount.filsys.1 - part of filsys 1.2.0
 .\" Derived from the Seventh Edition mount(8) page (usr/man/man1/mount.1m),
 .\" distributed under the Caldera International "Ancient UNIX License" (2002).
 .\" The LICENSE section below retains that license's notice and terms.
-.TH MOUNT.FILSYS 1 "August 26, 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.TH MOUNT.FILSYS 1 "August 26, 2026" "filsys 1.2.0" "File Format and Disk Utilities"
 .SH NAME
 mount.filsys, umount.filsys \- mount and dismount a Research Unix filesystem
 .SH SYNOPSIS
@@ -40,12 +40,14 @@ option mounts a filesystem that begins at a byte offset elsewhere in the file.
 .PP
 The on-disk edition is selected at run time with
 .BR \-v :
-v4, v5, or v6 select the Sixth Edition format (V4 and V5 are byte-identical to
-V6 on disk); v7 selects Seventh Edition; 32v selects 32V (V7 recompiled for the
-VAX, whose multi-byte fields are little-endian rather than PDP-11
-middle-endian).  A bare number
-.RB ( 4 ,
-.BR 5 ,
+v0 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
+through Third Edition format (one on-disk layout); v4, v5, or v6 select the
+Sixth Edition format (V4 and V5 are byte-identical to V6 on disk); v7 selects
+Seventh Edition; 32v selects 32V (V7 recompiled for the VAX, whose multi-byte
+fields are little-endian rather than PDP-11 middle-endian).  A bare number
+.RB ( 0 ,
+.BR 1 ,
+.BR 2 ,
 \&...) is also accepted.
 .PP
 The second form
@@ -91,7 +93,7 @@ supersedes.
 .SH OPTIONS
 .TP
 .BI \-v " edition"
-Filesystem edition: one of v4, v5, v6, v7, or 32v.  Required.
+Filesystem edition: one of v0, v1, v2, v3, v4, v5, v6, v7, or 32v.  Required.
 .TP
 .BI \-o " offset= N [, version= N ][, uid= N , gid= N ,...]"
 Comma-separated options.  The filsys-specific

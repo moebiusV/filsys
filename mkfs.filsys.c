@@ -1,4 +1,4 @@
-/* filsys 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* mkfs.filsys.c - create a Research Unix (V4 through V7) filesystem in a disk
  * image.
@@ -99,8 +99,8 @@ static int parse_edition(const char *s)
     if (strcmp(s, "v0") == 0 || strcmp(s, "0") == 0 ||
         strcmp(s, "pdp7") == 0 || strcmp(s, "p7") == 0)
         return FILSYS_PDP7;
-    if (strcmp(s, "1") == 0)
-        return FILSYS_V1;
+    if (strcmp(s, "1") == 0 || strcmp(s, "2") == 0 || strcmp(s, "3") == 0)
+        return FILSYS_V1;   /* V1, V2, V3: one format (10-byte dirents, bitmap, root 41) */
     if (strcmp(s, "4") == 0 || strcmp(s, "5") == 0 || strcmp(s, "6") == 0)
         return FILSYS_V6;
     if (strcmp(s, "7") == 0)
@@ -730,14 +730,14 @@ int main(int argc, char **argv)
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want v0|1|4|5|6|7|32v)\n", optarg);
+                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want v0|1|2|3|4|5|6|7|32v)\n", optarg);
                 return 1;
             }
             break;
         case 'o': offblock = strtoull(optarg, NULL, 0); break;
         case 'b': bootfile = optarg; break;
         default:
-            fprintf(stderr, "usage: mkfs.filsys [-v <4|5|6|7>] [-o block] [-b boot] image [blocks]\n");
+            fprintf(stderr, "usage: mkfs.filsys [-v <v0|1|2|3|4|5|6|7|32v>] [-o block] [-b boot] image [blocks]\n");
             return 1;
         }
     }

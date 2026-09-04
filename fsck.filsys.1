@@ -1,15 +1,15 @@
-.\" fsck.filsys.1 - part of filsys 1.0.0
+.\" fsck.filsys.1 - part of filsys 1.2.0
 .\" Derived from the Seventh Edition icheck(8) and dcheck(8) pages
 .\" (usr/man/man1/icheck.1m, usr/man/man1/dcheck.1m), distributed under the
 .\" Caldera International "Ancient UNIX License" (2002).  The LICENSE section
 .\" below retains that license's notice and terms.
-.TH FSCK.FILSYS 1 "August 26, 2026" "filsys 1.0.0" "File Format and Disk Utilities"
+.TH FSCK.FILSYS 1 "August 26, 2026" "filsys 1.2.0" "File Format and Disk Utilities"
 .SH NAME
 fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
 .B fsck.filsys
 .RB [ \-v
-.IR <v0|v1|v4|v5|v6|v7|32v> ]
+.IR <v0|v1|v2|v3|v4|v5|v6|v7|32v> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-s ]
@@ -81,8 +81,9 @@ together with the modifying flags).
 .PP
 The edition is selected with
 .BR \-v :
-v0 selects the word-addressed PDP-7 filesystem; v1 selects the First Edition;
-v4, v5, or v6 select the Sixth Edition format (V4 and V5 are byte-identical to
+v0 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
+through Third Edition (one format); v4, v5, or v6 select the Sixth Edition
+format (V4 and V5 are byte-identical to
 V6 on disk); v7 selects Seventh Edition; 32v selects 32V.  The default is v7.  A Research Unix
 disk image holds one or more filesystems
 .RI ( partitions ),
@@ -97,9 +98,10 @@ The exit status is 0 if the filesystem is clean, 1 if errors were found, and 2
 on a usage error.
 .SH OPTIONS
 .TP
-.BI \-v " <v0|v1|v4|v5|v6|v7|32v>"
-Filesystem edition.  v0 is the word-addressed PDP-7; v1 is First Edition;
-v4, v5 and v6 are byte-identical (the V6 format); v7 is V7; 32v is 32V.
+.BI \-v " <v0|v1|v2|v3|v4|v5|v6|v7|32v>"
+Filesystem edition.  v0 is the word-addressed PDP-7; v1, v2 and v3 are one
+format (First through Third Edition); v4, v5 and v6 are byte-identical (the V6
+format); v7 is V7; 32v is 32V.
 Default v7.  A bare number
 .RB ( 0 ,
 .BR 1 ,

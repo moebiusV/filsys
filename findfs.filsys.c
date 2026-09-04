@@ -1,4 +1,4 @@
-/* filsys 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* findfs.filsys.c - locate filesystem superblocks on a raw disk image.
  *

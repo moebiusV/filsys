@@ -2,16 +2,16 @@
 .\" filsys(5)/dir(5) (V7, 32V) pages, distributed under the Caldera
 .\" International "Ancient UNIX License" (2002).  The LICENSE section below
 .\" retains that license's copyright notice, conditions and disclaimer.
-.TH FILSYS 5 "August 26, 2026" "filsys 1.0.0" "File Formats and Mounting"
+.TH FILSYS 5 "August 26, 2026" "filsys 1.2.0" "File Formats and Mounting"
 .SH NAME
 mount.filsys, filsys \- mount a Research Unix filesystem image; format
 .SH SYNOPSIS
 .B mount.filsys
-\fB\-v\fR \fI<4|5|6|7|32>\fR [\fB\-o\fR \fIoffset=N\fR] [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
+\fB\-v\fR \fI<0|1|2|3|4|5|6|7|32>\fR [\fB\-o\fR \fIoffset=N\fR] [\fB\-r\fR] [\fB\-f\fR] [\fB\-d\fR]
 .I image mountpoint
 .br
 .B mount.filsys
-\fB\-v\fR \fI<4|5|6|7|32>\fR
+\fB\-v\fR \fI<0|1|2|3|4|5|6|7|32>\fR
 .B \-c
 .I image
 .SH DESCRIPTION
@@ -38,8 +38,16 @@ does not mount; it walks the free list and the inode table and reports any
 integrity problems on standard output.
 .SH OPTIONS
 .TP
-.B \-v <4|5|6|7|32>
+.B \-v <0|1|2|3|4|5|6|7|32>
 Select the on-disk edition.
+.B 0
+is the word-addressed PDP-7;
+.BR 1 ,
+.B 2
+and
+.B 3
+are one format (the First through Third Edition: bitmap-allocated, 10-byte
+directory entries);
 .BR 4 ,
 .B 5
 and
@@ -531,6 +539,16 @@ Heritage Society (TUHS), led the
 resurrection, and wrote the
 .I mkfs7 / fsck7
 Perl tools that document the PDP-7 on-disk format.
+.TP
+Angelo Papenhoff
+analysed the Dennis Ritchie DECtapes that Toomey had held back, recovering
+V2\(enV4 binaries and the
+.I NB
+discovery, and published the tape contents on TUHS.
+.TP
+Yufeng Gao
+rebuilt the mid-1972 \(lqV2 beta\(rq system from the s1/s2 tapes, producing
+the RF disk image against which the V1\(enV3 on-disk format was verified.
 .TP
 Phil Budne
 brought the restored PDP-7 kernel up and wrote its RIM bootstrap.

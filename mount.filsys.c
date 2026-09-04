@@ -1,4 +1,4 @@
-/* filsys 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* mount.filsys.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
  * filesystem, selecting the on-disk edition at run time.
@@ -225,9 +225,9 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <v0|v1|v4|v5|v6|v7|32v> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
+            "usage: %s -v <v0|v1|v2|v3|v4|v5|v6|v7|32v> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
             "                [-r] [-f] [-d] <image> <mountpoint>\n"
-            "       %s -v <v0|v1|v4|v5|v6|v7|32v> [-o offset=N] -c <image>   # integrity check\n",
+            "       %s -v <v0|v1|v2|v3|v4|v5|v6|v7|32v> [-o offset=N] -c <image>   # integrity check\n",
             p, p);
 }
 
@@ -236,8 +236,8 @@ static int parse_version(const char *s) {
     if (s[0] == 'v' || s[0] == 'V') s++;   /* accept "v7" and "7" alike */
     if (!strcmp(s, "v0") || !strcmp(s, "0") || !strcmp(s, "pdp7") || !strcmp(s, "p7"))
         return FILSYS_PDP7;
-    if (!strcmp(s, "1"))
-        return FILSYS_V1;
+    if (!strcmp(s, "1") || !strcmp(s, "2") || !strcmp(s, "3"))
+        return FILSYS_V1;   /* V1, V2, V3: one format (10-byte dirents, bitmap, root 41) */
     if (!strcmp(s, "4") || !strcmp(s, "5") || !strcmp(s, "6"))
         return FILSYS_V6;
     if (!strcmp(s, "7"))
@@ -262,7 +262,7 @@ int main(int argc, char *argv[]) {
         case 'v': {
             int v = parse_version(optarg);
             if (v < 0) {
-                fprintf(stderr, "%s: unknown Unix version \"%s\" (v0, v4, v5, v6, v7, 32v)\n",
+                fprintf(stderr, "%s: unknown Unix version \"%s\" (v0, v1, v2, v3, v4, v5, v6, v7, 32v)\n",
                         argv[0], optarg);
                 usage(argv[0]);
                 return 2;

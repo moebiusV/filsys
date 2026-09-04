@@ -1,6 +1,6 @@
-DISTNAME=	filsys-1.0.0
+DISTNAME=	filsys-1.2.0
 CATEGORIES=	sysutils
-MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v1.0.0/
+MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v1.2.0/
 EXTRACT_SUFX=	.tar.gz
 
 MAINTAINER=	maintainer@example.com
