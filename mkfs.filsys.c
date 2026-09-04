@@ -583,14 +583,15 @@ static void mkfs_v1(const char *path, uint32_t blocks, const char *bootfile)
 {
     (void)bootfile;   /* no boot-block install for V1 */
 
-    if (blocks > v1_max_fsize())
+    /* V1's free map and inode-map size fields are 16-bit words, so the maps
+     * (and the filesystem they describe) are a whole number of words: round the
+     * volume up to a multiple of 16 blocks, so fsize = freemap_bytes * 8. */
+    v1_fsize = (blocks + 15) & ~15u;
+    if (v1_fsize > v1_max_fsize())
         die("%s: v1: maximum filesystem size is %u blocks (superblock free map)\n",
             path, v1_max_fsize());
 
-    v1_fsize = blocks;
-    uint32_t freemap_bytes = (v1_fsize + 7) / 8;
-    if (freemap_bytes & 1)
-        freemap_bytes++;   /* always even */
+    uint32_t freemap_bytes = v1_fsize / 8;
 
     /* ~1 inode per 4 blocks, minimum 48 (so root inode 41 exists), a multiple
      * of 16 so the inode-map byte count is even. */
