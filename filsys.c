@@ -65,6 +65,34 @@ static uint16_t perm_of(mode_t m) {
     return (uint16_t)(m & 07777);
 }
 
+/* POSIX mode -> V1's on-disk flag word.  V1 has a two-class permission model
+ * (owner r/w/x, non-owner r/w) with no group or sticky bit, a single universal
+ * exec bit, and regular files carry no type bit (only IALLOC).  Group/other
+ * read-write collapse onto the non-owner bits; owner-exec drives the universal
+ * exec bit. */
+static uint16_t to_v1_mode(mode_t m, int isdir) {
+    uint16_t f = V1_IALLOC;
+    if (isdir) f |= V1_IFDIR;
+    if (m & S_IRUSR) f |= V1_IREAD;
+    if (m & S_IWUSR) f |= V1_IWRITE;
+    if (m & S_IXUSR) f |= V1_IEXEC;
+    if ((m & S_IRGRP) || (m & S_IROTH)) f |= V1_OREAD;
+    if ((m & S_IWGRP) || (m & S_IWOTH)) f |= V1_OWRITE;
+    if (m & S_ISUID) f |= V1_ISUID;
+    return f;
+}
+
+/* Is this on-disk mode word a directory?  V1 sets V1_IFDIR alongside the
+ * always-present IALLOC bit, so masking with V6/V7's IFMT (0170000) would
+ * misread it; V6/V7 use the type field. */
+static int is_dir(int ver, uint16_t mode) {
+    if (ver == FILSYS_V1)
+        return (mode & V1_IFDIR) != 0;
+    uint16_t fmask = (ver == FILSYS_V6) ? V6_IFMT : V7_IFMT;
+    uint16_t dbit  = (ver == FILSYS_V6) ? V6_IFDIR : V7_IFDIR;
+    return (mode & fmask) == dbit;
+}
+
 /* ---- dispatch (internal): forward through the backend ops table ---------- */
 
 static int read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
@@ -286,7 +314,12 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
     filsys_inode_t nip;
     memset(&nip, 0, sizeof(nip));
     nip.ino = nino;
-    nip.mode = perm_of(mode) | (fs->ver == FILSYS_V6 ? 0 : V7_IFREG);
+    if (fs->ver == FILSYS_V1)
+        nip.mode = to_v1_mode(mode, 0);
+    else if (fs->ver == FILSYS_V6)
+        nip.mode = perm_of(mode);              /* regular file = type 0 */
+    else
+        nip.mode = perm_of(mode) | V7_IFREG;
     nip.nlink = 1;
     nip.uid = (int16_t)uid;
     nip.gid = (int16_t)gid;
@@ -316,7 +349,12 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     filsys_inode_t nip;
     memset(&nip, 0, sizeof(nip));
     nip.ino = nino;
-    nip.mode = perm_of(mode) | (fs->ver == FILSYS_V6 ? V6_IFDIR : V7_IFDIR);
+    if (fs->ver == FILSYS_V1)
+        nip.mode = to_v1_mode(mode, 1);
+    else if (fs->ver == FILSYS_V6)
+        nip.mode = perm_of(mode) | V6_IFDIR;
+    else
+        nip.mode = perm_of(mode) | V7_IFDIR;
     nip.nlink = 2;
     nip.uid = (int16_t)uid;
     nip.gid = (int16_t)gid;
@@ -341,6 +379,10 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
 
 int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
                  uid_t uid, gid_t gid) {
+    /* V1 has no device type bits: devices are the fixed inodes 1..40, wired up
+     * by the kernel at boot (u0.s), not created with mknod(2). */
+    if (fs->ver == FILSYS_V1)
+        return -EPERM;
     /* V7 has only character and block devices; there is no on-disk type for a
      * FIFO or socket (named pipes arrived in System III).  Reject them up front
      * so mkfifo fails cleanly instead of depositing a bogus char device. */
@@ -419,9 +461,7 @@ int filsys_unlink(filsys_t *fs, const char *path) {
     uint32_t ino;
     rc = lookup(fs, path, &ino, &ip);
     if (rc) return rc;
-    uint16_t t = fs->ver == FILSYS_V6 ? (ip.mode & V6_IFMT) : (ip.mode & V7_IFMT);
-    int isdir = (fs->ver == FILSYS_V6) ? (t == V6_IFDIR) : (t == V7_IFDIR);
-    if (isdir) return -EISDIR;
+    if (is_dir(fs->ver, ip.mode)) return -EISDIR;
     return do_unlink(fs, dir, name);
 }
 
@@ -438,9 +478,7 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     if (rc) return rc;
     filsys_inode_t tip;
     if (read_inode(fs, ino, &tip)) return -EIO;
-    uint16_t t = fs->ver == FILSYS_V6 ? (tip.mode & V6_IFMT) : (tip.mode & V7_IFMT);
-    int isdir = (fs->ver == FILSYS_V6) ? (t == V6_IFDIR) : (t == V7_IFDIR);
-    if (!isdir) return -ENOTDIR;
+    if (!is_dir(fs->ver, tip.mode)) return -ENOTDIR;
     filsys_dirent_t *ents = NULL;
     size_t count = 0;
     if (dir_read(fs, &tip, &ents, &count)) return -EIO;
@@ -496,9 +534,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     int rc = lookup(fs, from, &sino, &sip);
     if (rc) return rc;
 
-    uint16_t fmask = fs->ver == FILSYS_V6 ? V6_IFMT : V7_IFMT;
-    uint16_t dirmode = fs->ver == FILSYS_V6 ? V6_IFDIR : V7_IFDIR;
-    int isdir = (sip.mode & fmask) == dirmode;
+    int isdir = is_dir(fs->ver, sip.mode);
 
     char fdir[PATH_MAX], fname[15];
     split_path(from, fdir, sizeof(fdir), fname, sizeof(fname));
@@ -518,7 +554,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         if (tino == sino) return 0;   /* already there */
         filsys_inode_t tip;
         if (read_inode(fs, tino, &tip)) return -EIO;
-        if ((tip.mode & fmask) == dirmode) {
+        if (is_dir(fs->ver, tip.mode)) {
             filsys_dirent_t *ents = NULL; size_t count = 0;
             if (dir_read(fs, &tip, &ents, &count)) return -EIO;
             for (size_t i = 0; i < count; i++)
@@ -606,8 +642,18 @@ int filsys_chmod(filsys_t *fs, const char *path, mode_t mode) {
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
     if (rc) return rc;
-    uint16_t fmask = fs->ver == FILSYS_V6 ? V6_IFMT : V7_IFMT;
-    ip.mode = (ip.mode & fmask) | (uint16_t)(mode & 07777);
+    if (fs->ver == FILSYS_V1) {
+        /* V1 chmod replaces the low six permission bits (preserving IALLOC/
+         * IFDIR/ILARG) and, like V1's sys/chmod, clears setuid+exec on
+         * directories. */
+        uint16_t bits = to_v1_mode(mode, 0) & (uint16_t)0077;
+        if (ip.mode & V1_IFDIR)
+            bits &= (uint16_t)~(V1_ISUID | V1_IEXEC);
+        ip.mode = (ip.mode & (uint16_t)~0077) | bits;
+    } else {
+        uint16_t fmask = fs->ver == FILSYS_V6 ? V6_IFMT : V7_IFMT;
+        ip.mode = (ip.mode & fmask) | (uint16_t)(mode & 07777);
+    }
     ip.ctime = (uint32_t)time(NULL);
     write_inode(fs, ino, &ip);
     return 0;
