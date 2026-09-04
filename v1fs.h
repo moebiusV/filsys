@@ -139,7 +139,10 @@ typedef struct {
     uint32_t errors;
 } v1_check_t;
 
-int v1fs_check(v1fs_t *fs, v1_check_t *rep);
+int v1fs_check(v1fs_t *fs, v1_check_t *rep, int salvage);
+/* Resolve duplicate blocks (salv -a): copy each block referenced twice to a
+ * fresh block and re-point the second reference, then rebuild the free map. */
+int v1fs_resolve_dups(v1fs_t *fs);
 
 /* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
 int v1fs_ncheck(v1fs_t *fs, uint32_t ino);

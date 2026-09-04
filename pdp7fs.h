@@ -34,6 +34,8 @@ enum {
     P7_DIRSIZ     = 8,     /* chars per name (2/word x 4 words) */
     P7_FIRSTINOBLK = 2,    /* first inode block (mkfs7) */
     P7_NINOBLKS   = 710,   /* inode blocks (mkfs7; s9.s zeroes 0..709) */
+    P7_DATASTART  = P7_FIRSTINOBLK + P7_NINOBLKS,      /* first data block (712) */
+    P7_KDATA      = 6400,  /* kernel area starts here (reserved, not freeable) */
     P7_MAXINO     = P7_NINOBLKS * P7_INOPB - 1,        /* 3549; inode 0 unused */
     P7_ROOTINO    = 4,     /* the "dd" (root) directory */
     P7_MAXWORD    = 0777777 /* 18-bit mask */
@@ -125,7 +127,10 @@ typedef struct {
     uint32_t errors;
 } p7_check_t;
 
-int p7fs_check(p7fs_t *fs, p7_check_t *rep);
+int p7fs_check(p7fs_t *fs, p7_check_t *rep, int salvage);
+/* Resolve duplicate blocks (salv -a): copy each block referenced twice to a
+ * fresh block and re-point the second reference, then rebuild the free list. */
+int p7fs_resolve_dups(p7fs_t *fs);
 
 /* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
 int p7fs_ncheck(p7fs_t *fs, uint32_t ino);

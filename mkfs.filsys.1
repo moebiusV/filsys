@@ -1,8 +1,8 @@
-.\" mkfs.filsys.1 - part of filsys 1.2.0
+.\" mkfs.filsys.1 - part of filsys 1.2.1
 .\" Derived from the Seventh Edition mkfs(8) page (usr/man/man1/mkfs.1m),
 .\" distributed under the Caldera International "Ancient UNIX License" (2002).
 .\" The LICENSE section below retains that license's notice and terms.
-.TH MKFS.FILSYS 1 "August 26, 2026" "filsys 1.2.0" "File Format and Disk Utilities"
+.TH MKFS.FILSYS 1 "August 26, 2026" "filsys 1.2.1" "File Format and Disk Utilities"
 .SH NAME
 mkfs.filsys \- construct a Research Unix filesystem in a disk image
 .SH SYNOPSIS
@@ -29,7 +29,8 @@ The edition of the filesystem is selected with
 v0 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
 through Third Edition (one format, bitmap-allocated); v4, v5, or v6 select the
 Sixth Edition format (V4 and V5
-are byte-identical to V6 on disk); v7 selects Seventh Edition.  The default is
+are byte-identical to V6 on disk); v7 selects Seventh Edition; 32v selects 32V
+(V7 for the VAX, little-endian).  The default is
 v7.  V6 and V7 differ
 on disk: V6 has 16 32-byte inodes per block, 16-bit block numbers, and an
 i-list whose size is stored as a block count; V7 has 8 64-byte inodes per

@@ -1,4 +1,4 @@
-/* filsys 1.2.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.1 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* mkfs.filsys.c - create a Research Unix (V4 through V7) filesystem in a disk
  * image.
@@ -61,6 +61,7 @@ static uint8_t  v7_sbuf[V7_BSIZE];    /* in-core superblock (block 1) */
 static uint8_t  v7_freebuf[V7_BSIZE];
 static uint16_t v7_nfree;
 static uint32_t v7_tinode, v7_tfree;
+static int      v7_le;                /* 0 = V7 middle-endian, 1 = 32V little-endian */
 
 static void     v7_sb_put16(uint32_t off, uint16_t v);
 static void     v7_sb_put32(uint32_t off, uint32_t v);
@@ -172,7 +173,7 @@ static void die(const char *fmt, ...)
 /* ---- V7 implementation -------------------------------------------------- */
 
 static void v7_sb_put16(uint32_t off, uint16_t v) { v7_put16le(v7_sbuf + off, v); }
-static void v7_sb_put32(uint32_t off, uint32_t v) { v7_put32me(v7_sbuf + off, v); }
+static void v7_sb_put32(uint32_t off, uint32_t v) { v7_put32(v7_sbuf + off, v7_le, v); }
 
 static uint32_t v7_alloc(void)
 {
@@ -181,7 +182,7 @@ static uint32_t v7_alloc(void)
 
     v7_tfree--;
     v7_nfree--;
-    bno = v7_get32me(v7_sbuf + 8 + 4 * v7_nfree);
+    bno = v7_get32(v7_sbuf + sb_free_off(v7_le) + 4 * v7_nfree, v7_le);
     if (bno == 0)
         die("out of free space\n");
     if (v7_nfree == 0) {
@@ -191,7 +192,8 @@ static uint32_t v7_alloc(void)
             die("read error at block %u\n", bno);
         v7_nfree = v7_get16le(fb);
         for (i = 0; i < V7_NICFREE; i++)
-            v7_put32me(v7_sbuf + 8 + 4 * i, v7_get32me(fb + 2 + 4 * i));
+            v7_put32(v7_sbuf + sb_free_off(v7_le) + 4 * i, v7_le,
+                     v7_get32(fb + fb_free_off(v7_le) + 4 * i, v7_le));
     }
     return bno;
 }
@@ -205,11 +207,12 @@ static void v7_bfree(uint32_t bno)
         memset(v7_freebuf, 0, V7_BSIZE);
         v7_put16le(v7_freebuf, (uint16_t)v7_nfree);
         for (i = 0; i < V7_NICFREE; i++)
-            v7_put32me(v7_freebuf + 2 + 4 * i, v7_get32me(v7_sbuf + 8 + 4 * i));
+            v7_put32(v7_freebuf + fb_free_off(v7_le) + 4 * i, v7_le,
+                     v7_get32(v7_sbuf + sb_free_off(v7_le) + 4 * i, v7_le));
         pblock(bno, v7_freebuf);
         v7_nfree = 0;
     }
-    v7_put32me(v7_sbuf + 8 + 4 * v7_nfree, bno);
+    v7_put32(v7_sbuf + sb_free_off(v7_le) + 4 * v7_nfree, v7_le, bno);
     v7_nfree++;
 }
 
@@ -286,12 +289,12 @@ static void v7_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
     memset(ip, 0, V7_INODESZ);
     v7_put16le(ip + 0, mode);
     v7_put16le(ip + 2, (uint16_t)nlink);
-    v7_put32me(ip + 8, size);
+    v7_put32(ip + 8, v7_le, size);
     for (i = 0; i < V7_NIADDR; i++)
-        v7_put24me(ip + 12 + 3 * i, addr[i]);
-    v7_put32me(ip + 52, (uint32_t)time(NULL));
-    v7_put32me(ip + 56, (uint32_t)time(NULL));
-    v7_put32me(ip + 60, (uint32_t)time(NULL));
+        v7_put24(ip + 12 + 3 * i, v7_le, addr[i]);
+    v7_put32(ip + 52, v7_le, (uint32_t)time(NULL));
+    v7_put32(ip + 56, v7_le, (uint32_t)time(NULL));
+    v7_put32(ip + 60, v7_le, (uint32_t)time(NULL));
 
     pblock(d, ib);
     v7_tinode--;
@@ -318,9 +321,11 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
 
     memset(v7_sbuf, 0, V7_BSIZE);
     v7_sb_put16(0, (uint16_t)v7_isize);
-    v7_sb_put32(2, v7_fsize);
-    v7_sb_put16(424, 3);      /* s_m  */
-    v7_sb_put16(426, 500);    /* s_n  */
+    v7_sb_put32(sb_fsize_off(v7_le), v7_fsize);
+    if (!v7_le) {
+        v7_sb_put16(424, 3);      /* s_m (V7 interleave hint) */
+        v7_sb_put16(426, 500);    /* s_n */
+    }
 
     /* s_isize is the first data block (not the i-list size), so the i-list is
      * blocks 2..s_isize-1 and the inode count is (s_isize-2) * 8.  V7's own
@@ -337,10 +342,12 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
     v7_bflist(3, 500);
     v7_mkroot();
 
-    v7_sb_put16(6, (uint16_t)v7_nfree);
-    v7_sb_put32(414, (uint32_t)time(NULL));   /* s_time */
-    v7_sb_put32(418, v7_tfree);               /* s_tfree */
-    v7_sb_put16(422, (uint16_t)v7_tinode);    /* s_tinode */
+    v7_sb_put16(sb_nfree_off(v7_le), (uint16_t)v7_nfree);
+    v7_sb_put32(sb_time_off(v7_le), (uint32_t)time(NULL));   /* s_time */
+    if (!v7_le) {
+        v7_sb_put32(418, v7_tfree);               /* s_tfree (V7 only) */
+        v7_sb_put16(422, (uint16_t)v7_tinode);    /* s_tinode (V7 only) */
+    }
     pblock(1, v7_sbuf);
 
     if (ftruncate(fd, (off_t)(base + (uint64_t)v7_fsize * V7_BSIZE)) < 0)
@@ -653,6 +660,7 @@ static uint32_t p7_build_freelist(void)
     p7_free_count = 0;
     while (p7_nfree > 0) {
         uint32_t fb = p7_take_free();
+        p7_free_count++;           /* the node block itself is free */
         uint32_t words[P7_WSIZE] = {0};
         words[0] = head;
         for (int i = 1; i <= 9 && p7_nfree > 0; i++) {
@@ -762,8 +770,10 @@ int main(int argc, char **argv)
         mkfs_v6(path, blocks, bootfile);
     else if (edition == FILSYS_V1)
         mkfs_v1(path, blocks, bootfile);
-    else
+    else {
+        v7_le = (edition == FILSYS_32V);
         mkfs_v7(path, blocks, bootfile);
+    }
 
     close(fd);
     return 0;
