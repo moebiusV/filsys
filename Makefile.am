@@ -13,7 +13,7 @@ sbin_PROGRAMS = mount.filsys
 # are the internal per-format layer and stay uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h v1fs.c v1fs.h v6fs.c v6fs.h v7fs.c v7fs.h
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h v1fs.c v1fs.h v6fs.c v6fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h

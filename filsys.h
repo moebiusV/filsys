@@ -24,17 +24,20 @@ extern "C" {
 
 /* Edition selectors passed to filsys_open(). */
 enum {
-    FILSYS_V1  = 1,
-    FILSYS_V6  = 6,
-    FILSYS_V7  = 7,
-    FILSYS_32V = 32
+    FILSYS_PDP7 = 0,   /* the PDP-7 filesystem (predates V1) */
+    FILSYS_V1   = 1,
+    FILSYS_V6   = 6,
+    FILSYS_V7   = 7,
+    FILSYS_32V  = 32
 };
 
-/* Decoded inode -- one shape for every edition (V6 fills only addr[0..7]).
- * Matches the internal v6fs/v7fs in-core inode layout. */
+/* Decoded inode -- one shape for every edition (V1, V6, V7/32V, PDP-7).  Each
+ * backend decodes its own on-disk inode (V1/V6 32 bytes, V7 64 bytes, PDP-7
+ * 12 words) field-by-field into this struct.  mode is 32 bits so PDP-7's
+ * 18-bit flag word fits (V1/V6/V7 modes are only 16 bits). */
 typedef struct {
     uint32_t ino;
-    uint16_t mode;               /* on-disk mode bits (edition-specific type) */
+    uint32_t mode;               /* on-disk mode bits (edition-specific type) */
     int16_t  nlink;
     int16_t  uid;
     int16_t  gid;
