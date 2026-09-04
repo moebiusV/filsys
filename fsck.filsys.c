@@ -36,19 +36,29 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include "filsys.h"
+#include "v1fs.h"
 #include "v6fs.h"
 #include "v7fs.h"
+#include "pdp7fs.h"
 
-/* Parse the -v edition argument.  Returns 6 (V4/V5/V6) or 7 (V7), or -1 on
- * error.  Accepts a leading 'v' (v6, v7) and rejects everything else. */
+/* Parse the -v edition argument.  Returns a FILSYS_* selector, or -1 on error.
+ * Accepts a leading 'v' (v6, v7) and rejects everything else. */
 static int parse_edition(const char *s)
 {
     if (s[0] == 'v' || s[0] == 'V')
         s++;
+    if (strcmp(s, "v0") == 0 || strcmp(s, "0") == 0 ||
+        strcmp(s, "pdp7") == 0 || strcmp(s, "p7") == 0)
+        return FILSYS_PDP7;
+    if (strcmp(s, "1") == 0)
+        return FILSYS_V1;
     if (strcmp(s, "4") == 0 || strcmp(s, "5") == 0 || strcmp(s, "6") == 0)
-        return 6;
+        return FILSYS_V6;
     if (strcmp(s, "7") == 0)
-        return 7;
+        return FILSYS_V7;
+    if (strcmp(s, "32") == 0 || strcmp(s, "32v") == 0)
+        return FILSYS_32V;
     return -1;
 }
 
@@ -56,7 +66,7 @@ int main(int argc, char **argv)
 {
     const char *path;
     uint64_t offblock = 0;
-    int edition = 7;   /* default: V7, matching mount.filsys's requirement */
+    int edition = FILSYS_V7;   /* default: V7, matching mount.filsys's requirement */
     int salvage = 0, resolve = 0, ncheck = 0, clri = 0, nochange = 0;
     uint32_t ino = 0;
     int c;
@@ -66,7 +76,7 @@ int main(int argc, char **argv)
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "fsck.filsys: bad edition '%s' (want 4|5|6|7)\n", optarg);
+                fprintf(stderr, "fsck.filsys: bad edition '%s' (want v0|1|4|5|6|7|32v)\n", optarg);
                 return 2;
             }
             break;
@@ -108,7 +118,7 @@ int main(int argc, char **argv)
     path = argv[optind];
 
     /* -s/-r/-N/-C are V7-only maintenance modes */
-    if (edition == 6 && (salvage || resolve || ncheck || clri)) {
+    if (edition != FILSYS_V7 && (salvage || resolve || ncheck || clri)) {
         fprintf(stderr, "fsck.filsys: -s/-r/-N/-C are V7 only\n");
         return 2;
     }
@@ -122,7 +132,7 @@ int main(int argc, char **argv)
         printf(" (offset block %llu)", (unsigned long long)offblock);
     printf("\n");
 
-    if (edition == 6) {
+    if (edition == FILSYS_V6) {
         v6fs_t fs;
         int rc = v6fs_open(&fs, path, 1 /*readonly*/, offblock * V6_BSIZE);
         if (rc < 0) {
@@ -132,6 +142,32 @@ int main(int argc, char **argv)
         v6_check_t rep;
         int err = v6fs_check(&fs, &rep);
         v6fs_close(&fs);
+        return err ? 1 : 0;
+    }
+
+    if (edition == FILSYS_V1) {
+        v1fs_t fs;
+        int rc = v1fs_open(&fs, path, 1 /*readonly*/, offblock * V1_BSIZE);
+        if (rc < 0) {
+            fprintf(stderr, "%s: %s\n", path, strerror(-rc));
+            return 1;
+        }
+        v1_check_t rep;
+        int err = v1fs_check(&fs, &rep);
+        v1fs_close(&fs);
+        return err ? 1 : 0;
+    }
+
+    if (edition == FILSYS_PDP7) {
+        p7fs_t fs;
+        int rc = p7fs_open(&fs, path, 1 /*readonly*/, offblock * P7_BLOCKBYTES);
+        if (rc < 0) {
+            fprintf(stderr, "%s: %s\n", path, strerror(-rc));
+            return 1;
+        }
+        p7_check_t rep;
+        int err = p7fs_check(&fs, &rep);
+        p7fs_close(&fs);
         return err ? 1 : 0;
     }
 

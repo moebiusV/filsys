@@ -1,0 +1,17 @@
+== mount read-only on the pristine image ==
+  ok: read /etc/passwd
+  ok: list /bin
+== mount read-write on a copy ==
+  ok: write + read
+  ok: mkdir
+  ok: rename
+  ok: unlink
+  ok: unlink #2
+  ok: rmdir
+  ok: copy binary off
+== truncate must not produce duplicate block references ==
+  ok: no duplicate blocks after truncate
+== persistence across remount ==
+  ok: file survived remount
+PASS
+PASS test.sh (exit status: 0)
