@@ -1,21 +1,6 @@
 filsys 1.2.4 (2026-09-04)
 ========================
 
-**Breaking change — fsck.filsys CLI flags.**  `-c` and `-n` no longer mean what
-they did when fsck.filsys first shipped:
-
-- `-c` (was `clri`) is gone; use `-C ino`.
-- `-n` (was `ncheck`) is now the universal fsck "report only, change nothing"
-  flag; use `-N ino` for `ncheck`.
-- `-C ino` = `clri` (zero an inode), `-N ino` = `ncheck` (print an inode's
-  pathname).  Both work on every edition.
-
-A wrapper written against an older release that passed `-c` will now fail with
-an error (loud); one that passed `-n` expecting `ncheck` will silently do
-nothing (quiet and wrong) — grep your scripts for `fsck.filsys` `-c`/`-n`.
-
-Other changes in 1.2.4:
-
 - fsck: unreferenced-but-unfree ("missing") blocks now count as errors, so a
   damaged filesystem exits non-zero (key for `make check` / CI).
 - mkfs v1: rejects a volume whose free/inode bitmaps would not fit in the
