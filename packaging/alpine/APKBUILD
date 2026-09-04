@@ -10,7 +10,7 @@ makedepends="fuse3-dev build-base"
 depends="fuse3"
 # recommended (optional): v7unix-toolchain prebsd
 source="https://github.com/moebiusV/filsys/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz"
-sha512sums="e46c9510bcb23fa846e869246c3d92026a6a82659a2e11588ce8a65084d8e49e9e9145ab5dcadd715a09e7ef22a5a8a19f5e942a594cb0a129c0426e0e81d76b  filsys-1.2.6.tar.gz"
+sha512sums="a6c2dd3e96e6251849c89ce7c4ffd57b0b21e069894ac4f4c8c95e9b7d233c3caccfcb71c949f52e66be38972ae890b8b990d6247c4ca6d6a80c0b74e0b61e12  filsys-1.2.6.tar.gz"
 
 build() {
 	./configure --prefix=/usr || return 1
