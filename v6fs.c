@@ -459,6 +459,23 @@ static int ind2(v6fs_t *fs, uint32_t *slot, uint32_t o, uint32_t i, int create, 
 }
 
 int v6fs_bmap(v6fs_t *fs, v6_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
+    /* A write past the eight direct slots promotes a small file to a large one:
+     * the eight direct block numbers move into the first single-indirect block. */
+    if (!(ip->mode & V6_ILARG) && create && lbn >= V6_NDADDR) {
+        uint32_t iblk;
+        if (v6fs_balloc(fs, &iblk))
+            return -ENOSPC;
+        uint8_t buf[V6_BSIZE] = {0};
+        for (int i = 0; i < V6_NDADDR; i++)
+            v6_put16le(buf + 2 * i, (uint16_t)ip->addr[i]);
+        if (v6fs_write_block(fs, iblk, buf))
+            return -EIO;
+        for (int i = 0; i < V6_NDADDR; i++)
+            ip->addr[i] = 0;
+        ip->addr[0] = iblk;
+        ip->mode |= V6_ILARG;
+    }
+
     if (ip->mode & V6_ILARG) {
         /* large file: i_addr[0..6] single-indirect, i_addr[7] double-indirect */
         if (lbn < 7 * V6_NINDIR)
