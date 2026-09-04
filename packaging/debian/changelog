@@ -1,5 +1,47 @@
 filsys (1.2.5-1) unstable; urgency=medium
 
-  * Initial release.
+  * mkfs v1: round the volume up to a multiple of 16 blocks so the free map
+    exactly describes the image.
+  * test_matrix: mkfs-cleanliness coverage at several volume sizes per format.
 
  -- David Walther <david@clearbrookdistillery.com>  Fri, 04 Sep 2026 00:00:00 +0000
+
+filsys (1.2.4-1) unstable; urgency=medium
+
+  * fsck: count unreferenced-but-unfree ("missing") blocks as errors.
+  * mkfs: reject an oversized V1 volume and a PDP-7 size argument up front.
+  * Normalise `-v` edition spellings; credit Keith Bostic and Paul Collinson.
+
+ -- David Walther <david@clearbrookdistillery.com>  Fri, 04 Sep 2026 00:00:00 +0000
+
+filsys (1.2.3-1) unstable; urgency=medium
+
+  * V6 large-file promotion; failed-write unwind; correct V1/V6 size ceilings.
+  * Add the per-format test matrix.
+
+ -- David Walther <david@clearbrookdistillery.com>  Fri, 04 Sep 2026 00:00:00 +0000
+
+filsys (1.2.2-1) unstable; urgency=medium
+
+  * PDP-7 large files; byte-exact sizes; allocators zero fresh blocks.
+
+ -- David Walther <david@clearbrookdistillery.com>  Fri, 04 Sep 2026 00:00:00 +0000
+
+filsys (1.2.1-1) unstable; urgency=medium
+
+  * fsck -s/-r for PDP-7 and V1; mkfs 32V.
+
+ -- David Walther <david@clearbrookdistillery.com>  Fri, 04 Sep 2026 00:00:00 +0000
+
+filsys (1.2.0-1) unstable; urgency=medium
+
+  * V1/V2/V3 and PDP-7 (v0) support; per-format ops table.
+  * fsck ncheck/clri across every edition; 32V fsck fix.
+
+ -- David Walther <david@clearbrookdistillery.com>  Fri, 04 Sep 2026 00:00:00 +0000
+
+filsys (1.0.0-1) unstable; urgency=medium
+
+  * First stable release: V4, V5, V6, V7 and 32V filesystems, read-write.
+
+ -- David Walther <david@clearbrookdistillery.com>  Thu, 27 Aug 2026 00:00:00 +0000

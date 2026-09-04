@@ -24,6 +24,46 @@ filsys 1.2.4 (2026-09-04)
   write/read/truncate/delete at each format's boundaries, oversized-write
   unwind, and mkfs argument validation — no FUSE or fetched image needed.
 
+filsys 1.2.3 (2026-09-04)
+========================
+
+- V6 large files: the small-to-large promotion gap fixed for V1 and PDP-7 in
+  1.2.2, now fixed for V6 too (a file past 4096 bytes promoted to ILARG instead
+  of failing).
+- Failed writes unwind: blocks allocated past the original size are freed and
+  the inode reset, then the error propagates, so a failed write leaks nothing
+  on any format.
+- V1/V6 file-size ceilings corrected to the size-field limit (64 KB / 16 MB),
+  not the block-address limit.
+- Added the per-format test matrix (`test_matrix`, run by `make check`).
+
+filsys 1.2.2 (2026-09-04)
+========================
+
+- PDP-7 large files: small-to-large promotion in the block map.
+- Byte-exact sizes: odd-size files no longer round up on the last block.
+- Allocators zero a freshly allocated block on every format.
+
+filsys 1.2.1 (2026-09-04)
+========================
+
+- fsck `-s` (rebuild the free list) and `-r` (resolve duplicate blocks) now
+  cover the PDP-7 and V1 backends, not just V6/V7.
+- mkfs builds a 32V filesystem.
+
+filsys 1.2.0 (2026-09-04)
+========================
+
+- V1/V2/V3 support: the First through Third Edition share one on-disk format
+  (10-byte directory entries, a bitmap free/inode allocator, 32-byte inodes,
+  root inode 41), read and written as a single code path.
+- PDP-7 (v0) support: the word-addressed PDP-7 filesystem, read-write.
+- Replaced the union-plus-ternary dispatch with a per-format ops table
+  (`filsys_ops`) that every backend plugs into.
+- fsck: ncheck (`-N`) and clri (`-C`) work across every edition; added `-s`
+  (salvage) and `-r` (resolve duplicates).
+- 32V fsck fixed.
+
 filsys 1.0.0 (2026-08-27)
 ========================
 
