@@ -14,7 +14,7 @@ stdenv.mkDerivation rec {
   # recommended (optional): v7unix-toolchain, prebsd
 
   meta = with lib; {
-    description = "FUSE driver for Research Unix (V4-V7, 32V) filesystem images";
+    description = "FUSE driver for Research Unix (V0-V7, 32V) filesystem images";
     homepage = "https://github.com/moebiusV/filsys";
     license = [ licenses.isc ];  # ISC + Caldera Ancient UNIX (see COPYING)
     maintainers = [ maintainers.maintainer ];

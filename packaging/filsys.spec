@@ -1,7 +1,7 @@
 Name:           filsys
 Version:        1.2.4
 Release:        1%{?dist}
-Summary:        FUSE driver for V7 (PDP-11) Unix filesystem images
+Summary:        FUSE driver for Research Unix (V0-V7, 32V) filesystem images
 
 License:        ISC AND Caldera
 URL:            https://github.com/moebiusV/filsys
@@ -16,13 +16,13 @@ Recommends:     v7unix-toolchain
 Recommends:     prebsd
 
 %description
-filsys mounts a Seventh Edition Unix filesystem image (as used by a PDP-11)
-as a FUSE filesystem, so files can be copied on and off the image for use with
-a simulator such as SIMH pdp11.
+filsys mounts a Research Unix filesystem image (PDP-7 through 32V, as used by
+a PDP-11) as a FUSE filesystem, so files can be copied on and off the image for
+use with a simulator such as SIMH pdp11.
 
-It understands the V7 on-disk format exactly - middle-endian byte order and
-the kernel's own free-list allocation discipline - so files staged with it are
-seen by a running V7 kernel after the image is booted.
+It understands each edition's on-disk format exactly - middle-endian byte order
+and the kernel's own free-list allocation discipline - so files staged with it
+are seen by a running kernel of that edition after the image is booted.
 
 %prep
 %autosetup
@@ -48,5 +48,5 @@ seen by a running V7 kernel after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
-* Mon Aug 25 2026 David Walther <david@clearbrookdistillery.com> - 1.2.4-1
-- Initial release
+* Fri Sep 04 2026 David Walther <david@clearbrookdistillery.com> - 1.2.4-1
+- Support V0 (PDP-7) through V7 and 32V; fsck/mkfs validation fixes.

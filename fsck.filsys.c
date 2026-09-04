@@ -1,10 +1,10 @@
 /* filsys 1.2.4 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* fsck.filsys.c - check and repair a Research Unix (PDP-7 through V7)
+/* fsck.filsys.c - check and repair a Research Unix (PDP-7 through 32V)
  * filesystem on a disk image.
  *
  * Usage:
- *     fsck.filsys [-v <v0|1|4|5|6|7|32v>] [-o block] [-s] [-r] [-n] image
+ *     fsck.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-s] [-r] [-n] image
  *     fsck.filsys [-v <edition>] [-o block] -N ino image
  *     fsck.filsys [-v <edition>] [-o block] -C ino image
  *
@@ -13,9 +13,10 @@
  * default fsck.filsys checks the filesystem at block 0.  -o selects a different
  * block offset.
  *
- * -v selects the edition: v0 (PDP-7), 1 (First Edition), 4/5/6 (the V6
- * format, byte-identical), 7 (V7), 32v.  The default is 7.  (V7 had no single
- * fsck -- it used icheck(8) + dcheck(8); the check folds both in.)
+ * -v selects the edition: v0 (PDP-7), 1/2/3 (First through Third Edition,
+ * one bitmap format), 4/5/6 (the V6 format, byte-identical), 7 (V7), 32v.
+ * The default is 7.  (V7 had no single fsck -- it used icheck(8) +
+ * dcheck(8); the check folds both in.)
  *
  * -s rebuilds the free list from the block scan (icheck -s), the standard
  * repair after restor(8), which does not rebuild the free list.  V7/V6 and
@@ -76,7 +77,7 @@ int main(int argc, char **argv)
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "fsck.filsys: bad edition '%s' (want v0|1|2|3|4|5|6|7|32v)\n", optarg);
+                fprintf(stderr, "fsck.filsys: bad edition '%s' (want v0|v1|v2|v3|v4|v5|v6|v7|32v)\n", optarg);
                 return 2;
             }
             break;
@@ -102,7 +103,7 @@ int main(int argc, char **argv)
             break;
         default:
             fprintf(stderr,
-                "usage: fsck.filsys [-v <v0|1|2|3|4|5|6|7|32v>] [-o block] [-s] [-r] [-n] image\n"
+                "usage: fsck.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-s] [-r] [-n] image\n"
                 "       fsck.filsys [-v <edition>] [-o block] -N ino image\n"
                 "       fsck.filsys [-v <edition>] [-o block] -C ino image\n");
             return 2;
@@ -110,7 +111,7 @@ int main(int argc, char **argv)
     }
     if (optind >= argc) {
         fprintf(stderr,
-            "usage: fsck.filsys [-v <v0|1|4|5|6|7|32v>] [-o block] [-s] [-r] [-n] image\n"
+            "usage: fsck.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-s] [-r] [-n] image\n"
             "       fsck.filsys [-v <edition>] [-o block] -N ino image\n"
             "       fsck.filsys [-v <edition>] [-o block] -C ino image\n");
         return 2;

@@ -2,7 +2,7 @@
 pkgname=filsys
 pkgver=1.2.4
 pkgrel=1
-pkgdesc="FUSE driver for V7 (PDP-11) Unix filesystem images"
+pkgdesc="FUSE driver for Research Unix (V0-V7, 32V) filesystem images"
 arch=('x86_64')
 url="https://github.com/moebiusV/filsys"
 license=('ISC' 'Caldera')
@@ -10,7 +10,7 @@ depends=('fuse3')
 optdepends=('prebsd: boot the images on simh')
 makedepends=('pkg-config')
 source=("https://github.com/moebiusV/filsys/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('eb703b355b9317c9f0075f5df302b77f0d3842b4cb7af0b86357bca6c0d23de2')
+sha256sums=('4cb9d6ebf0373cfd886b802ac4b1788f7e54eeec576711bed73fd89cd00a9e64')
 
 build() {
   cd "$pkgname-$pkgver"

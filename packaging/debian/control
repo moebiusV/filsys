@@ -22,7 +22,7 @@ Suggests:
  prebsd,
  v7unix-toolchain
 Description: FUSE driver and utilities for Research Unix filesystem images
- filsys mounts a Research Unix (V4 through V7, and 32V) filesystem image —
+ filsys mounts a Research Unix (V0 through V7, and 32V) filesystem image —
  the on-disk format used by the PDP-11 — as a FUSE filesystem, so files can
  be copied on and off the image for use with a simulator such as SIMH pdp11.
  .
@@ -32,7 +32,7 @@ Description: FUSE driver and utilities for Research Unix filesystem images
  .
  It understands the on-disk format exactly — middle-endian byte order and the
  kernel's own free-list allocation discipline — so files staged with it are
- seen by a running V7 kernel after the image is booted.
+ seen by a running kernel of that edition after the image is booted.
 
 Package: libfilsys-dev
 Section: libdevel
