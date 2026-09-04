@@ -1,32 +1,32 @@
 /* filsys 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* fsck.filsys.c - check and repair a Research Unix (V4 through V7) filesystem
- * on a disk image.
+/* fsck.filsys.c - check and repair a Research Unix (PDP-7 through V7)
+ * filesystem on a disk image.
  *
  * Usage:
- *     fsck.filsys [-v <4|5|6|7>] [-o block] [-s] [-r] [-n] image
- *     fsck.filsys [-v 7] [-o block] -N ino image
- *     fsck.filsys [-v 7] [-o block] -C ino image
+ *     fsck.filsys [-v <v0|1|4|5|6|7|32v>] [-o block] [-s] [-r] [-n] image
+ *     fsck.filsys [-v <edition>] [-o block] -N ino image
+ *     fsck.filsys [-v <edition>] [-o block] -C ino image
  *
  * A Research Unix disk image holds one or more filesystems ("partitions"); the
  * partition table is compiled into the kernel, not stored on the disk.  So by
  * default fsck.filsys checks the filesystem at block 0.  -o selects a different
  * block offset.
  *
- * -v selects the edition: 4, 5 and 6 are byte-identical (the V6 format) and
- * are checked with v6fs_check(); 7 is V7, checked with v7fs_check().  The
- * default is 7.  (V7 had no single fsck -- it used icheck(8) + dcheck(8);
- * v7fs_check() folds both in.)
+ * -v selects the edition: v0 (PDP-7), 1 (First Edition), 4/5/6 (the V6
+ * format, byte-identical), 7 (V7), 32v.  The default is 7.  (V7 had no single
+ * fsck -- it used icheck(8) + dcheck(8); the check folds both in.)
  *
  * -s rebuilds the free list from the block scan (icheck -s), the standard
- * repair after restor(8), which does not rebuild the free list.
+ * repair after restor(8), which does not rebuild the free list.  V7/V6 only
+ * (V1 has a bitmap allocator, and PDP-7's rebuild is not implemented).
  * -r resolves duplicate blocks (salv -a): each duplicate is copied to a fresh
  * block and the second reference re-pointed, then the free list is rebuilt.
+ * V7/V6 only.
  * -n report only, change nothing (the default; explicit, and refused together
  * with the modifying flags -s/-r/-C).
- * -N ino prints the pathname(s) of an inode (ncheck).
- * -C ino zeroes an inode (clri).
- * The -s/-r/-N/-C maintenance modes are V7 only.
+ * -N ino prints the pathname(s) of an inode (ncheck).  Every edition.
+ * -C ino zeroes an inode (clri).  Every edition.
  */
 #include <config.h>
 #include <stdio.h>
@@ -102,24 +102,26 @@ int main(int argc, char **argv)
             break;
         default:
             fprintf(stderr,
-                "usage: fsck.filsys [-v <4|5|6|7>] [-o block] [-s] [-r] [-n] image\n"
-                "       fsck.filsys [-v 7] [-o block] -N ino image\n"
-                "       fsck.filsys [-v 7] [-o block] -C ino image\n");
+                "usage: fsck.filsys [-v <v0|1|4|5|6|7|32v>] [-o block] [-s] [-r] [-n] image\n"
+                "       fsck.filsys [-v <edition>] [-o block] -N ino image\n"
+                "       fsck.filsys [-v <edition>] [-o block] -C ino image\n");
             return 2;
         }
     }
     if (optind >= argc) {
         fprintf(stderr,
-            "usage: fsck.filsys [-v <4|5|6|7>] [-o block] [-s] [-r] image\n"
-            "       fsck.filsys [-v 7] [-o block] -n ino image\n"
-            "       fsck.filsys [-v 7] [-o block] -c ino image\n");
+            "usage: fsck.filsys [-v <v0|1|4|5|6|7|32v>] [-o block] [-s] [-r] [-n] image\n"
+            "       fsck.filsys [-v <edition>] [-o block] -N ino image\n"
+            "       fsck.filsys [-v <edition>] [-o block] -C ino image\n");
         return 2;
     }
     path = argv[optind];
 
-    /* -s/-r/-N/-C are V7-only maintenance modes */
-    if (edition != FILSYS_V7 && (salvage || resolve || ncheck || clri)) {
-        fprintf(stderr, "fsck.filsys: -s/-r/-N/-C are V7 only\n");
+    /* -s (salvage) and -r (resolve dups) are V7/V6-only: V1 uses a bitmap
+     * allocator and PDP-7's free-list rebuild is not implemented.  -N (ncheck)
+     * and -C (clri) work on every edition. */
+    if ((edition == FILSYS_V1 || edition == FILSYS_PDP7) && (salvage || resolve)) {
+        fprintf(stderr, "fsck.filsys: -s/-r are V7/V6 only\n");
         return 2;
     }
     if (nochange && (salvage || resolve || clri)) {
@@ -133,40 +135,66 @@ int main(int argc, char **argv)
     printf("\n");
 
     if (edition == FILSYS_V6) {
+        int readonly = !(salvage || resolve || clri);
         v6fs_t fs;
-        int rc = v6fs_open(&fs, path, 1 /*readonly*/, offblock * V6_BSIZE);
+        int rc = v6fs_open(&fs, path, readonly, offblock * V6_BSIZE);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;
         }
-        v6_check_t rep;
-        int err = v6fs_check(&fs, &rep);
+        int err;
+        if (ncheck)
+            err = v6fs_ncheck(&fs, ino);
+        else if (clri)
+            err = v6fs_clri(&fs, ino);
+        else if (resolve)
+            err = v6fs_resolve_dups(&fs);
+        else {
+            v6_check_t rep;
+            err = v6fs_check(&fs, &rep, salvage);
+        }
         v6fs_close(&fs);
         return err ? 1 : 0;
     }
 
     if (edition == FILSYS_V1) {
+        int readonly = !clri;
         v1fs_t fs;
-        int rc = v1fs_open(&fs, path, 1 /*readonly*/, offblock * V1_BSIZE);
+        int rc = v1fs_open(&fs, path, readonly, offblock * V1_BSIZE);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;
         }
-        v1_check_t rep;
-        int err = v1fs_check(&fs, &rep);
+        int err;
+        if (ncheck)
+            err = v1fs_ncheck(&fs, ino);
+        else if (clri)
+            err = v1fs_clri(&fs, ino);
+        else {
+            v1_check_t rep;
+            err = v1fs_check(&fs, &rep);
+        }
         v1fs_close(&fs);
         return err ? 1 : 0;
     }
 
     if (edition == FILSYS_PDP7) {
+        int readonly = !clri;
         p7fs_t fs;
-        int rc = p7fs_open(&fs, path, 1 /*readonly*/, offblock * P7_BLOCKBYTES);
+        int rc = p7fs_open(&fs, path, readonly, offblock * P7_BLOCKBYTES);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;
         }
-        p7_check_t rep;
-        int err = p7fs_check(&fs, &rep);
+        int err;
+        if (ncheck)
+            err = p7fs_ncheck(&fs, ino);
+        else if (clri)
+            err = p7fs_clri(&fs, ino);
+        else {
+            p7_check_t rep;
+            err = p7fs_check(&fs, &rep);
+        }
         p7fs_close(&fs);
         return err ? 1 : 0;
     }

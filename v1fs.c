@@ -643,6 +643,68 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep) {
     return rep->errors ? -1 : 0;
 }
 
+/* ---- maintenance: ncheck / clri ---------------------------------------- */
+
+static void v1_ncheck_dir(v1fs_t *fs, uint32_t dirino, const char *prefix,
+                          uint32_t target, int *found, int depth)
+{
+    if (depth > 64)
+        return;
+    v1_inode_t ip;
+    if (v1fs_read_inode(fs, dirino, &ip))
+        return;
+    if (!(ip.mode & V1_IFDIR))
+        return;
+    v1_dirent_t *ents = NULL;
+    size_t cnt = 0;
+    if (v1fs_dir_read(fs, &ip, &ents, &cnt))
+        return;
+    for (size_t i = 0; i < cnt; i++) {
+        uint32_t eino = ents[i].ino;
+        if (eino == 0)
+            continue;
+        if (ents[i].name[0] == '.' &&
+            (ents[i].name[1] == 0 ||
+             (ents[i].name[1] == '.' && ents[i].name[2] == 0)))
+            continue;
+        char path[1024];
+        if (prefix[1] == 0)
+            snprintf(path, sizeof(path), "/%s", ents[i].name);
+        else
+            snprintf(path, sizeof(path), "%s/%s", prefix, ents[i].name);
+        if (eino == target) {
+            printf("%u\t%s\n", target, path);
+            *found = 1;
+        }
+        v1_inode_t cip;
+        if (v1fs_read_inode(fs, eino, &cip) == 0 && (cip.mode & V1_IFDIR))
+            v1_ncheck_dir(fs, eino, path, target, found, depth + 1);
+    }
+    v1fs_dirents_free(ents);
+}
+
+int v1fs_ncheck(v1fs_t *fs, uint32_t ino)
+{
+    int found = 0;
+    v1_ncheck_dir(fs, V1_ROOTINO, "/", ino, &found, 0);
+    if (!found)
+        printf("%u: not found\n", ino);
+    return 0;
+}
+
+int v1fs_clri(v1fs_t *fs, uint32_t ino)
+{
+    if (ino == 0 || ino > fs->maxino)
+        return -EINVAL;
+    v1_inode_t ip;
+    memset(&ip, 0, sizeof(ip));
+    ip.ino = ino;
+    int rc = v1fs_write_inode(fs, ino, &ip);
+    if (rc == 0)
+        printf("cleared inode %u\n", ino);
+    return rc;
+}
+
 /* ---- ops table ----------------------------------------------------------
  * Each op takes `void *` (the backend state).  The adapters forward to the
  * typed backend function; the `void *` argument converts implicitly to
