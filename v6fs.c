@@ -867,6 +867,7 @@ static uint64_t v6fs_max_file_op(void *fs) { (void)fs; uint64_t n = V6_NINDIR; r
 
 const struct filsys_ops v6fs_ops = {
     .name        = "v6",
+    .blocksize   = V6_BSIZE,
     .open        = v6fs_open_op,
     .close       = v6fs_close_op,
     .sync        = v6fs_sync_op,

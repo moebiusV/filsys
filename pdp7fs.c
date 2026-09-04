@@ -740,6 +740,7 @@ static uint64_t p7fs_max_file_op(void *fs) {
 
 const struct filsys_ops p7fs_ops = {
     .name        = "pdp7",
+    .blocksize   = P7_WSIZE * 2,   /* 64 words x 2 chars = 128 bytes */
     .open        = p7fs_open_op,
     .close       = p7fs_close_op,
     .sync        = p7fs_sync_op,

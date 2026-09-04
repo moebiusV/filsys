@@ -18,6 +18,7 @@
 
 struct filsys_ops {
     const char *name;
+    uint32_t blocksize;   /* logical block size in bytes (bmap/truncate unit) */
 
     /* lifecycle */
     int  (*open)(void *fs, const char *path, int readonly, int little_endian,
