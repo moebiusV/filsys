@@ -4,10 +4,13 @@
 # Reproducible `make dist`: a byte-identical tarball no matter when or where it
 # is built.  `-n` drops the gzip header timestamp; the dist-hook pins every file
 # and directory mtime to a fixed epoch (set SOURCE_DATE_EPOCH to the commit
-# time for a release, or leave it unset to fall back to 0).
+# time for a release, or leave it unset to fall back to 0); TAR_OPTIONS forces
+# uid/gid to root so the archive doesn't depend on who ran `make dist`.
 GZIP_ENV = --best -n
+export TAR_OPTIONS = --owner=0 --group=0
 dist-hook:
 	@find $(distdir) -exec touch -h -d @$${SOURCE_DATE_EPOCH:-0} {} +
+	@find $(distdir) -exec chmod a-s {} +
 
 # mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir;
 # the disk utilities are ordinary user commands.
@@ -85,19 +88,37 @@ test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
-# Rebuild the dist tarball and check its sha256 against the value pinned in the
-# FreeBSD port.  This is the mechanical guard against the tag/checksum drift
-# that bit us twice: `make dist` is reproducible (see GZIP_ENV + dist-hook
-# above), so a clean build must always reproduce the committed hash.
+# Rebuild the dist tarball and check every checksum the packaging pins (sha256,
+# sha512, blake2s, size) against it.  This is the mechanical guard against the
+# tag/checksum drift that bit us twice: `make dist` is reproducible (see
+# GZIP_ENV / TAR_OPTIONS / dist-hook above), so a clean build must reproduce the
+# committed hashes exactly.
+#
+# NOTE: run this from `main`, not from `git checkout <tag>`.  The checksums live
+# in packaging/, which is outside the tarball, and the checksum commit lands
+# *after* the tag -- so a tag checkout always holds a stale distinfo and always
+# fails here.  That is expected and correct.
 .PHONY: release-check
 release-check: dist
-	@actual=$$(sha256sum $(distdir).tar.gz | awk '{print $$1}'); \
-	pinned=$$(awk '/^SHA256 \(/{print $$4}' packaging/freebsd/distinfo); \
-	if [ "$$actual" = "$$pinned" ]; then \
-		echo "release-check: OK ($$actual)"; \
-	else \
-		echo "release-check: MISMATCH" >&2; \
-		echo "  tarball: $$actual" >&2; \
-		echo "  distinfo: $$pinned" >&2; \
-		exit 1; \
-	fi
+	@t=$(distdir).tar.gz; fail=0; \
+	sha256=$$(sha256sum $$t | awk '{print $$1}'); \
+	sha512=$$(sha512sum $$t | awk '{print $$1}'); \
+	blake2s=$$(openssl dgst -blake2s256 $$t 2>/dev/null | sed 's/.*= //'); \
+	size=$$(stat -c %s $$t); \
+	fb_sha=$$(awk '/^SHA256 \(/{print $$4}' packaging/freebsd/distinfo); \
+	fb_sz=$$(awk '/^SIZE \(/{print $$4}' packaging/freebsd/distinfo); \
+	nb_sha=$$(awk '/^SHA512 \(/{print $$4}' packaging/netbsd/distinfo); \
+	nb_b2=$$(awk '/^BLAKE2s \(/{print $$4}' packaging/netbsd/distinfo); \
+	nb_sz=$$(awk '/^Size \(/{print $$4}' packaging/netbsd/distinfo); \
+	al_sha=$$(sed -n 's/.*sha512sums="\([0-9a-f]*\).*/\1/p' packaging/alpine/APKBUILD); \
+	pk_sha=$$(sed -n "s/.*sha256sums=('\([0-9a-f]*\)'.*/\1/p" packaging/PKGBUILD); \
+	for pair in \
+	  "$$sha256:$$fb_sha:sha256/freebsd" "$$sha256:$$pk_sha:sha256/arch" \
+	  "$$sha512:$$nb_sha:sha512/netbsd" "$$sha512:$$al_sha:sha512/alpine" \
+	  "$$blake2s:$$nb_b2:blake2s/netbsd" \
+	  "$$size:$$fb_sz:size/freebsd" "$$size:$$nb_sz:size/netbsd"; do \
+	  want=$${pair%%:*}; rest=$${pair#*:}; got=$${rest%%:*}; name=$${rest#*:}; \
+	  if [ "$$want" = "$$got" ]; then echo "  ok    $$name"; \
+	  else echo "  FAIL  $$name (want $$want, got $$got)" >&2; fail=1; fi; \
+	done; \
+	[ $$fail = 0 ] && echo "release-check: OK" || { echo "release-check: MISMATCH" >&2; exit 1; }
