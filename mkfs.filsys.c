@@ -1,4 +1,4 @@
-/* filsys 1.2.3 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.4 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* mkfs.filsys.c - create a Research Unix (V4 through V7) filesystem in a disk
  * image.
@@ -559,9 +559,30 @@ static void v1_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
     pblock(bno, ib);
 }
 
+/* Largest volume a V1 superblock can describe: the free-block and inode
+ * bitmaps must both fit in the two-block (1024-byte) superblock. */
+static uint32_t v1_max_fsize(void)
+{
+    for (uint32_t n = 0; ; n++) {
+        uint32_t freemap_bytes = (n + 7) / 8;
+        if (freemap_bytes & 1)
+            freemap_bytes++;
+        uint32_t maxino = n / 4;
+        if (maxino < 48)
+            maxino = 48;
+        maxino = (maxino + 15) & ~15u;
+        if (2 + freemap_bytes + 2 + maxino / 8 > V1_BSIZE * 2)
+            return n - 1;
+    }
+}
+
 static void mkfs_v1(const char *path, uint32_t blocks, const char *bootfile)
 {
     (void)bootfile;   /* no boot-block install for V1 */
+
+    if (blocks > v1_max_fsize())
+        die("%s: v1: maximum filesystem size is %u blocks (superblock free map)\n",
+            path, v1_max_fsize());
 
     v1_fsize = blocks;
     uint32_t freemap_bytes = (v1_fsize + 7) / 8;
@@ -675,7 +696,11 @@ static uint32_t p7_build_freelist(void)
 
 static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile)
 {
-    (void)blocks;    /* PDP-7 is a fixed 8000-block/surface RB09 */
+    /* The RB09 fixed-head disk has one valid geometry (8000 blocks/surface);
+     * there is no size to choose. */
+    if (blocks != 0)
+        die("%s: v0: size is fixed by the RB09 geometry (8000 blocks/surface)\n",
+            path);
     (void)bootfile;
 
     fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);

@@ -107,10 +107,39 @@ static void run(const struct fmt *f) {
     unlink(img);
 }
 
+/* mkfs argument validation: reject a size the format cannot honor, and fsck a
+ * freshly-made small volume clean.  These are deterministic and image-free. */
+static void mkfs_validation(void) {
+    /* V1: 7000 blocks overflows the superblock bitmaps (max is 6528). */
+    unlink("test_matrix_v1big.img");
+    int rc = system("./mkfs.filsys -v 1 test_matrix_v1big.img 7000 >/dev/null 2>&1");
+    ok("v1 mkfs rejects oversized volume", rc != 0);
+    unlink("test_matrix_v1big.img");
+
+    /* PDP-7: any size argument is rejected (the RB09 geometry is fixed). */
+    unlink("test_matrix_p7sized.img");
+    rc = system("./mkfs.filsys -v 0 test_matrix_p7sized.img 500 >/dev/null 2>&1");
+    ok("v0 mkfs rejects size argument", rc != 0);
+    unlink("test_matrix_p7sized.img");
+
+    /* a freshly-made small V7 volume is fsck-clean at a non-default size. */
+    unlink("test_matrix_small.img");
+    if (system("./mkfs.filsys -v 7 test_matrix_small.img 400 >/dev/null 2>&1") == 0) {
+        FILE *p = popen("./fsck.filsys -v 7 test_matrix_small.img 2>&1", "r");
+        char out[2048] = "";
+        if (p) { (void)!fread(out, 1, sizeof out - 1, p); pclose(p); }
+        ok("fresh small v7 volume fsck-clean",
+           strstr(out, "errors=0") != NULL && strstr(out, "missing=0") != NULL);
+    } else {
+        ok("fresh small v7 volume fsck-clean", 0);
+    }
+    unlink("test_matrix_small.img");
+}
+
 int main(void) {
-    printf("1..%zu\n", sizeof FMTS / sizeof FMTS[0]);
     for (size_t i = 0; i < sizeof FMTS / sizeof FMTS[0]; i++)
         run(&FMTS[i]);
+    mkfs_validation();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;
