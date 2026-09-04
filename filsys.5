@@ -509,3 +509,55 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .BR stat (2)
 .SH AUTHOR
 Written for the filsys project.
+.SH ACKNOWLEDGMENTS
+The on-disk formats read here were designed in 1969 by
+Kenneth Lane Thompson, Dennis MacAlistair Ritchie, and Rudd Canaday,
+and written first for the word-addressed PDP-7 and then across V1\(enV3
+in hand-assembled PDP-11 code.
+.PP
+The surviving source and disk images exist because of the modern
+restorationists who recovered them:
+.PP
+.RS 4n
+.TP
+Norman Wilson
+made the original scans of the PDP-7 and V1 assembly listings while at
+Bell Labs; there is no PDP-7 source without them.
+.TP
+Warren Toomey
+received Dennis Ritchie's V1\(enV3 DECtapes in 1997, founded the Unix
+Heritage Society (TUHS), led the
+.I pdp7-unix
+resurrection, and wrote the
+.I mkfs7 / fsck7
+Perl tools that document the PDP-7 on-disk format.
+.TP
+Phil Budne
+brought the restored PDP-7 kernel up and wrote its RIM bootstrap.
+.TP
+Robert Swierczek
+made the B compiler self-hosting on the restored system.
+.TP
+Dennis Ritchie
+preserved and donated the DECtapes and source that became the
+.I Dennis_v1
+archive.
+.TP
+Living Computer Museum
+ran the restored system on a real PDP-7, proving the reconstruction
+faithful.
+.RE
+.PP
+Their work lives at:
+.IP \(bu 3n
+.I https://github.com/DoctorWkt/pdp7-unix
+(the restoration),
+.IP \(bu 3n
+.I https://www.tuhs.org/Archive/Distributions/Research/McIlroy_v0/
+(Norman Wilson's scans),
+.IP \(bu 3n
+.I https://www.tuhs.org/Archive/Distributions/Research/Dennis_v1/
+(the V1\(enV3 archive),
+.IP \(bu 3n
+.I https://www.tuhs.org/
+(The Unix Heritage Society).
