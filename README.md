@@ -166,6 +166,23 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 
 One `-v v6` code path covers V4, V5 and V6, which are byte-identical on disk.
 
+### Limits
+
+On-disk architectural maxima — what the format can address, not what a given
+disk image holds:
+
+| edition | max filesystem size | max files (inodes) | max file size |
+|---|---|---|---|
+| PDP-7 (v0) | 64 MB (2¹⁸ blocks × 256 B) | 262,144 (18-bit i-number) | 56 KB (7 × 64 × 64 words) |
+| V1 | 32 MB (2¹⁶ blocks × 512 B) | 65,536 (16-bit i-number) | 64 KB (16-bit size field) |
+| V4 / V5 / V6 | 32 MB | 65,536 | 1 MB (8 single-indirect × 256 blocks) |
+| V7 | 8 GB (2²⁴ blocks × 512 B) | 65,536 | ~1.08 GB (triple indirect) |
+| 32V | 8 GB | 65,536 | ~1.08 GB |
+
+The PDP-7's real RB09 disk held only 8000 blocks (2 MB) per surface; 64 MB is
+the 18-bit block-number ceiling.  V1's 16-bit size field caps a file at 64 KB
+even though the large-file flag can address a megabyte of blocks.
+
 ### Gotchas
 
 - **The V6 24-bit size is `(size0 << 16) | size1`.**  `size0` (one byte at
@@ -512,6 +529,50 @@ clean under libFuzzer and ASan (see "Notes"); extending that to `fsck` and to
 liveness assertions — not just sanitizer trips — is cheap insurance against
 being the author of the *second* Research Unix filesystem implementation that a
 fuzzer had to audit.
+
+## Acknowledgments
+
+filsys does not so much read filesystems as read the work of a handful of
+people who built them and a smaller handful who saved them from a notebook in a
+box.  We wrote none of the on-disk formats, recovered none of the listings,
+typed none of the assembly, and built none of the images this project mounts;
+that labour was all done by others, and the debt is total.
+
+The formats themselves are the work of **Kenneth Lane Thompson**, **Dennis
+MacAlistair Ritchie**, and **Rudd Canaday**, who designed the filesystem in
+1969 and wrote it first for the word-addressed PDP-7 and then across V1–V3 in
+hand-assembled PDP-11 code.  Ritchie's own account is "The Evolution of the
+Unix Time-sharing System".
+
+The reason there is anything left to read is a small group of modern
+restorationists who did the unglamorous, painstaking work of lifting 1969–1973
+source off paper and tape into a form we could study:
+
+- **Norman Wilson** made the original scans of the PDP-7 (and V1) assembly
+  listings while he was at Bell Labs.  There is no PDP-7 source — and no format
+  to reverse-engineer — without those scans.
+- **Warren Toomey** received Dennis Ritchie's original V1–V3 DECtapes in 1997,
+  founded **The Unix Heritage Society (TUHS)** to preserve all of it, led the
+  *pdp7-unix* resurrection, typed the barely-legible scans into assembler
+  source, and wrote the `mkfs7`/`fsck7` Perl tools whose constants are the
+  authoritative record of the PDP-7 on-disk format this backend follows.
+- **Phil Budne** coaxed the restored PDP-7 kernel up to a login prompt, wrote
+  the RIM bootstrap that boots it on real hardware, and fixed transcription
+  errors in the shell and `ed`.
+- **Robert Swierczek** made the B compiler self-hosting on the restored system.
+- **Dennis Ritchie** personally preserved and donated the DECtapes and source
+  that became the `Dennis_v1` archive, without which V1–V3 would be a gap.
+- The **Living Computer Museum** ran the restored system on a real PDP-7,
+  proving the reconstruction faithful.
+
+Every format table in this document was read out of code, tape, or image that
+these people recovered; our project would not exist without their work.
+
+- pdp7-unix restoration: <https://github.com/DoctorWkt/pdp7-unix>
+- Norman Wilson's scans: <https://www.tuhs.org/Archive/Distributions/Research/McIlroy_v0/>
+- The V1–V3 archive: <https://www.tuhs.org/Archive/Distributions/Research/Dennis_v1/>
+- The Unix Heritage Society: <https://www.tuhs.org/>
+- Ritchie's history: <https://www.bell-labs.com/usr/dmr/www/hist.html>
 
 ## License
 
