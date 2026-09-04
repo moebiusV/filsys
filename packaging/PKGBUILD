@@ -1,6 +1,6 @@
 # Maintainer: David Walther <david@clearbrookdistillery.com>
 pkgname=filsys
-pkgver=1.2.4
+pkgver=1.2.5
 pkgrel=1
 pkgdesc="FUSE driver for Research Unix (V0-V7, 32V) filesystem images"
 arch=('x86_64')
@@ -10,7 +10,7 @@ depends=('fuse3')
 optdepends=('prebsd: boot the images on simh')
 makedepends=('pkg-config')
 source=("https://github.com/moebiusV/filsys/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('b66de0596036b1ce70fe44f048b44373f4fa71f55b9d3007575db62366bab8ed')
+sha256sums=('8fe5aed2ae32db6b02df3c7b11bc4ca32ffd35b21f25392df586169c2bdaac7f')
 
 build() {
   cd "$pkgname-$pkgver"

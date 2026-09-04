@@ -1,3 +1,15 @@
+filsys 1.2.5 (2026-09-04)
+========================
+
+- mkfs v1: round the volume up to a multiple of 16 blocks, so the free map (a
+  whole number of 16-bit words) exactly describes the image.  Previously a
+  size like 100 or 6500 blocks produced a superblock that implied a larger
+  filesystem than the file held, and fsck rejected the fresh filesystem with
+  EINVAL.
+- test_matrix: mkfs_cleanliness() makes a fresh filesystem at several volume
+  sizes per format (100/1000/4000/6500 blocks, plus the PDP-7's fixed size)
+  and fsck-checks each — the widening that surfaced the V1 sizing bug.
+
 filsys 1.2.4 (2026-09-04)
 ========================
 
