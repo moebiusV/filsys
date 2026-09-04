@@ -165,8 +165,11 @@ int v1fs_read_inode(v1fs_t *fs, uint32_t ino, v1_inode_t *ip) {
     ip->size  = v1_get16le(d + 4);
     for (int i = 0; i < V1_NIADDR; i++)
         ip->addr[i] = v1_get16le(d + 6 + 2 * i);
-    ip->ctime = v1_get32me(d + 22);
-    ip->mtime = v1_get32me(d + 26);
+    /* V1 stores times as a 60 Hz clock tick count (60ths of a second), not
+     * whole seconds like V6/V7; convert to seconds for the POSIX-facing layer.
+     * The 32-bit counter wraps every ~2.27 years -- an inherent V1 quirk. */
+    ip->ctime = v1_get32me(d + 22) / 60;
+    ip->mtime = v1_get32me(d + 26) / 60;
     ip->atime = ip->mtime;            /* V1 has no atime */
     return 0;
 }
@@ -186,8 +189,8 @@ int v1fs_write_inode(v1fs_t *fs, uint32_t ino, const v1_inode_t *ip) {
     v1_put16le(d + 4, (uint16_t)ip->size);
     for (int i = 0; i < V1_NIADDR; i++)
         v1_put16le(d + 6 + 2 * i, (uint16_t)ip->addr[i]);
-    v1_put32me(d + 22, ip->ctime);
-    v1_put32me(d + 26, ip->mtime);
+    v1_put32me(d + 22, ip->ctime * 60u);   /* seconds -> 60ths of a second */
+    v1_put32me(d + 26, ip->mtime * 60u);
     return v1fs_write_block(fs, bno, raw);
 }
 
