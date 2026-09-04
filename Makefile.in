@@ -476,7 +476,6 @@ am__remove_distdir = \
   else :; fi
 am__post_remove_distdir = $(am__remove_distdir)
 DIST_ARCHIVES = $(distdir).tar.gz
-GZIP_ENV = -9
 DIST_TARGETS = dist-gzip
 # Exists only to be overridden by the user if desired.
 AM_DISTCHECK_DVI_TARGET = dvi
@@ -585,6 +584,12 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
+
+# Reproducible `make dist`: a byte-identical tarball no matter when or where it
+# is built.  `-n` drops the gzip header timestamp; the dist-hook pins every file
+# and directory mtime to a fixed epoch (set SOURCE_DATE_EPOCH to the commit
+# time for a release, or leave it unset to fall back to 0).
+GZIP_ENV = --best -n
 
 # The version-agnostic library: the facade (filsys.c) plus the two on-disk
 # backends.  Installed as libfilsys.a + filsys.h so other projects can link
@@ -1566,6 +1571,9 @@ distdir-am: $(DISTFILES)
 	    || exit 1; \
 	  fi; \
 	done
+	$(MAKE) $(AM_MAKEFLAGS) \
+	  top_distdir="$(top_distdir)" distdir="$(distdir)" \
+	  dist-hook
 	-test -n "$(am__skip_mode_fix)" \
 	|| find "$(distdir)" -type d ! -perm -755 \
 		-exec chmod u+rwx,go+rx {} \; -o \
@@ -1872,11 +1880,11 @@ uninstall-man: uninstall-man1 uninstall-man5
 	clean-checkPROGRAMS clean-cscope clean-generic \
 	clean-libLIBRARIES clean-sbinPROGRAMS cscope cscopelist-am \
 	ctags ctags-am dist dist-all dist-bzip2 dist-bzip3 dist-gzip \
-	dist-lzip dist-shar dist-tarZ dist-xz dist-zip dist-zstd \
-	distcheck distclean distclean-compile distclean-generic \
-	distclean-hdr distclean-tags distcleancheck distdir \
-	distuninstallcheck dvi dvi-am html html-am info info-am \
-	install install-am install-binPROGRAMS install-data \
+	dist-hook dist-lzip dist-shar dist-tarZ dist-xz dist-zip \
+	dist-zstd distcheck distclean distclean-compile \
+	distclean-generic distclean-hdr distclean-tags distcleancheck \
+	distdir distuninstallcheck dvi dvi-am html html-am info \
+	info-am install install-am install-binPROGRAMS install-data \
 	install-data-am install-dist_bootDATA install-dvi \
 	install-dvi-am install-exec install-exec-am \
 	install-filsysincludeHEADERS install-html install-html-am \
@@ -1894,6 +1902,8 @@ uninstall-man: uninstall-man1 uninstall-man5
 
 .PRECIOUS: Makefile
 
+dist-hook:
+	@find $(distdir) -exec touch -h -d @$${SOURCE_DATE_EPOCH:-0} {} +
 
 V7AS ?= $(libexecdir)/v7unix/as
 .PHONY: boot
@@ -1901,6 +1911,23 @@ boot:
 	$(V7AS) -o boot/hpuboot boot/hpuboot.s
 	$(V7AS) -o boot/rpuboot boot/rpuboot.s
 	chmod 644 boot/hpuboot boot/rpuboot
+
+# Rebuild the dist tarball and check its sha256 against the value pinned in the
+# FreeBSD port.  This is the mechanical guard against the tag/checksum drift
+# that bit us twice: `make dist` is reproducible (see GZIP_ENV + dist-hook
+# above), so a clean build must always reproduce the committed hash.
+.PHONY: release-check
+release-check: dist
+	@actual=$$(sha256sum $(distdir).tar.gz | awk '{print $$1}'); \
+	pinned=$$(awk '/^SHA256 \(/{print $$4}' packaging/freebsd/distinfo); \
+	if [ "$$actual" = "$$pinned" ]; then \
+		echo "release-check: OK ($$actual)"; \
+	else \
+		echo "release-check: MISMATCH" >&2; \
+		echo "  tarball: $$actual" >&2; \
+		echo "  distinfo: $$pinned" >&2; \
+		exit 1; \
+	fi
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
