@@ -702,10 +702,10 @@ static void v1fs_preen(v1fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
 {
     v1_inode_t root;
     uint32_t lf_ino = 0;
-    /* V1 names are 8 chars, so the recovery directory is "lost" (the canonical
-     * "lost+found" name postdates the 8-char era). */
+    /* V1 names are 8 chars, so the recovery directory is "lostfils"
+     * ("lost files"; the canonical "lost+found" doesn't fit in 8 chars). */
     if (v1fs_read_inode(fs, V1_ROOTINO, &root) == 0 &&
-        v1fs_dir_lookup(fs, &root, "lost", &lf_ino) != 0) {
+        v1fs_dir_lookup(fs, &root, "lostfils", &lf_ino) != 0) {
         v1_inode_t lf;
         if (v1fs_ialloc(fs, &lf_ino) == 0) {
             memset(&lf, 0, sizeof(lf));
@@ -715,7 +715,7 @@ static void v1fs_preen(v1fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
             v1fs_write_inode(fs, lf_ino, &lf);
             v1fs_dir_add(fs, &lf, lf_ino, ".");
             v1fs_dir_add(fs, &lf, V1_ROOTINO, "..");
-            v1fs_dir_add(fs, &root, lf_ino, "lost");
+            v1fs_dir_add(fs, &root, lf_ino, "lostfils");
             root.nlink++;
             v1fs_write_inode(fs, V1_ROOTINO, &root);
             printf("created lost+found (inode %u)\n", lf_ino);

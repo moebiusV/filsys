@@ -767,10 +767,10 @@ static void p7fs_preen(p7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
 {
     p7_inode_t root;
     uint32_t lf_ino = 0;
-    /* PDP-7 names are 8 chars, so the recovery directory is "lost" (the
-     * canonical "lost+found" name postdates the 8-char era). */
+    /* PDP-7 names are 8 chars, so the recovery directory is "lostfils"
+     * ("lost files"; the canonical "lost+found" doesn't fit in 8 chars). */
     if (p7fs_read_inode(fs, P7_ROOTINO, &root) == 0 &&
-        p7fs_dir_lookup(fs, &root, "lost", &lf_ino) != 0) {
+        p7fs_dir_lookup(fs, &root, "lostfils", &lf_ino) != 0) {
         p7_inode_t lf;
         if (p7fs_ialloc(fs, &lf_ino) == 0) {
             memset(&lf, 0, sizeof(lf));
@@ -778,7 +778,7 @@ static void p7fs_preen(p7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
             lf.mode = P7_IUSED | P7_IDIR | P7_IOREAD | P7_IOWRITE | P7_IWREAD;
             lf.nlink = 2;
             p7fs_write_inode(fs, lf_ino, &lf);
-            p7fs_dir_add(fs, &root, lf_ino, "lost");
+            p7fs_dir_add(fs, &root, lf_ino, "lostfils");
             root.nlink++;
             p7fs_write_inode(fs, P7_ROOTINO, &root);
             printf("created lost+found (inode %u)\n", lf_ino);
