@@ -1,10 +1,10 @@
-/* filsys 1.2.4 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.4 - 2026-09-04 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
-/* mkfs.filsys.c - create a Research Unix (V4 through V7) filesystem in a disk
- * image.
+/* mkfs.filsys.c - create a Research Unix (PDP-7 through 32V) filesystem in a
+ * disk image.
  *
  * Usage:
- *     mkfs.filsys [-v <4|5|6|7>] [-o block] [-b boot] image [blocks]
+ *     mkfs.filsys [-v <0|1|2|3|4|5|6|7|32>] [-o block] [-b boot] image [blocks]
  *
  * Builds a fresh filesystem: a superblock, a zeroed i-list, an interleaved
  * free-block list, and an empty root directory.  The image is opened (created
@@ -12,12 +12,15 @@
  * a block offset within the image (for multi-partition images); without it the
  * filesystem starts at block 0.
  *
- * -v selects the edition: 4, 5 and 6 are byte-identical (the V6 format); 7 is
- * V7.  The default is 7.  The two editions differ on disk (see README): V6 has
- * 16 32-byte inodes per block, 16-bit block numbers, an s_isize that counts
- * i-list *blocks* (first data block = s_isize+2), and no bad-block file; V7
- * has 8 64-byte inodes per block, 24-bit block numbers, an s_isize that is the
- * first data block, and reserves inode 1 as the bad-block file.
+ * -v selects the edition (the default is 7).  Several editions are one on-disk
+ * format: 1, 2 and 3 are byte-identical (bitmap allocator, 10-byte dirents,
+ * root inode 41); 4, 5 and 6 are byte-identical (the V6 format); 32 is 32V,
+ * V7 recompiled for the VAX with little-endian 32-bit fields.  0 is the
+ * word-addressed PDP-7.  The V6 and V7 layouts differ on disk (see README): V6
+ * has 16 32-byte inodes per block, 16-bit block numbers, an s_isize that
+ * counts i-list *blocks* (first data block = s_isize+2), and no bad-block file;
+ * V7 has 8 64-byte inodes per block, 24-bit block numbers, an s_isize that is
+ * the first data block, and reserves inode 1 as the bad-block file.
  *
  * Block layout (block 0 is the start of the filesystem):
  *     block 0    boot block (written by -b, else left alone)
