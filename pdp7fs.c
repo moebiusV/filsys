@@ -37,6 +37,26 @@ static int read_words(p7fs_t *fs, uint32_t bno, uint32_t *words) {
     return 0;
 }
 
+static int write_words(p7fs_t *fs, uint32_t bno, const uint32_t *words) {
+    uint8_t raw[P7_BLOCKBYTES];
+    for (int i = 0; i < P7_WSIZE; i++)
+        p7_putword(raw + i * P7_WORDBYTES, words[i]);
+    off_t pos = (off_t)fs->base + P7_SURFACE1 + (off_t)bno * P7_BLOCKBYTES;
+    ssize_t n = pwrite(fs->fd, raw, P7_BLOCKBYTES, pos);
+    if (n != P7_BLOCKBYTES)
+        return -EIO;
+    return 0;
+}
+
+/* Persist the free-list head into block 0 word 0. */
+static int super_write(p7fs_t *fs) {
+    uint32_t sb[P7_WSIZE];
+    if (read_words(fs, 0, sb))
+        return -EIO;
+    sb[0] = fs->freelist & P7_MAXWORD;
+    return write_words(fs, 0, sb);
+}
+
 /* Sign-extend an 18-bit word into a signed 32-bit value. */
 static int32_t sign18(uint32_t v) {
     v &= P7_MAXWORD;
@@ -59,6 +79,23 @@ static int inode_read_word(p7fs_t *fs, p7_inode_t *ip, uint32_t woff, uint32_t *
         return -EIO;
     *out = words[idx];
     return 0;
+}
+
+/* Write logical word `woff` of an inode's data (allocating the block if the
+ * word lies in a hole). */
+static int inode_write_word(p7fs_t *fs, p7_inode_t *ip, uint32_t woff, uint32_t val) {
+    uint32_t lbn = woff / P7_WSIZE;
+    uint32_t idx = woff % P7_WSIZE;
+    uint32_t pbn;
+    if (p7fs_bmap(fs, ip, lbn, 1, &pbn))
+        return -EIO;
+    if (pbn == 0)
+        return -EIO;
+    uint32_t words[P7_WSIZE];
+    if (read_words(fs, pbn, words))
+        return -EIO;
+    words[idx] = val;
+    return write_words(fs, pbn, words);
 }
 
 /* Unpack four name words (2 chars each) into a NUL-terminated, space-trimmed
@@ -115,14 +152,17 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly, uint64_t offset) {
 
 void p7fs_close(p7fs_t *fs) {
     if (fs->fd >= 0) {
+        if (!fs->readonly)
+            super_write(fs);
         close(fs->fd);
         fs->fd = -1;
     }
 }
 
 int p7fs_sync(p7fs_t *fs) {
-    (void)fs;
-    return 0;   /* read-only: nothing to flush */
+    if (fs->readonly)
+        return 0;
+    return super_write(fs);
 }
 
 /* ---- block / inode io -------------------------------------------------- */
@@ -137,8 +177,12 @@ int p7fs_read_block(p7fs_t *fs, uint32_t bno, uint8_t *buf) {
 }
 
 int p7fs_write_block(p7fs_t *fs, uint32_t bno, const uint8_t *buf) {
-    (void)fs; (void)bno; (void)buf;
-    return -EROFS;
+    if (fs->readonly)
+        return -EROFS;
+    uint32_t words[P7_WSIZE];
+    for (int i = 0; i < P7_WSIZE; i++)
+        words[i] = p7_getword(buf + i * P7_WORDBYTES);
+    return write_words(fs, bno, words);
 }
 
 int p7fs_read_inode(p7fs_t *fs, uint32_t ino, p7_inode_t *ip) {
@@ -162,68 +206,213 @@ int p7fs_read_inode(p7fs_t *fs, uint32_t ino, p7_inode_t *ip) {
 }
 
 int p7fs_write_inode(p7fs_t *fs, uint32_t ino, const p7_inode_t *ip) {
-    (void)fs; (void)ino; (void)ip;
-    return -EROFS;
+    if (ino == 0 || ino > P7_MAXINO)
+        return -EINVAL;
+    if (fs->readonly)
+        return -EROFS;
+    uint32_t words[P7_WSIZE];
+    if (read_words(fs, p7_itod(ino), words))
+        return -EIO;
+    uint32_t *d = words + p7_itoo(ino);
+    d[0] = ip->mode & P7_MAXWORD;
+    for (int i = 0; i < P7_NIADDR; i++)
+        d[1 + i] = ip->addr[i] & P7_MAXWORD;
+    d[8]  = (uint32_t)(uint16_t)ip->uid & P7_MAXWORD;
+    d[9]  = (uint32_t)(-(int32_t)ip->nlink) & P7_MAXWORD;   /* stored negative */
+    d[10] = (ip->size / 2) & P7_MAXWORD;                    /* bytes -> words */
+    /* d[11] (uniq) is left untouched */
+    return write_words(fs, p7_itod(ino), words);
 }
 
-/* ---- allocation (stubs: read-only) -------------------------------------- */
+/* ---- allocation (free list) --------------------------------------------- */
 
 int p7fs_balloc(p7fs_t *fs, uint32_t *bno) {
-    (void)fs; (void)bno;
-    return -EROFS;
+    if (fs->readonly)
+        return -EROFS;
+    uint32_t h = fs->freelist;
+    if (h == 0)
+        return -ENOSPC;
+    uint32_t words[P7_WSIZE];
+    if (read_words(fs, h, words))
+        return -EIO;
+    int last = 0;
+    for (int i = 1; i <= 9; i++)
+        if (words[i] != 0)
+            last = i;
+    if (last == 0) {
+        /* node exhausted: its own block is the free block now */
+        fs->freelist = words[0] & P7_MAXWORD;
+        *bno = h;
+        return 0;
+    }
+    *bno = words[last];
+    words[last] = 0;
+    return write_words(fs, h, words);
 }
 
 void p7fs_bfree(p7fs_t *fs, uint32_t bno) {
-    (void)fs; (void)bno;
+    if (bno == 0 || fs->readonly)
+        return;
+    uint32_t h = fs->freelist;
+    if (h == 0) {
+        fs->freelist = bno;
+        uint32_t words[P7_WSIZE] = {0};
+        write_words(fs, bno, words);   /* lone node holding itself */
+        return;
+    }
+    uint32_t words[P7_WSIZE];
+    if (read_words(fs, h, words))
+        return;
+    for (int i = 1; i <= 9; i++) {
+        if (words[i] == 0) {
+            words[i] = bno;
+            write_words(fs, h, words);
+            return;
+        }
+    }
+    /* head node full: the freed block becomes a new empty head node */
+    uint32_t nw[P7_WSIZE] = {0};
+    nw[0] = h;
+    write_words(fs, bno, nw);
+    fs->freelist = bno;
 }
 
 int p7fs_ialloc(p7fs_t *fs, uint32_t *ino) {
-    (void)fs; (void)ino;
-    return -EROFS;
+    if (fs->readonly)
+        return -EROFS;
+    for (uint32_t i = 1; i <= P7_MAXINO; i++) {
+        uint32_t words[P7_WSIZE];
+        if (read_words(fs, p7_itod(i), words))
+            return -EIO;
+        uint32_t *d = words + p7_itoo(i);
+        if (!(d[0] & P7_IUSED)) {
+            memset(d, 0, P7_INODESZ * sizeof(uint32_t));
+            d[0]  = P7_IUSED;
+            d[9]  = P7_MAXWORD;           /* nlink = -1 (one link) */
+            d[11] = i & P7_MAXWORD;       /* uniq = inode number */
+            if (write_words(fs, p7_itod(i), words))
+                return -EIO;
+            *ino = i;
+            return 0;
+        }
+    }
+    return -ENOSPC;
 }
 
 void p7fs_ifree(p7fs_t *fs, uint32_t ino) {
-    (void)fs; (void)ino;
+    if (ino == 0 || ino > P7_MAXINO || fs->readonly)
+        return;
+    uint32_t words[P7_WSIZE];
+    if (read_words(fs, p7_itod(ino), words))
+        return;
+    memset(words + p7_itoo(ino), 0, P7_INODESZ * sizeof(uint32_t));
+    write_words(fs, p7_itod(ino), words);
+}
+
+/* Free the 64 block pointers in a single-indirect block, then the block. */
+static void free_indirect(p7fs_t *fs, uint32_t blk) {
+    if (blk == 0)
+        return;
+    uint32_t words[P7_WSIZE];
+    if (read_words(fs, blk, words))
+        return;
+    for (int i = 0; i < P7_NINDIR; i++)
+        if (words[i] != 0)
+            p7fs_bfree(fs, words[i]);
+    p7fs_bfree(fs, blk);
 }
 
 int p7fs_itrunc(p7fs_t *fs, p7_inode_t *ip) {
-    (void)fs; (void)ip;
-    return -EROFS;
+    if (fs->readonly)
+        return -EROFS;
+    if (ip->mode & P7_ILARG) {
+        for (int i = 0; i < P7_NIADDR; i++) {
+            uint32_t blk = ip->addr[i];
+            if (blk) { ip->addr[i] = 0; free_indirect(fs, blk); }
+        }
+    } else {
+        for (int i = 0; i < P7_NIADDR; i++) {
+            uint32_t blk = ip->addr[i];
+            if (blk) { ip->addr[i] = 0; p7fs_bfree(fs, blk); }
+        }
+    }
+    ip->size = 0;
+    return 0;
 }
 
+/* Free blocks [first_blk, ...) only; first_blk == 0 == p7fs_itrunc. */
 int p7fs_itrunc_from(p7fs_t *fs, p7_inode_t *ip, uint32_t first_blk) {
-    (void)fs; (void)ip; (void)first_blk;
-    return -EROFS;
+    if (fs->readonly)
+        return -EROFS;
+    if (ip->mode & P7_ILARG) {
+        uint32_t slot   = first_blk / P7_NINDIR;
+        uint32_t within = first_blk % P7_NINDIR;
+        for (int i = P7_NIADDR - 1; i > (int)slot; i--) {
+            if (ip->addr[i]) { free_indirect(fs, ip->addr[i]); ip->addr[i] = 0; }
+        }
+        if (ip->addr[slot]) {
+            if (within == 0) {
+                free_indirect(fs, ip->addr[slot]);
+                ip->addr[slot] = 0;
+            } else {
+                uint32_t words[P7_WSIZE];
+                if (read_words(fs, ip->addr[slot], words) == 0) {
+                    for (uint32_t j = within; j < P7_NINDIR; j++) {
+                        if (words[j]) { p7fs_bfree(fs, words[j]); words[j] = 0; }
+                    }
+                    write_words(fs, ip->addr[slot], words);
+                }
+            }
+        }
+    } else {
+        for (int i = P7_NIADDR - 1; i >= (int)first_blk; i--) {
+            if (ip->addr[i]) { p7fs_bfree(fs, ip->addr[i]); ip->addr[i] = 0; }
+        }
+    }
+    return 0;
 }
 
 /* ---- block mapping ------------------------------------------------------ */
 
 int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    if (create)
-        return -EROFS;
-
     if (ip->mode & P7_ILARG) {
-        /* large file: 7 single-indirect slots, 64 block numbers each */
         if (lbn >= P7_NIADDR * P7_NINDIR) {
             *bno = 0;
-            return 0;
+            return create ? -EFBIG : 0;
         }
-        uint32_t iblk = ip->addr[lbn / P7_NINDIR];
+        uint32_t slot = lbn / P7_NINDIR;
+        uint32_t idx  = lbn % P7_NINDIR;
+        uint32_t iblk = ip->addr[slot];
         if (iblk == 0) {
-            *bno = 0;
-            return 0;
+            if (!create) { *bno = 0; return 0; }
+            if (p7fs_balloc(fs, &iblk))
+                return -ENOSPC;
+            uint32_t z[P7_WSIZE] = {0};
+            if (write_words(fs, iblk, z))
+                return -EIO;
+            ip->addr[slot] = iblk;
         }
         uint32_t words[P7_WSIZE];
         if (read_words(fs, iblk, words))
             return -EIO;
-        *bno = words[lbn % P7_NINDIR];
+        if (words[idx] == 0 && create) {
+            if (p7fs_balloc(fs, &words[idx]))
+                return -ENOSPC;
+            if (write_words(fs, iblk, words))
+                return -EIO;
+        }
+        *bno = words[idx];
         return 0;
     }
 
     /* small file: 7 direct block pointers */
     if (lbn >= P7_NIADDR) {
         *bno = 0;
-        return 0;
+        return create ? -EFBIG : 0;
+    }
+    if (ip->addr[lbn] == 0 && create) {
+        if (p7fs_balloc(fs, &ip->addr[lbn]))
+            return -ENOSPC;
     }
     *bno = ip->addr[lbn];
     return 0;
@@ -254,8 +443,31 @@ ssize_t p7fs_file_read(p7fs_t *fs, p7_inode_t *ip, uint8_t *buf, size_t size, of
 }
 
 ssize_t p7fs_file_write(p7fs_t *fs, p7_inode_t *ip, const uint8_t *buf, size_t size, off_t off) {
-    (void)fs; (void)ip; (void)buf; (void)size; (void)off;
-    return -EROFS;
+    if (off < 0)
+        return -EINVAL;
+    if (fs->readonly)
+        return -EROFS;
+
+    size_t done = 0;
+    while (done < size) {
+        uint64_t bpos = (uint64_t)off + done;   /* byte position */
+        uint32_t woff = (uint32_t)(bpos / 2);   /* word position */
+        uint32_t word;
+        if (inode_read_word(fs, ip, woff, &word))
+            return -EIO;
+        uint32_t c = buf[done];
+        if (bpos & 1)
+            word = (word & ~(uint32_t)0x1ff) | (c & 0x7f);   /* low char */
+        else
+            word = (word & 0x1ff) | ((c & 0x7f) << 9);       /* high char */
+        if (inode_write_word(fs, ip, woff, word))
+            return -EIO;
+        done++;
+    }
+    if ((uint64_t)off + size > ip->size)
+        ip->size = (uint32_t)(off + size);
+    p7fs_write_inode(fs, ip->ino, ip);
+    return (ssize_t)done;
 }
 
 /* ---- directories -------------------------------------------------------- */
@@ -285,8 +497,12 @@ int p7fs_dir_read(p7fs_t *fs, p7_inode_t *ip, p7_dirent_t **ents, size_t *count)
         for (int w = 0; w < 4; w++)
             if (inode_read_word(fs, ip, base + 1 + w, &namew[w]))
                 goto fail;
+        char ent[P7_DIRSIZ + 1];
+        unpack_name(namew, ent);
+        if (!strcmp(ent, ".") || !strcmp(ent, ".."))
+            continue;   /* synthesized above; a mkdir'd copy is redundant */
         out[cnt].ino = dino;
-        unpack_name(namew, out[cnt].name);
+        memcpy(out[cnt].name, ent, P7_DIRSIZ + 1);
         cnt++;
     }
     *ents = out;
@@ -330,13 +546,75 @@ int p7fs_dir_lookup(p7fs_t *fs, p7_inode_t *ip, const char *name, uint32_t *ino)
 }
 
 int p7fs_dir_add(p7fs_t *fs, p7_inode_t *ip, uint32_t ino, const char *name) {
-    (void)fs; (void)ip; (void)ino; (void)name;
-    return -EROFS;
+    size_t namelen = strlen(name);
+    if (namelen == 0 || namelen > P7_DIRSIZ)
+        return -ENAMETOOLONG;
+    if (strchr(name, '/'))
+        return -EINVAL;
+    if (fs->readonly)
+        return -EROFS;
+
+    uint32_t nwords = ip->size / 2;
+    size_t ndirents = nwords / P7_DIRENTSZ;
+
+    /* pack the name (space-padded to 8) into four 2-char words */
+    char padded[P7_DIRSIZ];
+    memset(padded, ' ', P7_DIRSIZ);
+    memcpy(padded, name, namelen);
+    uint32_t namew[4];
+    for (int w = 0; w < 4; w++)
+        namew[w] = ((uint32_t)(padded[2 * w] & 0x7f) << 9) | (padded[2 * w + 1] & 0x7f);
+
+    /* find a free slot (inode number word == 0) */
+    size_t slot = SIZE_MAX;
+    for (size_t d = 0; d < ndirents; d++) {
+        uint32_t dino;
+        if (inode_read_word(fs, ip, (uint32_t)(d * P7_DIRENTSZ), &dino))
+            return -EIO;
+        if (dino == 0) {
+            slot = d * P7_DIRENTSZ;
+            break;
+        }
+    }
+    if (slot == SIZE_MAX) {
+        slot = ndirents * P7_DIRENTSZ;
+        nwords += P7_DIRENTSZ;
+    }
+
+    if (inode_write_word(fs, ip, (uint32_t)slot, ino))
+        return -EIO;
+    for (int w = 0; w < 4; w++)
+        if (inode_write_word(fs, ip, (uint32_t)slot + 1 + w, namew[w]))
+            return -EIO;
+    if (inode_write_word(fs, ip, (uint32_t)slot + 5, ino & P7_MAXWORD))   /* uniq */
+        return -EIO;
+
+    ip->size = nwords * 2;
+    return p7fs_write_inode(fs, ip->ino, ip);
 }
 
 int p7fs_dir_remove(p7fs_t *fs, p7_inode_t *ip, const char *name) {
-    (void)fs; (void)ip; (void)name;
-    return -EROFS;
+    if (fs->readonly)
+        return -EROFS;
+    uint32_t nwords = ip->size / 2;
+    size_t ndirents = nwords / P7_DIRENTSZ;
+    for (size_t d = 0; d < ndirents; d++) {
+        uint32_t base = (uint32_t)(d * P7_DIRENTSZ);
+        uint32_t dino;
+        if (inode_read_word(fs, ip, base, &dino))
+            return -EIO;
+        if (dino == 0)
+            continue;
+        uint32_t namew[4];
+        for (int w = 0; w < 4; w++)
+            if (inode_read_word(fs, ip, base + 1 + w, &namew[w]))
+                return -EIO;
+        char ent[P7_DIRSIZ + 1];
+        unpack_name(namew, ent);
+        if (!strcmp(ent, name))
+            return inode_write_word(fs, ip, base, 0);   /* zero the i-number */
+    }
+    return -ENOENT;
 }
 
 /* ---- path lookup -------------------------------------------------------- */

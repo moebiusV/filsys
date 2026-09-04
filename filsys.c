@@ -94,6 +94,18 @@ static uint16_t to_v1_mode(mode_t m, int isdir) {
     return f;
 }
 
+/* POSIX mode -> PDP-7's on-disk flag word: I_USED + four permission bits
+ * (owner r/w, world r/w; no execute, no group). */
+static uint32_t to_p7_mode(mode_t m, int isdir) {
+    uint32_t f = P7_IUSED;
+    if (isdir) f |= P7_IDIR;
+    if (m & S_IRUSR) f |= P7_IOREAD;
+    if (m & S_IWUSR) f |= P7_IOWRITE;
+    if ((m & S_IRGRP) || (m & S_IROTH)) f |= P7_IWREAD;
+    if ((m & S_IWGRP) || (m & S_IWOTH)) f |= P7_IWWRITE;
+    return f;
+}
+
 /* Is this on-disk mode word a directory?  V1 sets V1_IFDIR alongside the
  * always-present IALLOC bit, so masking with V6/V7's IFMT (0170000) would
  * misread it; V6/V7 use the type field. */
@@ -336,6 +348,8 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
     nip.ino = nino;
     if (fs->ver == FILSYS_V1)
         nip.mode = to_v1_mode(mode, 0);
+    else if (fs->ver == FILSYS_PDP7)
+        nip.mode = to_p7_mode(mode, 0);
     else if (fs->ver == FILSYS_V6)
         nip.mode = perm_of(mode);              /* regular file = type 0 */
     else
@@ -371,6 +385,8 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     nip.ino = nino;
     if (fs->ver == FILSYS_V1)
         nip.mode = to_v1_mode(mode, 1);
+    else if (fs->ver == FILSYS_PDP7)
+        nip.mode = to_p7_mode(mode, 1);
     else if (fs->ver == FILSYS_V6)
         nip.mode = perm_of(mode) | V6_IFDIR;
     else
@@ -670,6 +686,11 @@ int filsys_chmod(filsys_t *fs, const char *path, mode_t mode) {
         if (ip.mode & V1_IFDIR)
             bits &= (uint16_t)~(V1_ISUID | V1_IEXEC);
         ip.mode = (ip.mode & (uint16_t)~0077) | bits;
+    } else if (fs->ver == FILSYS_PDP7) {
+        /* PDP-7 chmod replaces the low four permission bits, preserving
+         * I_USED/I_LARGE/I_DIRECTORY/I_SPECIAL. */
+        uint32_t bits = to_p7_mode(mode, 0) & (uint32_t)017;
+        ip.mode = (ip.mode & ~(uint32_t)017) | bits;
     } else {
         uint16_t fmask = fs->ver == FILSYS_V6 ? V6_IFMT : V7_IFMT;
         ip.mode = (ip.mode & fmask) | (uint16_t)(mode & 07777);
