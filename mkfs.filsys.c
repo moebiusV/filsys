@@ -4,7 +4,7 @@
  * disk image.
  *
  * Usage:
- *     mkfs.filsys [-v <0|1|2|3|4|5|6|7|32>] [-o block] [-b boot] image [blocks]
+ *     mkfs.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-b boot] image [blocks]
  *
  * Builds a fresh filesystem: a superblock, a zeroed i-list, an interleaved
  * free-block list, and an empty root directory.  The image is opened (created
@@ -766,19 +766,19 @@ int main(int argc, char **argv)
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want v0|1|2|3|4|5|6|7|32v)\n", optarg);
+                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want v0|v1|v2|v3|v4|v5|v6|v7|32v)\n", optarg);
                 return 1;
             }
             break;
         case 'o': offblock = strtoull(optarg, NULL, 0); break;
         case 'b': bootfile = optarg; break;
         default:
-            fprintf(stderr, "usage: mkfs.filsys [-v <v0|1|2|3|4|5|6|7|32v>] [-o block] [-b boot] image [blocks]\n");
+            fprintf(stderr, "usage: mkfs.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-b boot] image [blocks]\n");
             return 1;
         }
     }
     if (optind >= argc) {
-        fprintf(stderr, "usage: mkfs.filsys [-v <4|5|6|7>] [-o block] [-b boot] image [blocks]\n");
+        fprintf(stderr, "usage: mkfs.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-b boot] image [blocks]\n");
         return 1;
     }
     path = argv[optind];

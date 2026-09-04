@@ -1,3 +1,32 @@
+filsys 1.2.4 (2026-09-04)
+========================
+
+**Breaking change — fsck.filsys CLI flags.**  `-c` and `-n` no longer mean what
+they did when fsck.filsys first shipped:
+
+- `-c` (was `clri`) is gone; use `-C ino`.
+- `-n` (was `ncheck`) is now the universal fsck "report only, change nothing"
+  flag; use `-N ino` for `ncheck`.
+- `-C ino` = `clri` (zero an inode), `-N ino` = `ncheck` (print an inode's
+  pathname).  Both work on every edition.
+
+A wrapper written against an older release that passed `-c` will now fail with
+an error (loud); one that passed `-n` expecting `ncheck` will silently do
+nothing (quiet and wrong) — grep your scripts for `fsck.filsys` `-c`/`-n`.
+
+Other changes in 1.2.4:
+
+- fsck: unreferenced-but-unfree ("missing") blocks now count as errors, so a
+  damaged filesystem exits non-zero (key for `make check` / CI).
+- mkfs v1: rejects a volume whose free/inode bitmaps would not fit in the
+  two-block superblock, naming the limit (6528 blocks) instead of overflowing.
+- mkfs v0 (PDP-7): rejects a size argument (the RB09 geometry is fixed) instead
+  of silently ignoring it.
+- fsck/mkfs `-v` edition spellings normalised to `v0|v1|v2|v3|v4|v5|v6|v7|32v`.
+- New per-format test matrix (`test_matrix`, run by `make check`) exercises
+  write/read/truncate/delete at each format's boundaries, oversized-write
+  unwind, and mkfs argument validation — no FUSE or fetched image needed.
+
 filsys 1.0.0 (2026-08-27)
 ========================
 

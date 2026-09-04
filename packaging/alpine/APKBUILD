@@ -2,7 +2,7 @@
 pkgname=filsys
 pkgver=1.2.4
 pkgrel=0
-pkgdesc="FUSE driver for Research Unix (V4-V7, 32V) filesystem images"
+pkgdesc="FUSE driver for Research Unix (V0-V7, 32V) filesystem images"
 url="https://github.com/moebiusV/filsys"
 arch="x86_64"
 license="ISC AND Caldera"

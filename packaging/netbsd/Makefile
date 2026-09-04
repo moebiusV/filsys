@@ -5,7 +5,7 @@ EXTRACT_SUFX=	.tar.gz
 
 MAINTAINER=	maintainer@example.com
 HOMEPAGE=	https://github.com/moebiusV/filsys
-COMMENT=	FUSE driver for Research Unix (V4-V7, 32V) filesystem images
+COMMENT=	FUSE driver for Research Unix (V0-V7, 32V) filesystem images
 LICENSE=	isc AND caldera-license
 
 GNU_CONFIGURE=	yes

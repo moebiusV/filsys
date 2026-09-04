@@ -1,4 +1,4 @@
-COMMENT =	FUSE driver for Research Unix (V4-V7, 32V) filesystem images
+COMMENT =	FUSE driver for Research Unix (V0-V7, 32V) filesystem images
 V =		1.2.4
 DISTNAME =	filsys-${V}
 CATEGORIES =	sysutils
