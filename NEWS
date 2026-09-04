@@ -3,7 +3,9 @@ filsys 1.2.6 (2026-09-04)
 
 - fsck -p (preen): fixes the safe subset without prompting — unreferenced
   regular files are reconnected to lost+found, link counts are corrected, and
-  free-but-referenced inodes are cleared.  Every edition.
+  free-but-referenced inodes are cleared.  Every edition.  V1 and PDP-7, whose
+  8-char names are too short for "lost+found", name the recovery directory
+  "lostfils".
 - fsck dcheck: directory entries are validated against the inode table (a
   directory pointing at a free or out-of-range inode is an error) and link
   counts are cross-checked, folding V7's icheck+dcheck pair into one pass.
