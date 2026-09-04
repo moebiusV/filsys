@@ -47,13 +47,15 @@ is compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
 ## Usage
 
 ```sh
-mount.filsys -v <v4|v5|v6|v7|32v> [options] <image> <mountpoint>
-mount.filsys -v <v4|v5|v6|v7|32v> -c <image>   # integrity check (no mount)
+mount.filsys -v <v0|v1|v2|v3|v4|v5|v6|v7|32v> [options] <image> <mountpoint>
+mount.filsys -v <v0|v1|v2|v3|v4|v5|v6|v7|32v> -c <image>   # integrity check (no mount)
 ```
 
-`-v` takes the Unix edition: `v4`, `v5`, `v6`, `v7` or `32v` (a bare number —
-`4`, `5`, `6`, `7`, `32` — is also accepted).  `v4` and `v5` are byte-identical
-to `v6`, so they share one code path.
+`-v` takes the Unix edition: `v0` (PDP-7), `v1`/`v2`/`v3`, `v4`/`v5`/`v6`, `v7`,
+or `32v` (a bare number — `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `32` — is also
+accepted).  `v1`, `v2` and `v3` are one on-disk format, and `v4` and `v5` are
+byte-identical to `v6`, so the seven pre-V7 editions collapse onto two code
+paths.
 
 | option | meaning                          |
 |--------|----------------------------------|
@@ -128,9 +130,16 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
   headers from day one, entering the source as `filsys.h`.  The term itself
   came from the GE GECOS mainframe the early Bell Labs PDP-7/11 sat alongside,
   which is why `/etc/passwd` still carries a `GECOS` field half a century later.
-- **V1-V3** (1971-73) kernels are PDP-11 **assembly**.  Directory entries were
-  **10 bytes** (2-byte i-number + 8-char name).  The i-list, directories-as-
-  files, and device files were already there from the 1969 design.
+- **V1-V3** (1971-73) kernels are PDP-11 **assembly**, and all three share one
+  on-disk format: **10-byte** directory entries (2-byte i-number + 8-char name),
+  a **bitmap** free-block/inode allocator, a 32-byte inode, device files marked
+  by i-numbers below 41 (the root is inode 41), and times in 60ths of a second.
+  The i-list, directories-as-files, and device files were already there from the
+  1969 design.  Note that no original V1 media survives — what filsys reads is
+  the *reconstructed* V1-era format, verified against Yufeng Gao's mid-1972
+  "V2 beta" RF image rebuilt from Dennis Ritchie's s1/s2 DECtapes (see
+  Acknowledgments); the bytes on a real 1971 V1 pack may have differed in ways
+  no longer observable.
 - **V4 (1973)** is the **C rewrite** of the kernel *and* the filesystem, and
   the first edition with the **16-byte directory entry** (`d_ino` +
   `d_name[14]`), the same struct that survives into V7's `dir.h`.  The 14 is
@@ -164,7 +173,8 @@ documentation of record for the `v6fs.c` / `v7fs.c` backends.
 | bad-block file | none | inode 1 | inode 1 |
 | directory entry | 16 B (`d_ino` + 14-char) | 16 B | 16 B |
 
-One `-v v6` code path covers V4, V5 and V6, which are byte-identical on disk.
+One `-v v6` code path covers V4, V5 and V6, which are byte-identical on disk,
+and one `-v v1` code path covers V1, V2 and V3.
 
 ### Limits
 
@@ -174,7 +184,7 @@ disk image holds:
 | edition | max filesystem size | max files (inodes) | max file size |
 |---|---|---|---|
 | PDP-7 (v0) | 64 MB (2¹⁸ blocks × 256 B) | 262,144 (18-bit i-number) | 56 KB (7 × 64 × 64 words) |
-| V1 | 32 MB (2¹⁶ blocks × 512 B) | 65,536 (16-bit i-number) | 64 KB (16-bit size field) |
+| V1 / V2 / V3 | 32 MB (2¹⁶ blocks × 512 B) | 65,536 (16-bit i-number) | 64 KB (16-bit size field) |
 | V4 / V5 / V6 | 32 MB | 65,536 | 1 MB (8 single-indirect × 256 blocks) |
 | V7 | 8 GB (2²⁴ blocks × 512 B) | 65,536 | ~1.08 GB (triple indirect) |
 | 32V | 8 GB | 65,536 | ~1.08 GB |
@@ -556,6 +566,12 @@ source off paper and tape into a form we could study:
   *pdp7-unix* resurrection, typed the barely-legible scans into assembler
   source, and wrote the `mkfs7`/`fsck7` Perl tools whose constants are the
   authoritative record of the PDP-7 on-disk format this backend follows.
+- **Angelo Papenhoff** analysed the Dennis Ritchie DECtapes that Toomey had held
+  back, recovering V2–V4 binaries and identifying the `NB` intermediate
+  language, and published the tape contents on TUHS.
+- **Yufeng Gao** rebuilt the mid-1972 "V2 beta" system from the s1/s2 tapes;
+  its RF disk image is the surviving machine-readable reference against which
+  the V1–V3 on-disk format was verified here.
 - **Phil Budne** coaxed the restored PDP-7 kernel up to a login prompt, wrote
   the RIM bootstrap that boots it on real hardware, and fixed transcription
   errors in the shell and `ed`.

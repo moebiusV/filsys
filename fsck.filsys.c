@@ -1,4 +1,4 @@
-/* filsys 1.0.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
+/* filsys 1.2.0 - 2026-08-26 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* fsck.filsys.c - check and repair a Research Unix (PDP-7 through V7)
  * filesystem on a disk image.
@@ -51,8 +51,8 @@ static int parse_edition(const char *s)
     if (strcmp(s, "v0") == 0 || strcmp(s, "0") == 0 ||
         strcmp(s, "pdp7") == 0 || strcmp(s, "p7") == 0)
         return FILSYS_PDP7;
-    if (strcmp(s, "1") == 0)
-        return FILSYS_V1;
+    if (strcmp(s, "1") == 0 || strcmp(s, "2") == 0 || strcmp(s, "3") == 0)
+        return FILSYS_V1;   /* V1, V2, V3: one format (10-byte dirents, bitmap, root 41) */
     if (strcmp(s, "4") == 0 || strcmp(s, "5") == 0 || strcmp(s, "6") == 0)
         return FILSYS_V6;
     if (strcmp(s, "7") == 0)
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "fsck.filsys: bad edition '%s' (want v0|1|4|5|6|7|32v)\n", optarg);
+                fprintf(stderr, "fsck.filsys: bad edition '%s' (want v0|1|2|3|4|5|6|7|32v)\n", optarg);
                 return 2;
             }
             break;
@@ -102,7 +102,7 @@ int main(int argc, char **argv)
             break;
         default:
             fprintf(stderr,
-                "usage: fsck.filsys [-v <v0|1|4|5|6|7|32v>] [-o block] [-s] [-r] [-n] image\n"
+                "usage: fsck.filsys [-v <v0|1|2|3|4|5|6|7|32v>] [-o block] [-s] [-r] [-n] image\n"
                 "       fsck.filsys [-v <edition>] [-o block] -N ino image\n"
                 "       fsck.filsys [-v <edition>] [-o block] -C ino image\n");
             return 2;
@@ -201,7 +201,7 @@ int main(int argc, char **argv)
 
     int readonly = !(salvage || resolve || clri);
     v7fs_t fs;
-    int rc = v7fs_open(&fs, path, readonly, 0 /*V7 middle-endian*/,
+    int rc = v7fs_open(&fs, path, readonly, edition == FILSYS_32V,
                        offblock * V7_BSIZE);
     if (rc < 0) {
         fprintf(stderr, "%s: %s\n", path, strerror(-rc));
