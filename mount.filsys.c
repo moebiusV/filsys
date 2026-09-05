@@ -6,13 +6,13 @@
  * This file is a thin FUSE shim over the filsys library (libfilsys); the
  * on-disk backends (V6, V7/32V) and the version dispatch live there.
  *
- * One binary, every edition we care about:
+ * One binary, every edition we care about (canonical -v names):
  *
- *   -v v4    V4 format (byte-identical to V5/V6)
- *   -v v5    V5 format (byte-identical to V4/V6)
- *   -v v6    V6 format
- *   -v v7    V7 format
- *   -v 32v   32V format (V7 for the VAX; little-endian 32-bit fields + addresses)
+ *     pdp7 v1 v2 v3 v4 v5 v6 v7 32v coherent
+ *
+ * pdp7 is the word-addressed PDP-7; v1/v2/v3 share one bitmap format; v4/v5/v6
+ * are byte-identical (the V6 format); v7 is V7; 32v is 32V (VAX, little-endian);
+ * coherent is Mark Williams Coherent (V7 middle-endian, 64-entry free cache).
  *
  * The on-disk layout is the 1969 Thompson/Canaday/Ritchie design - a flat
  * i-list at a fixed offset, directories as ordinary files of 16-byte entries,
@@ -20,9 +20,9 @@
  * then widened in V7 (64-byte inode, 24-bit block numbers).  See filsys.5.
  *
  * Usage:
- *     mount.filsys -v <v4|v5|v6|v7|32v> [-o offset=N[,version=N][,uid=N,gid=N,...]]
+ *     mount.filsys -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [-o offset=N[,version=N][,uid=N,gid=N,...]]
  *                    [-r] [-f] [-d] <image> <mountpoint>
- *     mount.filsys -v <v4|v5|v6|v7|32v> [-o offset=N] -c <image>   # integrity check
+ *     mount.filsys -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [-o offset=N] -c <image>   # integrity check
  *
  * `-o offset=N` mounts a filesystem that lives at byte offset N within the
  * file (a partition of a larger disk image), instead of one at block 0.
@@ -225,9 +225,9 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <v0|v1|v2|v3|v4|v5|v6|v7|32v> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
+            "usage: %s -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
             "                [-r] [-f] [-d] <image> <mountpoint>\n"
-            "       %s -v <v0|v1|v2|v3|v4|v5|v6|v7|32v> [-o offset=N] -c <image>   # integrity check\n",
+            "       %s -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [-o offset=N] -c <image>   # integrity check\n",
             p, p);
 }
 
@@ -244,6 +244,8 @@ static int parse_version(const char *s) {
         return FILSYS_V7;
     if (!strcmp(s, "32") || !strcmp(s, "32v"))
         return FILSYS_32V;
+    if (!strcmp(s, "coherent") || !strcmp(s, "coh") || !strcmp(s, "33"))
+        return FILSYS_COHERENT;
     return -1;
 }
 

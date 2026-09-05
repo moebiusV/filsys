@@ -4,23 +4,27 @@
  * disk image.
  *
  * Usage:
- *     mkfs.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-b boot] image [blocks]
+ *     mkfs.filsys [-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>] [-o block] [-b boot]
+ *                 [-m m] [-n n] image [blocks]
  *
- * Builds a fresh filesystem: a superblock, a zeroed i-list, an interleaved
- * free-block list, and an empty root directory.  The image is opened (created
- * if missing) and grown to the filesystem size.  -o places the filesystem at
- * a block offset within the image (for multi-partition images); without it the
- * filesystem starts at block 0.
+ * Builds a fresh filesystem: a superblock, a zeroed i-list, a free-block list,
+ * and an empty root directory.  The image is opened (created if missing) and
+ * grown to the filesystem size.  -o places the filesystem at a block offset
+ * within the image (for multi-partition images); without it the filesystem
+ * starts at block 0.
  *
  * -v selects the edition (the default is 7).  Several editions are one on-disk
  * format: 1, 2 and 3 are byte-identical (bitmap allocator, 10-byte dirents,
  * root inode 41); 4, 5 and 6 are byte-identical (the V6 format); 32 is 32V,
  * V7 recompiled for the VAX with little-endian 32-bit fields.  0 is the
- * word-addressed PDP-7.  The V6 and V7 layouts differ on disk (see README): V6
- * has 16 32-byte inodes per block, 16-bit block numbers, an s_isize that
- * counts i-list *blocks* (first data block = s_isize+2), and no bad-block file;
- * V7 has 8 64-byte inodes per block, 24-bit block numbers, an s_isize that is
- * the first data block, and reserves inode 1 as the bad-block file.
+ * word-addressed PDP-7.  coherent is the Mark Williams Coherent format (see
+ * docs/coherent-format.md): middle-endian V7 with a 64-entry free cache and
+ * s_m/s_n/s_unique; -m/-n set the interleave factors (s_m/s_n, default 1/1).
+ * The V6 and V7 layouts differ on disk (see README): V6 has 16 32-byte inodes
+ * per block, 16-bit block numbers, an s_isize that counts i-list *blocks*
+ * (first data block = s_isize+2), and no bad-block file; V7 has 8 64-byte
+ * inodes per block, 24-bit block numbers, an s_isize that is the first data
+ * block, and reserves inode 1 as the bad-block file.
  *
  * Block layout (block 0 is the start of the filesystem):
  *     block 0    boot block (written by -b, else left alone)
@@ -65,12 +69,14 @@ static uint8_t  v7_freebuf[V7_BSIZE];
 static uint16_t v7_nfree;
 static uint32_t v7_tinode, v7_tfree;
 static int      v7_le;                /* 0 = V7 middle-endian, 1 = 32V little-endian */
+static int      v7_coh;               /* Coherent: NICFREE=64, s_m/s_n/s_unique */
+static uint16_t v7_m = 1, v7_n = 1;   /* interleave factors (s_m/s_n, coherent) */
 
 static void     v7_sb_put16(uint32_t off, uint16_t v);
 static void     v7_sb_put32(uint32_t off, uint32_t v);
 static uint32_t v7_alloc(void);
 static void     v7_bfree(uint32_t bno);
-static void     v7_bflist(int m, int n);
+static void     v7_bflist(void);
 static void     v7_mkroot(void);
 static void     v7_iput(uint32_t ino, uint16_t mode, int16_t nlink,
                         uint32_t size, const uint32_t *addr);
@@ -111,6 +117,8 @@ static int parse_edition(const char *s)
         return FILSYS_V7;
     if (strcmp(s, "32") == 0 || strcmp(s, "32v") == 0)
         return FILSYS_32V;
+    if (strcmp(s, "coherent") == 0 || strcmp(s, "coh") == 0 || strcmp(s, "33") == 0)
+        return FILSYS_COHERENT;
     return -1;
 }
 
@@ -185,7 +193,7 @@ static uint32_t v7_alloc(void)
 
     v7_tfree--;
     v7_nfree--;
-    bno = v7_get32(v7_sbuf + sb_free_off(v7_le) + 4 * v7_nfree, v7_le);
+    bno = v7_get32(v7_sbuf + sb_free_off(v7_le, v7_coh) + 4 * v7_nfree, v7_le);
     if (bno == 0)
         die("out of free space\n");
     if (v7_nfree == 0) {
@@ -194,9 +202,9 @@ static uint32_t v7_alloc(void)
         if (pread(fd, fb, V7_BSIZE, (off_t)(base + (uint64_t)bno * V7_BSIZE)) != V7_BSIZE)
             die("read error at block %u\n", bno);
         v7_nfree = v7_get16le(fb);
-        for (i = 0; i < V7_NICFREE; i++)
-            v7_put32(v7_sbuf + sb_free_off(v7_le) + 4 * i, v7_le,
-                     v7_get32(fb + fb_free_off(v7_le) + 4 * i, v7_le));
+        for (i = 0; i < sb_nicfree(v7_coh); i++)
+            v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh) + 4 * i, v7_le,
+                     v7_get32(fb + fb_free_off(v7_le, v7_coh) + 4 * i, v7_le));
     }
     return bno;
 }
@@ -205,58 +213,59 @@ static void v7_bfree(uint32_t bno)
 {
     int i;
 
-    v7_tfree++;
-    if (v7_nfree >= V7_NICFREE) {
+    if (v7_nfree == 0) {
+        /* Seed the 0 sentinel at the bottom of the stack, mirroring v7fs_bfree;
+         * it terminates the free-list chain and is not itself a free block. */
+        v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh), v7_le, 0);
+        v7_nfree = 1;
+    }
+    if (v7_nfree >= sb_nicfree(v7_coh)) {
         memset(v7_freebuf, 0, V7_BSIZE);
         v7_put16le(v7_freebuf, (uint16_t)v7_nfree);
-        for (i = 0; i < V7_NICFREE; i++)
-            v7_put32(v7_freebuf + fb_free_off(v7_le) + 4 * i, v7_le,
-                     v7_get32(v7_sbuf + sb_free_off(v7_le) + 4 * i, v7_le));
+        for (i = 0; i < sb_nicfree(v7_coh); i++)
+            v7_put32(v7_freebuf + fb_free_off(v7_le, v7_coh) + 4 * i, v7_le,
+                     v7_get32(v7_sbuf + sb_free_off(v7_le, v7_coh) + 4 * i, v7_le));
         pblock(bno, v7_freebuf);
         v7_nfree = 0;
     }
-    v7_put32(v7_sbuf + sb_free_off(v7_le) + 4 * v7_nfree, v7_le, bno);
+    v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh) + 4 * v7_nfree, v7_le, bno);
     v7_nfree++;
+    v7_tfree++;
 }
 
-/* Interleave free blocks with stride m modulo n, as V7's mkfs does. */
-static void v7_bflist(int m, int n)
+/* Build the free list.  Coherent interleaves it so that sequential allocation
+ * walks blocks around the cylinder: a logical block bn maps to the physical
+ * block (bn/n)*n + maptab[bn%n], where maptab[i] = (i/ratio) + (i%ratio)*m and
+ * ratio = n/m (s_m, s_n).  V7/32V have no interleave, which is m = n = 1 (the
+ * identity map).  This mirrors Coherent fsck's phase 6 (writefree). */
+static void v7_bflist(void)
 {
-    uint8_t  flg[500];
-    uint32_t adr[500];
-    uint32_t d, f;
-    int i, j;
-
-    if (n <= 0 || n > 500)
-        n = 500;
-    if (m <= 0 || m > n)
-        m = 3;
-
-    memset(flg, 0, sizeof flg);
-    i = 0;
-    for (j = 0; j < n; j++) {
-        while (flg[i])
-            i = (i + 1) % n;
-        adr[j] = i + 1;
-        flg[i]++;
-        i = (i + m) % n;
+    int m = v7_coh ? v7_m : 1;
+    int n = v7_coh ? v7_n : 1;
+    if (n < 1 || n > V7_COH_MAXINTN || m < 1 || m > n || n % m != 0) {
+        m = 1;
+        n = 1;
     }
+
+    int maptab[V7_COH_MAXINTN];
+    int ratio = n / m;
+    for (int i = 0; i < n; i++)
+        maptab[i] = (i / ratio) + (i % ratio) * m;
+
+    /* Interleave only within the data band, aligned to n blocks. */
+    uint32_t mapbot = ((v7_isize + n - 1) / n) * n;
+    uint32_t maptop = (v7_fsize / n) * n;
 
     /* inode 1: the (empty) bad-block file, as V7's mkfs writes */
     {
         uint32_t zaddr[V7_NIADDR] = {0};
         v7_iput(1, V7_IFREG, 0, 0, zaddr);
     }
-    v7_bfree(0);
-    d = v7_fsize - 1;
-    while (d % n)
-        d++;
-    for (; d > 0; d -= n) {
-        for (i = 0; i < n; i++) {
-            f = d - adr[i];
-            if (f < v7_fsize && f >= v7_isize)
-                v7_bfree(f);
-        }
+    for (uint32_t bn = v7_isize; bn < v7_fsize; bn++) {
+        uint32_t blk = bn;
+        if (bn >= mapbot && bn < maptop)
+            blk = (bn / n) * n + (uint32_t)maptab[bn % n];
+        v7_bfree(blk);
     }
 }
 
@@ -324,16 +333,20 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
 
     memset(v7_sbuf, 0, V7_BSIZE);
     v7_sb_put16(0, (uint16_t)v7_isize);
-    v7_sb_put32(sb_fsize_off(v7_le), v7_fsize);
-    if (!v7_le) {
-        v7_sb_put16(424, 3);      /* s_m (V7 interleave hint) */
-        v7_sb_put16(426, 500);    /* s_n */
+    v7_sb_put32(sb_fsize_off(v7_le, v7_coh), v7_fsize);
+    if (v7_coh) {
+        int toff = sb_time_off(v7_le, v7_coh);
+        v7_sb_put16(toff + 10, v7_m);             /* s_m */
+        v7_sb_put16(toff + 12, v7_n);             /* s_n */
+        v7_sb_put32(toff + 26, 0);                /* s_unique (4-byte `long`) */
     }
 
     /* s_isize is the first data block (not the i-list size), so the i-list is
      * blocks 2..s_isize-1 and the inode count is (s_isize-2) * 8.  V7's own
      * mkfs prints (n)*NIPB for n = s_isize-2; print the same, not isize*8. */
-    printf("m/n = 3 500, isize = %u, fsize = %u\n",
+    if (v7_coh)
+        printf("m/n = %u %u, ", v7_m, v7_n);
+    printf("isize = %u, fsize = %u\n",
            (v7_isize - 2) * V7_INOPB, v7_fsize);
 
     uint8_t zb[V7_BSIZE] = {0};
@@ -342,14 +355,15 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
         v7_tinode += V7_INOPB;
     }
 
-    v7_bflist(3, 500);
+    v7_bflist();
     v7_mkroot();
 
-    v7_sb_put16(sb_nfree_off(v7_le), (uint16_t)v7_nfree);
-    v7_sb_put32(sb_time_off(v7_le), (uint32_t)time(NULL));   /* s_time */
+    v7_sb_put16(sb_nfree_off(v7_le, v7_coh), (uint16_t)v7_nfree);
+    v7_sb_put32(sb_time_off(v7_le, v7_coh), (uint32_t)time(NULL));   /* s_time */
     if (!v7_le) {
-        v7_sb_put32(418, v7_tfree);               /* s_tfree (V7 only) */
-        v7_sb_put16(422, (uint16_t)v7_tinode);    /* s_tinode (V7 only) */
+        int toff = sb_time_off(v7_le, v7_coh);
+        v7_sb_put32(toff + 4, v7_tfree);          /* s_tfree */
+        v7_sb_put16(toff + 8, (uint16_t)v7_tinode); /* s_tinode */
     }
     pblock(1, v7_sbuf);
 
@@ -703,7 +717,7 @@ static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile)
     /* The RB09 fixed-head disk has one valid geometry (8000 blocks/surface);
      * there is no size to choose. */
     if (blocks != 0)
-        die("%s: v0: size is fixed by the RB09 geometry (8000 blocks/surface)\n",
+        die("%s: pdp7: size is fixed by the RB09 geometry (8000 blocks/surface)\n",
             path);
     (void)bootfile;
 
@@ -762,24 +776,26 @@ int main(int argc, char **argv)
     int edition = FILSYS_V7;
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:b:")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:b:m:n:")) != -1) {
         switch (c) {
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want v0|v1|v2|v3|v4|v5|v6|v7|32v)\n", optarg);
+                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent)\n", optarg);
                 return 1;
             }
             break;
         case 'o': offblock = strtoull(optarg, NULL, 0); break;
         case 'b': bootfile = optarg; break;
+        case 'm': v7_m = (uint16_t)strtoul(optarg, NULL, 0); break;
+        case 'n': v7_n = (uint16_t)strtoul(optarg, NULL, 0); break;
         default:
-            fprintf(stderr, "usage: mkfs.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-b boot] image [blocks]\n");
+            fprintf(stderr, "usage: mkfs.filsys [-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>] [-o block] [-b boot] [-m m] [-n n] image [blocks]\n");
             return 1;
         }
     }
     if (optind >= argc) {
-        fprintf(stderr, "usage: mkfs.filsys [-v <v0|v1|v2|v3|v4|v5|v6|v7|32v>] [-o block] [-b boot] image [blocks]\n");
+        fprintf(stderr, "usage: mkfs.filsys [-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>] [-o block] [-b boot] [-m m] [-n n] image [blocks]\n");
         return 1;
     }
     path = argv[optind];
@@ -800,7 +816,8 @@ int main(int argc, char **argv)
     else if (edition == FILSYS_V1)
         mkfs_v1(path, blocks, bootfile);
     else {
-        v7_le = (edition == FILSYS_32V);
+        v7_le  = (edition == FILSYS_32V);
+        v7_coh = (edition == FILSYS_COHERENT);
         mkfs_v7(path, blocks, bootfile);
     }
 

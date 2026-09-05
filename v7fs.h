@@ -30,9 +30,12 @@ enum {
     V7_BSIZE    = 512,
     V7_INOPB    = 8,           /* inodes per block */
     V7_INODESZ  = 64,          /* sizeof(struct dinode) */
-    V7_NICFREE  = 50,          /* superblock free-block cache size */
+    V7_NICFREE  = 50,          /* superblock free-block cache size (V7/32V) */
+    V7_COH_NICFREE = 64,       /* Coherent free-block cache size */
+    V7_COH_MAXINTN  = 255,     /* Coherent interleave bound (fsck MAXINTN) */
     V7_NICINOD  = 100,         /* superblock free-inode cache size */
     V7_ROOTINO  = 2,
+    V7_BADFIN   = 1,           /* the bad-block inode (records bad i-list blocks) */
     V7_SUPERB   = 1,           /* block number of superblock */
     V7_NDADDR   = 10,          /* direct addresses per inode */
     V7_NIADDR   = 13,          /* total address slots per inode */
@@ -50,6 +53,7 @@ enum {
     V7_IFREG  = 0100000,
     V7_IFMPC  = 0030000,
     V7_IFMPB  = 0070000,
+    V7_IFIFO  = 0010000,   /* Coherent: pipe inode (V7 has no such type) */
     V7_ISUID  = 0004000,
     V7_ISGID  = 0002000,
     V7_ISVTX  = 0001000,
@@ -124,14 +128,19 @@ static inline void v7_put24(uint8_t *p, int le, uint32_t v) {
 /* 32V (VAX) aligns daddr_t/time_t to 4 bytes, so in the superblock and the
  * free-list dump block the fields that follow such a type sit 2 bytes later
  * than they do in V7 (PDP-11, 2-byte alignment).  The inode is unaffected
- * (di_size already lands on a 4-byte boundary). */
-static inline int sb_fsize_off(int le)  { return le ? 4 : 2; }
-static inline int sb_nfree_off(int le)  { return le ? 8 : 6; }
-static inline int sb_free_off(int le)   { return le ? 12 : 8; }
-static inline int sb_ninode_off(int le) { return le ? 212 : 208; }
-static inline int sb_inode_off(int le)  { return le ? 214 : 210; }
-static inline int sb_time_off(int le)   { return le ? 420 : 414; }
-static inline int fb_free_off(int le)   { return le ? 4 : 2; }
+ * (di_size already lands on a 4-byte boundary).  Coherent keeps the 2-byte
+ * packing (8086 heritage) and widens the free cache to 64 entries, but its
+ * on-disk byte order is the PDP-11's middle-endian, not 32V's little-endian:
+ * the format was fixed on the PDP-11 and Coherent preserved it verbatim on
+ * x86.  `coh` selects that layout, `le` the byte order. */
+static inline int sb_nicfree(int coh)       { return coh ? V7_COH_NICFREE : V7_NICFREE; }
+static inline int sb_fsize_off(int le, int coh)  { return (le && !coh) ? 4 : 2; }
+static inline int sb_nfree_off(int le, int coh)  { return (le && !coh) ? 8 : 6; }
+static inline int sb_free_off(int le, int coh)   { return (le && !coh) ? 12 : 8; }
+static inline int sb_ninode_off(int le, int coh) { return sb_free_off(le, coh) + 4 * sb_nicfree(coh); }
+static inline int sb_inode_off(int le, int coh)  { return sb_ninode_off(le, coh) + 2; }
+static inline int sb_time_off(int le, int coh)   { return sb_inode_off(le, coh) + 2*V7_NICINOD + 4 + ((le && !coh) ? 2 : 0); }
+static inline int fb_free_off(int le, int coh)   { return (le && !coh) ? 4 : 2; }
 
 /* ---- core types -------------------------------------------------------- */
 
@@ -143,18 +152,22 @@ typedef filsys_dirent_t v7_dirent_t;
 typedef struct {
     int        fd;             /* open disk image */
     int        readonly;
-    int        le;             /* 0 = PDP-11 middle-endian (V7), 1 = VAX little-endian (32V) */
+    int        le;             /* 0 = PDP-11 middle-endian (V7/Coherent), 1 = little-endian (32V) */
+    int        coherent;       /* Coherent: 2-byte-packed superblock, NICFREE=64, s_unique */
     uint64_t   base;           /* byte offset of this filesystem within the file */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
     uint16_t   nfree;
-    uint32_t   free[V7_NICFREE];
+    uint32_t   free[V7_COH_NICFREE];
     uint16_t   ninode;
     uint16_t   inode[V7_NICINOD];
     uint32_t   time;           /* last superblock update */
     uint32_t   tfree;          /* total free blocks (s_tfree) */
     uint32_t   tinode;         /* total free inodes (s_tinode) */
+    uint16_t   m;              /* s_m interleave factor (coherent) */
+    uint16_t   n;              /* s_n interleave factor (coherent) */
+    uint32_t   unique;         /* s_unique (coherent) */
     int        fmod;           /* s_fmod: superblock modified flag (dirty) */
 } v7fs_t;
 
@@ -164,7 +177,7 @@ typedef struct {
  * (VAX) byte order for 32-bit fields and 3-byte block addresses; 0 selects
  * the PDP-11 (V7) middle-endian order.  offset is the byte offset of the
  * filesystem within the file (0 = it starts at block 0 of the file). */
-int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
+int v7fs_open(v7fs_t *fs, const char *path, int readonly, int mode,
               uint64_t offset);
 /* Flush the superblock and close. */
 void v7fs_close(v7fs_t *fs);

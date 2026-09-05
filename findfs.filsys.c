@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: ISC */
 /* findfs.filsys.c - locate filesystem superblocks on a raw disk image.
  *
- * A V7 (and V4/V5/V6/32V) disk is a set of *partitions* in one file, and the
+ * A V7 (and V4/V5/V6/32V/Coherent) disk is a set of *partitions* in one file, and the
  * partition table is compiled into the kernel, not stored on the disk.  This
  * tool finds the filesystems by looking for their superblocks directly, and -
  * with -i - by scanning for inode-table runs and tracing backwards to the
@@ -18,7 +18,7 @@
  * -i     also trace inode-table runs backwards to their superblocks
  *
  * Each hit is printed as:
- *     fs @ block START  (byte BYTES)  V7  isize=N fsize=M
+ *     fs @ block START  (byte BYTES)  V7  isize=N fsize=M   (or 32V/Coherent/V6)
  * Mount the partition in place with mount.filsys -o offset=BYTES.
  */
 #include <config.h>
@@ -35,6 +35,7 @@ enum {
     V6_NICFREE = 100,
     V6_NICINOD = 100,
     V7_NICFREE = 50,
+    V7_COH_NICFREE = 64,   /* Coherent free-list cache depth */
     V7_NICINOD = 100
 };
 
@@ -57,15 +58,28 @@ static int super_v7(const uint8_t *b, uint32_t bno, uint32_t nblocks,
     uint16_t isz = get16le(b);
     if (isz < 3)
         return 0;
-    for (int le = 0; le < 2; le++) {   /* 0 = PDP-11 ME (V7), 1 = VAX LE (32V) */
+    /* Three V7-family layouts: V7 (PDP-11 middle-endian, 2-byte), 32V (VAX
+     * little-endian, 4-byte aligned), and Coherent (middle-endian, 2-byte, a
+     * 64-entry free cache pushing s_ninode to +264). */
+    static const struct {
+        int le, coh;
+        const char *name;
+        int nicfree;
+    } L[] = {
+        { 0, 0, "V7",       V7_NICFREE },
+        { 1, 0, "32V",      V7_NICFREE },
+        { 0, 1, "Coherent", V7_COH_NICFREE },
+    };
+    for (int k = 0; k < 3; k++) {
+        int le  = L[k].le, coh = L[k].coh;
         /* 32V aligns daddr_t to 4 bytes, so s_fsize/s_nfree/s_free/s_ninode
-         * sit 2 bytes later than in V7. */
-        int nfree_off  = le ? 8 : 6;
-        int ninode_off = le ? 212 : 208;
-        int free_off   = le ? 12 : 8;
+         * sit 2 bytes later than in V7; Coherent keeps the 2-byte packing. */
+        int nfree_off  = (le && !coh) ? 8 : 6;
+        int ninode_off = coh ? 264 : (le ? 212 : 208);
+        int free_off   = (le && !coh) ? 12 : 8;
         uint16_t nfree  = get16le(b + nfree_off);
         uint16_t ninode = get16le(b + ninode_off);
-        if (nfree > V7_NICFREE || ninode > V7_NICINOD)
+        if (nfree > L[k].nicfree || ninode > V7_NICINOD)
             continue;
         uint32_t fsz = le ? get32le(b + 4) : get32me(b + 2);
         if (fsz <= isz || (uint64_t)bno - 1 + fsz > nblocks)
@@ -76,7 +90,7 @@ static int super_v7(const uint8_t *b, uint32_t bno, uint32_t nblocks,
             if (fb != 0 && (fb < isz || fb >= fsz)) { ok = 0; break; }
         }
         if (ok) {
-            *edition = le ? "32V" : "V7";
+            *edition = L[k].name;
             *isize = isz; *fsize = fsz;
             return 1;
         }
