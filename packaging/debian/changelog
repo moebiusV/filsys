@@ -1,3 +1,11 @@
+filsys (1.2.7-1) unstable; urgency=medium
+
+  * Coherent (Mark Williams Co.) filesystem support: mount, fsck, mkfs, findfs.
+  * fsck: per-inode state byte, bad-block handling, duplicate-block rescan,
+    and interactive repair (-i / -y).
+
+ -- David Walther <david@clearbrookdistillery.com>  Fri, 04 Sep 2026 00:00:00 +0000
+
 filsys (1.2.6-1) unstable; urgency=medium
 
   * fsck preen (-p): reconnect orphaned files to lost+found, fix link counts.

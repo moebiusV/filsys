@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        1.2.6
+Version:        1.2.7
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (V0-V7, 32V) filesystem images
 
@@ -48,6 +48,11 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Fri Sep 04 2026 David Walther <david@clearbrookdistillery.com> - 1.2.7-1
+- Coherent (Mark Williams Co.) filesystem support: mount, fsck, mkfs, findfs.
+- fsck: per-inode state byte, bad-block handling, duplicate-block rescan,
+  and interactive repair (-i / -y).
+
 * Fri Sep 04 2026 David Walther <david@clearbrookdistillery.com> - 1.2.6-1
 - fsck preen (-p), lost+found recovery, dcheck validation, clean/dirty flag.
 
