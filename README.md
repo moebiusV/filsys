@@ -108,6 +108,8 @@ mkfs.filsys -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block first
 
 fsck.filsys image.dk             # check the filesystem at block 0
 fsck.filsys -o 18392 image.dk    # check a filesystem at block 18392
+fsck.filsys -p image.dk          # preen: fix the safe subset without prompting
+fsck.filsys -i image.dk          # prompt before each repair
 ```
 
 `mkfs.filsys` writes a superblock, a zeroed i-list, an interleaved free-block
@@ -116,8 +118,23 @@ the empty bad-block file) exactly as that edition expects — root is inode 1 in
 V6, inode 2 in V7/32V, inode 41 in V1–V3, and inode 4 on the PDP-7.  `-o`
 places the filesystem at a block offset for multi-partition images; `-b`
 installs a boot block (a PDP-11 `a.out`, V7 magic `0407`) into block 0 before
-the superblock.  `fsck.filsys` is a thin wrapper over the same check the mount
-driver's `-c` runs.
+the superblock.
+
+`fsck.filsys` is more than the mount driver's `-c`: it folds V7's
+`icheck`+`dcheck` pair into one pass (block-bitmap and duplicate detection,
+free-list walk, link-count cross-check) and adds repair — `-s` rebuilds the
+free list, `-r` copies out duplicate blocks (`salv -a`), `-p`/`-y` fix the safe
+subset, `-i` prompts on each fix, and `-N`/`-C` are `ncheck`/`clri`.
+
+Reading Coherent's own BSD-licensed `fsck` while implementing that edition
+taught this checker a handful of ideas worth folding back in for *every*
+edition, not just Coherent: a per-inode **state byte** (which flags an inode
+whose type bits name nothing recognised), the **bad-block inode** and the
+"too many bad blocks" **errflag** that stops a badly-corrupt image from
+cascading into phantom missing blocks, the **phase-1b** duplicate rescan that
+names a block's first owner, and the interactive **`query()`/YES/NO/ASK**
+prompting.  Coherent is the newest format here, but its checker improved the
+oldest ones.
 
 ## Implementor's Notes
 
