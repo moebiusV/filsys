@@ -819,9 +819,8 @@ static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
     }
 }
 
-/* Rebuild the free list from the block-usage map (icheck -s / BSD fsck's pass
- * 5, which Coherent's fsck calls phase 6).  Returns the number of free blocks,
- * or -1 if the superblock could not be read.
+/* Rebuild the free list from the block-usage map (icheck -s).  Returns the
+ * number of free blocks, or -1 if the superblock could not be read.
  *
  * Coherent interleaves the free list so that sequential allocation walks
  * blocks around the cylinder: a logical block bn maps to the physical block
