@@ -630,8 +630,19 @@ two more people, further down the preservation chain:
   built the V6 `rk0` image, then hosted them so a filesystem can be fetched with
   a single `curl` instead of a tape drive.
 
+The Coherent filesystem is the work of **Mark Williams Company** (MWC), which
+sold Coherent as a commercial Unix clone from 1980 into the 1990s.  **Robert
+"Bob" Swartz**, MWC's founder and president, agreed on 3 January 2015 to release
+the Coherent command and system sources under the **3-clause BSD license**;
+that dump — source, some RCS history, tarballs, and a version-4 binary
+distribution — is published at `nesssoftware.com/home/mwc/source.php`, mirrored
+on the Internet Archive as `mwc-coherent-unix-clone`, and on GitHub as
+`gspu/Coherent`.  It is that release that makes the Coherent backend here
+possible and freely implementable.
+
 Every format table in this document was read out of code, tape, or image that
-these people recovered; our project would not exist without their work.
+these people recovered or released; our project would not exist without their
+work.
 
 - pdp7-unix restoration: <https://github.com/DoctorWkt/pdp7-unix>
 - Norman Wilson's scans: <https://www.tuhs.org/Archive/Distributions/Research/McIlroy_v0/>
@@ -639,6 +650,8 @@ these people recovered; our project would not exist without their work.
 - Keith Bostic's V7 tape: <https://www.tuhs.org/Archive/Distributions/Research/Keith_Bostic_v7>
 - Paul Collinson's V6/V7 images: <https://github.com/pcollinson/unixv7-extras>
 - The Unix Heritage Society: <https://www.tuhs.org/>
+- Coherent source (Robert Swartz's 2015 BSD-licensed release): <http://www.nesssoftware.com/home/mwc/source.php>
+- Coherent source mirror (GitHub): <https://github.com/gspu/Coherent>
 - Ritchie's history: <https://www.bell-labs.com/usr/dmr/www/hist.html>
 
 ## License
