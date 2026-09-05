@@ -9,7 +9,7 @@ findfs.filsys \- locate filesystem superblocks (partitions) on a raw disk image
 .RB [ \-i ]
 .I image
 .SH DESCRIPTION
-A Research Unix disk (V4 through 32V) is a set of
+A Research Unix disk (V4 through Coherent) is a set of
 .I partitions
 in one file, and the partition table is compiled into the kernel
 .RB ( rp.c 's
@@ -23,7 +23,7 @@ recovers them two ways.  First it scans every block (or every
 .IR N -th
 block) for a filesystem
 .I superblock ,
-validating the edition (V6, V7, or 32V), the i-list size, the volume size, and
+validating the edition (V6, V7, 32V, or Coherent), the i-list size, the volume size, and
 that the free-block list holds only in-range block numbers.  Second, with
 .BR \-i ,
 it scans for runs of
@@ -36,7 +36,7 @@ Each hit is printed as:
 .PP
 .RS
 .nf
-fs @ block START  (byte BYTES)  V7  isize=N fsize=M
+fs @ block START  (byte BYTES)  V7  isize=N fsize=M   (or 32V / Coherent / V6)
 .fi
 .RE
 .PP
