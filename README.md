@@ -126,14 +126,16 @@ free-list walk, link-count cross-check) and adds repair — `-s` rebuilds the
 free list, `-r` copies out duplicate blocks (`salv -a`), `-p`/`-y` fix the safe
 subset, `-i` prompts on each fix, and `-N`/`-C` are `ncheck`/`clri`.
 
-Reading Coherent's own BSD-licensed `fsck` while implementing that edition
-taught this checker a handful of ideas worth folding back in for *every*
-edition, not just Coherent: a per-inode **state byte** (which flags an inode
-whose type bits name nothing recognised), the **bad-block inode** and the
-"too many bad blocks" **errflag** that stops a badly-corrupt image from
-cascading into phantom missing blocks, the **phase-1b** duplicate rescan that
-names a block's first owner, and the interactive **`query()`/YES/NO/ASK**
-prompting.  Coherent is the newest format here, but its checker improved the
+These checker features are the classic **BSD `fsck`** design — the multi-phase
+structure, the per-inode state byte, the bad-block/errflag handling, the
+phase-1b duplicate rescan, and the `query()`/YES/NO/ASK `-y`/`-n` prompting —
+which Coherent's own `fsck` (a BSD descendant) also carries.  We read them out
+of Coherent's BSD-licensed `fsck` source (see the Acknowledgments) and folded
+them back into this checker for *every* edition, not just Coherent: the state
+byte flags an inode whose type bits name nothing recognised, the errflag stops
+a badly-corrupt image from cascading into phantom missing blocks, phase-1b
+names a block's first owner, and `-i`/`-y` prompt or auto-answer each repair.
+Coherent is the newest format here, but reading its checker improved the
 oldest ones.
 
 ## Implementor's Notes

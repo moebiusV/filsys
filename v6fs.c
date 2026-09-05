@@ -975,7 +975,7 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
     if (!cx.bmap)
         return -ENOMEM;
 
-    /* per-inode state: allocation + type (the Coherent fsck flag byte) */
+    /* per-inode state: allocation + type (the BSD fsck flag byte) */
     uint8_t *state = calloc(maxino + 1, 1);
     if (!state) {
         free(cx.bmap);

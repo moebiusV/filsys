@@ -32,7 +32,7 @@ enum {
     FILSYS_MAXBADOK   = 10  /* bad blocks tolerated before a check aborts */
 };
 
-/* Prompt for a repair decision (Coherent fsck's query()).  mode carries the
+/* Prompt for a repair decision (BSD fsck's reply()/query()).  mode carries the
  * answer: FILSYS_CK_YES (or preen's FILSYS_CK_PREEN) auto-applies, FILSYS_CK_ASK
  * reads y/n from stdin, and anything else skips the repair.  Returns 1 to apply
  * the repair, 0 to skip it. */
@@ -64,7 +64,7 @@ static inline int filsys_query(int mode, const char *fmt, ...) {
     }
 }
 
-/* Per-inode state tracked by the checker -- Coherent fsck's flag byte.  The
+/* Per-inode state tracked by the checker -- BSD fsck's flag byte.  The
  * low three bits (IN_MODEMASK) hold the inode's type; the rest are phase flags
  * set as the walk discovers them.  A state of 0 (UNALLOC) is a free inode;
  * UNKNOWN is an inode whose mode is set but whose type is not one of the five
