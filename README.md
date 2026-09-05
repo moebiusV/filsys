@@ -3,7 +3,7 @@
 Mount a **Research Unix** filesystem image (PDP-11) as a FUSE filesystem on
 Linux, so files can be copied on and off the disk for use with a simulator
 (SIMH `pdp11`).  Linux's own `sysv`/`v7` kernel driver was removed in 6.15
-(2025) and never handled V0–V6 or 32V to begin with, so this is now the
+(2025) and never handled the PDP-7 through V6 or 32V to begin with, so this is now the
 only way to mount these filesystems — see "Linux kernel support" below.
 
 One binary, every edition we care about: the on-disk format is understood
@@ -12,11 +12,12 @@ discipline), so files staged with it are seen by a running kernel after you
 boot the image.
 
 ```
-mount.filsys -v v0 pdp7.dsk mnt          # PDP-7 (v0) format, word-addressed
+mount.filsys -v pdp7 pdp7.dsk mnt        # PDP-7 format, word-addressed
 mount.filsys -v v1 v1root.dsk mnt        # V1 format (also V2 and V3, identical on disk)
 mount.filsys -v v6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
 mount.filsys -v v7 rp06-0.disk mnt       # V7 format
 mount.filsys -v 32v 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
+mount.filsys -v coherent coh.dsk mnt     # Coherent format (Mark Williams Co., V7 + interleave)
 ```
 
 Home: <https://github.com/moebiusV/filsys>
@@ -49,19 +50,20 @@ is compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
 ## Usage
 
 ```sh
-mount.filsys -v <v0|v1|v2|v3|v4|v5|v6|v7|32v> [options] <image> <mountpoint>
-mount.filsys -v <v0|v1|v2|v3|v4|v5|v6|v7|32v> -c <image>   # integrity check (no mount)
+mount.filsys -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [options] <image> <mountpoint>
+mount.filsys -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> -c <image>   # integrity check (no mount)
 ```
 
-`-v` takes the Unix edition: `v0` (PDP-7), `v1`/`v2`/`v3`, `v4`/`v5`/`v6`, `v7`,
-or `32v` (a bare number — `0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `32` — is also
-accepted).  `v1`, `v2` and `v3` are one on-disk format, and `v4` and `v5` are
-byte-identical to `v6`, so the seven pre-V7 editions collapse onto two code
+`-v` takes the Unix edition: `pdp7` (the word-addressed PDP-7), `v1`/`v2`/`v3`,
+`v4`/`v5`/`v6`, `v7`, `32v`, or `coherent` (Mark Williams Co.; a bare number —
+`0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `32` — is also accepted, and `v0`/`p7`
+spell the PDP-7).  `v1`, `v2` and `v3` are one on-disk format, and `v4` and `v5`
+are byte-identical to `v6`, so the seven pre-V7 editions collapse onto two code
 paths.
 
 | option | meaning                          |
 |--------|----------------------------------|
-| `-v v0` | PDP-7 (v0) format, word-addressed |
+| `-v pdp7` | PDP-7 format, word-addressed |
 | `-v v1` | V1 format (also V2/V3, identical on disk) |
 | `-v v2` | V2 format (identical to V1/V3)   |
 | `-v v3` | V3 format (identical to V1/V2)   |
@@ -70,6 +72,7 @@ paths.
 | `-v v6` | V6 format                          |
 | `-v v7` | V7 format                          |
 | `-v 32v`| 32V format (little-endian V7)      |
+| `-v coherent`| Coherent format (middle-endian V7, 64-entry free cache, interleave) |
 | `-o offset=N` | mount a filesystem at byte offset N (a partition) |
 | `-o uid=N,gid=N` | override reported ownership (default: you) |
 | `-o allow_other,...` | pass a FUSE option through |
@@ -168,24 +171,30 @@ backends.
   (Johnson and Ritchie's Interdata port) that produced `daddr_t`.
 - **32V** is V7 recompiled for the VAX; structurally identical, but many
   fields have a different byte order (see below).
+- **Coherent** (Mark Williams Co.) is V7 with three small changes: a 64-entry
+  free-list cache (V7 has 50), an `s_unique` superblock field, and an
+  `s_m`/`s_n` cylinder interleave applied when the free list is built.  Its
+  byte order is the PDP-11's middle-endian — the format was fixed on the PDP-11
+  and preserved verbatim on x86 — so it rides the V7 code path, not 32V's.
+  See `docs/coherent-format.md`.
 
 ### Format table
 
-| | PDP-7 (v0) | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V |
-|---|---|---|---|---|---|
-| block size | 64 words (256 B) | 512 | 512 | 512 | 512 |
-| inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) |
-| block addresses | 7 words | 8 × 16-bit | 8 × 16-bit | 13 × 24-bit (3-byte packed) | 13 × 24-bit (LE) |
-| allocator | free list | bitmap (in superblock) | free list | free list | free list |
-| file size | 56 KB | 64 KB (16-bit) | 24-bit | 32-bit | 32-bit |
-| root inode | 4 | 41 | 1 | 2 | 2 |
-| bad-block file | none | none | none | inode 1 | inode 1 |
-| directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B |
+| | PDP-7 | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V | Coherent |
+|---|---|---|---|---|---|---|
+| block size | 64 words (256 B) | 512 | 512 | 512 | 512 | 512 |
+| inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) | 64 B (8/block) |
+| block addresses | 7 words | 8 × 16-bit | 8 × 16-bit | 13 × 24-bit (3-byte packed) | 13 × 24-bit (LE) | 13 × 24-bit (ME) |
+| allocator | free list | bitmap (in superblock) | free list | free list | free list | free list (interleaved) |
+| file size | 56 KB | 64 KB (16-bit) | 24-bit | 32-bit | 32-bit | 32-bit |
+| root inode | 4 | 41 | 1 | 2 | 2 | 2 |
+| bad-block file | none | none | none | inode 1 | inode 1 | inode 1 |
+| directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B | 16 B |
 
-Four code paths cover the whole range: `pdp7fs.c` (`-v v0`, word-addressed),
+Four code paths cover the whole range: `pdp7fs.c` (`-v pdp7`, word-addressed),
 `v1fs.c` (`-v v1`/`v2`/`v3`, one bitmap format), `v6fs.c` (`-v v4`/`v5`/`v6`,
-byte-identical on disk), and `v7fs.c` (`-v v7`/`32v`, the two byte orders of
-one format).
+byte-identical on disk), and `v7fs.c` (`-v v7`/`32v`/`coherent`, the byte orders
+and free-cache widths of one format).
 
 ### Limits
 
@@ -194,11 +203,12 @@ disk image holds:
 
 | edition | max filesystem size | max files (inodes) | max file size |
 |---|---|---|---|
-| PDP-7 (v0) | 64 MB (2¹⁸ blocks × 256 B) | 262,144 (18-bit i-number) | 56 KB (7 × 64 × 64 words) |
+| PDP-7 | 64 MB (2¹⁸ blocks × 256 B) | 262,144 (18-bit i-number) | 56 KB (7 × 64 × 64 words) |
 | V1 / V2 / V3 | 6528 blocks × 512 B (~3.3 MB) | 65,536 (16-bit i-number) | 64 KB (16-bit size field) |
 | V4 / V5 / V6 | 32 MB | 65,536 | 1 MB (8 single-indirect × 256 blocks) |
 | V7 | 8 GB (2²⁴ blocks × 512 B) | 65,536 | ~1.08 GB (triple indirect) |
 | 32V | 8 GB | 65,536 | ~1.08 GB |
+| Coherent | 8 GB | 65,536 | ~1.08 GB |
 
 The PDP-7's real RB09 disk held only 8000 blocks (2 MB) per surface; 64 MB is
 the 18-bit block-number ceiling.  V1's 16-bit block numbers could address 32 MB,
@@ -396,20 +406,21 @@ Mount any hit with `mount.filsys -o offset=<byte>`.
 
 The read path and the write path were both exercised against real images of
 the V4-through-32V editions.  The earlier editions have no original media
-surviving, so the PDP-7 (v0) layout is verified against the pdp7-unix
+surviving, so the PDP-7 layout is verified against the pdp7-unix
 reconstruction and V1–V3 against Yufeng Gao's "V2 beta" RF image; the
 create/write/delete path for every edition is additionally run by
 `test_matrix` under `make check`:
 
 | edition | image | `-c` | mount | create/write | chmod/chown | delete |
 |---|---|---|---|---|---|---|
-| PDP-7 (v0) | pdp7-unix reconstruction | yes | yes | yes | yes | yes |
+| PDP-7 | pdp7-unix reconstruction | yes | yes | yes | yes | yes |
 | V1 / V2 / V3 | Gao's `V2 beta` RF (reconstruction) | yes | yes | yes | yes | yes |
 | V4 | TUHS `Utah_v4/disk.rk` | yes | yes | yes | yes (on-disk bytes verified) | yes |
 | V5 | TUHS `Dennis_v5/v5root` | yes | yes | yes | yes | yes |
 | V6 | pcollinson `rk0` / SIMH `uv6swre` | yes | yes | yes | yes | yes |
 | V7 | pcollinson `rp06-0.disk` | yes | yes | yes | yes | yes |
 | 32V (VAX) | `32v-root.disk`, `32v-rp06.disk` (`/usr`) | yes | yes | yes | yes | yes |
+| Coherent | `disk1..4.4.10.dd` (PUPS base floppies) | yes | — | — | — | — |
 
 On-disk verification dumped the raw 32-byte inode blocks after `chmod`/`chown`
 and confirmed the mode, uid/gid and size fields landed correctly, and that
@@ -436,7 +447,7 @@ emulator is running.
 
 ## Layout
 
-- `pdp7fs.h` / `pdp7fs.c`: PDP-7 (V0) word-addressed on-disk access layer.
+- `pdp7fs.h` / `pdp7fs.c`: PDP-7 word-addressed on-disk access layer.
 - `v1fs.h` / `v1fs.c`: V1/V2/V3 on-disk access layer.
 - `v6fs.h` / `v6fs.c`: V4/V5/V6 on-disk access layer.
 - `v7fs.h` / `v7fs.c`: V7/32V on-disk access layer.
@@ -544,7 +555,7 @@ carrying a 23-year-old locking bug, and had no way to create one or check one.
 ### What this means for filsys
 
 Mainline ever handled **one** edition — V7 — guessed at it, couldn't create it,
-couldn't check it, and dropped it in 6.15.  filsys handles the PDP-7 (V0)
+couldn't check it, and dropped it in 6.15.  filsys handles the PDP-7
 through 32V, has `findfs` for locating a superblock on a raw image, and has
 both `mkfs` and `fsck`.  That is not an incremental improvement on what the
 kernel had — it is the only implementation that exists.

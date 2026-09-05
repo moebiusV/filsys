@@ -9,11 +9,11 @@ fills in maintainer details, changelog, and distro-specific adjustments.
 What filsys Is
 --------------
 
-filsys is a FUSE driver and set of disk utilities for Research Unix (V4
-through V7, and 32V) filesystem images on a modern host.  It ships four tools:
-`mount.filsys` (the FUSE mount), `findfs.filsys` (locate filesystem
-superblocks/partitions on a raw disk image), `mkfs.filsys` (create a V7
-filesystem), and `fsck.filsys` (check one).
+filsys is a FUSE driver and set of disk utilities for Research Unix (the
+PDP-7 through V7, 32V, and Coherent) filesystem images on a modern host.  It
+ships four tools: `mount.filsys` (the FUSE mount), `findfs.filsys` (locate
+filesystem superblocks/partitions on a raw disk image), `mkfs.filsys` (create
+a filesystem), and `fsck.filsys` (check one).
 
 Dependencies
 ------------
