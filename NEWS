@@ -12,8 +12,7 @@ filsys 1.2.7 (unreleased)
 - Coherent's s_m/s_n free-list interleave (maptab[i] = (i/ratio) + (i%ratio)*m)
   is now honoured by fsck -s and mkfs -m/-n; V7/32V build their free list
   sequentially (m = n = 1), and s_tfree now reflects exactly the free blocks,
-  not the sentinel.  The cylinder-spacing idea predates Coherent — BSD fsck's
-  pass 5 spaces blocks too — but Coherent's two-factor maptab is its own.
+  not the sentinel.
 - fsck tracks a per-inode state byte (UNALLOC / UNKNOWN / IDIR / IREG / ICHR /
   IBLK / IPIPE, plus IBAD and phase flags) instead of a bare allocation bitmap,
   and flags an inode whose type bits name none of the recognised kinds
@@ -34,9 +33,7 @@ filsys 1.2.7 (unreleased)
   regular files (V7's IFREG is a non-zero type bit), so orphaned regular files
   are now actually reconnected to lost+found.
 - The state byte, bad/dup limits, phase-1b rescan and yes/no/ask prompting are
-  the classic BSD fsck design (2.11BSD's sbin/fsck, back to Bill Joy), read out
-  of Coherent's BSD-licensed fsck, itself a BSD descendant — not Coherent
-  originals.
+  the classic BSD fsck design (2.11BSD's sbin/fsck, back to Bill Joy).
 
 filsys 1.2.6 (2026-09-04)
 ========================

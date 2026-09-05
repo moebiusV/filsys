@@ -237,8 +237,8 @@ static void v7_bfree(uint32_t bno)
  * walks blocks around the cylinder: a logical block bn maps to the physical
  * block (bn/n)*n + maptab[bn%n], where maptab[i] = (i/ratio) + (i%ratio)*m and
  * ratio = n/m (s_m, s_n).  V7/32V have no interleave, which is m = n = 1 (the
- * identity map).  The spacing is BSD fsck's pass-5 writefree; Coherent's s_m/s_n
- * is its two-factor form. */
+ * identity map).  The s_m/s_n factors are Coherent's own — no other edition
+ * carries them. */
 static void v7_bflist(void)
 {
     int m = v7_coh ? v7_m : 1;
