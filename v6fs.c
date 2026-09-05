@@ -755,6 +755,7 @@ typedef struct {
     uint32_t nblk;
     uint32_t used_blocks;
     uint32_t dup_blocks;
+    uint32_t bad_blocks;  /* out-of-range block references */
     uint32_t errors;
     uint32_t ino;
 } v6_chkctx_t;
@@ -766,6 +767,7 @@ static int v6_mark_block(v6_chkctx_t *cx, uint32_t bno)
     uint32_t dstart = v6_data_start(cx->fs->isize);
     if (bno < dstart || bno >= cx->fs->fsize) {
         printf("block %u bad; inode=%u\n", bno, cx->ino);
+        cx->bad_blocks++;
         cx->errors++;
         return 1;
     }
@@ -775,19 +777,20 @@ static int v6_mark_block(v6_chkctx_t *cx, uint32_t bno)
         printf("block %u dup; inode=%u\n", bno, cx->ino);
         cx->dup_blocks++;
         cx->errors++;
-        return 0;
+        return 2;
     }
     cx->bmap[d >> 3] |= m;
     cx->used_blocks++;
     return 0;
 }
 
-/* V6 large file: a single-indirect block holding 256 16-bit pointers. */
+/* V6 large file: a single-indirect block holding 256 16-bit pointers.  A
+ * duplicate indirect block is not chased (its children were already claimed). */
 static void v6_mark_tree(v6_chkctx_t *cx, uint32_t blk)
 {
     if (blk == 0)
         return;
-    if (v6_mark_block(cx, blk))
+    if (v6_mark_block(cx, blk) != 0)
         return;
     uint8_t buf[V6_BSIZE];
     if (v6fs_read_block(cx->fs, blk, buf)) {
@@ -846,8 +849,21 @@ static int v6fs_makefree(v6fs_t *fs, v6_chkctx_t *cx)
  * to lost+found.  `ecount[ino]` is the number of directory references; `alloc`
  * marks allocated inodes.  Only regular files are reconnected -- a directory
  * orphan needs its ".." re-pointed, which is left to a human. */
-static void v6fs_preen(v6fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
-                       uint32_t maxino)
+/* Classify an inode's mode into a checker state (the low three type bits).
+ * V6 has no IFREG bit: a regular file is type 0, and IFMT/IFBLK are the same
+ * 0060000 mask. */
+static uint8_t v6_inode_state(uint16_t mode) {
+    switch (mode & V6_IFMT) {
+    case V6_IFDIR: return FILSYS_IN_IDIR;
+    case V6_IFCHR: return FILSYS_IN_ICHR;
+    case V6_IFBLK: return FILSYS_IN_IBLK;
+    case 0: return FILSYS_IN_IREG;   /* regular: no type bits set */
+    default: return FILSYS_IN_UNKNOWN;
+    }
+}
+
+static void v6fs_preen(v6fs_t *fs, const uint8_t *ecount, const uint8_t *state,
+                       uint32_t maxino, int mode)
 {
     v6_inode_t root;
     uint32_t lf_ino = 0;
@@ -875,10 +891,10 @@ static void v6fs_preen(v6fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
         v6_inode_t ip;
         if (v6fs_read_inode(fs, ino, &ip) != 0)
             continue;
-        int allocd = alloc[ino >> 3] & (uint8_t)(1u << (ino & 7));
+        int allocd = filsys_in_allocated(state[ino]);
         if (!allocd) {
             /* referenced but free: clri it */
-            if (cnt != 0) {
+            if (cnt != 0 && filsys_query(mode, "clear free-but-referenced inode %u", ino)) {
                 ip.mode = 0;
                 ip.nlink = 0;
                 v6fs_write_inode(fs, ino, &ip);
@@ -899,7 +915,8 @@ static void v6fs_preen(v6fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
             v6_inode_t lf;
             char name[16];
             snprintf(name, sizeof(name), "%u", ino);
-            if (v6fs_read_inode(fs, lf_ino, &lf) == 0 &&
+            if (filsys_query(mode, "reconnect inode %u to lost+found", ino) &&
+                v6fs_read_inode(fs, lf_ino, &lf) == 0 &&
                 v6fs_dir_add(fs, &lf, ino, name) == 0) {
                 ip.nlink = 1;
                 v6fs_write_inode(fs, ino, &ip);
@@ -908,9 +925,12 @@ static void v6fs_preen(v6fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
             }
         } else {
             int old = ip.nlink;
-            ip.nlink = (int16_t)(cnt & 0377);
-            v6fs_write_inode(fs, ino, &ip);
-            printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+            if (filsys_query(mode, "fix link count of inode %u from %d to %d",
+                             ino, old, cnt)) {
+                ip.nlink = (int16_t)(cnt & 0377);
+                v6fs_write_inode(fs, ino, &ip);
+                printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+            }
         }
     }
 }
@@ -923,9 +943,11 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
         return 0;
     }
 
+    int errflag = 0;
     if (v6_data_start(fs->isize) >= fs->fsize || fs->fsize == 0) {
         printf("bad superblock: isize=%u fsize=%u\n", fs->isize, fs->fsize);
         rep->errors++;
+        errflag = 1;
     }
     if (fs->nfree > V6_NICFREE) {
         printf("bad nfree=%u (>%d)\n", fs->nfree, V6_NICFREE);
@@ -934,6 +956,10 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
     if (fs->ninode > V6_NICINOD) {
         printf("bad ninode=%u (>%d)\n", fs->ninode, V6_NICINOD);
         rep->errors++;
+    }
+    if (errflag) {
+        printf("superblock unusable; skipping check\n");
+        return -1;
     }
 
     uint32_t maxino = v6_maxino(fs->isize);
@@ -949,9 +975,9 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
     if (!cx.bmap)
         return -ENOMEM;
 
-    /* which inodes are allocated (mode != 0), for the dcheck pass */
-    uint8_t *alloc = calloc((maxino + 8) / 8, 1);
-    if (!alloc) {
+    /* per-inode state: allocation + type (the Coherent fsck flag byte) */
+    uint8_t *state = calloc(maxino + 1, 1);
+    if (!state) {
         free(cx.bmap);
         return -ENOMEM;
     }
@@ -965,11 +991,15 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
             continue;
         }
         if (ip.mode == 0)
-            continue;
+            continue;   /* state[ino] stays UNALLOC */
         rep->used_inodes++;
-        alloc[ino >> 3] |= (uint8_t)(1u << (ino & 7));
-        int t = ip.mode & V6_IFMT;
-        if (t == V6_IFCHR || t == V6_IFBLK)
+        state[ino] = v6_inode_state(ip.mode);
+        if (state[ino] == FILSYS_IN_UNKNOWN) {
+            printf("inode %u unknown type 0%o\n", ino, ip.mode & V6_IFMT);
+            rep->errors++;
+            continue;   /* unknown type: block addresses are untrusted */
+        }
+        if (state[ino] == FILSYS_IN_ICHR || state[ino] == FILSYS_IN_IBLK)
             continue;   /* device inode: addr[0] is a device number */
         cx.ino = ino;
         for (int i = 0; i < V6_NIADDR; i++) {
@@ -984,10 +1014,18 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
     }
     rep->errors += cx.errors;
 
+    if (cx.bad_blocks > FILSYS_MAXBADOK) {
+        printf("too many bad blocks (%u); skipping free-list and directory checks\n",
+               cx.bad_blocks);
+        free(state);
+        free(cx.bmap);
+        return -1;
+    }
+
     if (mode & FILSYS_CK_SALVAGE) {
         int nf = v6fs_makefree(fs, &cx);
         printf("salvaged: free list rebuilt (%d free blocks)\n", nf);
-        free(alloc);
+        free(state);
         free(cx.bmap);
         return rep->errors ? -1 : 0;
     }
@@ -995,6 +1033,7 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
     /* walk the free list exactly as alloc() would, marking free blocks. */
     uint8_t *seen = calloc(fs->fsize ? fs->fsize : 1, 1);
     if (!seen) {
+        free(state);
         free(cx.bmap);
         return -ENOMEM;
     }
@@ -1076,7 +1115,7 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
                     uint32_t dno = ents[e].ino;
                     if (dno == 0 || dno > maxino)
                         continue;   /* V6 root is inode 1, not skipped */
-                    if (!(alloc[dno >> 3] & (uint8_t)(1u << (dno & 7)))) {
+                    if (!filsys_in_allocated(state[dno])) {
                         printf("dir %u references free inode %u\n", ino, dno);
                         rep->errors++;
                     }
@@ -1097,12 +1136,12 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
             printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
             rep->errors++;
         }
-        if (mode & FILSYS_CK_PREEN)
-            v6fs_preen(fs, ecount, alloc, maxino);
+        if (mode & (FILSYS_CK_PREEN | FILSYS_CK_YES | FILSYS_CK_ASK))
+            v6fs_preen(fs, ecount, state, maxino, mode);
         free(ecount);
     }
 
-    free(alloc);
+    free(state);
     free(cx.bmap);
 
     printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
