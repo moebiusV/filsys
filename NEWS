@@ -1,3 +1,40 @@
+filsys 1.2.7 (unreleased)
+=========================
+
+- Coherent (Mark Williams Co.) filesystem support across mount, fsck and mkfs
+  (edition "coherent"/"coh"/"33").  Coherent is V7 with a 64-entry free-list
+  cache, an s_unique field, and an s_m/s_n cylinder interleave, and — unlike
+  32V — it keeps the PDP-11's middle-endian byte order (the on-disk format was
+  fixed on the PDP-11 and preserved verbatim on x86).  fsck -s and mkfs rebuild
+  the free list with the interleave, and mkfs grows -m/-n to set the factors.
+  Format spec in docs/coherent-format.md, verified against the 4.2.10 base
+  floppies (disk1..4.4.10.dd).
+- fsck -s / mkfs: the free list is now built with the Coherent phase-6
+  interleave (maptab[i] = (i/ratio) + (i%ratio)*m), and V7/32V build it
+  sequentially (m = n = 1), matching real V7 rather than a filsys-specific
+  stride.  s_tfree now reflects exactly the free blocks, not the sentinel.
+- fsck tracks a per-inode state byte (Coherent's flag byte: UNALLOC / UNKNOWN /
+  IDIR / IREG / ICHR / IBLK / IPIPE, plus IBAD and phase flags) instead of a
+  bare allocation bitmap, and flags an inode whose type bits name none of the
+  recognised kinds ("unknown type") rather than trusting its block addresses.
+  Every edition.
+- fsck bad-block handling: inode 1 (the V7/Coherent bad-block inode) may
+  reference i-list blocks to record gone-bad blocks without being flagged, and
+  an out-of-range block reference is counted as a bad block.  More than 10 bad
+  blocks (or a bad superblock) aborts the check before the free-list and
+  directory phases, mirroring Coherent fsck's errflag, so a badly-corrupt image
+  no longer produces a cascade of phantom "missing" blocks.
+- fsck duplicate-block rescan (Coherent phase 1b): a duplicate indirect block
+  is no longer chased, so a shared indirect block reports one duplicate rather
+  than one per child, and each duplicate is attributed to the inode that first
+  claimed the block ("block N dup; inode=M (owner O)").
+- fsck interactive repair (Coherent's query()/YES/NO/ASK): -y answers yes to
+  every repair, -i prompts on standard input before each ("fix link count ...
+  [yes/no]?"), and -p preens without prompting.  This also fixes V7 preen, whose
+  reconnect check skipped regular files (V7's IFREG is a non-zero type bit),
+  so orphaned regular files are now actually reconnected to lost+found.
+
+filsys 1.2.6 (2026-09-04)
 filsys 1.2.6 (2026-09-04)
 ========================
 

@@ -40,11 +40,16 @@ option mounts a filesystem that begins at a byte offset elsewhere in the file.
 .PP
 The on-disk edition is selected at run time with
 .BR \-v :
-v0 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
+pdp7 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
 through Third Edition format (one on-disk layout); v4, v5, or v6 select the
 Sixth Edition format (V4 and V5 are byte-identical to V6 on disk); v7 selects
 Seventh Edition; 32v selects 32V (V7 recompiled for the VAX, whose multi-byte
-fields are little-endian rather than PDP-11 middle-endian).  A bare number
+fields are little-endian rather than PDP-11 middle-endian); coherent selects
+the Mark Williams Coherent format (V7 with a 64-entry free cache, an
+.I s_unique
+field, and an
+.I s_m/s_n
+cylinder interleave; byte order is PDP-11 middle-endian like V7).  A bare number
 .RB ( 0 ,
 .BR 1 ,
 .BR 2 ,
@@ -93,7 +98,7 @@ supersedes.
 .SH OPTIONS
 .TP
 .BI \-v " edition"
-Filesystem edition: one of v0, v1, v2, v3, v4, v5, v6, v7, or 32v.  Required.
+Filesystem edition: one of pdp7, v1, v2, v3, v4, v5, v6, v7, 32v, or coherent.  Required.
 .TP
 .BI \-o " offset= N [, version= N ][, uid= N , gid= N ,...]"
 Comma-separated options.  The filsys-specific

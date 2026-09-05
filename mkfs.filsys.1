@@ -8,11 +8,15 @@ mkfs.filsys \- construct a Research Unix filesystem in a disk image
 .SH SYNOPSIS
 .B mkfs.filsys
 .RB [ \-v
-.IR <v0|v1|v2|v3|v4|v5|v6|v7|32v> ]
+.IR <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-b
 .IR boot ]
+.RB [ \-m
+.IR m ]
+.RB [ \-n
+.IR n ]
 .I image
 .RI [ blocks ]
 .SH DESCRIPTION
@@ -26,11 +30,16 @@ already exist.
 .PP
 The edition of the filesystem is selected with
 .BR \-v :
-v0 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
+pdp7 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
 through Third Edition (one format, bitmap-allocated); v4, v5, or v6 select the
 Sixth Edition format (V4 and V5
 are byte-identical to V6 on disk); v7 selects Seventh Edition; 32v selects 32V
-(V7 for the VAX, little-endian).  The default is
+(V7 for the VAX, little-endian); coherent selects the Mark Williams Coherent
+format (see
+.BR filsys (5)
+and
+.IR docs/coherent-format.md ).
+The default is
 v7.  V6 and V7 differ
 on disk: V6 has 16 32-byte inodes per block, 16-bit block numbers, and an
 i-list whose size is stored as a block count; V7 has 8 64-byte inodes per
@@ -48,10 +57,11 @@ each filesystem is the boot block; block 1 is the superblock; blocks 2 onward
 are the i-list.
 .SH OPTIONS
 .TP
-.BI \-v " <v0|v1|v2|v3|v4|v5|v6|v7|32v>"
-Filesystem edition.  v0 is the word-addressed PDP-7; v1, v2 and v3 are one
+.BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>"
+Filesystem edition.  pdp7 is the word-addressed PDP-7; v1, v2 and v3 are one
 format (First through Third Edition); v4, v5 and v6 are byte-identical (the V6
-format); v7 is V7.
+format); v7 is V7; 32v is 32V (little-endian); coherent is the Coherent format
+(middle-endian V7 with a 64-entry free cache).
 Default v7.  A bare number
 .RB ( 0 ,
 .BR 1 ,
@@ -62,6 +72,20 @@ Default v7.  A bare number
 Place the filesystem at
 .I block
 (512-byte blocks) within the image, instead of block 0.
+.TP
+.BI \-m " m"
+.TQ
+.BI \-n " n"
+Interleave factors
+.I s_m
+and
+.I s_n
+for a Coherent filesystem (see
+.IR docs/coherent-format.md ).
+Both default to 1 (no interleave), which matches the Coherent base floppies;
+a hard-disk image can use e.g.\&
+.BR "\-m 3 \-n 255" .
+Ignored for every other edition.
 .TP
 .BI \-b " boot"
 Write

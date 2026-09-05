@@ -28,7 +28,12 @@ carried essentially unchanged from the PDP-7 through V6, then widened once,
 in V7.  V4, V5 and V6 are byte-for-byte identical on disk; 32V is V7
 recompiled for the VAX, with one byte-order caveat noted under
 .B "FILESYSTEM FORMAT"
-below.
+below.  Coherent (Mark Williams Co.) is V7 with a 64-entry free-list cache, an
+.I s_unique
+field, and an
+.I s_m/s_n
+cylinder interleave; its byte order is the PDP-11's middle-endian (the format
+was fixed on the PDP-11 and preserved verbatim on x86).
 .PP
 The first form mounts the image at
 .IR mountpoint .
@@ -38,34 +43,37 @@ does not mount; it walks the free list and the inode table and reports any
 integrity problems on standard output.
 .SH OPTIONS
 .TP
-.B \-v <0|1|2|3|4|5|6|7|32>
+.B \-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>
 Select the on-disk edition.
-.B 0
+.B pdp7
 is the word-addressed PDP-7;
-.BR 1 ,
-.B 2
+.BR v1 ,
+.B v2
 and
-.B 3
+.B v3
 are one format (the First through Third Edition: bitmap-allocated, 10-byte
 directory entries);
-.BR 4 ,
-.B 5
+.BR v4 ,
+.B v5
 and
-.B 6
+.B v6
 are byte-identical (the V6 format);
-.B 7
-is the V7 format; and
-.B 32
+.B v7
+is the V7 format;
+.B 32v
 selects 32V (VAX), whose 32-bit fields and 3-byte block addresses are
 little-endian rather than PDP-11 middle-endian (see
 .B "FILESYSTEM FORMAT"
-below).  A leading
-.B v
-is accepted
-.RB ( v7 ,
-.BR v6 ,
-\&...), as is
-.BR 32v .
+below); and
+.B coherent
+selects the Coherent format.  A bare number
+.RB ( 0 ,
+.BR 1 ,
+.BR 4 ,
+\&...) and
+.B v0
+are also accepted as aliases for
+.BR pdp7 .
 .TP
 .B \-o offset=N[,uid=N,gid=N,...]
 Mount a filesystem that lives at byte offset
@@ -403,6 +411,45 @@ fields already fall on 4-byte boundaries), so only
 and
 .I fblk
 differ in layout; every other structure differs from V7 only in byte order.
+.SS Coherent
+The Mark Williams Coherent filesystem is V7 with three changes, none of which
+touches the inode or directory entry (they are byte-identical to V7).  The
+superblock keeps the 2-byte packing of V7 (not 32V's 4-byte alignment) but
+widens the free cache to 64 entries, so
+.I s_ninode
+moves from +208 to +264 and
+.I s_time
+from +414 to +470.  After
+.I s_tinode
+it adds two interleave factors,
+.I s_m
+at +480 and
+.I s_n
+at +482, a filesystem name
+.I s_fname[6]
+at +484, a pack name
+.I s_fpack[6]
+at +490, and an
+.I s_unique
+at +496.  Byte order is the PDP-11's middle-endian throughout \(em Coherent
+began as a PDP-11 OS and preserved the on-disk format verbatim on x86, so it
+takes the
+.B v7
+decode path, not
+.BR 32v .
+.PP
+The interleave maps a logical block
+.I bn
+to the physical block
+.IR "(bn/n)*n + maptab[bn%n]" ,
+where
+.I maptab[i] = (i/ratio) + (i%ratio)*m
+and
+.IR ratio = n/m .
+It is applied only when building (mkfs) or rebuilding
+.RB ( fsck\ \-s )
+the free list; the free list and inode addresses store the resulting physical
+(interleaved) block numbers, so the read/write path needs no runtime mapping.
 .SS Reserved i-numbers
 .I V4, V5, V6:
 i-number 1 is the root directory; no bad-block file exists.
