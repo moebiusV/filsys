@@ -856,7 +856,7 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
     if (!cx.bmap)
         return -ENOMEM;
 
-    /* per-inode state: allocation + type (the Coherent fsck flag byte) */
+    /* per-inode state: allocation + type (the BSD fsck flag byte) */
     uint8_t *state = calloc(P7_MAXINO + 1, 1);
     if (!state) {
         free(cx.bmap);

@@ -795,7 +795,7 @@ static int v7_mark_block(v7_chkctx_t *cx, uint32_t bno)
 /* Mark an indirect block and everything beneath it.  level 0 = single
  * indirect, 1 = double, 2 = triple.  A duplicate indirect block is not chased:
  * its children were already claimed by the first reference, so re-walking them
- * would only cascade spurious "dup" reports (Coherent fsck's phase 1). */
+ * would only cascade spurious "dup" reports (BSD fsck's phase 1). */
 static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
 {
     if (blk == 0)
@@ -819,9 +819,9 @@ static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
     }
 }
 
-/* Rebuild the free list from the block-usage map (icheck -s / Coherent fsck
- * phase 6).  Returns the number of free blocks, or -1 if the superblock could
- * not be read.
+/* Rebuild the free list from the block-usage map (icheck -s / BSD fsck's pass
+ * 5, which Coherent's fsck calls phase 6).  Returns the number of free blocks,
+ * or -1 if the superblock could not be read.
  *
  * Coherent interleaves the free list so that sequential allocation walks
  * blocks around the cylinder: a logical block bn maps to the physical block
@@ -1004,7 +1004,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
         return -ENOMEM;
 
     /* owner table: name the inode that first claimed each block, so a duplicate
-     * report can say who already owns it (Coherent fsck's phase-1b rescan). */
+     * report can say who already owns it (BSD fsck's phase-1b rescan). */
     cx.owner = calloc(nblk + 1, sizeof(uint32_t));
     if (!cx.owner) {
         free(cx.bmap);
@@ -1054,7 +1054,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
 
     /* Too many bad blocks leave the block accounting untrustworthy, so skip the
      * free-list and directory phases rather than report phantom "missing"
-     * blocks (Coherent fsck's errflag on excessive bad blocks). */
+     * blocks (BSD fsck's errflag on excessive bad blocks). */
     if (cx.bad_blocks > FILSYS_MAXBADOK) {
         printf("too many bad blocks (%u); skipping free-list and directory checks\n",
                cx.bad_blocks);
