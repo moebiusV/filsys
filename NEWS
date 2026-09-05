@@ -1,4 +1,4 @@
-filsys 1.3.0 (unreleased)
+filsys 1.3.0 (2026-09-04)
 =========================
 
 - Coherent (Mark Williams Co.) filesystem support across mount, fsck and mkfs
