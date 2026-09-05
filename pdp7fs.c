@@ -694,6 +694,7 @@ typedef struct {
     uint32_t  nblk;
     uint32_t  used_blocks;
     uint32_t  dup_blocks;
+    uint32_t  bad_blocks;  /* out-of-range block references */
     uint32_t  errors;
     uint32_t  ino;
 } p7_chkctx_t;
@@ -704,6 +705,7 @@ static int p7_mark_block(p7_chkctx_t *cx, uint32_t bno)
         return 0;
     if (bno < P7_DATASTART || bno >= P7_KDATA) {
         printf("block %u bad; inode=%u\n", bno, cx->ino);
+        cx->bad_blocks++;
         cx->errors++;
         return 1;
     }
@@ -713,19 +715,20 @@ static int p7_mark_block(p7_chkctx_t *cx, uint32_t bno)
         printf("block %u dup; inode=%u\n", bno, cx->ino);
         cx->dup_blocks++;
         cx->errors++;
-        return 0;
+        return 2;
     }
     cx->bmap[d >> 3] |= m;
     cx->used_blocks++;
     return 0;
 }
 
-/* PDP-7 large file: all 7 slots are single-indirect (64 18-bit pointers). */
+/* PDP-7 large file: all 7 slots are single-indirect (64 18-bit pointers).  A
+ * duplicate indirect block is not chased (its children were already claimed). */
 static void p7_mark_tree(p7_chkctx_t *cx, uint32_t blk)
 {
     if (blk == 0)
         return;
-    if (p7_mark_block(cx, blk))
+    if (p7_mark_block(cx, blk) != 0)
         return;
     uint32_t words[P7_WSIZE];
     if (read_words(cx->fs, blk, words)) {
@@ -762,8 +765,17 @@ static void p7fs_makefree(p7fs_t *fs, p7_chkctx_t *cx)
  * lost+found.  The PDP-7 directory has no on-disk "." and ".." (dir_read
  * synthesizes them), so lost+found is created empty -- its "." and ".." are
  * synthesized on read. */
-static void p7fs_preen(p7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
-                       uint32_t maxino)
+/* Classify an inode's mode into a checker state.  The PDP-7 has two type bits,
+ * P7_IDIR and P7_ISPEC (device); every other allocated inode is a regular
+ * file, so there is no unknown type. */
+static uint8_t p7_inode_state(uint16_t mode) {
+    if (mode & P7_IDIR)  return FILSYS_IN_IDIR;
+    if (mode & P7_ISPEC) return FILSYS_IN_ICHR;   /* special (device) file */
+    return FILSYS_IN_IREG;
+}
+
+static void p7fs_preen(p7fs_t *fs, const uint8_t *ecount, const uint8_t *state,
+                       uint32_t maxino, int mode)
 {
     p7_inode_t root;
     uint32_t lf_ino = 0;
@@ -790,9 +802,9 @@ static void p7fs_preen(p7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
         p7_inode_t ip;
         if (p7fs_read_inode(fs, ino, &ip) != 0)
             continue;
-        int allocd = alloc[ino >> 3] & (uint8_t)(1u << (ino & 7));
+        int allocd = filsys_in_allocated(state[ino]);
         if (!allocd) {
-            if (cnt != 0) {
+            if (cnt != 0 && filsys_query(mode, "clear free-but-referenced inode %u", ino)) {
                 ip.mode = 0;
                 ip.nlink = 0;
                 p7fs_write_inode(fs, ino, &ip);
@@ -810,7 +822,8 @@ static void p7fs_preen(p7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
             p7_inode_t lf;
             char name[16];
             snprintf(name, sizeof(name), "%u", ino);
-            if (p7fs_read_inode(fs, lf_ino, &lf) == 0 &&
+            if (filsys_query(mode, "reconnect inode %u to lost+found", ino) &&
+                p7fs_read_inode(fs, lf_ino, &lf) == 0 &&
                 p7fs_dir_add(fs, &lf, ino, name) == 0) {
                 ip.nlink = 1;
                 p7fs_write_inode(fs, ino, &ip);
@@ -819,9 +832,12 @@ static void p7fs_preen(p7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
             }
         } else {
             int old = ip.nlink;
-            ip.nlink = (int16_t)(cnt & 0377);
-            p7fs_write_inode(fs, ino, &ip);
-            printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+            if (filsys_query(mode, "fix link count of inode %u from %d to %d",
+                             ino, old, cnt)) {
+                ip.nlink = (int16_t)(cnt & 0377);
+                p7fs_write_inode(fs, ino, &ip);
+                printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+            }
         }
     }
 }
@@ -840,9 +856,9 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
     if (!cx.bmap)
         return -ENOMEM;
 
-    /* which inodes are allocated (P7_IUSED), for the dcheck pass */
-    uint8_t *alloc = calloc((P7_MAXINO + 8) / 8, 1);
-    if (!alloc) {
+    /* per-inode state: allocation + type (the Coherent fsck flag byte) */
+    uint8_t *state = calloc(P7_MAXINO + 1, 1);
+    if (!state) {
         free(cx.bmap);
         return -ENOMEM;
     }
@@ -854,11 +870,11 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
             continue;
         }
         if (!(ip.mode & P7_IUSED))
-            continue;
+            continue;   /* state[ino] stays UNALLOC */
         rep->used_inodes++;
-        alloc[ino >> 3] |= (uint8_t)(1u << (ino & 7));
-        if (ip.mode & P7_ISPEC)         /* device: addr[0] is a device no. */
-            continue;
+        state[ino] = p7_inode_state(ip.mode);
+        if (state[ino] == FILSYS_IN_ICHR)
+            continue;   /* device: addr[0] is a device no. */
         cx.ino = ino;
         for (int i = 0; i < P7_NIADDR; i++) {
             uint32_t a = ip.addr[i];
@@ -873,10 +889,18 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
     rep->errors += cx.errors;
     rep->dup_blocks = cx.dup_blocks;
 
+    if (cx.bad_blocks > FILSYS_MAXBADOK) {
+        printf("too many bad blocks (%u); skipping free-list and directory checks\n",
+               cx.bad_blocks);
+        free(state);
+        free(cx.bmap);
+        return -1;
+    }
+
     if (mode & FILSYS_CK_SALVAGE) {
         p7fs_makefree(fs, &cx);
         printf("salvaged: free list rebuilt (%u free blocks)\n", fs->tfree);
-        free(alloc);
+        free(state);
         free(cx.bmap);
         return rep->errors ? -1 : 0;
     }
@@ -885,7 +909,7 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
      * flag blocks both used and free, and blocks missing. */
     uint8_t *freeb = calloc(nblk ? nblk : 1, 1);
     if (!freeb) {
-        free(alloc);
+        free(state);
         free(cx.bmap);
         return -ENOMEM;
     }
@@ -964,7 +988,7 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
                         rep->errors++;
                         continue;
                     }
-                    if (!(alloc[dno >> 3] & (uint8_t)(1u << (dno & 7)))) {
+                    if (!filsys_in_allocated(state[dno])) {
                         printf("dir %u references free inode %u\n", ino, dno);
                         rep->errors++;
                     }
@@ -991,12 +1015,12 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
             printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
             rep->errors++;
         }
-        if (mode & FILSYS_CK_PREEN)
-            p7fs_preen(fs, ecount, alloc, P7_MAXINO);
+        if (mode & (FILSYS_CK_PREEN | FILSYS_CK_YES | FILSYS_CK_ASK))
+            p7fs_preen(fs, ecount, state, P7_MAXINO, mode);
         free(ecount);
     }
 
-    free(alloc);
+    free(state);
     free(cx.bmap);
     printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
            cx.used_blocks, rep->free_blocks, rep->missing_blocks, rep->dup_blocks,
