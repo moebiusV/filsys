@@ -25,11 +25,12 @@ static int super_write(v7fs_t *fs);
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
+int v7fs_open(v7fs_t *fs, const char *path, int readonly, int mode,
               uint64_t offset) {
     memset(fs, 0, sizeof(*fs));
     fs->readonly = readonly;
-    fs->le = little_endian;
+    fs->le = (mode == 1);            /* only 32V is little-endian */
+    fs->coherent = (mode == 2);      /* Coherent: middle-endian like V7, NICFREE=64 */
     fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
@@ -41,20 +42,29 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int little_endian,
         return -EIO;
     }
     fs->isize  = v7_get16le(sb + 0);
-    fs->fsize  = v7_get32(sb + sb_fsize_off(fs->le), fs->le);
-    fs->nfree  = v7_get16le(sb + sb_nfree_off(fs->le));
-    for (int i = 0; i < V7_NICFREE; i++)
-        fs->free[i] = v7_get32(sb + sb_free_off(fs->le) + 4 * i, fs->le);
-    fs->ninode = v7_get16le(sb + sb_ninode_off(fs->le));
+    fs->fsize  = v7_get32(sb + sb_fsize_off(fs->le, fs->coherent), fs->le);
+    fs->nfree  = v7_get16le(sb + sb_nfree_off(fs->le, fs->coherent));
+    for (int i = 0; i < sb_nicfree(fs->coherent); i++)
+        fs->free[i] = v7_get32(sb + sb_free_off(fs->le, fs->coherent) + 4 * i, fs->le);
+    fs->ninode = v7_get16le(sb + sb_ninode_off(fs->le, fs->coherent));
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->inode[i] = v7_get16le(sb + sb_inode_off(fs->le) + 2 * i);
-    fs->time   = v7_get32(sb + sb_time_off(fs->le), fs->le);
-    fs->fmod   = sb[sb_time_off(fs->le) - 2];   /* s_fmod (s_flock,s_ilock,fmod,s_ronly precede s_time) */
+        fs->inode[i] = v7_get16le(sb + sb_inode_off(fs->le, fs->coherent) + 2 * i);
+    fs->time   = v7_get32(sb + sb_time_off(fs->le, fs->coherent), fs->le);
+    fs->fmod   = sb[sb_time_off(fs->le, fs->coherent) - 2];  /* s_fmod */
     /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
      * them); the 50/100-entry caches are only the in-core spill.  Read them so
-     * statfs can report real free space rather than the cache depth. */
-    fs->tfree  = (fs->le == 0) ? v7_get32(sb + 418, fs->le) : 0;
-    fs->tinode = (fs->le == 0) ? v7_get16le(sb + 422) : 0;
+     * statfs can report real free space rather than the cache depth.  They sit
+     * immediately after s_time, whose offset already accounts for the layout. */
+    if (fs->le == 0) {
+        int toff = sb_time_off(fs->le, fs->coherent);
+        fs->tfree  = v7_get32(sb + toff + 4, fs->le);
+        fs->tinode = v7_get16le(sb + toff + 8);
+    }
+    if (fs->coherent) {
+        fs->m      = v7_get16le(sb + sb_time_off(fs->le, fs->coherent) + 10);
+        fs->n      = v7_get16le(sb + sb_time_off(fs->le, fs->coherent) + 12);
+        fs->unique = v7_get32(sb + sb_time_off(fs->le, fs->coherent) + 26, fs->le);
+    }
 
     /* Reject a superblock that claims more disk than the image file actually
      * holds, one with no data area, or an i-list too small to subtract 2 from
@@ -130,18 +140,24 @@ static int super_write(v7fs_t *fs) {
     if (v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
     v7_put16le(sb + 0, fs->isize);
-    v7_put32(sb + sb_fsize_off(fs->le), fs->le, fs->fsize);
-    v7_put16le(sb + sb_nfree_off(fs->le), fs->nfree);
-    for (int i = 0; i < V7_NICFREE; i++)
-        v7_put32(sb + sb_free_off(fs->le) + 4 * i, fs->le, fs->free[i]);
-    v7_put16le(sb + sb_ninode_off(fs->le), fs->ninode);
+    v7_put32(sb + sb_fsize_off(fs->le, fs->coherent), fs->le, fs->fsize);
+    v7_put16le(sb + sb_nfree_off(fs->le, fs->coherent), fs->nfree);
+    for (int i = 0; i < sb_nicfree(fs->coherent); i++)
+        v7_put32(sb + sb_free_off(fs->le, fs->coherent) + 4 * i, fs->le, fs->free[i]);
+    v7_put16le(sb + sb_ninode_off(fs->le, fs->coherent), fs->ninode);
     for (int i = 0; i < V7_NICINOD; i++)
-        v7_put16le(sb + sb_inode_off(fs->le) + 2 * i, fs->inode[i]);
-    v7_put32(sb + sb_time_off(fs->le), fs->le, (uint32_t)time(NULL));  /* s_time */
-    sb[sb_time_off(fs->le) - 2] = (uint8_t)(fs->fmod != 0);            /* s_fmod */
+        v7_put16le(sb + sb_inode_off(fs->le, fs->coherent) + 2 * i, fs->inode[i]);
+    v7_put32(sb + sb_time_off(fs->le, fs->coherent), fs->le, (uint32_t)time(NULL));  /* s_time */
+    sb[sb_time_off(fs->le, fs->coherent) - 2] = (uint8_t)(fs->fmod != 0);            /* s_fmod */
     if (fs->le == 0) {
-        v7_put32(sb + 418, fs->le, fs->tfree);             /* s_tfree */
-        v7_put16le(sb + 422, (uint16_t)fs->tinode);        /* s_tinode */
+        int toff = sb_time_off(fs->le, fs->coherent);
+        v7_put32(sb + toff + 4, fs->le, fs->tfree);        /* s_tfree */
+        v7_put16le(sb + toff + 8, (uint16_t)fs->tinode);   /* s_tinode */
+    }
+    if (fs->coherent) {
+        v7_put16le(sb + sb_time_off(fs->le, fs->coherent) + 10, fs->m);
+        v7_put16le(sb + sb_time_off(fs->le, fs->coherent) + 12, fs->n);
+        v7_put32(sb + sb_time_off(fs->le, fs->coherent) + 26, fs->le, fs->unique);
     }
     return v7fs_write_block(fs, V7_SUPERB, sb);
 }
@@ -220,8 +236,8 @@ int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
         fs->nfree = v7_get16le(buf + 0);
-        for (int i = 0; i < V7_NICFREE; i++)
-            fs->free[i] = v7_get32(buf + fb_free_off(fs->le) + 4 * i, fs->le);
+        for (int i = 0; i < sb_nicfree(fs->coherent); i++)
+            fs->free[i] = v7_get32(buf + fb_free_off(fs->le, fs->coherent) + 4 * i, fs->le);
     }
     /* Zero the freshly-allocated block: V7's alloc() clrbuf()s it, and without
      * this the previous file's data leaks into a new file. */
@@ -241,12 +257,12 @@ void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
         fs->nfree = 1;
         fs->free[0] = 0;
     }
-    if (fs->nfree >= V7_NICFREE) {
+    if (fs->nfree >= sb_nicfree(fs->coherent)) {
         uint8_t buf[V7_BSIZE];
         memset(buf, 0, V7_BSIZE);
         v7_put16le(buf + 0, fs->nfree);
-        for (int i = 0; i < V7_NICFREE; i++)
-            v7_put32(buf + fb_free_off(fs->le) + 4 * i, fs->le, fs->free[i]);
+        for (int i = 0; i < sb_nicfree(fs->coherent); i++)
+            v7_put32(buf + fb_free_off(fs->le, fs->coherent) + 4 * i, fs->le, fs->free[i]);
         if (v7fs_write_block(fs, bno, buf) == 0)
             fs->nfree = 0;
     }
@@ -732,44 +748,60 @@ int v7fs_lookup(v7fs_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
 typedef struct {
     v7fs_t  *fs;
     uint8_t *bmap;        /* bit i = data block (isize + i) */
+    uint32_t *owner;      /* owner[block - isize] = first inode to claim it (or NULL) */
     uint32_t nblk;        /* number of data blocks (fsize - isize) */
     uint32_t used_blocks;
     uint32_t dup_blocks;
+    uint32_t bad_blocks;  /* out-of-range block references */
     uint32_t errors;
     uint32_t ino;         /* current inode, for messages */
 } v7_chkctx_t;
 
-/* Mark one data block as accounted-for.  Returns 1 if out of range. */
+/* Mark one data block as accounted-for.  Returns 0 on a first claim, 1 for an
+ * out-of-range (bad) block, 2 for a duplicate (already claimed).  Inode 1 is
+ * the bad-block inode (V7_BADFIN): its addresses record bad blocks, so a
+ * reference into the i-list region [2, isize) is a record, not an error. */
 static int v7_mark_block(v7_chkctx_t *cx, uint32_t bno)
 {
     if (bno == 0)
         return 0;
     if (bno < cx->fs->isize || bno >= cx->fs->fsize) {
+        if (cx->ino == V7_BADFIN && bno >= 2 && bno < cx->fs->isize)
+            return 0;   /* bad-block record: a gone-bad i-list block */
         printf("block %u bad; inode=%u\n", bno, cx->ino);
+        cx->bad_blocks++;
         cx->errors++;
         return 1;
     }
     uint32_t d = bno - cx->fs->isize;
     uint8_t  m = (uint8_t)(1u << (d & 7));
     if (cx->bmap[d >> 3] & m) {
-        printf("block %u dup; inode=%u\n", bno, cx->ino);
+        if (cx->owner)
+            printf("block %u dup; inode=%u (owner %u)\n",
+                   bno, cx->ino, cx->owner[d]);
+        else
+            printf("block %u dup; inode=%u\n", bno, cx->ino);
         cx->dup_blocks++;
         cx->errors++;
-        return 0;
+        return 2;
     }
     cx->bmap[d >> 3] |= m;
+    if (cx->owner)
+        cx->owner[d] = cx->ino;
     cx->used_blocks++;
     return 0;
 }
 
 /* Mark an indirect block and everything beneath it.  level 0 = single
- * indirect, 1 = double, 2 = triple. */
+ * indirect, 1 = double, 2 = triple.  A duplicate indirect block is not chased:
+ * its children were already claimed by the first reference, so re-walking them
+ * would only cascade spurious "dup" reports (Coherent fsck's phase 1). */
 static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
 {
     if (blk == 0)
         return;
-    if (v7_mark_block(cx, blk))
-        return;                       /* out of range: don't chase it */
+    if (v7_mark_block(cx, blk) != 0)
+        return;                       /* bad or duplicate: don't chase it */
     uint8_t buf[V7_BSIZE];
     if (v7fs_read_block(cx->fs, blk, buf)) {
         printf("cannot read indirect block %u\n", blk);
@@ -787,66 +819,80 @@ static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
     }
 }
 
-/* Rebuild the free list from the block-usage map (icheck -s).  Returns the
- * number of free blocks, or -1 if the superblock could not be read. */
+/* Rebuild the free list from the block-usage map (icheck -s / Coherent fsck
+ * phase 6).  Returns the number of free blocks, or -1 if the superblock could
+ * not be read.
+ *
+ * Coherent interleaves the free list so that sequential allocation walks
+ * blocks around the cylinder: a logical block bn maps to the physical block
+ * (bn/n)*n + maptab[bn%n], where maptab[i] = (i/ratio) + (i%ratio)*m and
+ * ratio = n/m (s_m, s_n).  The free list and inode addresses store the
+ * resulting physical (interleaved) numbers, so the read/write path uses them
+ * directly -- no runtime mapping.  V7/32V have no interleave: s_m = s_n = 1,
+ * the identity map. */
 static int v7fs_makefree(v7fs_t *fs, v7_chkctx_t *cx)
 {
-    uint8_t sb[V7_BSIZE];
-    if (v7fs_read_block(fs, V7_SUPERB, sb))
-        return -1;
-    int m = v7_get16le(sb + 424);
-    int n = v7_get16le(sb + 426);
-    if (n <= 0 || n > 500)
-        n = 500;
-    if (m <= 0 || m > n)
-        m = 3;
-
-    int adr[500];
-    uint8_t flg[500] = {0};
-    int i, j;
-    i = 0;
-    for (j = 0; j < n; j++) {
-        while (flg[i])
-            i = (i + 1) % n;
-        adr[j] = i + 1;
-        flg[i]++;
-        i = (i + m) % n;
+    int m, n;
+    if (fs->coherent) {
+        m = fs->m;
+        n = fs->n;
+        if (n < 1 || n > V7_COH_MAXINTN || m < 1 || m > n || n % m != 0) {
+            printf("invalid interleave factors in superblock (m=%d n=%d); defaulting\n", m, n);
+            m = 1;
+            n = 1;
+        }
+    } else {
+        m = 1;
+        n = 1;   /* V7/32V: no interleave */
     }
 
+    int maptab[V7_COH_MAXINTN];
+    int ratio = n / m;
+    for (int i = 0; i < n; i++)
+        maptab[i] = (i / ratio) + (i % ratio) * m;
+
+    /* Interleave only within the data band, aligned to n blocks (phase6's
+     * mapbot/maptop). */
+    uint32_t mapbot = ((fs->isize + n - 1) / n) * n;
+    uint32_t maptop = (fs->fsize / n) * n;
+
+    /* v7fs_bfree increments fs->tfree as it goes, so reset the running totals
+     * first -- otherwise the rebuilt count is added on top of the old one. */
     fs->nfree = 0;
     fs->ninode = 0;
+    fs->tfree = 0;
+    fs->tinode = 0;
     int nfree = 0;
-    uint32_t d = fs->fsize - 1;
-    while (d % n)
-        d++;
-    for (; d > 0; d -= n) {
-        for (i = 0; i < n; i++) {
-            int64_t f = (int64_t)d - adr[i];
-            if (f < (int64_t)fs->isize || f >= (int64_t)fs->fsize)
-                continue;
-            uint32_t off = (uint32_t)f - fs->isize;
-            if (!(cx->bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
-                v7fs_bfree(fs, (uint32_t)f);
-                nfree++;
-            }
+    for (uint32_t bn = fs->isize; bn < fs->fsize; bn++) {
+        uint32_t blk = bn;
+        if (bn >= mapbot && bn < maptop)
+            blk = (bn / n) * n + (uint32_t)maptab[bn % n];
+        uint32_t off = blk - fs->isize;
+        if (off >= cx->nblk)
+            continue;   /* interleave stays within [isize, fsize), but be safe */
+        if (!(cx->bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
+            v7fs_bfree(fs, blk);
+            nfree++;
         }
     }
-    super_write(fs);
-
-    /* super_write doesn't maintain s_tfree/s_tinode; fix them up (V7 layout). */
-    if (fs->le == 0) {
-        uint8_t sb2[V7_BSIZE];
-        if (v7fs_read_block(fs, V7_SUPERB, sb2) == 0) {
-            v7_put32(sb2 + 418, 0, (uint32_t)nfree);   /* s_tfree */
-            v7_put16le(sb2 + 422, 0);                  /* s_tinode */
-            v7fs_write_block(fs, V7_SUPERB, sb2);
-        }
-    }
+    super_write(fs);   /* writes fs->tfree (= nfree) and fs->tinode (= 0) */
     return nfree;
 }
 
-static void v7fs_preen(v7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
-                       uint32_t maxino)
+/* Classify an inode's mode into a checker state (the low three type bits). */
+static uint8_t v7_inode_state(uint16_t mode) {
+    switch (mode & V7_IFMT) {
+    case V7_IFDIR: return FILSYS_IN_IDIR;
+    case V7_IFREG: return FILSYS_IN_IREG;
+    case V7_IFCHR: case V7_IFMPC: return FILSYS_IN_ICHR;
+    case V7_IFBLK: case V7_IFMPB: return FILSYS_IN_IBLK;
+    case V7_IFIFO: return FILSYS_IN_IPIPE;
+    default: return FILSYS_IN_UNKNOWN;
+    }
+}
+
+static void v7fs_preen(v7fs_t *fs, const uint8_t *ecount, const uint8_t *state,
+                       uint32_t maxino, int mode)
 {
     v7_inode_t root;
     uint32_t lf_ino = 0;
@@ -873,9 +919,9 @@ static void v7fs_preen(v7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
         v7_inode_t ip;
         if (v7fs_read_inode(fs, ino, &ip) != 0)
             continue;
-        int allocd = alloc[ino >> 3] & (uint8_t)(1u << (ino & 7));
+        int allocd = filsys_in_allocated(state[ino]);
         if (!allocd) {
-            if (cnt != 0) {
+            if (cnt != 0 && filsys_query(mode, "clear free-but-referenced inode %u", ino)) {
                 ip.mode = 0;
                 ip.nlink = 0;
                 v7fs_write_inode(fs, ino, &ip);
@@ -890,12 +936,13 @@ static void v7fs_preen(v7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
         if (cnt == 0) {
             if (lf_ino == 0)
                 continue;
-            if ((ip.mode & V7_IFMT) != 0)   /* dir or device: leave it */
+            if ((ip.mode & V7_IFMT) != V7_IFREG)   /* dir or device: leave it */
                 continue;
             v7_inode_t lf;
             char name[16];
             snprintf(name, sizeof(name), "%u", ino);
-            if (v7fs_read_inode(fs, lf_ino, &lf) == 0 &&
+            if (filsys_query(mode, "reconnect inode %u to lost+found", ino) &&
+                v7fs_read_inode(fs, lf_ino, &lf) == 0 &&
                 v7fs_dir_add(fs, &lf, ino, name) == 0) {
                 ip.nlink = 1;
                 v7fs_write_inode(fs, ino, &ip);
@@ -904,9 +951,12 @@ static void v7fs_preen(v7fs_t *fs, const uint8_t *ecount, const uint8_t *alloc,
             }
         } else {
             int old = ip.nlink;
-            ip.nlink = (int16_t)(cnt & 0377);
-            v7fs_write_inode(fs, ino, &ip);
-            printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+            if (filsys_query(mode, "fix link count of inode %u from %d to %d",
+                             ino, old, cnt)) {
+                ip.nlink = (int16_t)(cnt & 0377);
+                v7fs_write_inode(fs, ino, &ip);
+                printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+            }
         }
     }
 }
@@ -919,18 +969,26 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
         return 0;
     }
 
-    /* 1. superblock sanity */
+    /* 1. superblock sanity.  A bad superblock makes everything downstream
+     * meaningless, so it sets the Coherent-style errflag and bails before the
+     * i-list and block walks (nblk = fsize - isize would underflow). */
+    int errflag = 0;
     if (fs->isize >= fs->fsize || fs->fsize == 0) {
         printf("bad superblock: isize=%u fsize=%u\n", fs->isize, fs->fsize);
         rep->errors++;
+        errflag = 1;
     }
-    if (fs->nfree > V7_NICFREE) {
-        printf("bad nfree=%u (>%d)\n", fs->nfree, V7_NICFREE);
+    if (fs->nfree > sb_nicfree(fs->coherent)) {
+        printf("bad nfree=%u (>%d)\n", fs->nfree, sb_nicfree(fs->coherent));
         rep->errors++;
     }
     if (fs->ninode > V7_NICINOD) {
         printf("bad ninode=%u (>%d)\n", fs->ninode, V7_NICINOD);
         rep->errors++;
+    }
+    if (errflag) {
+        printf("superblock unusable; skipping check\n");
+        return -1;
     }
 
     uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
@@ -945,8 +1003,17 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
     if (!cx.bmap)
         return -ENOMEM;
 
-    uint8_t *alloc = calloc((maxino + 8) / 8, 1);
-    if (!alloc) {
+    /* owner table: name the inode that first claimed each block, so a duplicate
+     * report can say who already owns it (Coherent fsck's phase-1b rescan). */
+    cx.owner = calloc(nblk + 1, sizeof(uint32_t));
+    if (!cx.owner) {
+        free(cx.bmap);
+        return -ENOMEM;
+    }
+
+    uint8_t *state = calloc(maxino + 1, 1);
+    if (!state) {
+        free(cx.owner);
         free(cx.bmap);
         return -ENOMEM;
     }
@@ -960,12 +1027,15 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
             continue;
         }
         if (ip.mode == 0)
-            continue;
+            continue;   /* state[ino] stays UNALLOC */
         rep->used_inodes++;
-        alloc[ino >> 3] |= (uint8_t)(1u << (ino & 7));
-        uint16_t fmt = ip.mode & V7_IFMT;
-        if (fmt == V7_IFCHR || fmt == V7_IFBLK ||
-            fmt == V7_IFMPC || fmt == V7_IFMPB)
+        state[ino] = v7_inode_state(ip.mode);
+        if (state[ino] == FILSYS_IN_UNKNOWN) {
+            printf("inode %u unknown type 0%o\n", ino, ip.mode & V7_IFMT);
+            rep->errors++;
+            continue;   /* unknown type: block addresses are untrusted */
+        }
+        if (state[ino] == FILSYS_IN_ICHR || state[ino] == FILSYS_IN_IBLK)
             continue;   /* device inode: addr[0] is a device number, not a block */
         cx.ino = ino;
         for (int i = 0; i < V7_NIADDR; i++) {
@@ -982,10 +1052,23 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
     /* fold the mark-phase findings (dup/bad blocks) into the report */
     rep->errors += cx.errors;
 
+    /* Too many bad blocks leave the block accounting untrustworthy, so skip the
+     * free-list and directory phases rather than report phantom "missing"
+     * blocks (Coherent fsck's errflag on excessive bad blocks). */
+    if (cx.bad_blocks > FILSYS_MAXBADOK) {
+        printf("too many bad blocks (%u); skipping free-list and directory checks\n",
+               cx.bad_blocks);
+        free(state);
+        free(cx.owner);
+        free(cx.bmap);
+        return -1;
+    }
+
     if (mode & FILSYS_CK_SALVAGE) {
         int nf = v7fs_makefree(fs, &cx);
         printf("salvaged: free list rebuilt (%d free blocks)\n", nf);
-        free(alloc);
+        free(state);
+        free(cx.owner);
         free(cx.bmap);
         return rep->errors ? -1 : 0;
     }
@@ -993,11 +1076,13 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
     /* 3. walk the free list exactly as alloc() would, marking free blocks. */
     uint8_t *seen = calloc(fs->fsize ? fs->fsize : 1, 1);
     if (!seen) {
+        free(state);
+        free(cx.owner);
         free(cx.bmap);
         return -ENOMEM;
     }
     uint16_t n = fs->nfree;
-    uint32_t cur[V7_NICFREE];
+    uint32_t cur[V7_COH_NICFREE];
     memcpy(cur, fs->free, sizeof(cur));
     uint32_t guard = 0;
     while (n > 0) {
@@ -1027,7 +1112,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
         } else {
             cx.bmap[off >> 3] |= m;
         }
-        if (++guard > fs->fsize + V7_NICFREE) {
+        if (++guard > fs->fsize + sb_nicfree(fs->coherent)) {
             printf("free list does not terminate\n");
             rep->errors++;
             break;
@@ -1040,13 +1125,13 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
                 break;
             }
             n = v7_get16le(blk);
-            if (n > V7_NICFREE) {
+            if (n > sb_nicfree(fs->coherent)) {
                 printf("free-list block %u has bad count %u\n", bno, n);
                 rep->errors++;
                 break;
             }
-            for (int i = 0; i < V7_NICFREE; i++)
-                cur[i] = v7_get32(blk + fb_free_off(fs->le) + 4 * i, fs->le);
+            for (int i = 0; i < sb_nicfree(fs->coherent); i++)
+                cur[i] = v7_get32(blk + fb_free_off(fs->le, fs->coherent) + 4 * i, fs->le);
         }
     }
     free(seen);
@@ -1082,7 +1167,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
                         rep->errors++;
                         continue;
                     }
-                    if (!(alloc[dno >> 3] & (uint8_t)(1u << (dno & 7)))) {
+                    if (!filsys_in_allocated(state[dno])) {
                         printf("dir %u references free inode %u\n", ino, dno);
                         rep->errors++;
                     }
@@ -1105,12 +1190,12 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
             printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
             rep->errors++;
         }
-        if (mode & FILSYS_CK_PREEN)
-            v7fs_preen(fs, ecount, alloc, maxino);
+        if (mode & (FILSYS_CK_PREEN | FILSYS_CK_YES | FILSYS_CK_ASK))
+            v7fs_preen(fs, ecount, state, maxino, mode);
         free(ecount);
     }
 
-    free(alloc);
+    free(state);
     free(cx.bmap);
 
     printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
@@ -1290,9 +1375,9 @@ int v7fs_resolve_dups(v7fs_t *fs)
  * typed backend function; the `void *` argument converts implicitly to
  * v7fs_t*, so there is no cast anywhere. */
 
-static int v7fs_open_op(void *fs, const char *path, int readonly, int le,
+static int v7fs_open_op(void *fs, const char *path, int readonly, int mode,
                         uint64_t offset) {
-    return v7fs_open(fs, path, readonly, le, offset);
+    return v7fs_open(fs, path, readonly, mode, offset);
 }
 static void v7fs_close_op(void *fs) { v7fs_close(fs); }
 static int v7fs_sync_op(void *fs) { return v7fs_sync(fs); }

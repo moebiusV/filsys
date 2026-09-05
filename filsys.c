@@ -220,7 +220,11 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
         free(fs);
         return -ENOMEM;
     }
-    int rc = fs->ops->open(fs->fs, path, readonly, edition == FILSYS_32V, offset);
+    /* The open op's 4th arg is a byte-order/layout mode: 0 = V7 (middle-endian,
+     * 2-byte), 1 = 32V (little-endian, 4-byte), 2 = Coherent (middle-endian,
+     * 2-byte, NICFREE=64).  Only v7fs reads it. */
+    int mode = (edition == FILSYS_32V) ? 1 : (edition == FILSYS_COHERENT) ? 2 : 0;
+    int rc = fs->ops->open(fs->fs, path, readonly, mode, offset);
     if (rc) {
         free(fs->fs);
         free(fs);

@@ -41,6 +41,7 @@ static const struct fmt {
     { FILSYS_V6,   "6",   4000, 16777215ULL },   /* 24-bit size field */
     { FILSYS_V7,   "7",   4000, 1082201088ULL }, /* triple indirect */
     { FILSYS_32V,  "32v", 4000, 1082201088ULL },
+    { FILSYS_COHERENT, "coherent", 4000, 1082201088ULL },
 };
 
 static void run(const struct fmt *f) {

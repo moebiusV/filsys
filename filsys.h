@@ -28,7 +28,8 @@ enum {
     FILSYS_V1   = 1,
     FILSYS_V6   = 6,
     FILSYS_V7   = 7,
-    FILSYS_32V  = 32
+    FILSYS_32V  = 32,
+    FILSYS_COHERENT = 33 /* Coherent (Mark Williams): V7-family, middle-endian, NICFREE=64 */
 };
 
 /* Decoded inode -- one shape for every edition (V1, V6, V7/32V, PDP-7).  Each
