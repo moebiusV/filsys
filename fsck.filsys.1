@@ -9,12 +9,14 @@ fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
 .B fsck.filsys
 .RB [ \-v
-.IR <v0|v1|v2|v3|v4|v5|v6|v7|32v> ]
+.IR <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-s ]
 .RB [ \-r ]
 .RB [ \-p ]
+.RB [ \-i ]
+.RB [ \-y ]
 .RB [ \-f ]
 .RB [ \-n ]
 .I image
@@ -81,16 +83,27 @@ is
 means "report only, change nothing" (the default, made explicit, and refused
 together with the modifying flags).  The
 .B \-p
-option preens (fixes the safe subset without prompting), and
+option preens (fixes the safe subset without prompting);
+.B \-y
+answers yes to every repair question (the same safe set as
+.BR \-p ,
+without prompting);
+.B \-i
+prompts on standard input before each repair, the interactive form of preen; and
 .B \-f
 forces a check even when the superblock is marked clean (V6, V7 and 32V only).
 .PP
 The edition is selected with
 .BR \-v :
-v0 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
+pdp7 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
 through Third Edition (one format); v4, v5, or v6 select the Sixth Edition
 format (V4 and V5 are byte-identical to
-V6 on disk); v7 selects Seventh Edition; 32v selects 32V.  The default is v7.  A Research Unix
+V6 on disk); v7 selects Seventh Edition; 32v selects 32V; coherent selects the
+Mark Williams Coherent format (V7 with a 64-entry free cache and an
+.I s_m/s_n
+interleave, which
+.B \-s
+rebuilds).  The default is v7.  A Research Unix
 disk image holds one or more filesystems
 .RI ( partitions ),
 selected by a partition table compiled into the kernel, not stored on the
@@ -104,10 +117,10 @@ The exit status is 0 if the filesystem is clean, 1 if errors were found, and 2
 on a usage error.
 .SH OPTIONS
 .TP
-.BI \-v " <v0|v1|v2|v3|v4|v5|v6|v7|32v>"
-Filesystem edition.  v0 is the word-addressed PDP-7; v1, v2 and v3 are one
+.BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>"
+Filesystem edition.  pdp7 is the word-addressed PDP-7; v1, v2 and v3 are one
 format (First through Third Edition); v4, v5 and v6 are byte-identical (the V6
-format); v7 is V7; 32v is 32V.
+format); v7 is V7; 32v is 32V; coherent is the Coherent format.
 Default v7.  A bare number
 .RB ( 0 ,
 .BR 1 ,
@@ -145,6 +158,18 @@ except on V1 and PDP-7, whose 8-char names are too short for it; there it is
 .IR lostfils .
 Every edition.
 .TP
+.B \-y
+Answer yes to every repair question, as if
+.B \-p
+were given: the same safe repairs are applied without prompting.  Every edition.
+.TP
+.B \-i
+Interactive.  Prompt on standard input before each repair
+.RB ( "fix link count ... [yes/no]?" )
+and apply only those answered yes.  Otherwise
+.B fsck.filsys
+is a batch check.  Every edition.
+.TP
 .B \-f
 Force a check even when the superblock is marked clean.  V6, V7 and 32V carry
 the
@@ -160,6 +185,8 @@ explicit, and is refused together with
 .BR \-s ,
 .BR \-r ,
 .BR \-p ,
+.BR \-i ,
+.BR \-y ,
 or
 .BR \-C .
 .TP
