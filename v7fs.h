@@ -66,7 +66,7 @@ enum {
     V7_IEXEC  = 0000100
 };
 
-/* Byte order lives in bo.h (bo_get_le16/bo_get_me32/...); v7fs reads and writes
+/* Byte order lives in bo.h (bo_get16le/bo_get32me/...); v7fs reads and writes
  * through fs->bo (a byte_order_ops_t chosen by the format descriptor). */
 
 /* Superblock field offsets.  32V (VAX) aligns daddr_t/time_t to 4 bytes, so

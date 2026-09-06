@@ -45,7 +45,7 @@ enum {
     V1_OWRITE = 0000001        /* write, non-owner */
 };
 
-/* Byte order lives in bo.h (bo_get_le16/bo_get_me32/...). */
+/* Byte order lives in bo.h (bo_get16le/bo_get32me/...). */
 
 /* ---- core types -------------------------------------------------------- */
 

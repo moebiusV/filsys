@@ -48,14 +48,14 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly,
         close(fs->fd);
         return -EIO;
     }
-    fs->isize  = bo_get_le16(sb + 0);
+    fs->isize  = bo_get16le(sb + 0);
     fs->fsize  = fs->bo->get32(sb + sb_fsize_off(fs->pack4));
-    fs->nfree  = bo_get_le16(sb + sb_nfree_off(fs->pack4));
+    fs->nfree  = bo_get16le(sb + sb_nfree_off(fs->pack4));
     for (int i = 0; i < fs->nicfree; i++)
         fs->free[i] = fs->bo->get32(sb + sb_free_off(fs->pack4) + 4 * i);
-    fs->ninode = bo_get_le16(sb + sb_ninode_off(fs->pack4, fs->nicfree));
+    fs->ninode = bo_get16le(sb + sb_ninode_off(fs->pack4, fs->nicfree));
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->inode[i] = bo_get_le16(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
+        fs->inode[i] = bo_get16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
     fs->time   = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree));
     fs->fmod   = sb[sb_time_off(fs->pack4, fs->nicfree) - 2];  /* s_fmod */
     /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
@@ -65,14 +65,14 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly,
     if (!fs->pack4 || fs->magic) {
         int toff = sb_time_off(fs->pack4, fs->nicfree);
         fs->tfree  = fs->bo->get32(sb + toff + 4);
-        fs->tinode = bo_get_le16(sb + toff + 8);
+        fs->tinode = bo_get16le(sb + toff + 8);
     }
     if (fs->interleave) {
-        fs->m      = bo_get_le16(sb + sb_time_off(fs->pack4, fs->nicfree) + 10);
-        fs->n      = bo_get_le16(sb + sb_time_off(fs->pack4, fs->nicfree) + 12);
+        fs->m      = bo_get16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 10);
+        fs->n      = bo_get16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 12);
         fs->unique = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26);
     }
-    if (fs->magic && bo_get_le32(sb + 0x3F8) != V7_XEN_MAGIC) {
+    if (fs->magic && bo_get32le(sb + 0x3F8) != V7_XEN_MAGIC) {
         /* Xenix carries a magic at superblock offset 1016; validate it rather
          * than mis-decoding a non-Xenix volume named -v xenix. */
         close(fs->fd);
@@ -153,24 +153,24 @@ static int super_write(v7fs_t *fs) {
      * (s_tfree, s_tinode, s_m, s_n, s_fname, s_fpack, ...). */
     if (v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
-    bo_put_le16(sb + 0, fs->isize);
+    bo_put16le(sb + 0, fs->isize);
     fs->bo->put32(sb + sb_fsize_off(fs->pack4), fs->fsize);
-    bo_put_le16(sb + sb_nfree_off(fs->pack4), fs->nfree);
+    bo_put16le(sb + sb_nfree_off(fs->pack4), fs->nfree);
     for (int i = 0; i < fs->nicfree; i++)
         fs->bo->put32(sb + sb_free_off(fs->pack4) + 4 * i, fs->free[i]);
-    bo_put_le16(sb + sb_ninode_off(fs->pack4, fs->nicfree), fs->ninode);
+    bo_put16le(sb + sb_ninode_off(fs->pack4, fs->nicfree), fs->ninode);
     for (int i = 0; i < V7_NICINOD; i++)
-        bo_put_le16(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i, fs->inode[i]);
+        bo_put16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i, fs->inode[i]);
     fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree), (uint32_t)time(NULL));  /* s_time */
     sb[sb_time_off(fs->pack4, fs->nicfree) - 2] = (uint8_t)(fs->fmod != 0);            /* s_fmod */
     if (!fs->pack4 || fs->magic) {
         int toff = sb_time_off(fs->pack4, fs->nicfree);
         fs->bo->put32(sb + toff + 4, fs->tfree);        /* s_tfree */
-        bo_put_le16(sb + toff + 8, (uint16_t)fs->tinode);   /* s_tinode */
+        bo_put16le(sb + toff + 8, (uint16_t)fs->tinode);   /* s_tinode */
     }
     if (fs->interleave) {
-        bo_put_le16(sb + sb_time_off(fs->pack4, fs->nicfree) + 10, fs->m);
-        bo_put_le16(sb + sb_time_off(fs->pack4, fs->nicfree) + 12, fs->n);
+        bo_put16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 10, fs->m);
+        bo_put16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 12, fs->n);
         fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26, fs->unique);
     }
     return v7fs_write_block(fs, V7_SUPERB, sb);
@@ -191,10 +191,10 @@ int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip) {
     const uint8_t *d = raw + off * fs->inode_size;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = bo_get_le16(d + 0);
-    ip->nlink = (int16_t)bo_get_le16(d + 2);
-    ip->uid   = (int16_t)bo_get_le16(d + 4);
-    ip->gid   = (int16_t)bo_get_le16(d + 6);
+    ip->mode  = bo_get16le(d + 0);
+    ip->nlink = (int16_t)bo_get16le(d + 2);
+    ip->uid   = (int16_t)bo_get16le(d + 4);
+    ip->gid   = (int16_t)bo_get16le(d + 6);
     ip->size  = fs->bo->get32(d + 8);
     for (int i = 0; i < fs->niaddr; i++)
         ip->addr[i] = fs->bo->get24(d + 12 + 3 * i);
@@ -215,10 +215,10 @@ int v7fs_write_inode(v7fs_t *fs, uint32_t ino, const v7_inode_t *ip) {
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * fs->inode_size;
-    bo_put_le16(d + 0, ip->mode);
-    bo_put_le16(d + 2, (uint16_t)ip->nlink);
-    bo_put_le16(d + 4, (uint16_t)ip->uid);
-    bo_put_le16(d + 6, (uint16_t)ip->gid);
+    bo_put16le(d + 0, ip->mode);
+    bo_put16le(d + 2, (uint16_t)ip->nlink);
+    bo_put16le(d + 4, (uint16_t)ip->uid);
+    bo_put16le(d + 6, (uint16_t)ip->gid);
     fs->bo->put32(d + 8, ip->size);
     for (int i = 0; i < fs->niaddr; i++)
         fs->bo->put24(d + 12 + 3 * i, ip->addr[i]);
@@ -249,7 +249,7 @@ int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
         uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
-        fs->nfree = bo_get_le16(buf + 0);
+        fs->nfree = bo_get16le(buf + 0);
         for (int i = 0; i < fs->nicfree; i++)
             fs->free[i] = fs->bo->get32(buf + fb_free_off(fs->pack4) + 4 * i);
     }
@@ -274,7 +274,7 @@ void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
     if (fs->nfree >= fs->nicfree) {
         uint8_t buf[V7_MAXBSIZE];
         memset(buf, 0, fs->bsize);
-        bo_put_le16(buf + 0, fs->nfree);
+        bo_put16le(buf + 0, fs->nfree);
         for (int i = 0; i < fs->nicfree; i++)
             fs->bo->put32(buf + fb_free_off(fs->pack4) + 4 * i, fs->free[i]);
         if (v7fs_write_block(fs, bno, buf) == 0)
@@ -608,7 +608,7 @@ int v7fs_dir_read(v7fs_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count)
 
     size_t cnt = 0;
     for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
-        uint16_t ino = bo_get_le16(buf + off);
+        uint16_t ino = bo_get16le(buf + off);
         if (ino == 0)
             continue;
         out[cnt].ino = ino;
@@ -665,7 +665,7 @@ int v7fs_dir_add(v7fs_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
     /* find an empty slot, else append */
     size_t slot = SIZE_MAX;
     for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
-        if (bo_get_le16(buf + off) == 0) {
+        if (bo_get16le(buf + off) == 0) {
             slot = off;
             break;
         }
@@ -675,7 +675,7 @@ int v7fs_dir_add(v7fs_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
         n += 16;
     }
 
-    bo_put_le16(buf + slot, (uint16_t)ino);
+    bo_put16le(buf + slot, (uint16_t)ino);
     memset(buf + slot + 2, 0, V7_DIRSIZ);
     memcpy(buf + slot + 2, name, namelen);
 
@@ -695,13 +695,13 @@ int v7fs_dir_remove(v7fs_t *fs, v7_inode_t *ip, const char *name) {
     }
     int rc = -ENOENT;
     for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
-        if (bo_get_le16(buf + off) == 0)
+        if (bo_get16le(buf + off) == 0)
             continue;
         char ent[V7_DIRSIZ + 1];
         memcpy(ent, buf + off + 2, V7_DIRSIZ);
         ent[V7_DIRSIZ] = 0;
         if (strcmp(ent, name) == 0) {
-            bo_put_le16(buf + off, 0);
+            bo_put16le(buf + off, 0);
             memset(buf + off + 2, 0, V7_DIRSIZ);
             ssize_t w = v7fs_file_write(fs, ip, buf, (size_t)n, 0);
             rc = w < 0 ? (int)w : 0;
@@ -1136,7 +1136,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
                 rep->errors++;
                 break;
             }
-            n = bo_get_le16(blk);
+            n = bo_get16le(blk);
             if (n > fs->nicfree) {
                 printf("free-list block %u has bad count %u\n", bno, n);
                 rep->errors++;

@@ -60,7 +60,7 @@ enum {
     V6_IEXEC  = 0000100
 };
 
-/* Byte order lives in bo.h (bo_get_le16/bo_get_me32/bo_get_me24/...). */
+/* Byte order lives in bo.h (bo_get16le/bo_get32me/bo_get24me/...). */
 
 /* ---- core types -------------------------------------------------------- */
 
