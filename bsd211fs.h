@@ -53,7 +53,7 @@ enum {
     BSD211_IEXEC  = 0000100
 };
 
-/* Byte order lives in bo.h (bo_get_le16/bo_get_me32/...). */
+/* Byte order lives in bo.h (bo_get16le/bo_get32me/...). */
 
 /* ---- superblock field offsets (struct fs, packed, block 1) --------------- */
 

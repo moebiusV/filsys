@@ -31,14 +31,14 @@ static int read_words(p7fs_t *fs, uint32_t bno, uint32_t *words) {
     if (n != P7_BLOCKBYTES)
         return -EIO;
     for (int i = 0; i < P7_WSIZE; i++)
-        words[i] = bo_get_le32(raw + i * P7_WORDBYTES);
+        words[i] = bo_get32le(raw + i * P7_WORDBYTES);
     return 0;
 }
 
 static int write_words(p7fs_t *fs, uint32_t bno, const uint32_t *words) {
     uint8_t raw[P7_BLOCKBYTES];
     for (int i = 0; i < P7_WSIZE; i++)
-        bo_put_le32(raw + i * P7_WORDBYTES, words[i]);
+        bo_put32le(raw + i * P7_WORDBYTES, words[i]);
     off_t pos = (off_t)fs->base + P7_SURFACE1 + (off_t)bno * P7_BLOCKBYTES;
     ssize_t n = pwrite(fs->fd, raw, P7_BLOCKBYTES, pos);
     if (n != P7_BLOCKBYTES)
@@ -171,7 +171,7 @@ int p7fs_read_block(p7fs_t *fs, uint32_t bno, uint8_t *buf) {
     if (read_words(fs, bno, words))
         return -EIO;
     for (int i = 0; i < P7_WSIZE; i++)
-        bo_put_le32(buf + i * P7_WORDBYTES, words[i]);
+        bo_put32le(buf + i * P7_WORDBYTES, words[i]);
     return 0;
 }
 
@@ -180,7 +180,7 @@ int p7fs_write_block(p7fs_t *fs, uint32_t bno, const uint8_t *buf) {
         return -EROFS;
     uint32_t words[P7_WSIZE];
     for (int i = 0; i < P7_WSIZE; i++)
-        words[i] = bo_get_le32(buf + i * P7_WORDBYTES);
+        words[i] = bo_get32le(buf + i * P7_WORDBYTES);
     return write_words(fs, bno, words);
 }
 

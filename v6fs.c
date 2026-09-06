@@ -39,15 +39,15 @@ int v6fs_open(v6fs_t *fs, const char *path, int readonly, uint64_t offset) {
         return -EIO;
     }
     /* V6 superblock: 16-bit fields, s_free[100]/s_inode[100], s_time[2]. */
-    fs->isize  = bo_get_le16(sb + 0);
-    fs->fsize  = bo_get_le16(sb + 2);
-    fs->nfree  = bo_get_le16(sb + 4);
+    fs->isize  = bo_get16le(sb + 0);
+    fs->fsize  = bo_get16le(sb + 2);
+    fs->nfree  = bo_get16le(sb + 4);
     for (int i = 0; i < V6_NICFREE; i++)
-        fs->free[i] = bo_get_le16(sb + 6 + 2 * i);
-    fs->ninode = bo_get_le16(sb + 206);
+        fs->free[i] = bo_get16le(sb + 6 + 2 * i);
+    fs->ninode = bo_get16le(sb + 206);
     for (int i = 0; i < V6_NICINOD; i++)
-        fs->inode[i] = bo_get_le16(sb + 208 + 2 * i);
-    fs->time   = bo_get_me32(sb + 412);
+        fs->inode[i] = bo_get16le(sb + 208 + 2 * i);
+    fs->time   = bo_get32me(sb + 412);
     fs->fmod   = sb[410];              /* s_fmod */
 
     /* Reject a superblock that claims more disk than the image file actually
@@ -85,9 +85,9 @@ static void v6_count_free(v6fs_t *fs, uint32_t *nblk, uint32_t *nino) {
             uint8_t blk[V6_BSIZE];
             if (v6fs_read_block(fs, bno, blk))
                 break;
-            n = bo_get_le16(blk + 0);
+            n = bo_get16le(blk + 0);
             for (int i = 0; i < V6_NICFREE; i++)
-                cur[i] = bo_get_le16(blk + 2 + 2 * i);
+                cur[i] = bo_get16le(blk + 2 + 2 * i);
         }
         if (++guard > fs->fsize + V6_NICFREE)
             break;
@@ -157,15 +157,15 @@ static int super_write(v6fs_t *fs) {
      * (s_flock/s_ilock/s_fmod/s_ronly, the pad words, ...). */
     if (v6fs_read_block(fs, V6_SUPERB, sb))
         return -EIO;
-    bo_put_le16(sb + 0, fs->isize);
-    bo_put_le16(sb + 2, fs->fsize);
-    bo_put_le16(sb + 4, fs->nfree);
+    bo_put16le(sb + 0, fs->isize);
+    bo_put16le(sb + 2, fs->fsize);
+    bo_put16le(sb + 4, fs->nfree);
     for (int i = 0; i < V6_NICFREE; i++)
-        bo_put_le16(sb + 6 + 2 * i, (uint16_t)fs->free[i]);
-    bo_put_le16(sb + 206, fs->ninode);
+        bo_put16le(sb + 6 + 2 * i, (uint16_t)fs->free[i]);
+    bo_put16le(sb + 206, fs->ninode);
     for (int i = 0; i < V6_NICINOD; i++)
-        bo_put_le16(sb + 208 + 2 * i, fs->inode[i]);
-    bo_put_me32(sb + 412, (uint32_t)time(NULL));  /* s_time[2] */
+        bo_put16le(sb + 208 + 2 * i, fs->inode[i]);
+    bo_put32me(sb + 412, (uint32_t)time(NULL));  /* s_time[2] */
     sb[410] = (uint8_t)(fs->fmod != 0);           /* s_fmod */
     return v6fs_write_block(fs, V6_SUPERB, sb);
 }
@@ -185,17 +185,17 @@ int v6fs_read_inode(v6fs_t *fs, uint32_t ino, v6_inode_t *ip) {
     const uint8_t *d = raw + off * V6_INODESZ;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = bo_get_le16(d + 0);
+    ip->mode  = bo_get16le(d + 0);
     ip->nlink = (int16_t)d[2];        /* char */
     ip->uid   = (int16_t)d[3];        /* char */
     ip->gid   = (int16_t)d[4];        /* char */
     /* 24-bit size: i_size0 @5 is the HIGH byte (bits 16..23),
      * i_size1 @6..7 is the LOW word (bits 0..15). */
-    ip->size  = ((uint32_t)d[5] << 16) | bo_get_le16(d + 6);
+    ip->size  = ((uint32_t)d[5] << 16) | bo_get16le(d + 6);
     for (int i = 0; i < V6_NIADDR; i++)
-        ip->addr[i] = bo_get_le16(d + 8 + 2 * i);
-    ip->atime = bo_get_me32(d + 24);
-    ip->mtime = bo_get_me32(d + 28);
+        ip->addr[i] = bo_get16le(d + 8 + 2 * i);
+    ip->atime = bo_get32me(d + 24);
+    ip->mtime = bo_get32me(d + 28);
     ip->ctime = ip->mtime;            /* V6 has no ctime */
     return 0;
 }
@@ -211,17 +211,17 @@ int v6fs_write_inode(v6fs_t *fs, uint32_t ino, const v6_inode_t *ip) {
     if (v6fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * V6_INODESZ;
-    bo_put_le16(d + 0, ip->mode);
+    bo_put16le(d + 0, ip->mode);
     d[2] = (uint8_t)ip->nlink;
     d[3] = (uint8_t)ip->uid;
     d[4] = (uint8_t)ip->gid;
     /* 24-bit size: i_size0 @5 = high byte, i_size1 @6..7 = low word */
     d[5] = (uint8_t)((ip->size >> 16) & 0xff);
-    bo_put_le16(d + 6, (uint16_t)(ip->size & 0xffff));
+    bo_put16le(d + 6, (uint16_t)(ip->size & 0xffff));
     for (int i = 0; i < V6_NIADDR; i++)
-        bo_put_le16(d + 8 + 2 * i, (uint16_t)ip->addr[i]);
-    bo_put_me32(d + 24, ip->atime);
-    bo_put_me32(d + 28, ip->mtime);
+        bo_put16le(d + 8 + 2 * i, (uint16_t)ip->addr[i]);
+    bo_put32me(d + 24, ip->atime);
+    bo_put32me(d + 28, ip->mtime);
     return v6fs_write_block(fs, bno, raw);
 }
 
@@ -244,9 +244,9 @@ int v6fs_balloc(v6fs_t *fs, uint32_t *bno) {
         uint8_t buf[V6_BSIZE];
         if (v6fs_read_block(fs, blk, buf))
             return -EIO;
-        fs->nfree = bo_get_le16(buf + 0);
+        fs->nfree = bo_get16le(buf + 0);
         for (int i = 0; i < V6_NICFREE; i++)
-            fs->free[i] = bo_get_le16(buf + 2 + 2 * i);
+            fs->free[i] = bo_get16le(buf + 2 + 2 * i);
     }
     /* Zero the freshly-allocated block (V6 alloc() clrbuf()s it). */
     uint8_t z[V6_BSIZE];
@@ -268,9 +268,9 @@ void v6fs_bfree(v6fs_t *fs, uint32_t bno) {
     if (fs->nfree >= V6_NICFREE) {
         uint8_t buf[V6_BSIZE];
         memset(buf, 0, V6_BSIZE);
-        bo_put_le16(buf + 0, fs->nfree);
+        bo_put16le(buf + 0, fs->nfree);
         for (int i = 0; i < V6_NICFREE; i++)
-            bo_put_le16(buf + 2 + 2 * i, (uint16_t)fs->free[i]);
+            bo_put16le(buf + 2 + 2 * i, (uint16_t)fs->free[i]);
         if (v6fs_write_block(fs, bno, buf) == 0)
             fs->nfree = 0;
     }
@@ -324,7 +324,7 @@ static void tloop(v6fs_t *fs, uint32_t blk, int level) {
     if (v6fs_read_block(fs, blk, buf))
         return;
     for (int i = V6_NINDIR - 1; i >= 0; i--) {
-        uint32_t nb = bo_get_le16(buf + 2 * i);
+        uint32_t nb = bo_get16le(buf + 2 * i);
         if (nb == 0)
             continue;
         if (level > 0)
@@ -366,7 +366,7 @@ static void tloop_from(v6fs_t *fs, uint32_t blk, int level, uint32_t skip) {
     uint32_t se = skip / sub;
     uint32_t sp = skip % sub;
     for (int i = V6_NINDIR - 1; i >= 0; i--) {
-        uint32_t nb = bo_get_le16(buf + 2 * i);
+        uint32_t nb = bo_get16le(buf + 2 * i);
         if (nb == 0)
             continue;
         if ((uint32_t)i < se)
@@ -376,7 +376,7 @@ static void tloop_from(v6fs_t *fs, uint32_t blk, int level, uint32_t skip) {
         } else {
             if (level == 0) v6fs_bfree(fs, nb);
             else tloop(fs, nb, level - 1);
-            bo_put_le16(buf + 2 * i, 0);                  /* drop the freed entry */
+            bo_put16le(buf + 2 * i, 0);                  /* drop the freed entry */
         }
     }
     /* skip > 0 by construction (see v7fs tloop_from); the whole-block case is
@@ -430,11 +430,11 @@ static int ind1(v6fs_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *
     uint8_t buf[V6_BSIZE];
     if (v6fs_read_block(fs, blk, buf))
         return -EIO;
-    uint32_t nb = bo_get_le16(buf + 2 * idx);
+    uint32_t nb = bo_get16le(buf + 2 * idx);
     if (nb == 0 && create) {
         if (v6fs_balloc(fs, &nb))
             return -ENOSPC;
-        bo_put_le16(buf + 2 * idx, (uint16_t)nb);
+        bo_put16le(buf + 2 * idx, (uint16_t)nb);
         if (v6fs_write_block(fs, blk, buf))
             return -EIO;
     }
@@ -456,13 +456,13 @@ static int ind2(v6fs_t *fs, uint32_t *slot, uint32_t o, uint32_t i, int create, 
     uint8_t buf[V6_BSIZE];
     if (v6fs_read_block(fs, blk, buf))
         return -EIO;
-    uint32_t sub = bo_get_le16(buf + 2 * o);
+    uint32_t sub = bo_get16le(buf + 2 * o);
     if (sub == 0 && create) {
         uint8_t z[V6_BSIZE];
         memset(z, 0, V6_BSIZE);
         if (v6fs_balloc(fs, &sub) || v6fs_write_block(fs, sub, z))
             return -ENOSPC;
-        bo_put_le16(buf + 2 * o, (uint16_t)sub);
+        bo_put16le(buf + 2 * o, (uint16_t)sub);
         if (v6fs_write_block(fs, blk, buf))
             return -EIO;
     }
@@ -479,7 +479,7 @@ int v6fs_bmap(v6fs_t *fs, v6_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
             return -ENOSPC;
         uint8_t buf[V6_BSIZE] = {0};
         for (int i = 0; i < V6_NDADDR; i++)
-            bo_put_le16(buf + 2 * i, (uint16_t)ip->addr[i]);
+            bo_put16le(buf + 2 * i, (uint16_t)ip->addr[i]);
         if (v6fs_write_block(fs, iblk, buf))
             return -EIO;
         for (int i = 0; i < V6_NDADDR; i++)
@@ -603,7 +603,7 @@ int v6fs_dir_read(v6fs_t *fs, v6_inode_t *ip, v6_dirent_t **ents, size_t *count)
 
     size_t cnt = 0;
     for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
-        uint16_t ino = bo_get_le16(buf + off);
+        uint16_t ino = bo_get16le(buf + off);
         if (ino == 0)
             continue;
         out[cnt].ino = ino;
@@ -660,7 +660,7 @@ int v6fs_dir_add(v6fs_t *fs, v6_inode_t *ip, uint32_t ino, const char *name) {
     /* find an empty slot, else append */
     size_t slot = SIZE_MAX;
     for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
-        if (bo_get_le16(buf + off) == 0) {
+        if (bo_get16le(buf + off) == 0) {
             slot = off;
             break;
         }
@@ -670,7 +670,7 @@ int v6fs_dir_add(v6fs_t *fs, v6_inode_t *ip, uint32_t ino, const char *name) {
         n += 16;
     }
 
-    bo_put_le16(buf + slot, (uint16_t)ino);
+    bo_put16le(buf + slot, (uint16_t)ino);
     memset(buf + slot + 2, 0, V6_DIRSIZ);
     memcpy(buf + slot + 2, name, namelen);
 
@@ -690,13 +690,13 @@ int v6fs_dir_remove(v6fs_t *fs, v6_inode_t *ip, const char *name) {
     }
     int rc = -ENOENT;
     for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
-        if (bo_get_le16(buf + off) == 0)
+        if (bo_get16le(buf + off) == 0)
             continue;
         char ent[V6_DIRSIZ + 1];
         memcpy(ent, buf + off + 2, V6_DIRSIZ);
         ent[V6_DIRSIZ] = 0;
         if (strcmp(ent, name) == 0) {
-            bo_put_le16(buf + off, 0);
+            bo_put16le(buf + off, 0);
             memset(buf + off + 2, 0, V6_DIRSIZ);
             ssize_t w = v6fs_file_write(fs, ip, buf, (size_t)n, 0);
             rc = w < 0 ? (int)w : 0;
@@ -799,7 +799,7 @@ static void v6_mark_tree(v6_chkctx_t *cx, uint32_t blk)
         return;
     }
     for (int i = 0; i < V6_NINDIR; i++) {
-        uint32_t nb = bo_get_le16(buf + 2 * i);
+        uint32_t nb = bo_get16le(buf + 2 * i);
         if (nb != 0)
             v6_mark_block(cx, nb);
     }
@@ -1078,14 +1078,14 @@ int v6fs_check(v6fs_t *fs, v6_check_t *rep, int mode) {
                 rep->errors++;
                 break;
             }
-            n = bo_get_le16(blk);
+            n = bo_get16le(blk);
             if (n > V6_NICFREE) {
                 printf("free-list block %u has bad count %u\n", bno, n);
                 rep->errors++;
                 break;
             }
             for (int i = 0; i < V6_NICFREE; i++)
-                cur[i] = bo_get_le16(blk + 2 + 2 * i);
+                cur[i] = bo_get16le(blk + 2 + 2 * i);
         }
     }
     free(seen);

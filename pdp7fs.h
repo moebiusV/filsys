@@ -54,7 +54,7 @@ enum {
 };
 
 /* SimH RB09 word packing: an 18-bit word in a 4-byte little-endian slot
- * (bo_get_le32 / bo_put_le32). */
+ * (bo_get32le / bo_put32le). */
 
 /* itod / itoo: inode number -> block and word offset (5 inodes per block). */
 static inline uint32_t p7_itod(uint32_t ino) { return P7_FIRSTINOBLK + ino / P7_INOPB; }
