@@ -1,5 +1,12 @@
 2026-09-05  David Walther  <david@clearbrookdistillery.com>
 
+	* filsys.c: max_namlen() per-edition name limit; the facade's
+	path-component buffer was 15 bytes for every edition, so 2.11BSD's
+	63-character names were rejected before reaching the backend.
+	* test_matrix.c: name-length regression (63 for bsd211, 14 for v7).
+
+2026-09-05  David Walther  <david@clearbrookdistillery.com>
+
 	* bsd211fs.c, bsd211fs.h: new backend for 2.11BSD (4-byte block
 	addresses, di_flags, symlinks, variable-length directory entries).
 	* v7fs.c, v7fs.h: Xenix (mode 3) and 2.9BSD (mode 4) support; the block

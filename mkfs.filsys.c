@@ -1,4 +1,4 @@
-/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.1 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* mkfs.filsys.c - create a Research Unix (PDP-7 through 32V) filesystem in a
  * disk image.

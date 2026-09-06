@@ -1,3 +1,14 @@
+filsys 1.3.1 (2026-09-05)
+=========================
+
+- Fix 2.11BSD long filenames: the version-agnostic facade (filsys.c) hardcoded
+  a 15-byte path-component buffer and reported f_namemax as 14 for every
+  edition, so 2.11BSD's variable-length directory entries (63 characters) were
+  rejected before they ever reached the backend.  The facade now uses each
+  edition's real name limit (8 for V1/PDP-7, 14 for the fixed-width editions,
+  63 for 2.11BSD), so -v bsd211 accepts names up to 63 characters.  A
+  name-length regression is added to the test matrix.
+
 filsys 1.3.0 (2026-09-05)
 =========================
 
