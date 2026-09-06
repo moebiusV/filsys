@@ -402,8 +402,11 @@ static int ind_follow(filsys_edition_t *fs, uint32_t *slot, int levels,
             }
             uint8_t z[V7_MAXBSIZE];
             memset(z, 0, fs->bsize);
-            if (v7fs_balloc(fs, &blk) || v7fs_write_block(fs, blk, z))
-                return -ENOSPC;
+            int rc = v7fs_balloc(fs, &blk);
+            if (rc)
+                return rc;   /* -EIO (barrier commit) or -ENOSPC */
+            if (v7fs_write_block(fs, blk, z))
+                return -EIO;
             *slot = blk;
         }
         uint8_t buf[V7_MAXBSIZE];
@@ -413,8 +416,9 @@ static int ind_follow(filsys_edition_t *fs, uint32_t *slot, int levels,
 
         if (L == levels - 1) {
             if (next == 0 && create) {
-                if (v7fs_balloc(fs, &next))
-                    return -ENOSPC;
+                int rc = v7fs_balloc(fs, &next);
+                if (rc)
+                    return rc;   /* -EIO (barrier commit) or -ENOSPC */
                 fs->bo->put32(buf + 4 * indices[L], next);
                 if (v7fs_write_block(fs, blk, buf))
                     return -EIO;
@@ -429,8 +433,11 @@ static int ind_follow(filsys_edition_t *fs, uint32_t *slot, int levels,
             }
             uint8_t z[V7_MAXBSIZE];
             memset(z, 0, fs->bsize);
-            if (v7fs_balloc(fs, &next) || v7fs_write_block(fs, next, z))
-                return -ENOSPC;
+            int rc = v7fs_balloc(fs, &next);
+            if (rc)
+                return rc;   /* -EIO (barrier commit) or -ENOSPC */
+            if (v7fs_write_block(fs, next, z))
+                return -EIO;
             fs->bo->put32(buf + 4 * indices[L], next);
             if (v7fs_write_block(fs, blk, buf))
                 return -EIO;
@@ -444,8 +451,9 @@ int v7fs_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, ui
     if (lbn < (uint32_t)fs->ndaddr) {
         uint32_t nb = ip->addr[lbn];
         if (nb == 0 && create) {
-            if (v7fs_balloc(fs, &nb))
-                return -ENOSPC;
+            int rc = v7fs_balloc(fs, &nb);
+            if (rc)
+                return rc;   /* -EIO (barrier commit) or -ENOSPC */
             ip->addr[lbn] = nb;
         }
         *bno = nb;
@@ -507,8 +515,9 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
         uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->bsize);
         uint32_t boff = (uint32_t)((off + (off_t)done) % fs->bsize);
         uint32_t pbn;
-        if (fs->ops->bmap(fs, ip, lbn, 1, &pbn))
-            return -ENOSPC;
+        int rc = fs->ops->bmap(fs, ip, lbn, 1, &pbn);
+        if (rc)
+            return rc;   /* -EIO (allocator commit) or -ENOSPC or -EFBIG */
         if (pbn == 0)
             return -ENOSPC;
 
@@ -1207,8 +1216,11 @@ static int v6_ind1(filsys_edition_t *fs, uint32_t *slot, uint32_t idx, int creat
         if (!create) { *out = 0; return 0; }
         uint8_t z[V6_BSIZE];
         memset(z, 0, V6_BSIZE);
-        if (v7fs_balloc(fs, &blk) || v7fs_write_block(fs, blk, z))
-            return -ENOSPC;
+        int rc = v7fs_balloc(fs, &blk);
+        if (rc)
+            return rc;   /* -EIO (barrier commit) or -ENOSPC */
+        if (v7fs_write_block(fs, blk, z))
+            return -EIO;
         *slot = blk;
     }
     uint8_t buf[V6_BSIZE];
@@ -1216,8 +1228,9 @@ static int v6_ind1(filsys_edition_t *fs, uint32_t *slot, uint32_t idx, int creat
         return -EIO;
     uint32_t nb = bo_get16le(buf + 2 * idx);
     if (nb == 0 && create) {
-        if (v7fs_balloc(fs, &nb))
-            return -ENOSPC;
+        int rc = v7fs_balloc(fs, &nb);
+        if (rc)
+            return rc;   /* -EIO (barrier commit) or -ENOSPC */
         bo_put16le(buf + 2 * idx, (uint16_t)nb);
         if (v7fs_write_block(fs, blk, buf))
             return -EIO;
@@ -1232,8 +1245,11 @@ static int v6_ind2(filsys_edition_t *fs, uint32_t *slot, uint32_t o, uint32_t i,
         if (!create) { *out = 0; return 0; }
         uint8_t z[V6_BSIZE];
         memset(z, 0, V6_BSIZE);
-        if (v7fs_balloc(fs, &blk) || v7fs_write_block(fs, blk, z))
-            return -ENOSPC;
+        int rc = v7fs_balloc(fs, &blk);
+        if (rc)
+            return rc;   /* -EIO (barrier commit) or -ENOSPC */
+        if (v7fs_write_block(fs, blk, z))
+            return -EIO;
         *slot = blk;
     }
     uint8_t buf[V6_BSIZE];
@@ -1243,8 +1259,11 @@ static int v6_ind2(filsys_edition_t *fs, uint32_t *slot, uint32_t o, uint32_t i,
     if (sub == 0 && create) {
         uint8_t z[V6_BSIZE];
         memset(z, 0, V6_BSIZE);
-        if (v7fs_balloc(fs, &sub) || v7fs_write_block(fs, sub, z))
-            return -ENOSPC;
+        int rc = v7fs_balloc(fs, &sub);
+        if (rc)
+            return rc;   /* -EIO (barrier commit) or -ENOSPC */
+        if (v7fs_write_block(fs, sub, z))
+            return -EIO;
         bo_put16le(buf + 2 * o, (uint16_t)sub);
         if (v7fs_write_block(fs, blk, buf))
             return -EIO;
@@ -1256,8 +1275,9 @@ static int v6_ind2(filsys_edition_t *fs, uint32_t *slot, uint32_t o, uint32_t i,
 static int v6_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
     if (!(ip->mode & V6_ILARG) && create && lbn >= V6_NDADDR) {
         uint32_t iblk;
-        if (v7fs_balloc(fs, &iblk))
-            return -ENOSPC;
+        int rc = v7fs_balloc(fs, &iblk);
+        if (rc)
+            return rc;   /* -EIO (barrier commit) or -ENOSPC */
         uint8_t buf[V6_BSIZE] = {0};
         for (int i = 0; i < V6_NDADDR; i++)
             bo_put16le(buf + 2 * i, (uint16_t)ip->addr[i]);
@@ -1281,8 +1301,9 @@ static int v6_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int creat
     }
     uint32_t nb = ip->addr[lbn];
     if (nb == 0 && create) {
-        if (v7fs_balloc(fs, &nb))
-            return -ENOSPC;
+        int rc = v7fs_balloc(fs, &nb);
+        if (rc)
+            return rc;   /* -EIO (barrier commit) or -ENOSPC */
         ip->addr[lbn] = nb;
     }
     *bno = nb;

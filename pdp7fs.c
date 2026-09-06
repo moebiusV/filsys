@@ -421,8 +421,9 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
      * the seven direct block numbers move into the first indirect block. */
     if (!(ip->mode & P7_ILARG) && create && lbn >= P7_NIADDR) {
         uint32_t iblk;
-        if (p7fs_balloc(fs, &iblk))
-            return -ENOSPC;
+        int rc = p7fs_balloc(fs, &iblk);
+        if (rc)
+            return rc;   /* -EIO or -EROFS or -ENOSPC */
         uint32_t words[P7_WSIZE] = {0};
         for (int i = 0; i < P7_NIADDR; i++)
             words[i] = ip->addr[i];
@@ -444,8 +445,9 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
         uint32_t iblk = ip->addr[slot];
         if (iblk == 0) {
             if (!create) { *bno = 0; return 0; }
-            if (p7fs_balloc(fs, &iblk))
-                return -ENOSPC;
+            int rc = p7fs_balloc(fs, &iblk);
+            if (rc)
+                return rc;
             uint32_t z[P7_WSIZE] = {0};
             if (write_words(fs, iblk, z))
                 return -EIO;
@@ -455,8 +457,9 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
         if (read_words(fs, iblk, words))
             return -EIO;
         if (words[idx] == 0 && create) {
-            if (p7fs_balloc(fs, &words[idx]))
-                return -ENOSPC;
+            int rc = p7fs_balloc(fs, &words[idx]);
+            if (rc)
+                return rc;
             if (write_words(fs, iblk, words))
                 return -EIO;
         }
@@ -470,8 +473,9 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
         return create ? -EFBIG : 0;
     }
     if (ip->addr[lbn] == 0 && create) {
-        if (p7fs_balloc(fs, &ip->addr[lbn]))
-            return -ENOSPC;
+        int rc = p7fs_balloc(fs, &ip->addr[lbn]);
+        if (rc)
+            return rc;
     }
     *bno = ip->addr[lbn];
     return 0;

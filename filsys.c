@@ -400,7 +400,10 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     ddir.nlink++;
     rc = write_inode(fs, dino, &ddir);
     if (rc) {
-        /* the parent's link-count bump didn't persist: withdraw the entry */
+        /* The bump didn't persist, but dir_remove rewrites the parent's inode
+         * from the in-memory ddir (whose nlink is now bumped).  Undo the bump
+         * first so the parent doesn't count a child that's about to be freed. */
+        ddir.nlink--;
         dir_remove(fs, &ddir, name);
         goto fail;
     }
@@ -541,11 +544,12 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     for (size_t i = 0; i < count; i++)
         if (strcmp(ents[i].name, ".") && strcmp(ents[i].name, "..")) { free(ents); return -ENOTEMPTY; }
     free(ents);
-    rc = dir_remove(fs, &ddir, name);
-    if (rc) return rc;
     ddir.nlink--;
-    rc = write_inode(fs, dino, &ddir);
-    if (rc) return rc;
+    rc = dir_remove(fs, &ddir, name);
+    if (rc) {
+        ddir.nlink++;   /* the entry wasn't removed: undo the decrement */
+        return rc;
+    }
     filsys_blklist_t *bl = NULL;
     rc = itrunc(fs, &tip, &bl);
     if (rc) {
