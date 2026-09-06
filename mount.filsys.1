@@ -115,7 +115,10 @@ selects the edition (same values as
 .B uid=
 and
 .B gid=
-override the reported ownership.  Any other option (for example
+override the reported ownership;
+.B packing=
+selects the PDP-7 word container codec (rb09, packed18 or rim) for a dump
+that is not in simh's 4-byte-slot convention.  Any other option (for example
 .BR allow_other )
 is passed through to FUSE.  Without
 .BR offset= ,

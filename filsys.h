@@ -77,9 +77,11 @@ typedef struct {
 typedef struct filsys filsys_t;  /* opaque */
 
 /* Open an image.  Returns 0 and *out, or -errno.  uid/gid are the ownership
- * reported by filsys_fill_stat (the "mounting user"). */
+ * reported by filsys_fill_stat (the "mounting user").  packing selects the
+ * PDP-7 word container codec ("rb09", "packed18", "rim"); NULL = the edition's
+ * default, and it is ignored for byte-addressed editions. */
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
-                uint64_t offset, uid_t uid, gid_t gid);
+                uint64_t offset, uid_t uid, gid_t gid, const char *packing);
 /* Flush the superblock (and pending metadata) and close. */
 void filsys_close(filsys_t *fs);
 /* Flush the superblock (and pending metadata) without closing. */

@@ -68,6 +68,11 @@ typedef struct word_codec {
 
 extern const word_codec_t word_rb09;       /* SimH RB09: 4-byte LE slot, 256 B */
 extern const word_codec_t word_packed18;   /* packed 18-bit, no gap, 144 B */
+extern const word_codec_t word_rim;        /* paper-tape RIM: 3 x 6-bit, 192 B */
+
+/* Resolve a packing name ("rb09", "packed18", "rim") to a word codec, or NULL.
+ * The tools use this to let `-o packing=` / `-P` select a non-default container. */
+const word_codec_t *filsys_word_codec_by_name(const char *name);
 
 /* itod / itoo: inode number -> block and word offset (5 inodes per block). */
 static inline uint32_t p7_itod(uint32_t ino) { return P7_FIRSTINOBLK + ino / P7_INOPB; }

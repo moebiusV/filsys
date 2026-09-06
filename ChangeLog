@@ -1,5 +1,15 @@
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
+	* pdp7fs.h, pdp7fs.c, byteorder.c, byteorder.h, filsys.h, filsys.c,
+	mount.filsys.c, fsck.filsys.c, mkfs.filsys.c: wire the word container
+	codec into the tools.  filsys_word_codec_by_name() resolves "rb09",
+	"packed18" and "rim" (RIM = mkfs7's word2three, three 6-bit frames); a
+	new `packing` argument to filsys_open overrides the descriptor's codec,
+	mount.filsys takes `-o packing=NAME`, and fsck/mkfs take `-P NAME`.  So a
+	PDP-7 dump in any of the three container layouts is a flag, not a rewrite.
+
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
 	* pdp7fs.h, pdp7fs.c, v7fs.h, filsys_format.c, byteorder.c, byteorder.h,
 	mkfs.filsys.c, fsck.filsys.c: make PDP-7's word container codec a
 	descriptor entry.  The SimH RB09 packing (one 18-bit word per 4-byte LE

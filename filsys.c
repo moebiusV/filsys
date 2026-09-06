@@ -164,10 +164,16 @@ static int split_path(const char *path, char *dir, size_t dirsz,
 /* ---- public API ---------------------------------------------------------- */
 
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
-                uint64_t offset, uid_t uid, gid_t gid) {
+                uint64_t offset, uid_t uid, gid_t gid, const char *packing) {
     filsys_edition_t fmt = filsys_getformat(edition);
     if (!fmt.ops)
         return -EINVAL;
+    if (packing && fmt.word) {   /* packing applies only to word-addressed editions */
+        const word_codec_t *wc = filsys_word_codec_by_name(packing);
+        if (!wc)
+            return -EINVAL;
+        fmt.word = wc;
+    }
     filsys_t *fs = calloc(1, sizeof(*fs));
     if (!fs)
         return -ENOMEM;

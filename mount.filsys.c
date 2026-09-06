@@ -29,9 +29,11 @@
  * `-o version=N` selects the edition (so `mount -t filsys` can pass it in `-o`
  * rather than `-v`, which mount(8) has no generic way to supply).
  * `-o uid=N,gid=N` override the reported ownership (default: the mounting
- * user, so a nested mount point is writable).  Any other -o option is passed
- * through to FUSE (e.g. allow_other).  Installed as sbin/mount.filsys, so
- * `mount -t filsys device dir -o version=7,offset=N` works.
+ * user, so a nested mount point is writable).  `-o packing=NAME` selects the
+ * PDP-7 word container codec (rb09|packed18|rim) when mounting a non-simh
+ * dump.  Any other -o option is passed through to FUSE (e.g. allow_other).
+ * Installed as sbin/mount.filsys, so `mount -t filsys device dir -o
+ * version=7,offset=N` works.
  */
 #include <config.h>
 #include "filsys.h"
@@ -225,7 +227,7 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <%s> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
+            "usage: %s -v <%s> [-o offset=N[,version=N][,packing=NAME][,uid=N][,gid=N]]\n"
             "                [-r] [-f] [-d] <image> <mountpoint>\n"
             "       %s -v <edition> [-o offset=N] -c <image>   # integrity check\n",
             p, filsys_editions_usage(), p);
@@ -235,6 +237,7 @@ int main(int argc, char *argv[]) {
     int ver = -1, readonly = 0, foreground = 0, debug = 0, check = 0;
     uint64_t offset = 0;
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
+    const char *packing = NULL; /* PDP-7 word container codec (rb09|packed18|rim) */
     char fuse_opts[512] = ""; /* -o options passed through to FUSE (allow_other, ...) */
     int c;
 
@@ -268,6 +271,8 @@ int main(int argc, char *argv[]) {
                     uid = atoi(tok + 4);
                 } else if (!strncmp(tok, "gid=", 4)) {
                     gid = atoi(tok + 4);
+                } else if (!strncmp(tok, "packing=", 8)) {
+                    packing = tok + 8;
                 } else {
                     /* pass anything else through to FUSE (allow_other, ...) */
                     if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
@@ -298,7 +303,7 @@ int main(int argc, char *argv[]) {
     filsys_t *k = NULL;
     int rc = filsys_open(&k, ver, image, readonly || check, offset,
                          uid >= 0 ? (uid_t)uid : getuid(),
-                         gid >= 0 ? (gid_t)gid : getgid());
+                         gid >= 0 ? (gid_t)gid : getgid(), packing);
     if (rc) {
         fprintf(stderr, "filsys: cannot open %s: %s\n", image, strerror(-rc));
         return 1;

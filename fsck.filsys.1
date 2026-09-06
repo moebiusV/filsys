@@ -138,6 +138,12 @@ Check the filesystem at
 .I block
 (512-byte blocks) within the image, instead of block 0.
 .TP
+.BI \-P " packing"
+Select the PDP-7 word container codec: rb09 (the default simh 4-byte-slot
+packing), packed18 (18 bits with no gap), or rim (three 6-bit frames).  Only
+applies to
+.BR pdp7 .
+.TP
 .B \-s
 Rebuild the free list from the block bit map (V7
 .IR icheck (8)
