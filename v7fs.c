@@ -209,7 +209,7 @@ int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * fs->inode_size;
-    bo_put16le(d + 0, ip->mode);
+    bo_put16le(d + 0, (uint16_t)ip->mode);
     bo_put16le(d + 2, (uint16_t)ip->nlink);
     bo_put16le(d + 4, (uint16_t)ip->uid);
     bo_put16le(d + 6, (uint16_t)ip->gid);
@@ -1652,7 +1652,7 @@ static int v6_super_write(filsys_edition_t *fs) {
     if (v7fs_read_block(fs, V6_SUPERB, sb))
         return -EIO;
     bo_put16le(sb + 0, fs->isize);
-    bo_put16le(sb + 2, fs->fsize);
+    bo_put16le(sb + 2, (uint16_t)fs->fsize);
     bo_put16le(sb + 4, fs->fl.nfree);
     for (int i = 0; i < fs->nicfree; i++)
         bo_put16le(sb + 6 + 2 * i, (uint16_t)fs->fl.free[i]);
@@ -1725,7 +1725,7 @@ static int v6_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * fs->inode_size;
-    bo_put16le(d + 0, ip->mode);
+    bo_put16le(d + 0, (uint16_t)ip->mode);
     d[2] = (uint8_t)ip->nlink;
     d[3] = (uint8_t)ip->uid;
     d[4] = (uint8_t)ip->gid;

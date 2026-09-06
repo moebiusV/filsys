@@ -185,7 +185,7 @@ int v1fs_write_inode(v1fs_t *fs, uint32_t ino, const v1_inode_t *ip) {
     if (v1fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * V1_INODESZ;
-    bo_put16le(d + 0, ip->mode);
+    bo_put16le(d + 0, (uint16_t)ip->mode);
     d[2] = (uint8_t)ip->nlink;
     d[3] = (uint8_t)ip->uid;
     bo_put16le(d + 4, (uint16_t)ip->size);

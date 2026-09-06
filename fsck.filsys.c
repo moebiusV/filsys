@@ -123,11 +123,11 @@ int main(int argc, char **argv)
             break;
         case 'N':
             ncheck = 1;
-            ino = strtoul(optarg, NULL, 0);
+            ino = (uint32_t)strtoul(optarg, NULL, 0);
             break;
         case 'C':
             clri = 1;
-            ino = strtoul(optarg, NULL, 0);
+            ino = (uint32_t)strtoul(optarg, NULL, 0);
             break;
         default:
             fprintf(stderr,
