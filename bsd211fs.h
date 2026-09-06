@@ -53,23 +53,7 @@ enum {
     BSD211_IEXEC  = 0000100
 };
 
-/* ---- byte-order primitives (PDP-11 middle-endian) ------------------------ */
-
-static inline uint16_t bsd211_get16le(const uint8_t *p) {
-    return (uint16_t)(p[0] | (p[1] << 8));
-}
-static inline void bsd211_put16le(uint8_t *p, uint16_t v) {
-    p[0] = (uint8_t)(v & 0xff);
-    p[1] = (uint8_t)(v >> 8);
-}
-/* 32-bit middle-endian: high word first, each word little-endian. */
-static inline uint32_t bsd211_get32me(const uint8_t *p) {
-    return ((uint32_t)bsd211_get16le(p) << 16) | bsd211_get16le(p + 2);
-}
-static inline void bsd211_put32me(uint8_t *p, uint32_t v) {
-    bsd211_put16le(p,     (uint16_t)(v >> 16));
-    bsd211_put16le(p + 2, (uint16_t)(v & 0xffff));
-}
+/* Byte order lives in bo.h (bo_get_le16/bo_get_me32/...). */
 
 /* ---- superblock field offsets (struct fs, packed, block 1) --------------- */
 

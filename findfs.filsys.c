@@ -30,6 +30,8 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#include "bo.h"
+
 enum {
     BSIZE      = 512,
     V6_NICFREE = 100,
@@ -41,23 +43,13 @@ enum {
     V7_NICINOD = 100
 };
 
-static uint16_t get16le(const uint8_t *p) {
-    return (uint16_t)(p[0] | (p[1] << 8));
-}
-static uint32_t get32me(const uint8_t *p) {   /* PDP-11 middle-endian */
-    return ((uint32_t)get16le(p) << 16) | get16le(p + 2);
-}
-static uint32_t get32le(const uint8_t *p) {   /* VAX little-endian (32V) */
-    return (uint32_t)get16le(p) | ((uint32_t)get16le(p + 2) << 16);
-}
-
 /* Does block b (a candidate superblock) describe a V7 filesystem whose
  * superblock sits at absolute block `bno` (so the fs starts at bno-1)?
  * The free-list entries are checked to be in-range, which rejects the vast
  * majority of random data that merely *looks* superblock-shaped. */
 static int super_v7(const uint8_t *b, uint32_t bno, uint32_t nblocks,
                     const char **edition, uint16_t *isize, uint32_t *fsize) {
-    uint16_t isz = get16le(b);
+    uint16_t isz = bo_get_le16(b);
     if (isz < 3)
         return 0;
     /* Three V7-family layouts: V7 (PDP-11 middle-endian, 2-byte), 32V (VAX
@@ -79,16 +71,16 @@ static int super_v7(const uint8_t *b, uint32_t bno, uint32_t nblocks,
         int nfree_off  = (le && !coh) ? 8 : 6;
         int ninode_off = coh ? 264 : (le ? 212 : 208);
         int free_off   = (le && !coh) ? 12 : 8;
-        uint16_t nfree  = get16le(b + nfree_off);
-        uint16_t ninode = get16le(b + ninode_off);
+        uint16_t nfree  = bo_get_le16(b + nfree_off);
+        uint16_t ninode = bo_get_le16(b + ninode_off);
         if (nfree > L[k].nicfree || ninode > V7_NICINOD)
             continue;
-        uint32_t fsz = le ? get32le(b + 4) : get32me(b + 2);
+        uint32_t fsz = le ? bo_get_le32(b + 4) : bo_get_me32(b + 2);
         if (fsz <= isz || (uint64_t)bno - 1 + fsz > nblocks)
             continue;
         int ok = 1;
         for (int i = 0; i < nfree; i++) {
-            uint32_t fb = le ? get32le(b + free_off + 4 * i) : get32me(b + free_off + 4 * i);
+            uint32_t fb = le ? bo_get_le32(b + free_off + 4 * i) : bo_get_me32(b + free_off + 4 * i);
             if (fb != 0 && (fb < isz || fb >= fsz)) { ok = 0; break; }
         }
         if (ok) {
@@ -103,17 +95,17 @@ static int super_v7(const uint8_t *b, uint32_t bno, uint32_t nblocks,
 /* V6 superblock (all 16-bit fields), same free-list validation. */
 static int super_v6(const uint8_t *b, uint32_t bno, uint32_t nblocks,
                     uint16_t *isize, uint32_t *fsize) {
-    uint16_t isz = get16le(b);
+    uint16_t isz = bo_get_le16(b);
     if (isz < 3)
         return 0;
-    uint16_t fsz = get16le(b + 2);
-    uint16_t nfree = get16le(b + 4);
-    uint16_t ninode = get16le(b + 206);
+    uint16_t fsz = bo_get_le16(b + 2);
+    uint16_t nfree = bo_get_le16(b + 4);
+    uint16_t ninode = bo_get_le16(b + 206);
     if (fsz <= isz || nfree > V6_NICFREE || ninode > V6_NICINOD ||
         (uint64_t)bno - 1 + fsz > nblocks)
         return 0;
     for (int i = 0; i < nfree; i++) {
-        uint16_t fb = get16le(b + 6 + 2 * i);
+        uint16_t fb = bo_get_le16(b + 6 + 2 * i);
         if (fb != 0 && (fb < isz || fb >= fsz))
             return 0;
     }
@@ -124,18 +116,18 @@ static int super_v6(const uint8_t *b, uint32_t bno, uint32_t nblocks,
 /* Xenix superblock (1024-byte blocks, magic 0x2b5544 at offset 1016). */
 static int super_xenix(const uint8_t *b, uint32_t bno, uint32_t nblocks,
                        uint16_t *isize, uint32_t *fsize) {
-    if (get32le(b + 0x3F8) != XENIX_MAGIC)
+    if (bo_get_le32(b + 0x3F8) != XENIX_MAGIC)
         return 0;
-    uint16_t isz = get16le(b + 0);
-    uint32_t fsz = get32le(b + 2);
-    uint16_t nfree = get16le(b + 6);
-    uint16_t ninode = get16le(b + 0x198);
+    uint16_t isz = bo_get_le16(b + 0);
+    uint32_t fsz = bo_get_le32(b + 2);
+    uint16_t nfree = bo_get_le16(b + 6);
+    uint16_t ninode = bo_get_le16(b + 0x198);
     if (isz < 3 || fsz <= isz || nfree > V7_XEN_NICFREE || ninode > V7_NICINOD)
         return 0;
     if ((uint64_t)bno - 1 + fsz > nblocks)
         return 0;
     for (int i = 0; i < nfree; i++) {
-        uint32_t fb = get32le(b + 8 + 4 * i);
+        uint32_t fb = bo_get_le32(b + 8 + 4 * i);
         if (fb != 0 && (fb < isz || fb >= fsz))
             return 0;
     }
@@ -147,18 +139,18 @@ static int super_xenix(const uint8_t *b, uint32_t bno, uint32_t nblocks,
  * 2-byte packing, NICFREE=50. */
 static int super_bsd29(const uint8_t *b, uint32_t bno, uint32_t nblocks,
                        uint16_t *isize, uint32_t *fsize) {
-    uint16_t isz = get16le(b);
+    uint16_t isz = bo_get_le16(b);
     if (isz < 3)
         return 0;
-    uint16_t nfree = get16le(b + 6);
-    uint16_t ninode = get16le(b + 208);
+    uint16_t nfree = bo_get_le16(b + 6);
+    uint16_t ninode = bo_get_le16(b + 208);
     if (nfree > V7_NICFREE || ninode > V7_NICINOD)
         return 0;
-    uint32_t fsz = get32me(b + 2);
+    uint32_t fsz = bo_get_me32(b + 2);
     if (fsz <= isz || (uint64_t)bno - 1 + fsz > nblocks)
         return 0;
     for (int i = 0; i < nfree; i++) {
-        uint32_t fb = get32me(b + 8 + 4 * i);
+        uint32_t fb = bo_get_me32(b + 8 + 4 * i);
         if (fb != 0 && (fb < isz || fb >= fsz))
             return 0;
     }
@@ -169,13 +161,13 @@ static int super_bsd29(const uint8_t *b, uint32_t bno, uint32_t nblocks,
 /* Is one 64-byte on-disk inode plausible (free, or a valid type with small
  * counts)? */
 static int inode_ok(const uint8_t *d) {
-    uint16_t mode = get16le(d);
+    uint16_t mode = bo_get_le16(d);
     if (mode == 0)
         return 1;   /* free inode */
     uint16_t t = mode & 0170000;
     if (t != 0100000 && t != 0040000 && t != 0020000 && t != 0060000)
         return 0;
-    return get16le(d + 2) < 128 && get16le(d + 4) < 256 && get16le(d + 6) < 256;
+    return bo_get_le16(d + 2) < 128 && bo_get_le16(d + 4) < 256 && bo_get_le16(d + 6) < 256;
 }
 
 /* Is block b an inode-table block (8 plausible inodes, at least one used)? */
@@ -184,7 +176,7 @@ static int inode_block(const uint8_t *b) {
     for (int i = 0; i < 8; i++) {
         const uint8_t *d = b + i * 64;
         if (inode_ok(d)) ok++;
-        if (get16le(d) != 0) used++;
+        if (bo_get_le16(d) != 0) used++;
     }
     return ok >= 6 && used > 0;
 }

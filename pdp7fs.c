@@ -31,14 +31,14 @@ static int read_words(p7fs_t *fs, uint32_t bno, uint32_t *words) {
     if (n != P7_BLOCKBYTES)
         return -EIO;
     for (int i = 0; i < P7_WSIZE; i++)
-        words[i] = p7_getword(raw + i * P7_WORDBYTES);
+        words[i] = bo_get_le32(raw + i * P7_WORDBYTES);
     return 0;
 }
 
 static int write_words(p7fs_t *fs, uint32_t bno, const uint32_t *words) {
     uint8_t raw[P7_BLOCKBYTES];
     for (int i = 0; i < P7_WSIZE; i++)
-        p7_putword(raw + i * P7_WORDBYTES, words[i]);
+        bo_put_le32(raw + i * P7_WORDBYTES, words[i]);
     off_t pos = (off_t)fs->base + P7_SURFACE1 + (off_t)bno * P7_BLOCKBYTES;
     ssize_t n = pwrite(fs->fd, raw, P7_BLOCKBYTES, pos);
     if (n != P7_BLOCKBYTES)
@@ -171,7 +171,7 @@ int p7fs_read_block(p7fs_t *fs, uint32_t bno, uint8_t *buf) {
     if (read_words(fs, bno, words))
         return -EIO;
     for (int i = 0; i < P7_WSIZE; i++)
-        p7_putword(buf + i * P7_WORDBYTES, words[i]);
+        bo_put_le32(buf + i * P7_WORDBYTES, words[i]);
     return 0;
 }
 
@@ -180,7 +180,7 @@ int p7fs_write_block(p7fs_t *fs, uint32_t bno, const uint8_t *buf) {
         return -EROFS;
     uint32_t words[P7_WSIZE];
     for (int i = 0; i < P7_WSIZE; i++)
-        words[i] = p7_getword(buf + i * P7_WORDBYTES);
+        words[i] = bo_get_le32(buf + i * P7_WORDBYTES);
     return write_words(fs, bno, words);
 }
 
@@ -1192,9 +1192,9 @@ int p7fs_clri(p7fs_t *fs, uint32_t ino)
  * typed backend function; the `void *` argument converts implicitly to
  * p7fs_t*, so there is no cast anywhere. */
 
-static int p7fs_open_op(void *fs, const char *path, int readonly, int le, uint64_t offset, uint32_t bsize) {
-    (void)le;   /* no byte-order variant */
-    (void)bsize;
+static int p7fs_open_op(void *fs, const char *path, int readonly,
+                        const filsys_format_t *fmt, uint64_t offset) {
+    (void)fmt;   /* no byte-order or block-size variants */
     return p7fs_open(fs, path, readonly, offset);
 }
 static uint32_t p7fs_blocksize_op(const void *fs) { (void)fs; return P7_WSIZE * 2; }
@@ -1237,6 +1237,13 @@ static uint64_t p7fs_max_file_op(void *fs) {
     return (uint64_t)P7_NIADDR * P7_NINDIR * P7_WSIZE * 2;   /* 7*64*64*2 bytes */
 }
 
+static void p7fs_statfs_op(void *fs, struct statvfs *st) {
+    p7fs_t *p7 = fs;
+    st->f_blocks = P7_NBLOCKS;
+    st->f_bfree = st->f_bavail = p7->tfree;
+    st->f_files = P7_MAXINO;
+    st->f_ffree = 0;   /* not tracked (read-only) */
+}
 const struct filsys_ops p7fs_ops = {
     .name        = "pdp7",
     .blocksize   = p7fs_blocksize_op,   /* 64 words x 2 chars = 128 bytes */
@@ -1260,5 +1267,6 @@ const struct filsys_ops p7fs_ops = {
     .dir_remove  = p7fs_dir_remove_op,
     .lookup      = p7fs_lookup_op,
     .check       = p7fs_check_op,
+    .statfs      = p7fs_statfs_op,
     .max_file    = p7fs_max_file_op,
 };

@@ -15,6 +15,7 @@
 #define FILSYS_OPS_H
 
 #include "filsys.h"
+#include "filsys_format.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -96,8 +97,8 @@ struct filsys_ops {
     uint32_t (*blocksize)(const void *fs);  /* logical block size in bytes */
 
     /* lifecycle */
-    int  (*open)(void *fs, const char *path, int readonly, int little_endian,
-                 uint64_t offset, uint32_t bsize);
+    int  (*open)(void *fs, const char *path, int readonly,
+                 const filsys_format_t *fmt, uint64_t offset);
     void (*close)(void *fs);
     int  (*sync)(void *fs);
     /* Mark the superblock dirty (s_fmod) and flush.  Optional: only the V6/V7
@@ -136,6 +137,9 @@ struct filsys_ops {
 
     /* integrity check; returns -1 if problems were found */
     int  (*check)(void *fs);
+
+    /* fill the edition-specific statvfs totals (blocks / free / files / free) */
+    void (*statfs)(void *fs, struct statvfs *st);
 
     /* largest addressable file, in bytes */
     uint64_t (*max_file)(void *fs);

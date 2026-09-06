@@ -70,11 +70,8 @@ static uint8_t  v7_sbuf[V7_MAXBSIZE]; /* in-core superblock (block 1) */
 static uint8_t  v7_freebuf[V7_MAXBSIZE];
 static uint16_t v7_nfree;
 static uint32_t v7_tinode, v7_tfree;
-static int      v7_le;                /* 0 = V7 middle-endian, 1 = little-endian (32V/Xenix) */
-static int      v7_coh;               /* Coherent: NICFREE=64, s_m/s_n/s_unique */
-static int      v7_xen;               /* Xenix: little-endian, NICFREE=100, magic tail */
-static uint32_t v7_ipb = V7_INOPB;  /* inodes per block (bsize / 64) */
-static int      v7_niaddr = V7_NIADDR; /* total address slots (13, or 7 for bsd29) */
+static filsys_format_t v7_fmt; /* format descriptor (bo, bsize, pack4, ...) */
+static uint32_t v7_ipb = V7_INOPB;  /* inodes per block (bsize / inode_size) */
 static uint16_t v7_m = 1, v7_n = 1;   /* interleave factors (s_m/s_n, coherent) */
 
 static void     v7_sb_put16(uint32_t off, uint16_t v);
@@ -170,9 +167,9 @@ static void write_boot(const char *path)
         die("%s: cannot open boot: %s\n", path, strerror(errno));
     if (read(f, hdr, sizeof hdr) != (ssize_t)sizeof hdr)
         die("%s: short boot header\n", path);
-    uint16_t magic = v7_get16le(hdr + 0);
-    uint16_t text  = v7_get16le(hdr + 2);
-    uint16_t data  = v7_get16le(hdr + 4);
+    uint16_t magic = bo_get_le16(hdr + 0);
+    uint16_t text  = bo_get_le16(hdr + 2);
+    uint16_t data  = bo_get_le16(hdr + 4);
     if (magic != A_MAGIC1)
         die("%s: bad boot magic 0%o (want 0%o)\n", path, magic, A_MAGIC1);
     uint32_t c = (uint32_t)text + data;
@@ -196,8 +193,8 @@ static void die(const char *fmt, ...)
 
 /* ---- V7 implementation -------------------------------------------------- */
 
-static void v7_sb_put16(uint32_t off, uint16_t v) { v7_put16le(v7_sbuf + off, v); }
-static void v7_sb_put32(uint32_t off, uint32_t v) { v7_put32(v7_sbuf + off, v7_le, v); }
+static void v7_sb_put16(uint32_t off, uint16_t v) { bo_put_le16(v7_sbuf + off, v); }
+static void v7_sb_put32(uint32_t off, uint32_t v) { v7_fmt.bo->put32(v7_sbuf + off, v); }
 
 static uint32_t v7_alloc(void)
 {
@@ -206,7 +203,7 @@ static uint32_t v7_alloc(void)
 
     v7_tfree--;
     v7_nfree--;
-    bno = v7_get32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen) + 4 * v7_nfree, v7_le);
+    bno = v7_fmt.bo->get32(v7_sbuf + sb_free_off(v7_fmt.pack4) + 4 * v7_nfree);
     if (bno == 0)
         die("out of free space\n");
     if (v7_nfree == 0) {
@@ -214,10 +211,10 @@ static uint32_t v7_alloc(void)
         uint8_t fb[V7_MAXBSIZE];
         if (pread(fd, fb, bsize, (off_t)(base + (uint64_t)bno * bsize)) != (ssize_t)bsize)
             die("read error at block %u\n", bno);
-        v7_nfree = v7_get16le(fb);
-        for (i = 0; i < sb_nicfree(v7_coh, v7_xen); i++)
-            v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen) + 4 * i, v7_le,
-                     v7_get32(fb + fb_free_off(v7_le, v7_coh, v7_xen) + 4 * i, v7_le));
+        v7_nfree = bo_get_le16(fb);
+        for (i = 0; i < v7_fmt.nicfree; i++)
+            v7_fmt.bo->put32(v7_sbuf + sb_free_off(v7_fmt.pack4) + 4 * i, 
+                     v7_fmt.bo->get32(fb + fb_free_off(v7_fmt.pack4) + 4 * i));
     }
     return bno;
 }
@@ -229,19 +226,19 @@ static void v7_bfree(uint32_t bno)
     if (v7_nfree == 0) {
         /* Seed the 0 sentinel at the bottom of the stack, mirroring v7fs_bfree;
          * it terminates the free-list chain and is not itself a free block. */
-        v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen), v7_le, 0);
+        v7_fmt.bo->put32(v7_sbuf + sb_free_off(v7_fmt.pack4), 0);
         v7_nfree = 1;
     }
-    if (v7_nfree >= sb_nicfree(v7_coh, v7_xen)) {
+    if (v7_nfree >= v7_fmt.nicfree) {
         memset(v7_freebuf, 0, bsize);
-        v7_put16le(v7_freebuf, (uint16_t)v7_nfree);
-        for (i = 0; i < sb_nicfree(v7_coh, v7_xen); i++)
-            v7_put32(v7_freebuf + fb_free_off(v7_le, v7_coh, v7_xen) + 4 * i, v7_le,
-                     v7_get32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen) + 4 * i, v7_le));
+        bo_put_le16(v7_freebuf, (uint16_t)v7_nfree);
+        for (i = 0; i < v7_fmt.nicfree; i++)
+            v7_fmt.bo->put32(v7_freebuf + fb_free_off(v7_fmt.pack4) + 4 * i, 
+                     v7_fmt.bo->get32(v7_sbuf + sb_free_off(v7_fmt.pack4) + 4 * i));
         pblock(bno, v7_freebuf);
         v7_nfree = 0;
     }
-    v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen) + 4 * v7_nfree, v7_le, bno);
+    v7_fmt.bo->put32(v7_sbuf + sb_free_off(v7_fmt.pack4) + 4 * v7_nfree, bno);
     v7_nfree++;
     v7_tfree++;
 }
@@ -254,8 +251,8 @@ static void v7_bfree(uint32_t bno)
  * carries them. */
 static void v7_bflist(void)
 {
-    int m = v7_coh ? v7_m : 1;
-    int n = v7_coh ? v7_n : 1;
+    int m = v7_fmt.interleave ? v7_m : 1;
+    int n = v7_fmt.interleave ? v7_n : 1;
     if (n < 1 || n > V7_COH_MAXINTN || m < 1 || m > n || n % m != 0) {
         m = 1;
         n = 1;
@@ -290,9 +287,9 @@ static void v7_mkroot(void)
     uint8_t db[V7_MAXBSIZE];
 
     memset(db, 0, bsize);
-    v7_put16le(db, V7_ROOTINO);
+    bo_put_le16(db, V7_ROOTINO);
     memcpy(db + 2, ".", 1);
-    v7_put16le(db + V7_DIRENTSZ, V7_ROOTINO);
+    bo_put_le16(db + V7_DIRENTSZ, V7_ROOTINO);
     memcpy(db + V7_DIRENTSZ + 2, "..", 2);
     pblock(bno, db);
 
@@ -313,14 +310,14 @@ static void v7_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
 
     uint8_t *ip = ib + o * V7_INODESZ;
     memset(ip, 0, V7_INODESZ);
-    v7_put16le(ip + 0, mode);
-    v7_put16le(ip + 2, (uint16_t)nlink);
-    v7_put32(ip + 8, v7_le, size);
-    for (i = 0; i < v7_niaddr; i++)
-        v7_put24(ip + 12 + 3 * i, v7_le, addr[i]);
-    v7_put32(ip + 52, v7_le, (uint32_t)time(NULL));
-    v7_put32(ip + 56, v7_le, (uint32_t)time(NULL));
-    v7_put32(ip + 60, v7_le, (uint32_t)time(NULL));
+    bo_put_le16(ip + 0, mode);
+    bo_put_le16(ip + 2, (uint16_t)nlink);
+    v7_fmt.bo->put32(ip + 8, size);
+    for (i = 0; i < v7_fmt.niaddr; i++)
+        v7_fmt.bo->put24(ip + 12 + 3 * i, addr[i]);
+    v7_fmt.bo->put32(ip + 52, (uint32_t)time(NULL));
+    v7_fmt.bo->put32(ip + 56, (uint32_t)time(NULL));
+    v7_fmt.bo->put32(ip + 60, (uint32_t)time(NULL));
 
     pblock(d, ib);
     v7_tinode--;
@@ -347,11 +344,11 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
 
     memset(v7_sbuf, 0, bsize);
     v7_sb_put16(0, (uint16_t)v7_isize);
-    v7_sb_put32(sb_fsize_off(v7_le, v7_coh, v7_xen), v7_fsize);
-    if (v7_xen)
-        v7_put32le(v7_sbuf + 0x3F8, V7_XEN_MAGIC);   /* Xenix magic (offset 1016) */
-    if (v7_coh) {
-        int toff = sb_time_off(v7_le, v7_coh, v7_xen);
+    v7_sb_put32(sb_fsize_off(v7_fmt.pack4), v7_fsize);
+    if (v7_fmt.magic)
+        bo_put_le32(v7_sbuf + 0x3F8, V7_XEN_MAGIC);   /* Xenix magic (offset 1016) */
+    if (v7_fmt.interleave) {
+        int toff = sb_time_off(v7_fmt.pack4, v7_fmt.nicfree);
         v7_sb_put16(toff + 10, v7_m);             /* s_m */
         v7_sb_put16(toff + 12, v7_n);             /* s_n */
         v7_sb_put32(toff + 26, 0);                /* s_unique (4-byte `long`) */
@@ -359,7 +356,7 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
 
     /* s_isize is the first data block (not the i-list size), so the i-list is
      * blocks 2..s_isize-1 and the inode count is (s_isize-2) * inodes/block. */
-    if (v7_coh)
+    if (v7_fmt.interleave)
         printf("m/n = %u %u, ", v7_m, v7_n);
     printf("isize = %u, fsize = %u\n",
            (v7_isize - 2) * v7_ipb, v7_fsize);
@@ -373,10 +370,10 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
     v7_bflist();
     v7_mkroot();
 
-    v7_sb_put16(sb_nfree_off(v7_le, v7_coh, v7_xen), (uint16_t)v7_nfree);
-    v7_sb_put32(sb_time_off(v7_le, v7_coh, v7_xen), (uint32_t)time(NULL));   /* s_time */
-    if (!v7_le || v7_xen) {
-        int toff = sb_time_off(v7_le, v7_coh, v7_xen);
+    v7_sb_put16(sb_nfree_off(v7_fmt.pack4), (uint16_t)v7_nfree);
+    v7_sb_put32(sb_time_off(v7_fmt.pack4, v7_fmt.nicfree), (uint32_t)time(NULL));   /* s_time */
+    if (!v7_fmt.pack4) {
+        int toff = sb_time_off(v7_fmt.pack4, v7_fmt.nicfree);
         v7_sb_put32(toff + 4, v7_tfree);          /* s_tfree */
         v7_sb_put16(toff + 8, (uint16_t)v7_tinode); /* s_tinode */
     }
@@ -390,8 +387,8 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
 
 /* ---- V6 implementation -------------------------------------------------- */
 
-static void v6_sb_put16(uint32_t off, uint16_t v) { v6_put16le(v6_sbuf + off, v); }
-static void v6_sb_put32(uint32_t off, uint32_t v) { v6_put32me(v6_sbuf + off, v); }
+static void v6_sb_put16(uint32_t off, uint16_t v) { bo_put_le16(v6_sbuf + off, v); }
+static void v6_sb_put32(uint32_t off, uint32_t v) { bo_put_me32(v6_sbuf + off, v); }
 
 static uint32_t v6_alloc(void)
 {
@@ -399,16 +396,16 @@ static uint32_t v6_alloc(void)
     int i;
 
     v6_nfree--;
-    bno = v6_get16le(v6_sbuf + 6 + 2 * v6_nfree);
+    bno = bo_get_le16(v6_sbuf + 6 + 2 * v6_nfree);
     if (bno == 0)
         die("out of free space\n");
     if (v6_nfree == 0) {
         uint8_t fb[V6_BSIZE];
         if (pread(fd, fb, V6_BSIZE, (off_t)(base + (uint64_t)bno * V6_BSIZE)) != V6_BSIZE)
             die("read error at block %u\n", bno);
-        v6_nfree = v6_get16le(fb);
+        v6_nfree = bo_get_le16(fb);
         for (i = 0; i < V6_NICFREE; i++)
-            v6_put16le(v6_sbuf + 6 + 2 * i, v6_get16le(fb + 2 + 2 * i));
+            bo_put_le16(v6_sbuf + 6 + 2 * i, bo_get_le16(fb + 2 + 2 * i));
     }
     return bno;
 }
@@ -419,13 +416,13 @@ static void v6_bfree(uint32_t bno)
 
     if (v6_nfree >= V6_NICFREE) {
         memset(v6_freebuf, 0, V6_BSIZE);
-        v6_put16le(v6_freebuf, (uint16_t)v6_nfree);
+        bo_put_le16(v6_freebuf, (uint16_t)v6_nfree);
         for (i = 0; i < V6_NICFREE; i++)
-            v6_put16le(v6_freebuf + 2 + 2 * i, v6_get16le(v6_sbuf + 6 + 2 * i));
+            bo_put_le16(v6_freebuf + 2 + 2 * i, bo_get_le16(v6_sbuf + 6 + 2 * i));
         pblock(bno, v6_freebuf);
         v6_nfree = 0;
     }
-    v6_put16le(v6_sbuf + 6 + 2 * v6_nfree, (uint16_t)bno);
+    bo_put_le16(v6_sbuf + 6 + 2 * v6_nfree, (uint16_t)bno);
     v6_nfree++;
 }
 
@@ -473,9 +470,9 @@ static void v6_mkroot(void)
 
     memset(db, 0, V6_BSIZE);
     /* "." and ".." both point at the root itself (inode 1); 16-byte entries */
-    v6_put16le(db, V6_ROOTINO);
+    bo_put_le16(db, V6_ROOTINO);
     memcpy(db + 2, ".", 1);
-    v6_put16le(db + 16, V6_ROOTINO);
+    bo_put_le16(db + 16, V6_ROOTINO);
     memcpy(db + 18, "..", 2);
     pblock(bno, db);
 
@@ -496,15 +493,15 @@ static void v6_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
 
     uint8_t *ip = ib + o * V6_INODESZ;
     memset(ip, 0, V6_INODESZ);
-    v6_put16le(ip + 0, mode);
+    bo_put_le16(ip + 0, mode);
     ip[2] = (uint8_t)nlink;                 /* i_nlink */
     /* i_uid, i_gid = 0 */
     ip[5] = (uint8_t)((size >> 16) & 0xff); /* i_size0: high byte */
-    v6_put16le(ip + 6, (uint16_t)(size & 0xffff));   /* i_size1: low word */
+    bo_put_le16(ip + 6, (uint16_t)(size & 0xffff));   /* i_size1: low word */
     for (i = 0; i < V6_NIADDR; i++)
-        v6_put16le(ip + 8 + 2 * i, (uint16_t)addr[i]);
-    v6_put32me(ip + 24, (uint32_t)time(NULL));   /* i_atime */
-    v6_put32me(ip + 28, (uint32_t)time(NULL));   /* i_mtime */
+        bo_put_le16(ip + 8 + 2 * i, (uint16_t)addr[i]);
+    bo_put_me32(ip + 24, (uint32_t)time(NULL));   /* i_atime */
+    bo_put_me32(ip + 28, (uint32_t)time(NULL));   /* i_mtime */
 
     pblock(d, ib);
 }
@@ -579,14 +576,14 @@ static void v1_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
 
     uint8_t *ip = ib + off * V1_INODESZ;
     memset(ip, 0, V1_INODESZ);
-    v1_put16le(ip + 0, mode);
+    bo_put_le16(ip + 0, mode);
     ip[2] = (uint8_t)nlink;
     /* i_uid = 0 */
-    v1_put16le(ip + 4, (uint16_t)size);
+    bo_put_le16(ip + 4, (uint16_t)size);
     for (int i = 0; i < V1_NIADDR; i++)
-        v1_put16le(ip + 6 + 2 * i, (uint16_t)addr[i]);
-    v1_put32me(ip + 22, (uint32_t)time(NULL) * 60u);   /* ctime (60ths) */
-    v1_put32me(ip + 26, (uint32_t)time(NULL) * 60u);   /* mtime (60ths) */
+        bo_put_le16(ip + 6 + 2 * i, (uint16_t)addr[i]);
+    bo_put_me32(ip + 22, (uint32_t)time(NULL) * 60u);   /* ctime (60ths) */
+    bo_put_me32(ip + 26, (uint32_t)time(NULL) * 60u);   /* mtime (60ths) */
 
     pblock(bno, ib);
 }
@@ -639,8 +636,8 @@ static void mkfs_v1(const char *path, uint32_t blocks, const char *bootfile)
         die("%s: superblock overflow\n", path);
 
     memset(v1_sb, 0, sizeof(v1_sb));
-    v1_put16le(v1_sb + 0, (uint16_t)freemap_bytes);
-    v1_put16le(v1_sb + 2 + freemap_bytes, (uint16_t)inodemap_bytes);
+    bo_put_le16(v1_sb + 0, (uint16_t)freemap_bytes);
+    bo_put_le16(v1_sb + 2 + freemap_bytes, (uint16_t)inodemap_bytes);
 
     /* free map: data blocks are free (bit=1) */
     for (uint32_t b = v1_dstart; b < v1_fsize; b++)
@@ -660,9 +657,9 @@ static void mkfs_v1(const char *path, uint32_t blocks, const char *bootfile)
     /* root directory: inode 41, "." and ".." (10-byte entries) */
     uint32_t rb = v1_balloc();
     uint8_t db[V1_BSIZE] = {0};
-    v1_put16le(db + 0, V1_ROOTINO);
+    bo_put_le16(db + 0, V1_ROOTINO);
     memcpy(db + 2, ".", 1);
-    v1_put16le(db + V1_DIRENTSZ, V1_ROOTINO);
+    bo_put_le16(db + V1_DIRENTSZ, V1_ROOTINO);
     memcpy(db + V1_DIRENTSZ + 2, "..", 2);
     pblock(rb, db);
 
@@ -692,7 +689,7 @@ static void p7_pblock(uint32_t bno, const uint32_t *words)
 {
     uint8_t raw[P7_BLOCKBYTES];
     for (int i = 0; i < P7_WSIZE; i++)
-        p7_putword(raw + i * P7_WORDBYTES, words[i]);
+        bo_put_le32(raw + i * P7_WORDBYTES, words[i]);
     off_t pos = (off_t)P7_SURFACE1 + (off_t)bno * P7_BLOCKBYTES;
     if (pwrite(fd, raw, P7_BLOCKBYTES, pos) != P7_BLOCKBYTES)
         die("write error at block %u\n", bno);
@@ -788,8 +785,8 @@ static uint8_t  bsd211_freebuf[BSD211_BSIZE];
 static uint16_t bsd211_nfree;
 static uint32_t bsd211_tinode, bsd211_tfree;
 
-static void bsd211_sb_put16(uint32_t off, uint16_t v) { bsd211_put16le(bsd211_sbuf + off, v); }
-static void bsd211_sb_put32(uint32_t off, uint32_t v) { bsd211_put32me(bsd211_sbuf + off, v); }
+static void bsd211_sb_put16(uint32_t off, uint16_t v) { bo_put_le16(bsd211_sbuf + off, v); }
+static void bsd211_sb_put32(uint32_t off, uint32_t v) { bo_put_me32(bsd211_sbuf + off, v); }
 
 static uint32_t bsd211_alloc(void)
 {
@@ -798,16 +795,16 @@ static uint32_t bsd211_alloc(void)
 
     bsd211_tfree--;
     bsd211_nfree--;
-    bno = bsd211_get32me(bsd211_sbuf + BSD211_SB_FREE + 4 * bsd211_nfree);
+    bno = bo_get_me32(bsd211_sbuf + BSD211_SB_FREE + 4 * bsd211_nfree);
     if (bno == 0)
         die("out of free space\n");
     if (bsd211_nfree == 0) {
         uint8_t fb[BSD211_BSIZE];
         if (pread(fd, fb, BSD211_BSIZE, (off_t)(base + (uint64_t)bno * BSD211_BSIZE)) != BSD211_BSIZE)
             die("read error at block %u\n", bno);
-        bsd211_nfree = bsd211_get16le(fb);
+        bsd211_nfree = bo_get_le16(fb);
         for (i = 0; i < BSD211_NICFREE; i++)
-            bsd211_put32me(bsd211_sbuf + BSD211_SB_FREE + 4 * i, bsd211_get32me(fb + 2 + 4 * i));
+            bo_put_me32(bsd211_sbuf + BSD211_SB_FREE + 4 * i, bo_get_me32(fb + 2 + 4 * i));
     }
     return bno;
 }
@@ -819,19 +816,19 @@ static void bsd211_bfree(uint32_t bno)
     if (bsd211_nfree == 0) {
         /* Seed the 0 sentinel, mirroring the kernel's free(): it terminates the
          * free-list chain and is not itself a free block. */
-        bsd211_put32me(bsd211_sbuf + BSD211_SB_FREE, 0);
+        bo_put_me32(bsd211_sbuf + BSD211_SB_FREE, 0);
         bsd211_nfree = 1;
     }
     if (bsd211_nfree >= BSD211_NICFREE) {
         memset(bsd211_freebuf, 0, BSD211_BSIZE);
-        bsd211_put16le(bsd211_freebuf, (uint16_t)bsd211_nfree);
+        bo_put_le16(bsd211_freebuf, (uint16_t)bsd211_nfree);
         for (i = 0; i < BSD211_NICFREE; i++)
-            bsd211_put32me(bsd211_freebuf + 2 + 4 * i,
-                          bsd211_get32me(bsd211_sbuf + BSD211_SB_FREE + 4 * i));
+            bo_put_me32(bsd211_freebuf + 2 + 4 * i,
+                          bo_get_me32(bsd211_sbuf + BSD211_SB_FREE + 4 * i));
         pblock(bno, bsd211_freebuf);
         bsd211_nfree = 0;
     }
-    bsd211_put32me(bsd211_sbuf + BSD211_SB_FREE + 4 * bsd211_nfree, bno);
+    bo_put_me32(bsd211_sbuf + BSD211_SB_FREE + 4 * bsd211_nfree, bno);
     bsd211_nfree++;
     bsd211_tfree++;
 }
@@ -849,15 +846,15 @@ static void bsd211_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t siz
 
     uint8_t *ip = ib + o * BSD211_INODESZ;
     memset(ip, 0, BSD211_INODESZ);
-    bsd211_put16le(ip + 0, mode);
-    bsd211_put16le(ip + 2, (uint16_t)nlink);
-    bsd211_put32me(ip + 8, size);
+    bo_put_le16(ip + 0, mode);
+    bo_put_le16(ip + 2, (uint16_t)nlink);
+    bo_put_me32(ip + 8, size);
     for (i = 0; i < BSD211_NIADDR; i++)
-        bsd211_put32me(ip + 12 + 4 * i, addr[i]);
+        bo_put_me32(ip + 12 + 4 * i, addr[i]);
     /* di_flags (offset 50) stays zero */
-    bsd211_put32me(ip + 52, (uint32_t)time(NULL));
-    bsd211_put32me(ip + 56, (uint32_t)time(NULL));
-    bsd211_put32me(ip + 60, (uint32_t)time(NULL));
+    bo_put_me32(ip + 52, (uint32_t)time(NULL));
+    bo_put_me32(ip + 56, (uint32_t)time(NULL));
+    bo_put_me32(ip + 60, (uint32_t)time(NULL));
 
     pblock(d, ib);
     bsd211_tinode--;
@@ -872,15 +869,15 @@ static void bsd211_mkroot(void)
      * "." and ".."; the second is empty (one free entry spanning it). */
     uint32_t lfb = bsd211_alloc();
     uint8_t lf[BSD211_BSIZE] = {0};
-    bsd211_put16le(lf + 0, BSD211_LOSTFOUNDINO);          /* . */
-    bsd211_put16le(lf + 2, (uint16_t)bsd211_dirsiz(1));
-    bsd211_put16le(lf + 4, 1);
+    bo_put_le16(lf + 0, BSD211_LOSTFOUNDINO);          /* . */
+    bo_put_le16(lf + 2, (uint16_t)bsd211_dirsiz(1));
+    bo_put_le16(lf + 4, 1);
     lf[6] = '.';
-    bsd211_put16le(lf + 8, BSD211_ROOTINO);               /* .. (fills the block) */
-    bsd211_put16le(lf + 10, (uint16_t)(BSD211_DIRBLKSIZ - 8));
-    bsd211_put16le(lf + 12, 2);
+    bo_put_le16(lf + 8, BSD211_ROOTINO);               /* .. (fills the block) */
+    bo_put_le16(lf + 10, (uint16_t)(BSD211_DIRBLKSIZ - 8));
+    bo_put_le16(lf + 12, 2);
     lf[14] = '.'; lf[15] = '.';
-    bsd211_put16le(lf + BSD211_DIRBLKSIZ + 2, (uint16_t)BSD211_DIRBLKSIZ);  /* 2nd block empty */
+    bo_put_le16(lf + BSD211_DIRBLKSIZ + 2, (uint16_t)BSD211_DIRBLKSIZ);  /* 2nd block empty */
     pblock(lfb, lf);
 
     uint32_t lfa[BSD211_NIADDR] = {0};
@@ -891,19 +888,19 @@ static void bsd211_mkroot(void)
     uint32_t rb = bsd211_alloc();
     uint8_t rd[BSD211_BSIZE] = {0};
     uint32_t off = 0;
-    bsd211_put16le(rd + off, BSD211_ROOTINO);             /* . */
-    bsd211_put16le(rd + off + 2, (uint16_t)bsd211_dirsiz(1));
-    bsd211_put16le(rd + off + 4, 1);
+    bo_put_le16(rd + off, BSD211_ROOTINO);             /* . */
+    bo_put_le16(rd + off + 2, (uint16_t)bsd211_dirsiz(1));
+    bo_put_le16(rd + off + 4, 1);
     rd[off + 6] = '.';
     off += bsd211_dirsiz(1);
-    bsd211_put16le(rd + off, BSD211_ROOTINO);             /* .. */
-    bsd211_put16le(rd + off + 2, (uint16_t)bsd211_dirsiz(2));
-    bsd211_put16le(rd + off + 4, 2);
+    bo_put_le16(rd + off, BSD211_ROOTINO);             /* .. */
+    bo_put_le16(rd + off + 2, (uint16_t)bsd211_dirsiz(2));
+    bo_put_le16(rd + off + 4, 2);
     rd[off + 6] = '.'; rd[off + 7] = '.';
     off += bsd211_dirsiz(2);
-    bsd211_put16le(rd + off, BSD211_LOSTFOUNDINO);        /* lost+found (fills the block) */
-    bsd211_put16le(rd + off + 2, (uint16_t)(BSD211_DIRBLKSIZ - off));
-    bsd211_put16le(rd + off + 4, 10);
+    bo_put_le16(rd + off, BSD211_LOSTFOUNDINO);        /* lost+found (fills the block) */
+    bo_put_le16(rd + off + 2, (uint16_t)(BSD211_DIRBLKSIZ - off));
+    bo_put_le16(rd + off + 4, 10);
     memcpy(rd + off + 6, "lost+found", 10);
     pblock(rb, rd);
 
@@ -1016,12 +1013,9 @@ int main(int argc, char **argv)
 
     /* Set the edition's block size and layout flags before resolve_blocks
      * computes the byte offset and block count in that block size. */
-    bsize = (edition == FILSYS_XENIX || edition == FILSYS_BSD29 || edition == FILSYS_BSD211) ? 1024 : 512;
-    v7_le  = (edition == FILSYS_32V || edition == FILSYS_XENIX);
-    v7_coh = (edition == FILSYS_COHERENT);
-    v7_xen = (edition == FILSYS_XENIX);
-    v7_ipb = bsize / V7_INODESZ;
-    v7_niaddr = (edition == FILSYS_BSD29) ? 7 : V7_NIADDR;
+    v7_fmt = filsys_getformat(edition);
+    bsize = v7_fmt.bsize;
+    v7_ipb = v7_fmt.bsize / v7_fmt.inode_size;
 
     blocks = resolve_blocks(path, offblock, blocks);
 

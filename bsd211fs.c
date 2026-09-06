@@ -20,23 +20,21 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#define B(x) (bsd211_get16le((uint8_t *)(x)))
-#define B32(x) (bsd211_get32me((uint8_t *)(x)))
 
 /* ---- superblock persistence --------------------------------------------- */
 
 static void super_read(bsd211fs_t *fs, const uint8_t *sb) {
-    fs->isize  = bsd211_get16le(sb + BSD211_SB_ISIZE);
-    fs->fsize  = bsd211_get32me(sb + BSD211_SB_FSIZE);
-    fs->nfree  = bsd211_get16le(sb + BSD211_SB_NFREE);
+    fs->isize  = bo_get_le16(sb + BSD211_SB_ISIZE);
+    fs->fsize  = bo_get_me32(sb + BSD211_SB_FSIZE);
+    fs->nfree  = bo_get_le16(sb + BSD211_SB_NFREE);
     for (int i = 0; i < BSD211_NICFREE; i++)
-        fs->free[i] = bsd211_get32me(sb + BSD211_SB_FREE + 4 * i);
-    fs->ninode = bsd211_get16le(sb + BSD211_SB_NINODE);
+        fs->free[i] = bo_get_me32(sb + BSD211_SB_FREE + 4 * i);
+    fs->ninode = bo_get_le16(sb + BSD211_SB_NINODE);
     for (int i = 0; i < BSD211_NICINOD; i++)
-        fs->inode[i] = bsd211_get16le(sb + BSD211_SB_INODE + 2 * i);
-    fs->time   = bsd211_get32me(sb + BSD211_SB_TIME);
-    fs->tfree  = bsd211_get32me(sb + BSD211_SB_TFREE);
-    fs->tinode = bsd211_get16le(sb + BSD211_SB_TINODE);
+        fs->inode[i] = bo_get_le16(sb + BSD211_SB_INODE + 2 * i);
+    fs->time   = bo_get_me32(sb + BSD211_SB_TIME);
+    fs->tfree  = bo_get_me32(sb + BSD211_SB_TFREE);
+    fs->tinode = bo_get_le16(sb + BSD211_SB_TINODE);
     fs->fmod   = sb[BSD211_SB_FMOD];
 }
 
@@ -46,17 +44,17 @@ static int super_write(bsd211fs_t *fs) {
     uint8_t sb[BSD211_BSIZE];
     if (bsd211fs_read_block(fs, BSD211_SUPERB, sb))
         return -EIO;
-    bsd211_put16le(sb + BSD211_SB_ISIZE, fs->isize);
-    bsd211_put32me(sb + BSD211_SB_FSIZE, fs->fsize);
-    bsd211_put16le(sb + BSD211_SB_NFREE, fs->nfree);
+    bo_put_le16(sb + BSD211_SB_ISIZE, fs->isize);
+    bo_put_me32(sb + BSD211_SB_FSIZE, fs->fsize);
+    bo_put_le16(sb + BSD211_SB_NFREE, fs->nfree);
     for (int i = 0; i < BSD211_NICFREE; i++)
-        bsd211_put32me(sb + BSD211_SB_FREE + 4 * i, fs->free[i]);
-    bsd211_put16le(sb + BSD211_SB_NINODE, fs->ninode);
+        bo_put_me32(sb + BSD211_SB_FREE + 4 * i, fs->free[i]);
+    bo_put_le16(sb + BSD211_SB_NINODE, fs->ninode);
     for (int i = 0; i < BSD211_NICINOD; i++)
-        bsd211_put16le(sb + BSD211_SB_INODE + 2 * i, fs->inode[i]);
-    bsd211_put32me(sb + BSD211_SB_TIME, (uint32_t)time(NULL));
-    bsd211_put32me(sb + BSD211_SB_TFREE, fs->tfree);
-    bsd211_put16le(sb + BSD211_SB_TINODE, fs->tinode);
+        bo_put_le16(sb + BSD211_SB_INODE + 2 * i, fs->inode[i]);
+    bo_put_me32(sb + BSD211_SB_TIME, (uint32_t)time(NULL));
+    bo_put_me32(sb + BSD211_SB_TFREE, fs->tfree);
+    bo_put_le16(sb + BSD211_SB_TINODE, fs->tinode);
     sb[BSD211_SB_FMOD] = (uint8_t)(fs->fmod != 0);
     return bsd211fs_write_block(fs, BSD211_SUPERB, sb);
 }
@@ -146,16 +144,16 @@ int bsd211fs_read_inode(bsd211fs_t *fs, uint32_t ino, bsd211_inode_t *ip) {
     const uint8_t *d = raw + off * BSD211_INODESZ;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = bsd211_get16le(d + 0);
-    ip->nlink = (int16_t)bsd211_get16le(d + 2);
-    ip->uid   = (int16_t)bsd211_get16le(d + 4);
-    ip->gid   = (int16_t)bsd211_get16le(d + 6);
-    ip->size  = bsd211_get32me(d + 8);
+    ip->mode  = bo_get_le16(d + 0);
+    ip->nlink = (int16_t)bo_get_le16(d + 2);
+    ip->uid   = (int16_t)bo_get_le16(d + 4);
+    ip->gid   = (int16_t)bo_get_le16(d + 6);
+    ip->size  = bo_get_me32(d + 8);
     for (int i = 0; i < BSD211_NIADDR; i++)
-        ip->addr[i] = bsd211_get32me(d + 12 + 4 * i);
-    ip->atime = bsd211_get32me(d + 52);
-    ip->mtime = bsd211_get32me(d + 56);
-    ip->ctime = bsd211_get32me(d + 60);
+        ip->addr[i] = bo_get_me32(d + 12 + 4 * i);
+    ip->atime = bo_get_me32(d + 52);
+    ip->mtime = bo_get_me32(d + 56);
+    ip->ctime = bo_get_me32(d + 60);
     return 0;
 }
 
@@ -170,16 +168,16 @@ int bsd211fs_write_inode(bsd211fs_t *fs, uint32_t ino, const bsd211_inode_t *ip)
     if (bsd211fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * BSD211_INODESZ;
-    bsd211_put16le(d + 0, ip->mode);
-    bsd211_put16le(d + 2, (uint16_t)ip->nlink);
-    bsd211_put16le(d + 4, (uint16_t)ip->uid);
-    bsd211_put16le(d + 6, (uint16_t)ip->gid);
-    bsd211_put32me(d + 8, ip->size);
+    bo_put_le16(d + 0, ip->mode);
+    bo_put_le16(d + 2, (uint16_t)ip->nlink);
+    bo_put_le16(d + 4, (uint16_t)ip->uid);
+    bo_put_le16(d + 6, (uint16_t)ip->gid);
+    bo_put_me32(d + 8, ip->size);
     for (int i = 0; i < BSD211_NIADDR; i++)
-        bsd211_put32me(d + 12 + 4 * i, ip->addr[i]);
-    bsd211_put32me(d + 52, ip->atime);
-    bsd211_put32me(d + 56, ip->mtime);
-    bsd211_put32me(d + 60, ip->ctime);
+        bo_put_me32(d + 12 + 4 * i, ip->addr[i]);
+    bo_put_me32(d + 52, ip->atime);
+    bo_put_me32(d + 56, ip->mtime);
+    bo_put_me32(d + 60, ip->ctime);
     /* di_flags (offset 50) is left untouched by the read-modify-write. */
     return bsd211fs_write_block(fs, bno, raw);
 }
@@ -198,9 +196,9 @@ int bsd211fs_balloc(bsd211fs_t *fs, uint32_t *bno) {
         uint8_t buf[BSD211_BSIZE];
         if (bsd211fs_read_block(fs, blk, buf))
             return -EIO;
-        fs->nfree = bsd211_get16le(buf + 0);
+        fs->nfree = bo_get_le16(buf + 0);
         for (int i = 0; i < BSD211_NICFREE; i++)
-            fs->free[i] = bsd211_get32me(buf + 2 + 4 * i);
+            fs->free[i] = bo_get_me32(buf + 2 + 4 * i);
     }
     uint8_t z[BSD211_BSIZE];
     memset(z, 0, sizeof(z));
@@ -217,9 +215,9 @@ void bsd211fs_bfree(bsd211fs_t *fs, uint32_t bno) {
     if (fs->nfree >= BSD211_NICFREE) {
         uint8_t buf[BSD211_BSIZE];
         memset(buf, 0, sizeof(buf));
-        bsd211_put16le(buf + 0, fs->nfree);
+        bo_put_le16(buf + 0, fs->nfree);
         for (int i = 0; i < BSD211_NICFREE; i++)
-            bsd211_put32me(buf + 2 + 4 * i, fs->free[i]);
+            bo_put_me32(buf + 2 + 4 * i, fs->free[i]);
         if (bsd211fs_write_block(fs, bno, buf) == 0)
             fs->nfree = 0;
     }
@@ -271,7 +269,7 @@ static void tloop(bsd211fs_t *fs, uint32_t blk, int level) {
     if (bsd211fs_read_block(fs, blk, buf))
         return;
     for (int i = BSD211_NINDIR - 1; i >= 0; i--) {
-        uint32_t nb = bsd211_get32me(buf + 4 * i);
+        uint32_t nb = bo_get_me32(buf + 4 * i);
         if (nb == 0)
             continue;
         if (level > 0)
@@ -352,12 +350,12 @@ static int ind_follow(bsd211fs_t *fs, uint32_t *slot, int levels,
         uint8_t buf[BSD211_BSIZE];
         if (bsd211fs_read_block(fs, blk, buf))
             return -EIO;
-        uint32_t next = bsd211_get32me(buf + 4 * indices[L]);
+        uint32_t next = bo_get_me32(buf + 4 * indices[L]);
         if (L == levels - 1) {
             if (next == 0 && create) {
                 if (bsd211fs_balloc(fs, &next))
                     return -ENOSPC;
-                bsd211_put32me(buf + 4 * indices[L], next);
+                bo_put_me32(buf + 4 * indices[L], next);
                 if (bsd211fs_write_block(fs, blk, buf))
                     return -EIO;
             }
@@ -370,7 +368,7 @@ static int ind_follow(bsd211fs_t *fs, uint32_t *slot, int levels,
             memset(z, 0, sizeof(z));
             if (bsd211fs_balloc(fs, &next) || bsd211fs_write_block(fs, next, z))
                 return -ENOSPC;
-            bsd211_put32me(buf + 4 * indices[L], next);
+            bo_put_me32(buf + 4 * indices[L], next);
             if (bsd211fs_write_block(fs, blk, buf))
                 return -EIO;
         }
@@ -487,9 +485,9 @@ int bsd211fs_dir_read(bsd211fs_t *fs, bsd211_inode_t *ip, bsd211_dirent_t **ents
 
     size_t cnt = 0;
     for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t ino    = bsd211_get16le(buf + off);
-        uint16_t reclen = bsd211_get16le(buf + off + 2);
-        uint16_t namlen = bsd211_get16le(buf + off + 4);
+        uint16_t ino    = bo_get_le16(buf + off);
+        uint16_t reclen = bo_get_le16(buf + off + 2);
+        uint16_t namlen = bo_get_le16(buf + off + 4);
         if (reclen < 6 || off + reclen > (size_t)n)
             break;
         if (ino != 0 && namlen <= BSD211_MAXNAMLEN) {
@@ -541,15 +539,15 @@ int bsd211fs_dir_add(bsd211fs_t *fs, bsd211_inode_t *ip, uint32_t ino, const cha
 
     /* Reuse a free entry (d_ino == 0) that is big enough. */
     for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t d_ino    = bsd211_get16le(buf + off);
-        uint16_t reclen   = bsd211_get16le(buf + off + 2);
+        uint16_t d_ino    = bo_get_le16(buf + off);
+        uint16_t reclen   = bo_get_le16(buf + off + 2);
         if (reclen < 6 || off + reclen > (size_t)n)
             break;
         if (d_ino == 0 && reclen >= need) {
             memset(buf + off, 0, reclen);
-            bsd211_put16le(buf + off, (uint16_t)ino);
-            bsd211_put16le(buf + off + 2, reclen);
-            bsd211_put16le(buf + off + 4, (uint16_t)namlen);
+            bo_put_le16(buf + off, (uint16_t)ino);
+            bo_put_le16(buf + off + 2, reclen);
+            bo_put_le16(buf + off + 4, (uint16_t)namlen);
             memcpy(buf + off + 6, name, namlen);
             ssize_t w = bsd211fs_file_write(fs, ip, buf, n, 0);
             free(buf);
@@ -561,9 +559,9 @@ int bsd211fs_dir_add(bsd211fs_t *fs, bsd211_inode_t *ip, uint32_t ino, const cha
     /* Append a new entry at the end (the directory grows). */
     uint8_t ent[6 + BSD211_MAXNAMLEN + 4];
     memset(ent, 0, sizeof(ent));
-    bsd211_put16le(ent, (uint16_t)ino);
-    bsd211_put16le(ent + 2, (uint16_t)need);
-    bsd211_put16le(ent + 4, (uint16_t)namlen);
+    bo_put_le16(ent, (uint16_t)ino);
+    bo_put_le16(ent + 2, (uint16_t)need);
+    bo_put_le16(ent + 4, (uint16_t)namlen);
     memcpy(ent + 6, name, namlen);
     ssize_t w = bsd211fs_file_write(fs, ip, ent, need, n);
     free(buf);
@@ -578,14 +576,14 @@ int bsd211fs_dir_remove(bsd211fs_t *fs, bsd211_inode_t *ip, const char *name) {
     if (n < 0) { free(buf); return (int)n; }
 
     for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t d_ino    = bsd211_get16le(buf + off);
-        uint16_t reclen   = bsd211_get16le(buf + off + 2);
-        uint16_t namlen   = bsd211_get16le(buf + off + 4);
+        uint16_t d_ino    = bo_get_le16(buf + off);
+        uint16_t reclen   = bo_get_le16(buf + off + 2);
+        uint16_t namlen   = bo_get_le16(buf + off + 4);
         if (reclen < 6 || off + reclen > (size_t)n)
             break;
         if (d_ino != 0 && namlen == strlen(name) &&
             memcmp(buf + off + 6, name, namlen) == 0) {
-            bsd211_put16le(buf + off, 0);   /* mark free */
+            bo_put_le16(buf + off, 0);   /* mark free */
             ssize_t w = bsd211fs_file_write(fs, ip, buf, n, 0);
             free(buf);
             return w < 0 ? (int)w : 0;
@@ -680,7 +678,7 @@ static void bsd211_mark_tree(bsd211fs_t *fs, uint8_t *bmap,
         return;
     }
     for (int i = 0; i < BSD211_NINDIR; i++) {
-        uint32_t nb = bsd211_get32me(buf + 4 * i);
+        uint32_t nb = bo_get_me32(buf + 4 * i);
         if (nb == 0)
             continue;
         if (level > 0)
@@ -747,9 +745,9 @@ int bsd211fs_check(bsd211fs_t *fs, bsd211_check_t *rep, int mode) {
             uint8_t blk[BSD211_BSIZE];
             if (bsd211fs_read_block(fs, bno, blk))
                 break;
-            n = bsd211_get16le(blk);
+            n = bo_get_le16(blk);
             for (int i = 0; i < BSD211_NICFREE; i++)
-                cur[i] = bsd211_get32me(blk + 2 + 4 * i);
+                cur[i] = bo_get_me32(blk + 2 + 4 * i);
         }
     }
 
@@ -776,9 +774,9 @@ int bsd211fs_check(bsd211fs_t *fs, bsd211_check_t *rep, int mode) {
 /* ---- ops table ------------------------------------------------------------ */
 
 static uint32_t bsd211fs_blocksize_op(const void *fs) { (void)fs; return BSD211_BSIZE; }
-static int bsd211fs_open_op(void *fs, const char *path, int readonly, int mode,
-                           uint64_t offset, uint32_t bsize) {
-    (void)mode; (void)bsize;
+static int bsd211fs_open_op(void *fs, const char *path, int readonly,
+                            const filsys_format_t *fmt, uint64_t offset) {
+    (void)fmt;   /* 2.11BSD has no byte-order or block-size variants */
     return bsd211fs_open(fs, path, readonly, offset);
 }
 static void bsd211fs_close_op(void *fs) { bsd211fs_close(fs); }
@@ -820,6 +818,13 @@ static uint64_t bsd211fs_max_file_op(void *fs) {
     return ((uint64_t)BSD211_NDADDR + n + n * n + n * n * n) * BSD211_BSIZE;
 }
 
+static void bsd211fs_statfs_op(void *fs, struct statvfs *st) {
+    bsd211fs_t *b211 = fs;
+    st->f_blocks = b211->fsize;
+    st->f_bfree = st->f_bavail = b211->tfree;
+    st->f_files = (b211->isize - 2) * BSD211_INOPB;
+    st->f_ffree = b211->tinode;
+}
 const struct filsys_ops bsd211fs_ops = {
     .name        = "bsd211",
     .blocksize   = bsd211fs_blocksize_op,
@@ -844,5 +849,6 @@ const struct filsys_ops bsd211fs_ops = {
     .dir_remove  = bsd211fs_dir_remove_op,
     .lookup      = bsd211fs_lookup_op,
     .check       = bsd211fs_check_op,
+    .statfs      = bsd211fs_statfs_op,
     .max_file    = bsd211fs_max_file_op,
 };
