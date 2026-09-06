@@ -111,8 +111,10 @@ static void unpack_name(const uint32_t *w, char *name) {
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int p7fs_open(p7fs_t *fs, const char *path, int readonly, uint64_t offset) {
-    memset(fs, 0, sizeof(*fs));
+int p7fs_open(p7fs_t *fs, const char *path, int readonly,
+              const filsys_edition_t *proto, uint64_t offset) {
+    if (fs != proto)
+        memcpy(fs, proto, sizeof *fs); /* copy the static descriptor fields */
     fs->readonly = readonly;
     fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
@@ -141,10 +143,10 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly, uint64_t offset) {
         uint32_t fl[P7_WSIZE];
         if (read_words(fs, head, fl))
             break;
-        fs->tfree++;            /* the node block itself is free */
+        fs->fl.tfree++;         /* the node block itself is free */
         for (int i = 1; i <= 9; i++)
             if (fl[i] != 0)
-                fs->tfree++;
+                fs->fl.tfree++;
         head = fl[0] & P7_MAXWORD;
     }
     return 0;
@@ -472,57 +474,10 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
     return 0;
 }
 
-/* ---- file data ---------------------------------------------------------- */
-
-ssize_t p7fs_file_read(p7fs_t *fs, p7_inode_t *ip, uint8_t *buf, size_t size, off_t off) {
-    if (off < 0)
-        return -EINVAL;
-    if ((uint64_t)off >= ip->size)
-        return 0;
-    uint64_t remaining = ip->size - (uint64_t)off;
-    if (size > remaining)
-        size = (size_t)remaining;
-
-    size_t done = 0;
-    while (done < size) {
-        uint64_t bpos = (uint64_t)off + done;   /* byte position */
-        uint32_t woff = (uint32_t)(bpos / 2);   /* word position */
-        uint32_t word;
-        if (inode_read_word(fs, ip, woff, &word))
-            return -EIO;
-        uint32_t c = (bpos & 1) ? (word & 0x7f) : ((word >> 9) & 0x7f);
-        buf[done++] = (uint8_t)c;
-    }
-    return (ssize_t)done;
-}
-
-ssize_t p7fs_file_write(p7fs_t *fs, p7_inode_t *ip, const uint8_t *buf, size_t size, off_t off) {
-    if (off < 0)
-        return -EINVAL;
-    if (fs->readonly)
-        return -EROFS;
-
-    size_t done = 0;
-    while (done < size) {
-        uint64_t bpos = (uint64_t)off + done;   /* byte position */
-        uint32_t woff = (uint32_t)(bpos / 2);   /* word position */
-        uint32_t word;
-        if (inode_read_word(fs, ip, woff, &word))
-            return -EIO;
-        uint32_t c = buf[done];
-        if (bpos & 1)
-            word = (word & ~(uint32_t)0x1ff) | (c & 0x7f);   /* low char */
-        else
-            word = (word & 0x1ff) | ((c & 0x7f) << 9);       /* high char */
-        if (inode_write_word(fs, ip, woff, word))
-            return -EIO;
-        done++;
-    }
-    if ((uint64_t)off + size > ip->size)
-        ip->size = (uint32_t)(off + size);
-    p7fs_write_inode(fs, ip->ino, ip);
-    return (ssize_t)done;
-}
+/* ---- file data ----------------------------------------------------------
+ * Shared with the V7 engine: blk_get/blk_put unpack each block to bsize
+ * logical bytes, so v7fs_file_read/write apply unchanged.
+ */
 
 /* ---- directories -------------------------------------------------------- */
 
@@ -570,33 +525,6 @@ fail:
 
 void p7fs_dirents_free(p7_dirent_t *ents) {
     free(ents);
-}
-
-int p7fs_dir_lookup(p7fs_t *fs, p7_inode_t *ip, const char *name, uint32_t *ino) {
-    if (!strcmp(name, "."))  { *ino = ip->ino; return 0; }
-    if (!strcmp(name, "..")) { *ino = P7_ROOTINO; return 0; }
-
-    uint32_t nwords = ip->size / 2;
-    size_t ndirents = nwords / P7_DIRENTSZ;
-    for (size_t d = 0; d < ndirents; d++) {
-        uint32_t base = (uint32_t)(d * P7_DIRENTSZ);
-        uint32_t dino;
-        if (inode_read_word(fs, ip, base, &dino))
-            return -EIO;
-        if (dino == 0)
-            continue;
-        uint32_t namew[4];
-        for (int w = 0; w < 4; w++)
-            if (inode_read_word(fs, ip, base + 1 + w, &namew[w]))
-                return -EIO;
-        char ent[P7_DIRSIZ + 1];
-        unpack_name(namew, ent);
-        if (!strcmp(ent, name)) {
-            *ino = dino;
-            return 0;
-        }
-    }
-    return -ENOENT;
 }
 
 int p7fs_dir_add(p7fs_t *fs, p7_inode_t *ip, uint32_t ino, const char *name) {
@@ -671,42 +599,9 @@ int p7fs_dir_remove(p7fs_t *fs, p7_inode_t *ip, const char *name) {
     return -ENOENT;
 }
 
-/* ---- path lookup -------------------------------------------------------- */
-
-int p7fs_lookup(p7fs_t *fs, const char *path, uint32_t *ino, p7_inode_t *ip) {
-    if (path[0] != '/')
-        return -EINVAL;
-    uint32_t cur = P7_ROOTINO;
-    p7_inode_t dip;
-    if (p7fs_read_inode(fs, cur, &dip))
-        return -EIO;
-
-    const char *p = path + 1;
-    while (*p) {
-        const char *slash = strchr(p, '/');
-        size_t len = slash ? (size_t)(slash - p) : strlen(p);
-        if (len == 0) { p++; continue; }
-        if (len > P7_DIRSIZ)
-            return -ENAMETOOLONG;
-        char name[P7_DIRSIZ + 1];
-        memcpy(name, p, len);
-        name[len] = 0;
-
-        if (!(dip.mode & P7_IDIR))
-            return -ENOTDIR;
-        uint32_t next;
-        int rc = p7fs_dir_lookup(fs, &dip, name, &next);
-        if (rc)
-            return rc;
-        if (p7fs_read_inode(fs, next, &dip))
-            return -EIO;
-        p = slash ? slash + 1 : p + len;
-    }
-    *ino = dip.ino;
-    if (ip)
-        *ip = dip;
-    return 0;
-}
+/* ---- path lookup ---------------------------------------------------------
+ * Shared with the V7 engine: v7fs_lookup walks rootino/is_dir/dir_lookup.
+ */
 
 /* ---- integrity check ---------------------------------------------------- */
 
@@ -781,7 +676,7 @@ static int p7fs_makefree(void *fs, filsys_chkctx_t *cx)
     p7fs_t *f = fs;
     uint32_t nfree = 0;
     f->freelist = 0;
-    f->tfree = 0;
+    f->fl.tfree = 0;
     for (uint32_t b = P7_KDATA - 1; b >= P7_DATASTART; b--) {
         uint32_t off = b - P7_DATASTART;
         if (!(cx->bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
@@ -789,7 +684,7 @@ static int p7fs_makefree(void *fs, filsys_chkctx_t *cx)
             nfree++;
         }
     }
-    f->tfree = nfree;
+    f->fl.tfree = nfree;
     super_write(f);
     return nfree;
 }
@@ -818,7 +713,7 @@ static void p7fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
     /* PDP-7 names are 8 chars, so the recovery directory is "lostfils"
      * ("lost files"; the canonical "lost+found" doesn't fit in 8 chars). */
     if (p7fs_read_inode(fs, P7_ROOTINO, &root) == 0 &&
-        p7fs_dir_lookup(fs, &root, "lostfils", &lf_ino) != 0) {
+        v7fs_dir_lookup(fs, &root, "lostfils", &lf_ino) != 0) {
         p7_inode_t lf;
         if (p7fs_ialloc(fs, &lf_ino) == 0) {
             memset(&lf, 0, sizeof(lf));
@@ -1105,8 +1000,7 @@ int p7fs_clri(p7fs_t *fs, uint32_t ino)
 
 static int p7fs_open_op(void *fs, const char *path, int readonly,
                         const filsys_edition_t *proto, uint64_t offset) {
-    (void)proto;   /* no byte-order or block-size variants */
-    return p7fs_open(fs, path, readonly, offset);
+    return p7fs_open(fs, path, readonly, proto, offset);
 }
 static uint32_t p7fs_blocksize_op(const void *fs) { (void)fs; return P7_WSIZE * 2; }
 static void p7fs_close_op(void *fs) { p7fs_close(fs); }
@@ -1129,19 +1023,19 @@ static int p7fs_itrunc_op(void *fs, filsys_inode_t *ip)
 static int p7fs_itrunc_from_op(void *fs, filsys_inode_t *ip, uint32_t first_blk)
 { return p7fs_itrunc_from(fs, ip, first_blk); }
 static ssize_t p7fs_file_read_op(void *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off)
-{ return p7fs_file_read(fs, ip, buf, size, off); }
+{ return v7fs_file_read(fs, ip, buf, size, off); }
 static ssize_t p7fs_file_write_op(void *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off)
-{ return p7fs_file_write(fs, ip, buf, size, off); }
+{ return v7fs_file_write(fs, ip, buf, size, off); }
 static int p7fs_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
 { return p7fs_dir_read(fs, ip, ents, count); }
 static int p7fs_dir_lookup_op(void *fs, filsys_inode_t *ip, const char *name, uint32_t *ino)
-{ return p7fs_dir_lookup(fs, ip, name, ino); }
+{ return v7fs_dir_lookup(fs, ip, name, ino); }
 static int p7fs_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
 { return p7fs_dir_add(fs, ip, ino, name); }
 static int p7fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
 { return p7fs_dir_remove(fs, ip, name); }
 static int p7fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
-{ return p7fs_lookup(fs, path, ino, ip); }
+{ return v7fs_lookup(fs, path, ino, ip); }
 static int p7fs_check_op(void *fs) { p7_check_t rep; return p7fs_check(fs, &rep, 0); }
 static uint64_t p7fs_max_file_op(void *fs) {
     (void)fs;
@@ -1151,7 +1045,7 @@ static uint64_t p7fs_max_file_op(void *fs) {
 static void p7fs_statfs_op(void *fs, struct statvfs *st) {
     p7fs_t *p7 = fs;
     st->f_blocks = P7_NBLOCKS;
-    st->f_bfree = st->f_bavail = p7->tfree;
+    st->f_bfree = st->f_bavail = p7->fl.tfree;
     st->f_files = P7_MAXINO;
     st->f_ffree = 0;   /* not tracked (read-only) */
 }
