@@ -1,6 +1,6 @@
 /* filsys_ops.h - internal vtable for the filsys library backends.
  *
- * Each on-disk format (v6fs, v7fs, ...) exposes one of these; filsys.c routes
+ * Each on-disk format (v1fs, v7fs, pdp7fs, ...) exposes one of these; filsys.c routes
  * every operation through it rather than a per-edition switch, so a new format
  * is one more ops table instead of a third arm of every ternary.
  *
@@ -176,7 +176,7 @@ extern const struct filsys_ops v1fs_ops;
 extern const struct filsys_ops p7fs_ops;
 extern const struct filsys_ops bsd211fs_ops;
 
-/* The shared integrity-check driver (filsys.c).  fmt is the format descriptor
+/* The shared integrity-check driver (check.c).  fmt is the format descriptor
  * (for rootino / cache depths / generic fields); fs is the backend state. */
 int filsys_check_common(filsys_edition_t *fmt, void *fs,
                         filsys_check_t *rep, int mode);

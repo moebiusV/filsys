@@ -222,7 +222,7 @@ typedef struct filsys_edition {
     size_t      state_size;         /* sizeof the backend state struct */
     const char *name;               /* "-v" spelling */
     const byte_order_ops_t *bo;     /* byte-order ops (bo_le / bo_be / bo_me) */
-    uint32_t    bsize;              /* logical block size (512 / 1024) */
+    uint32_t    bsize;              /* logical block size (128 / 512 / 1024) */
     uint16_t    nicfree;            /* free-block cache depth (50 / 64 / 100) */
     uint16_t    nicinod;            /* free-inode cache depth */
     uint8_t     pack4;              /* 4-byte-aligned superblock fields (32V) */

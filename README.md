@@ -214,12 +214,46 @@ backends.
 | bad-block file | none | none | none | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 |
 | directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B | 16 B | 16 B | 16 B | variable (≤ 63-char) |
 
-Five code paths cover the whole range: `pdp7fs.c` (`-v pdp7`, word-addressed),
-`v1fs.c` (`-v v1`/`v2`/`v3`, one bitmap format), `v6fs.c` (`-v v4`/`v5`/`v6`,
-byte-identical on disk), `v7fs.c` (`-v v7`/`vax32`/`coherent`/`xenix`/`bsd29`,
-one format with per-edition byte order, block size, free-cache width and address
-count), and `bsd211fs.c` (`-v bsd211`, the 32-bit-address inode and
-variable-length directories).
+One engine covers the whole range: a `filsys_edition_t` descriptor plus a
+`filsys_ops` vtable (`v7fs.c` / `filsys.c` / `filsys_format.c` / `check.c`).
+What survives per edition is only what genuinely differs on disk — the inode
+codec, the directory-entry codec, the block-mapping topology and the allocator —
+each exposed as a vtable op.  `v1fs.c` carries V1's 32-byte inode, 10-byte
+dirent and bitmap allocator; `pdp7fs.c` carries the word-addressed block codec,
+the 8-word dirent and the on-disk free list; `v7fs.c` carries the V6/V7 inode and
+the 2.11BSD variable-length dirent.  File read/write and path lookup are shared
+across all of them: they touch only logical bytes and route block I/O through the
+`blk_get`/`blk_put` data-block codec (next section).
+
+The PDP-7 row's "block size" is its on-disk **container** (64 × 4-byte word
+slots = 256 B); its **logical** block size — the `blocksize` the data layer sees
+— is 128 B (64 words × two 7-bit characters).
+
+### Block codec
+
+The abstraction that lets a single file/dir engine serve byte- *and*
+word-addressed editions is the data-block codec, `blk_get`/`blk_put` in
+`filsys_ops`:
+
+- `read_block`/`write_block` move a raw **container** block to/from the image:
+  512 or 1024 bytes for the byte-addressed editions, 64 × 4-byte word slots
+  (256 B) for the PDP-7.
+- `blk_get`/`blk_put` move a **logical** block — `blocksize` bytes of file data,
+  the `bsize` descriptor field — between that container block and a byte buffer.
+
+For the byte-addressed editions the two coincide, so `blk_get`/`blk_put` are
+literally `read_block`/`write_block`.  For the PDP-7 they differ: an 18-bit word
+is two 7-bit ASCII characters packed in the low bits of each 9-bit half, so a
+256-byte container block becomes 128 logical bytes.  `v7fs_file_read`/`file_write`
+and `v7fs_lookup` therefore run unchanged for every edition — they only touch
+logical bytes and route block I/O through `bmap` + `blk_get`/`blk_put`.
+
+The corollary is a one-line invariant: **`bsize` is the *logical* block size, not
+the on-disk footprint.**  The `open` size check `fsize × bsize ≤ image_size`
+holds for the byte-addressed editions (logical == physical) but not the PDP-7,
+whose on-disk footprint is `fsize × 256` and whose filesystem sits at
+`base + P7_SURFACE1`; `p7fs_open` checks the container size directly rather than
+deriving it from `bsize`.
 
 ### Limits
 
@@ -322,9 +356,11 @@ large-file flag can address a megabyte of blocks.
   `s_isize`, `s_nfree`, `s_ninode`, `s_inode[]`) are byte-order neutral.
   filsys handles this with a `-v vax32` selector.
 - **V3-and-earlier directories are 10 bytes** (V1–V3: a 2-byte i-number and an
-  8-character name), and the PDP-7's are 8 words, so readers for those editions
-  use a different directory walker than the 16-byte-entry V4-and-later
-  editions.
+  8-character name), and the PDP-7's are 8 words, so the directory-entry *codec*
+  differs from the 16-byte-entry V4-and-later editions.  V1 rides the shared
+  codec with `dirent_size=10`/`max_namlen=8`; the PDP-7 keeps a word-based
+  `dir_read`/`dir_add`/`dir_remove`.  The directory *walker* above the codec
+  (`dir_lookup`) is shared across all of them.
 
 ### Byte order (PDP-11)
 
@@ -475,12 +511,18 @@ emulator is running.
 
 ## Layout
 
-- `pdp7fs.h` / `pdp7fs.c`: PDP-7 word-addressed on-disk access layer.
-- `v1fs.h` / `v1fs.c`: V1/V2/V3 on-disk access layer.
-- `v6fs.h` / `v6fs.c`: V4/V5/V6 on-disk access layer.
-- `v7fs.h` / `v7fs.c`: V7/32V on-disk access layer.
-- `filsys.h` / `filsys.c`: the shared `filsys_ops` table and the
-  format-independent path walker.
+- `v7fs.h` / `v7fs.c`: the shared engine — `filsys_edition_t`, the free-list
+  allocator, and the V6/V7/32V/Coherent/Xenix/2.9BSD and 2.11BSD codecs (the
+  2.11BSD variable-length dirent lives here too).
+- `v1fs.h` / `v1fs.c`: V1/V2/V3 — the 32-byte inode, 10-byte dirent and bitmap
+  allocator (its file/dir/lookup layer is shared).
+- `pdp7fs.h` / `pdp7fs.c`: PDP-7 — the word container codec (`read_words` +
+  `blk_get`/`blk_put`), the 8-word dirent and the on-disk free list.
+- `filsys.h` / `filsys.c`: the public API and the format-independent path walker.
+- `filsys_format.c`: the per-edition descriptor table (`filsys_getformat`).
+- `filsys_ops.h`: the backend vtable.
+- `check.h` / `check.c`: the shared integrity-check driver.
+- `byteorder.h` / `byteorder.c`: the byte-order ops (`bo_le`/`bo_be`/`bo_me`).
 - `mount.filsys.c`: FUSE callbacks + the `-v` edition selector.
 - `findfs.filsys.c`: locate filesystem superblocks (partitions) on a raw image.
 - `mkfs.filsys.c`: create a filesystem of any edition in an image.
