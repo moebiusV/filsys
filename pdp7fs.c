@@ -189,7 +189,7 @@ int p7fs_write_block(p7fs_t *fs, uint32_t bno, const uint8_t *buf) {
 
 /* Data-block codec: 64 words <-> bsize (128) logical bytes, two 7-bit ASCII
  * characters per word in the low bits of each 9-bit half. */
-static int p7fs_blk_get(void *fs, uint32_t bno, uint8_t *buf) {
+static int p7fs_blk_get(filsys_edition_t *fs, uint32_t bno, uint8_t *buf) {
     p7fs_t *f = fs;
     uint32_t words[P7_WSIZE];
     if (read_words(f, bno, words))
@@ -200,7 +200,7 @@ static int p7fs_blk_get(void *fs, uint32_t bno, uint8_t *buf) {
     }
     return 0;
 }
-static int p7fs_blk_put(void *fs, uint32_t bno, const uint8_t *buf) {
+static int p7fs_blk_put(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf) {
     p7fs_t *f = fs;
     if (f->readonly)
         return -EROFS;
@@ -653,7 +653,7 @@ static void p7_mark_tree(p7fs_t *fs, filsys_chkctx_t *cx, uint32_t blk)
 }
 
 /* The vtable mark_blocks seam: PDP-7's ILARG layout (all 7 slots single-indirect). */
-static void p7_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
+static void p7_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
                            filsys_chkctx_t *cx)
 {
     p7fs_t *f = fs;
@@ -671,7 +671,7 @@ static void p7_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
 
 /* Rebuild the free list from the usage bitmap (icheck -s), chaining unused
  * data blocks back through the 9-per-node free-list allocator. */
-static uint32_t p7fs_makefree(void *fs, filsys_chkctx_t *cx)
+static uint32_t p7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
 {
     p7fs_t *f = fs;
     uint32_t nfree = 0;
@@ -696,7 +696,7 @@ static uint32_t p7fs_makefree(void *fs, filsys_chkctx_t *cx)
 /* Classify an inode's mode into a checker state.  The PDP-7 has two type bits,
  * P7_IDIR and P7_ISPEC (device); every other allocated inode is a regular
  * file, so there is no unknown type. */
-static uint8_t p7_inode_state(void *fs, uint32_t ino, uint32_t mode) {
+static uint8_t p7_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode) {
     (void)fs; (void)ino;
     if (!(mode & P7_IUSED))
         return FILSYS_IN_UNALLOC;
@@ -705,7 +705,7 @@ static uint8_t p7_inode_state(void *fs, uint32_t ino, uint32_t mode) {
     return FILSYS_IN_IREG;
 }
 
-static void p7fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
+static void p7fs_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
                        uint32_t maxino, int mode)
 {
     p7_inode_t root;
@@ -773,14 +773,14 @@ static void p7fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
     }
 }
 
-static uint32_t p7_chk_maxino(void *fs)     { (void)fs; return P7_MAXINO; }
-static uint32_t p7_chk_data_start(void *fs) { (void)fs; return P7_DATASTART; }
-static uint32_t p7_chk_data_end(void *fs)   { (void)fs; return P7_KDATA; }
-static int p7_chk_is_clean(void *fs)        { (void)fs; return 0; }
+static uint32_t p7_chk_maxino(filsys_edition_t *fs)     { (void)fs; return P7_MAXINO; }
+static uint32_t p7_chk_data_start(filsys_edition_t *fs) { (void)fs; return P7_DATASTART; }
+static uint32_t p7_chk_data_end(filsys_edition_t *fs)   { (void)fs; return P7_KDATA; }
+static int p7_chk_is_clean(filsys_edition_t *fs)        { (void)fs; return 0; }
 
 /* Walk the PDP-7 on-disk free list (9 free blocks per 64-word node), marking
  * free blocks into cx->bmap and counting them. */
-static void p7_chk_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
+static void p7_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
 {
     p7fs_t *f = fs;
     uint8_t *freeb = calloc(cx->nblk ? cx->nblk : 1, 1);
@@ -999,51 +999,33 @@ int p7fs_clri(p7fs_t *fs, uint32_t ino)
  * typed backend function; the `void *` argument converts implicitly to
  * p7fs_t*, so there is no cast anywhere. */
 
-static int p7fs_open_op(void *fs, const char *path, int readonly,
-                        const filsys_edition_t *proto, uint64_t offset) {
-    return p7fs_open(fs, path, readonly, proto, offset);
-}
-static uint32_t p7fs_blocksize_op(const void *fs) { (void)fs; return P7_WSIZE * 2; }
-static void p7fs_close_op(void *fs) { p7fs_close(fs); }
-static int p7fs_sync_op(void *fs) { return p7fs_sync(fs); }
-static int p7fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
-{ return p7fs_read_block(fs, bno, buf); }
-static int p7fs_write_block_op(void *fs, uint32_t bno, const uint8_t *buf)
-{ return p7fs_write_block(fs, bno, buf); }
-static int p7fs_read_inode_op(void *fs, uint32_t ino, filsys_inode_t *ip)
-{ return p7fs_read_inode(fs, ino, ip); }
-static int p7fs_write_inode_op(void *fs, uint32_t ino, const filsys_inode_t *ip)
-{ return p7fs_write_inode(fs, ino, ip); }
-static int p7fs_ialloc_op(void *fs, uint32_t *ino)
-{ return p7fs_ialloc(fs, ino); }
-static void p7fs_ifree_op(void *fs, uint32_t ino) { p7fs_ifree(fs, ino); }
-static int p7fs_bmap_op(void *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno)
-{ return p7fs_bmap(fs, ip, lbn, create, bno); }
-static int p7fs_itrunc_op(void *fs, filsys_inode_t *ip)
-{ return p7fs_itrunc(fs, ip); }
-static int p7fs_itrunc_from_op(void *fs, filsys_inode_t *ip, uint32_t first_blk)
-{ return p7fs_itrunc_from(fs, ip, first_blk); }
-static ssize_t p7fs_file_read_op(void *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off)
-{ return v7fs_file_read(fs, ip, buf, size, off); }
-static ssize_t p7fs_file_write_op(void *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off)
-{ return v7fs_file_write(fs, ip, buf, size, off); }
-static int p7fs_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
-{ return p7fs_dir_read(fs, ip, ents, count); }
-static int p7fs_dir_lookup_op(void *fs, filsys_inode_t *ip, const char *name, uint32_t *ino)
-{ return v7fs_dir_lookup(fs, ip, name, ino); }
-static int p7fs_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
-{ return p7fs_dir_add(fs, ip, ino, name); }
-static int p7fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
-{ return p7fs_dir_remove(fs, ip, name); }
-static int p7fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
-{ return v7fs_lookup(fs, path, ino, ip); }
-static int p7fs_check_op(void *fs) { p7_check_t rep; return p7fs_check(fs, &rep, 0); }
-static uint64_t p7fs_max_file_op(void *fs) {
+
+static uint32_t p7fs_blocksize_op(const filsys_edition_t *fs) { (void)fs; return P7_WSIZE * 2; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int p7fs_check_op(filsys_edition_t *fs) { p7_check_t rep; return p7fs_check(fs, &rep, 0); }
+static uint64_t p7fs_max_file_op(filsys_edition_t *fs) {
     (void)fs;
     return (uint64_t)P7_NIADDR * P7_NINDIR * P7_WSIZE * 2;   /* 7*64*64*2 bytes */
 }
 
-static void p7fs_statfs_op(void *fs, struct statvfs *st) {
+static void p7fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     p7fs_t *p7 = fs;
     st->f_blocks = P7_NBLOCKS;
     st->f_bfree = st->f_bavail = p7->fl.tfree;
@@ -1053,27 +1035,27 @@ static void p7fs_statfs_op(void *fs, struct statvfs *st) {
 const struct filsys_ops p7fs_ops = {
     .name        = "pdp7",
     .blocksize   = p7fs_blocksize_op,   /* 64 words x 2 chars = 128 bytes */
-    .open        = p7fs_open_op,
-    .close       = p7fs_close_op,
-    .sync        = p7fs_sync_op,
-    .read_block  = p7fs_read_block_op,
-    .write_block = p7fs_write_block_op,
+    .open        = p7fs_open,
+    .close       = p7fs_close,
+    .sync        = p7fs_sync,
+    .read_block  = p7fs_read_block,
+    .write_block = p7fs_write_block,
     .blk_get     = p7fs_blk_get,
     .blk_put     = p7fs_blk_put,
-    .read_inode  = p7fs_read_inode_op,
-    .write_inode = p7fs_write_inode_op,
-    .ialloc      = p7fs_ialloc_op,
-    .ifree       = p7fs_ifree_op,
-    .bmap        = p7fs_bmap_op,
-    .itrunc      = p7fs_itrunc_op,
-    .itrunc_from = p7fs_itrunc_from_op,
-    .file_read   = p7fs_file_read_op,
-    .file_write  = p7fs_file_write_op,
-    .dir_read    = p7fs_dir_read_op,
-    .dir_lookup  = p7fs_dir_lookup_op,
-    .dir_add     = p7fs_dir_add_op,
-    .dir_remove  = p7fs_dir_remove_op,
-    .lookup      = p7fs_lookup_op,
+    .read_inode  = p7fs_read_inode,
+    .write_inode = p7fs_write_inode,
+    .ialloc      = p7fs_ialloc,
+    .ifree       = p7fs_ifree,
+    .bmap        = p7fs_bmap,
+    .itrunc      = p7fs_itrunc,
+    .itrunc_from = p7fs_itrunc_from,
+    .file_read   = v7fs_file_read,
+    .file_write  = v7fs_file_write,
+    .dir_read    = p7fs_dir_read,
+    .dir_lookup  = v7fs_dir_lookup,
+    .dir_add     = p7fs_dir_add,
+    .dir_remove  = p7fs_dir_remove,
+    .lookup      = v7fs_lookup,
     .check       = p7fs_check_op,
     .maxino      = p7_chk_maxino,
     .data_start  = p7_chk_data_start,

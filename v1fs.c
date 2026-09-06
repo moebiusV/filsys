@@ -447,7 +447,7 @@ static void v1_mark_tree(v1fs_t *fs, filsys_chkctx_t *cx, uint32_t blk)
 }
 
 /* The vtable mark_blocks seam: V1's ILARG layout (all 8 slots single-indirect). */
-static void v1_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
+static void v1_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
                            filsys_chkctx_t *cx)
 {
     v1fs_t *f = fs;
@@ -465,7 +465,7 @@ static void v1_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
 
 /* Rebuild the free-block map from the usage bitmap (icheck -s).  Only the
  * data area can be free; the superblock, i-list and device slots stay used. */
-static uint32_t v1fs_makefree(void *fs, filsys_chkctx_t *cx)
+static uint32_t v1fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
 {
     v1fs_t *f = fs;
     uint32_t dstart = v1_data_start(f->maxino);
@@ -486,7 +486,7 @@ static uint32_t v1fs_makefree(void *fs, filsys_chkctx_t *cx)
 /* Classify an inode into a checker state.  V1 has only an IFDIR type bit; a
  * device is a reserved i-number (below V1_ROOTINO), not a mode bit, and every
  * other allocated inode is a regular file -- so there is no unknown type. */
-static uint8_t v1_inode_state(void *fs, uint32_t ino, uint32_t mode) {
+static uint8_t v1_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode) {
     (void)fs;
     if (mode == 0)
         return FILSYS_IN_UNALLOC;
@@ -497,7 +497,7 @@ static uint8_t v1_inode_state(void *fs, uint32_t ino, uint32_t mode) {
     return FILSYS_IN_IREG;
 }
 
-static void v1fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
+static void v1fs_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
                        uint32_t maxino, int mode)
 {
     v1_inode_t root;
@@ -569,13 +569,13 @@ static void v1fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
     }
 }
 
-static uint32_t v1_chk_maxino(void *fs)     { return ((v1fs_t *)fs)->maxino; }
-static uint32_t v1_chk_data_start(void *fs) { v1fs_t *f = fs; return v1_data_start(f->maxino); }
-static uint32_t v1_chk_data_end(void *fs)   { return ((v1fs_t *)fs)->fsize; }
-static int v1_chk_is_clean(void *fs)        { (void)fs; return 0; }
+static uint32_t v1_chk_maxino(filsys_edition_t *fs)     { return ((v1fs_t *)fs)->maxino; }
+static uint32_t v1_chk_data_start(filsys_edition_t *fs) { v1fs_t *f = fs; return v1_data_start(f->maxino); }
+static uint32_t v1_chk_data_end(filsys_edition_t *fs)   { return ((v1fs_t *)fs)->fsize; }
+static int v1_chk_is_clean(filsys_edition_t *fs)        { (void)fs; return 0; }
 
 /* V1's allocator is a bitmap: a block is free iff its freemap bit is set. */
-static void v1_chk_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
+static void v1_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
 {
     v1fs_t *f = fs;
     uint32_t dstart = v1_data_start(f->maxino);
@@ -766,53 +766,35 @@ int v1fs_clri(v1fs_t *fs, uint32_t ino)
  * typed backend function; the `void *` argument converts implicitly to
  * v1fs_t*, so there is no cast anywhere. */
 
-static int v1fs_open_op(void *fs, const char *path, int readonly,
-                        const filsys_edition_t *proto, uint64_t offset) {
-    return v1fs_open(fs, path, readonly, proto, offset);
-}
-static uint32_t v1fs_blocksize_op(const void *fs) { (void)fs; return V1_BSIZE; }
-static void v1fs_close_op(void *fs) { v1fs_close(fs); }
-static int v1fs_sync_op(void *fs) { return v1fs_sync(fs); }
-static int v1fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
-{ return v1fs_read_block(fs, bno, buf); }
-static int v1fs_write_block_op(void *fs, uint32_t bno, const uint8_t *buf)
-{ return v1fs_write_block(fs, bno, buf); }
-static int v1fs_read_inode_op(void *fs, uint32_t ino, filsys_inode_t *ip)
-{ return v1fs_read_inode(fs, ino, ip); }
-static int v1fs_write_inode_op(void *fs, uint32_t ino, const filsys_inode_t *ip)
-{ return v1fs_write_inode(fs, ino, ip); }
-static int v1fs_ialloc_op(void *fs, uint32_t *ino)
-{ return v1fs_ialloc(fs, ino); }
-static void v1fs_ifree_op(void *fs, uint32_t ino) { v1fs_ifree(fs, ino); }
-static int v1fs_bmap_op(void *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno)
-{ return v1fs_bmap(fs, ip, lbn, create, bno); }
-static int v1fs_itrunc_op(void *fs, filsys_inode_t *ip)
-{ return v1fs_itrunc(fs, ip); }
-static int v1fs_itrunc_from_op(void *fs, filsys_inode_t *ip, uint32_t first_blk)
-{ return v1fs_itrunc_from(fs, ip, first_blk); }
-static ssize_t v1fs_file_read_op(void *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off)
-{ return v7fs_file_read(fs, ip, buf, size, off); }
-static ssize_t v1fs_file_write_op(void *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off)
-{ return v7fs_file_write(fs, ip, buf, size, off); }
-static int v1fs_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
-{ return v7fs_dir_read(fs, ip, ents, count); }
-static int v1fs_dir_lookup_op(void *fs, filsys_inode_t *ip, const char *name, uint32_t *ino)
-{ return v7fs_dir_lookup(fs, ip, name, ino); }
-static int v1fs_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
-{ return v7fs_dir_add(fs, ip, ino, name); }
-static int v1fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
-{ return v7fs_dir_remove(fs, ip, name); }
-static int v1fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
-{ return v7fs_lookup(fs, path, ino, ip); }
-static int v1fs_check_op(void *fs) { v1_check_t rep; return v1fs_check(fs, &rep, 0); }
-static uint64_t v1fs_max_file_op(void *fs) {
+
+static uint32_t v1fs_blocksize_op(const filsys_edition_t *fs) { (void)fs; return V1_BSIZE; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int v1fs_check_op(filsys_edition_t *fs) { v1_check_t rep; return v1fs_check(fs, &rep, 0); }
+static uint64_t v1fs_max_file_op(filsys_edition_t *fs) {
     (void)fs;
     /* The large-file flag can address a megabyte of blocks, but the 16-bit
      * size field caps a file at 65535 bytes (past that it wraps to zero). */
     return (1u << 16) - 1;
 }
 
-static void v1fs_statfs_op(void *fs, struct statvfs *st) {
+static void v1fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     v1fs_t *v1 = fs;
     st->f_blocks = v1->fsize;
     st->f_bfree = st->f_bavail = v1->bm.tfree;
@@ -822,27 +804,27 @@ static void v1fs_statfs_op(void *fs, struct statvfs *st) {
 const struct filsys_ops v1fs_ops = {
     .name        = "v1",
     .blocksize   = v1fs_blocksize_op,
-    .open        = v1fs_open_op,
-    .close       = v1fs_close_op,
-    .sync        = v1fs_sync_op,
-    .read_block  = v1fs_read_block_op,
-    .write_block = v1fs_write_block_op,
-    .blk_get     = v1fs_read_block_op,
-    .blk_put     = v1fs_write_block_op,
-    .read_inode  = v1fs_read_inode_op,
-    .write_inode = v1fs_write_inode_op,
-    .ialloc      = v1fs_ialloc_op,
-    .ifree       = v1fs_ifree_op,
-    .bmap        = v1fs_bmap_op,
-    .itrunc      = v1fs_itrunc_op,
-    .itrunc_from = v1fs_itrunc_from_op,
-    .file_read   = v1fs_file_read_op,
-    .file_write  = v1fs_file_write_op,
-    .dir_read    = v1fs_dir_read_op,
-    .dir_lookup  = v1fs_dir_lookup_op,
-    .dir_add     = v1fs_dir_add_op,
-    .dir_remove  = v1fs_dir_remove_op,
-    .lookup      = v1fs_lookup_op,
+    .open        = v1fs_open,
+    .close       = v1fs_close,
+    .sync        = v1fs_sync,
+    .read_block  = v1fs_read_block,
+    .write_block = v1fs_write_block,
+    .blk_get     = v1fs_read_block,
+    .blk_put     = v1fs_write_block,
+    .read_inode  = v1fs_read_inode,
+    .write_inode = v1fs_write_inode,
+    .ialloc      = v1fs_ialloc,
+    .ifree       = v1fs_ifree,
+    .bmap        = v1fs_bmap,
+    .itrunc      = v1fs_itrunc,
+    .itrunc_from = v1fs_itrunc_from,
+    .file_read   = v7fs_file_read,
+    .file_write  = v7fs_file_write,
+    .dir_read    = v7fs_dir_read,
+    .dir_lookup  = v7fs_dir_lookup,
+    .dir_add     = v7fs_dir_add,
+    .dir_remove  = v7fs_dir_remove,
+    .lookup      = v7fs_lookup,
     .check       = v1fs_check_op,
     .maxino      = v1_chk_maxino,
     .data_start  = v1_chk_data_start,

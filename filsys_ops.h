@@ -4,7 +4,7 @@
  * every operation through it rather than a per-edition switch, so a new format
  * is one more ops table instead of a third arm of every ternary.
  *
- * The first parameter of every op is a `void *` pointing at the backend's own
+ * The first parameter of every op is a `void *` pointing at the backend's own (filsys_edition_t)
  * state struct; the decoded types (filsys_inode_t / filsys_dirent_t) are the
  * public structs from filsys.h.  Backends may expose their functions with
  * layout-identical private typedefs and cast at the ops-table definition.
@@ -95,79 +95,79 @@ static inline int filsys_in_allocated(uint8_t st) {
 
 struct filsys_ops {
     const char *name;
-    uint32_t (*blocksize)(const void *fs);  /* logical block size in bytes */
+    uint32_t (*blocksize)(const filsys_edition_t *fs);  /* logical block size in bytes */
 
     /* lifecycle */
-    int  (*open)(void *fs, const char *path, int readonly,
+    int  (*open)(filsys_edition_t *fs, const char *path, int readonly,
                  const filsys_edition_t *proto, uint64_t offset);
-    void (*close)(void *fs);
-    int  (*sync)(void *fs);
+    void (*close)(filsys_edition_t *fs);
+    int  (*sync)(filsys_edition_t *fs);
     /* Mark the superblock dirty (s_fmod) and flush.  Optional: only the V6/V7
      * formats carry an s_fmod byte; other backends leave it NULL. */
-    int  (*mark_dirty)(void *fs);
+    int  (*mark_dirty)(filsys_edition_t *fs);
 
     /* block io */
-    int  (*read_block)(void *fs, uint32_t bno, uint8_t *buf);
-    int  (*write_block)(void *fs, uint32_t bno, const uint8_t *buf);
+    int  (*read_block)(filsys_edition_t *fs, uint32_t bno, uint8_t *buf);
+    int  (*write_block)(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf);
 
     /* data-block codec: read/write a block as `blocksize` *logical* bytes.
      * For byte-addressed editions logical == physical, so this is read_block;
      * for the word-addressed PDP-7 it is read_words + the 2-chars-per-word
      * pack/unpack (a 128-logical-byte block from a 256-byte container). */
-    int  (*blk_get)(void *fs, uint32_t bno, uint8_t *buf);
-    int  (*blk_put)(void *fs, uint32_t bno, const uint8_t *buf);
+    int  (*blk_get)(filsys_edition_t *fs, uint32_t bno, uint8_t *buf);
+    int  (*blk_put)(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf);
 
     /* inode io: on-disk bytes <-> decoded filsys_inode_t */
-    int  (*read_inode)(void *fs, uint32_t ino, filsys_inode_t *ip);
-    int  (*write_inode)(void *fs, uint32_t ino, const filsys_inode_t *ip);
+    int  (*read_inode)(filsys_edition_t *fs, uint32_t ino, filsys_inode_t *ip);
+    int  (*write_inode)(filsys_edition_t *fs, uint32_t ino, const filsys_inode_t *ip);
 
     /* inode allocation (block allocation is internal to bmap/itrunc) */
-    int  (*ialloc)(void *fs, uint32_t *ino);
-    void (*ifree)(void *fs, uint32_t ino);
+    int  (*ialloc)(filsys_edition_t *fs, uint32_t *ino);
+    void (*ifree)(filsys_edition_t *fs, uint32_t ino);
 
     /* block mapping + truncate */
-    int  (*bmap)(void *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
-    int  (*itrunc)(void *fs, filsys_inode_t *ip);
-    int  (*itrunc_from)(void *fs, filsys_inode_t *ip, uint32_t first_blk);
+    int  (*bmap)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
+    int  (*itrunc)(filsys_edition_t *fs, filsys_inode_t *ip);
+    int  (*itrunc_from)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_blk);
 
     /* file data */
-    ssize_t (*file_read)(void *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off);
-    ssize_t (*file_write)(void *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
+    ssize_t (*file_read)(filsys_edition_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off);
+    ssize_t (*file_write)(filsys_edition_t *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
 
     /* directories */
-    int  (*dir_read)(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count);
-    int  (*dir_lookup)(void *fs, filsys_inode_t *ip, const char *name, uint32_t *ino);
-    int  (*dir_add)(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name);
-    int  (*dir_remove)(void *fs, filsys_inode_t *ip, const char *name);
+    int  (*dir_read)(filsys_edition_t *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count);
+    int  (*dir_lookup)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino);
+    int  (*dir_add)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name);
+    int  (*dir_remove)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name);
 
     /* path lookup */
-    int  (*lookup)(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip);
+    int  (*lookup)(filsys_edition_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip);
 
     /* integrity check; returns -1 if problems were found */
-    int  (*check)(void *fs);
+    int  (*check)(filsys_edition_t *fs);
 
     /* Check-driver seams.  The shared filsys_check_common() driver (filsys.c)
      * calls these per-edition ops so the block-accounting / dup-rescan /
      * directory-walk / link-count logic lives once instead of per backend. */
-    uint32_t (*maxino)(void *fs);              /* last inode number */
-    uint32_t (*data_start)(void *fs);          /* first data block */
-    uint32_t (*data_end)(void *fs);            /* one past the last data block */
-    uint8_t  (*inode_state)(void *fs, uint32_t ino, uint32_t mode); /* -> FILSYS_IN_* */
-    void     (*mark_blocks)(void *fs, const filsys_inode_t *ip, uint32_t ino,
+    uint32_t (*maxino)(filsys_edition_t *fs);              /* last inode number */
+    uint32_t (*data_start)(filsys_edition_t *fs);          /* first data block */
+    uint32_t (*data_end)(filsys_edition_t *fs);            /* one past the last data block */
+    uint8_t  (*inode_state)(filsys_edition_t *fs, uint32_t ino, uint32_t mode); /* -> FILSYS_IN_* */
+    void     (*mark_blocks)(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
                             filsys_chkctx_t *cx);  /* mark an inode's blocks */
-    void     (*walk_free)(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep);
+    void     (*walk_free)(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep);
                               /* walk the allocator, marking free blocks into cx->bmap
                                * (detecting used+free as dup), counting free_blocks */
-    uint32_t (*makefree)(void *fs, filsys_chkctx_t *cx); /* salvage: rebuild free space */
-    void     (*preen)(void *fs, const uint8_t *ecount, const uint8_t *state,
+    uint32_t (*makefree)(filsys_edition_t *fs, filsys_chkctx_t *cx); /* salvage: rebuild free space */
+    void     (*preen)(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
                       uint32_t maxino, int mode);  /* auto-repair the safe subset */
-    int      (*is_clean)(void *fs);            /* 1 = superblock marked clean (fmod==0) */
+    int      (*is_clean)(filsys_edition_t *fs);            /* 1 = superblock marked clean (fmod==0) */
 
     /* fill the edition-specific statvfs totals (blocks / free / files / free) */
-    void (*statfs)(void *fs, struct statvfs *st);
+    void (*statfs)(filsys_edition_t *fs, struct statvfs *st);
 
     /* largest addressable file, in bytes */
-    uint64_t (*max_file)(void *fs);
+    uint64_t (*max_file)(filsys_edition_t *fs);
 };
 
 extern const struct filsys_ops v6fs_ops;
@@ -178,7 +178,7 @@ extern const struct filsys_ops bsd211fs_ops;
 
 /* The shared integrity-check driver (check.c).  fmt is the format descriptor
  * (for rootino / cache depths / generic fields); fs is the backend state. */
-int filsys_check_common(filsys_edition_t *fmt, void *fs,
+int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
                         filsys_check_t *rep, int mode);
 
 #endif /* FILSYS_OPS_H */

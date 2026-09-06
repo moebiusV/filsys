@@ -1,5 +1,14 @@
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
+	* filsys_ops.h, check.c, v7fs.c, v1fs.c, pdp7fs.c, filsys.c: fold the
+	*_op wrapper layer.  The ops vtable now takes filsys_edition_t * (not
+	void *) -- every backend already aliases that type -- so the ~66 one-line
+	void*-to-typed adapters are deleted and the tables point at the real
+	functions directly.  The *_op functions that remain carry real logic
+	(blocksize, check, max_file, statfs), not a signature cast.
+
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
 	* test_matrix.c, filsys_format.c: drive the per-format regression table
 	from the shared edition table too.  The direct-block capacity and the max
 	file size now derive from the descriptor (ndaddr * bsize, ops->max_file)
