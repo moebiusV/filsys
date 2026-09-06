@@ -1,3 +1,25 @@
+filsys 1.6.0 (2026-09-06)
+=========================
+
+A refactor release; no on-disk or API change.
+
+- mkfs's parallel per-format layout paths fold into one descriptor-driven
+  driver: the free-list-cache editions (V7/32V/Coherent/Xenix/2.9BSD/V6/2.11BSD)
+  now build a filesystem through the library's ops/alloc vtable -- alloc_ops for
+  balloc/bfree, write_inode for the on-disk inode codec, and the check driver's
+  makefree for the per-edition interleave -- leaving only the i-list sizing and
+  the seed (reserved + root) inodes as per-format hooks.  bsd211 gains a makefree
+  (sequential salvage).  V1 and PDP-7 stay their own paths.
+- The *_op wrapper layer folds away: the ops vtable now takes filsys_edition_t *
+  (not void *) -- every backend already aliases that type -- so the ~66 one-line
+  void*-to-typed adapters are deleted and the tables point at the real functions
+  directly.  The *_op functions that remain carry real logic (blocksize, check,
+  max_file, statfs), not a signature cast.
+- test_matrix's per-format regression table now derives from the shared edition
+  table too: the direct-block capacity and the max file size come from the
+  descriptor (ndaddr * bsize, ops->max_file) and the mkfs block count is a test
+  default, so a new edition is exercised with no hand-written row.
+
 filsys 1.5.2 (2026-09-06)
 =========================
 
