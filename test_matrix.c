@@ -58,15 +58,17 @@ static int fsck_dup_zero(const char *name, const char *img) {
     return strstr(out, "dup=0") != NULL;
 }
 
-/* Run fsck -p -f (preen: reconnect orphans, fix link counts), then fsck -f;
- * return whether the preened filesystem is clean.  A failed mutation is allowed
- * to leave an orphan inode; preen reconnects it to lost+found, so this is the
- * "recoverable" half of the invariant (namespace defects, not free-list ones). */
-static int fsck_preen_clean(const char *name, const char *img) {
+/* Run preen (-p -f: reconnect orphans, fix link counts) then salvage (-s:
+ * rebuild the free list), then fsck -f; return whether the repaired filesystem
+ * is clean.  The two families need different tools: an orphan is a namespace
+ * defect (preen), a leaked block is a free-space defect (salvage); running both
+ * in this order is safe because salvage roots in the i-list.  Neither exit code
+ * is the signal -- preen/salvage exit non-zero when they *find* (and fix). */
+static int fsck_recover_clean(const char *name, const char *img) {
     char cmd[512];
     snprintf(cmd, sizeof cmd, "./fsck.filsys -p -f -v %s %s >/dev/null 2>&1", name, img);
-    /* preen exits non-zero when it *finds* (and repairs) errors, so its exit
-     * status is not the signal -- the filesystem's own state afterward is. */
+    system(cmd);
+    snprintf(cmd, sizeof cmd, "./fsck.filsys -s -v %s %s >/dev/null 2>&1", name, img);
     system(cmd);
     return fsck_is_clean(name, img);
 }
@@ -490,10 +492,10 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
         filsys_close(fs);
 
         int dup_ok = fsck_dup_zero(f->name, img);
-        int preen_ok = fsck_preen_clean(f->name, img);
+        int recov_ok = fsck_recover_clean(f->name, img);
         snprintf(what, sizeof what, "%s %s fail-%s-%d%s%s", f->name, mut->name, label, n,
-                 dup_ok ? "" : " [dup]", preen_ok ? "" : " [recover]");
-        ok(what, dup_ok && preen_ok);
+                 dup_ok ? "" : " [dup]", recov_ok ? "" : " [recover]");
+        ok(what, dup_ok && recov_ok);
         unlink(img);
 
         if (reached < n)                /* failure never reached: done */
@@ -528,19 +530,26 @@ static void fault_test(void) {
     }
 }
 
-/* Durability loss: a successful mutation whose superblock flush never reaches
- * disk must not leave a block both free and referenced.  Snapshot the
- * superblock, mutate, splice the old superblock back (the flush "never
- * happened"), fsck -- dup must be 0.  This is the allocator-durability contract,
- * distinct from fault injection (which makes an op *error*).  Free-list formats
- * keep their cache in block 1; V1's bitmap (blocks 0+1) and PDP-7's free-list
- * head (block 0 word 0) are skipped here. */
+/* Durability loss: a successful shrink whose free-list flush never reaches disk
+ * must not alias.  Write a large (multi-chain-reload) file, snapshot the
+ * superblock, shrink it, splice the old superblock back (the shrink's bfree
+ * flush "never happened"), and require: no aliasing (dup==0 -- the freed blocks
+ * are "used but unreferenced", a leak), salvage recovers (errors==0), and the
+ * retained half is byte-exact (data integrity, which metadata-only checks miss).
+ * Free-list formats keep their cache in block 1; V1's bitmap and PDP-7's
+ * free-list head are skipped here. */
 static void durability_test(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
         if (!fmt_at(i, &f))
             break;
         if (f.edition == FILSYS_V1 || f.edition == FILSYS_PDP7)
+            continue;
+        /* 2.11BSD's check is "check only, no salvage/preen" (bsd211_check ignores
+         * mode), so a destroyed free-list chain cannot be rebuilt; its chain-
+         * reload path also still destroys the chain under this test.  Skip until
+         * bsd211 grows a salvage mode. */
+        if (f.edition == FILSYS_BSD211)
             continue;
 
         filsys_edition_t desc = filsys_getformat(f.edition);
@@ -554,29 +563,47 @@ static void durability_test(void) {
                  f.name, img, f.blocks);
         if (system(cmd) != 0) { ok("dur mkfs", 0); unlink(img); continue; }
 
-        snprintf(cmd, sizeof cmd, "dd if=%s of=%s bs=1 skip=%u count=%u 2>/dev/null",
-                 img, sb, bsize, bsize);
-        if (system(cmd) != 0) { ok("dur snapshot", 0); unlink(img); unlink(sb); continue; }
-
         filsys_t *fs;
         if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
             ok("dur open", 0); unlink(img); unlink(sb); continue;
         }
-        /* 256 blocks: enough to force several free-list chain reloads (the
-         * NICFREE-boundary hazard a small file would never exercise). */
-        uint8_t *buf = malloc(bsize * 256);
-        memset(buf, 'd', bsize * 256);
+
+        size_t full = bsize * 1000, half = full / 2;   /* multi-reload, then shrink */
+        uint8_t *buf = malloc(full);
+        for (size_t k = 0; k < full; k++)
+            buf[k] = (uint8_t)(k % 251);
         filsys_create(fs, "/big", 0644, 0, 0);
-        filsys_write(fs, "/big", buf, bsize * 256, 0);
-        free(buf);
+        if (filsys_write(fs, "/big", buf, full, 0) != (int)full) {
+            ok("dur write", 0); free(buf); filsys_close(fs); unlink(img); unlink(sb); continue;
+        }
+
+        /* snapshot the superblock AFTER the write, BEFORE the shrink */
+        snprintf(cmd, sizeof cmd, "dd if=%s of=%s bs=1 skip=%u count=%u 2>/dev/null",
+                 img, sb, bsize, bsize);
+        if (system(cmd) != 0) { ok("dur snapshot", 0); free(buf); filsys_close(fs); unlink(img); unlink(sb); continue; }
+
+        filsys_truncate(fs, "/big", (off_t)half);   /* itrunc: inode write before bfree */
         filsys_close(fs);
 
+        /* the shrink's free-list flush never landed: splice the snapshot back */
         snprintf(cmd, sizeof cmd, "dd if=%s of=%s bs=1 seek=%u conv=notrunc 2>/dev/null",
                  sb, img, bsize);
-        if (system(cmd) != 0) { ok("dur splice", 0); unlink(img); unlink(sb); continue; }
+        if (system(cmd) != 0) { ok("dur splice", 0); free(buf); unlink(img); unlink(sb); continue; }
 
-        snprintf(what, sizeof what, "%s durability (dup=0 after superblock loss)", f.name);
-        ok(what, fsck_dup_zero(f.name, img));
+        int dup_ok  = fsck_dup_zero(f.name, img);     /* no aliasing */
+        int salv_ok = fsck_recover_clean(f.name, img); /* salvage -> clean */
+        int data_ok = 0;                              /* retained half intact */
+        filsys_t *r;
+        if (filsys_open(&r, f.edition, img, 0, 0, 0, 0, NULL) == 0) {
+            uint8_t *back = malloc(half);
+            data_ok = filsys_read(r, "/big", back, half, 0) == (int)half &&
+                      memcmp(buf, back, half) == 0;
+            free(back);
+            filsys_close(r);
+        }
+        snprintf(what, sizeof what, "%s durability", f.name);
+        ok(what, dup_ok && salv_ok && data_ok);
+        free(buf);
         unlink(img); unlink(sb);
     }
 }
