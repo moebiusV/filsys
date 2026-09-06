@@ -57,6 +57,13 @@ void     bo_put24me(uint8_t *p, uint32_t v);
 uint32_t bo_get32me(const uint8_t *p);
 void     bo_put32me(uint8_t *p, uint32_t v);
 
+/* Packed 18-bit word codec (PDP-7 platter dumps): 18 bits with no padding gap.
+ * lcm(18, 8) = 72 bits = 9 bytes per 4 words, so a 64-word block fills 144 bytes
+ * with no ragged tail -- the same shape as base64's 3-bytes-to-4-chars.  Word i
+ * occupies bits [18*i, 18*i+18) of the byte stream, most-significant bit first. */
+uint32_t bo_get18packed(const uint8_t *p, uint32_t i);
+void     bo_put18packed(uint8_t *p, uint32_t i, uint32_t v);
+
 /* one ops table per byte order */
 extern const byte_order_ops_t bo_le;   /* little-endian */
 extern const byte_order_ops_t bo_be;   /* big-endian */

@@ -1,5 +1,18 @@
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
+	* pdp7fs.h, pdp7fs.c, v7fs.h, filsys_format.c, byteorder.c, byteorder.h,
+	mkfs.filsys.c, fsck.filsys.c: make PDP-7's word container codec a
+	descriptor entry.  The SimH RB09 packing (one 18-bit word per 4-byte LE
+	slot) was baked into P7_WORDBYTES/P7_BLOCKBYTES/P7_SURFACE1; it is now a
+	word_codec_t (get/put/block_bytes) on the descriptor, so a dump from real
+	hardware -- which has no reason to use simh's padding -- is a table row
+	rather than a rewrite.  word_rb09 (256 bytes/block) is the default;
+	word_packed18 (bo_get18packed/bo_put18packed, 18 bits with no gap, 144
+	bytes/block) is the packed codec, and lcm(18,8) = 72 bits = 9 bytes per 4
+	words makes a 64-word block fill exactly with no ragged tail.
+
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
 	* blocktree.c (new), v7fs.h, filsys_format.c, filsys_ops.h, check.c,
 	v7fs.c, v1fs.c, pdp7fs.c, filsys.c: fold the block-map tree walk and the
 	check helpers into one shared implementation.  The per-backend

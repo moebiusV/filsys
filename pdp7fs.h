@@ -25,10 +25,8 @@
 
 enum {
     P7_WSIZE      = 64,    /* 18-bit words per block */
-    P7_WORDBYTES  = 4,     /* SimH RB09 image: one word per 4-byte LE slot */
-    P7_BLOCKBYTES = P7_WSIZE * P7_WORDBYTES,          /* 256 bytes/block */
     P7_NBLOCKS    = 8000,  /* blocks per RB09 surface */
-    P7_SURFACE1   = P7_NBLOCKS * P7_BLOCKBYTES,       /* 2048000: fs surface */
+    P7_MAXBLOCKBYTES = 256, /* largest container block (RB09); buffer bound */
     P7_INODESZ    = 12,    /* words per inode */
     P7_INOPB      = P7_WSIZE / P7_INODESZ,            /* 5 inodes/block */
     P7_NIADDR     = 7,     /* block pointers per inode */
@@ -56,8 +54,20 @@ enum {
     P7_IWWRITE = 0000001    /* world write */
 };
 
-/* SimH RB09 word packing: an 18-bit word in a 4-byte little-endian slot
- * (bo_get32le / bo_put32le). */
+/* The PDP-7 word container codec: how an 18-bit word is packed into a block's
+ * byte stream.  The SimH RB09 image stores one word per 4-byte little-endian
+ * slot (256 bytes/block); a real platter dump has no such padding, so the
+ * packed codec stores 18 bits with no gap (144 bytes/block).  The descriptor's
+ * `word` field selects the codec, so a different container is a table row
+ * rather than a rewrite. */
+typedef struct word_codec {
+    uint32_t (*get)(const uint8_t *buf, uint32_t i);
+    void     (*put)(uint8_t *buf, uint32_t i, uint32_t v);
+    uint32_t  block_bytes;    /* container bytes per block */
+} word_codec_t;
+
+extern const word_codec_t word_rb09;       /* SimH RB09: 4-byte LE slot, 256 B */
+extern const word_codec_t word_packed18;   /* packed 18-bit, no gap, 144 B */
 
 /* itod / itoo: inode number -> block and word offset (5 inodes per block). */
 static inline uint32_t p7_itod(uint32_t ino) { return P7_FIRSTINOBLK + ino / P7_INOPB; }

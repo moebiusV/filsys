@@ -26,23 +26,25 @@
 
 /* Read block `bno` (64 words) out of the image's filesystem surface. */
 static int read_words(p7fs_t *fs, uint32_t bno, uint32_t *words) {
-    uint8_t raw[P7_BLOCKBYTES];
-    off_t pos = (off_t)fs->base + P7_SURFACE1 + (off_t)bno * P7_BLOCKBYTES;
-    ssize_t n = pread(fs->fd, raw, P7_BLOCKBYTES, pos);
-    if (n != P7_BLOCKBYTES)
+    uint8_t raw[P7_MAXBLOCKBYTES];
+    uint32_t bb = fs->word->block_bytes;
+    off_t pos = (off_t)fs->base + (off_t)((uint64_t)P7_NBLOCKS * bb) + (off_t)bno * (off_t)bb;
+    ssize_t n = pread(fs->fd, raw, bb, pos);
+    if (n != (ssize_t)bb)
         return -EIO;
-    for (int i = 0; i < P7_WSIZE; i++)
-        words[i] = bo_get32le(raw + i * P7_WORDBYTES);
+    for (uint32_t i = 0; i < P7_WSIZE; i++)
+        words[i] = fs->word->get(raw, i);
     return 0;
 }
 
 static int write_words(p7fs_t *fs, uint32_t bno, const uint32_t *words) {
-    uint8_t raw[P7_BLOCKBYTES];
-    for (int i = 0; i < P7_WSIZE; i++)
-        bo_put32le(raw + i * P7_WORDBYTES, words[i]);
-    off_t pos = (off_t)fs->base + P7_SURFACE1 + (off_t)bno * P7_BLOCKBYTES;
-    ssize_t n = pwrite(fs->fd, raw, P7_BLOCKBYTES, pos);
-    if (n != P7_BLOCKBYTES)
+    uint8_t raw[P7_MAXBLOCKBYTES];
+    for (uint32_t i = 0; i < P7_WSIZE; i++)
+        fs->word->put(raw, i, words[i]);
+    uint32_t bb = fs->word->block_bytes;
+    off_t pos = (off_t)fs->base + (off_t)((uint64_t)P7_NBLOCKS * bb) + (off_t)bno * (off_t)bb;
+    ssize_t n = pwrite(fs->fd, raw, bb, pos);
+    if (n != (ssize_t)bb)
         return -EIO;
     return 0;
 }
@@ -61,6 +63,19 @@ static int32_t sign18(uint32_t v) {
     v &= P7_MAXWORD;
     return (v & 0400000) ? (int32_t)(v - 01000000u) : (int32_t)v;
 }
+
+/* ---- word container codecs ---------------------------------------------- */
+
+/* SimH RB09: one 18-bit word per 4-byte little-endian slot. */
+static uint32_t rb09_get(const uint8_t *buf, uint32_t i) {
+    return bo_get32le(buf + 4 * i) & P7_MAXWORD;
+}
+static void rb09_put(uint8_t *buf, uint32_t i, uint32_t v) {
+    bo_put32le(buf + 4 * i, v & P7_MAXWORD);
+}
+
+const word_codec_t word_rb09     = { rb09_get,      rb09_put,      P7_WSIZE * 4 };
+const word_codec_t word_packed18 = { bo_get18packed, bo_put18packed, P7_WSIZE * 18 / 8 };
 
 /* Read logical word `woff` of an inode's data (map through bmap). */
 static int inode_read_word(p7fs_t *fs, p7_inode_t *ip, uint32_t woff, uint32_t *out) {
@@ -122,8 +137,10 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly,
         return -errno;
 
     struct stat st;
+    uint32_t bb = fs->word->block_bytes;
+    uint64_t surf1 = (uint64_t)P7_NBLOCKS * bb;
     if (fstat(fs->fd, &st) != 0 ||
-        fs->base + P7_SURFACE1 + P7_BLOCKBYTES > (uint64_t)st.st_size) {
+        fs->base + surf1 + bb > (uint64_t)st.st_size) {
         close(fs->fd);
         fs->fd = -1;
         return -EINVAL;   /* image too small to hold surface 1 */
@@ -173,8 +190,8 @@ int p7fs_read_block(p7fs_t *fs, uint32_t bno, uint8_t *buf) {
     uint32_t words[P7_WSIZE];
     if (read_words(fs, bno, words))
         return -EIO;
-    for (int i = 0; i < P7_WSIZE; i++)
-        bo_put32le(buf + i * P7_WORDBYTES, words[i]);
+    for (uint32_t i = 0; i < P7_WSIZE; i++)
+        fs->word->put(buf, i, words[i]);
     return 0;
 }
 
@@ -182,20 +199,18 @@ int p7fs_write_block(p7fs_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
     uint32_t words[P7_WSIZE];
-    for (int i = 0; i < P7_WSIZE; i++)
-        words[i] = bo_get32le(buf + i * P7_WORDBYTES);
+    for (uint32_t i = 0; i < P7_WSIZE; i++)
+        words[i] = fs->word->get(buf, i);
     return write_words(fs, bno, words);
 }
 
-/* PDP-7's indirect-entry codec (the descriptor's ind_get/ind_put override): an
- * 18-bit word packed in a 4-byte little-endian slot. */
+/* PDP-7's indirect-entry codec (the descriptor's ind_get/ind_put override):
+ * the word container codec, applied to the block buffer. */
 uint32_t p7_ind_get(const filsys_edition_t *fs, const uint8_t *buf, uint32_t i) {
-    (void)fs;
-    return bo_get32le(buf + 4 * i) & P7_MAXWORD;
+    return fs->word->get(buf, i);
 }
 void p7_ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t i, uint32_t v) {
-    (void)fs;
-    bo_put32le(buf + 4 * i, v & P7_MAXWORD);
+    fs->word->put(buf, i, v);
 }
 
 /* Data-block codec: 64 words <-> bsize (128) logical bytes, two 7-bit ASCII
@@ -205,7 +220,7 @@ static int p7fs_blk_get(filsys_edition_t *fs, uint32_t bno, uint8_t *buf) {
     uint32_t words[P7_WSIZE];
     if (read_words(f, bno, words))
         return -EIO;
-    for (int i = 0; i < P7_WSIZE; i++) {
+    for (uint32_t i = 0; i < P7_WSIZE; i++) {
         buf[2 * i]     = (uint8_t)((words[i] >> 9) & 0x7f);
         buf[2 * i + 1] = (uint8_t)(words[i] & 0x7f);
     }
@@ -216,7 +231,7 @@ static int p7fs_blk_put(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf) 
     if (f->readonly)
         return -EROFS;
     uint32_t words[P7_WSIZE];
-    for (int i = 0; i < P7_WSIZE; i++)
+    for (uint32_t i = 0; i < P7_WSIZE; i++)
         words[i] = ((uint32_t)(buf[2 * i] & 0x7f) << 9) | (uint32_t)(buf[2 * i + 1] & 0x7f);
     return write_words(f, bno, words);
 }
