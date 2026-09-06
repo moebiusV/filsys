@@ -35,6 +35,24 @@ enum {
     FILSYS_BSD211 = 36    /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
 };
 
+/* One row of the edition name table (defined in filsys_format.c): the canonical
+ * "-v" spelling, its alternates, and the FILSYS_* selector.  The tools and the
+ * test matrix resolve and list editions through this table rather than their own
+ * strcmp chains, so the spellings live in one place and cannot drift. */
+typedef struct {
+    int         edition;           /* FILSYS_* selector */
+    const char *name;              /* canonical spelling: "pdp7", "v1", ... */
+    const char *const *aliases;    /* NULL-terminated alternates: "0", "p7", ... */
+} filsys_format_t;
+
+/* Iterate the edition name table (returns NULL past the end). */
+const filsys_format_t *filsys_format_nth(size_t i);
+/* Resolve a canonical name or alias to a FILSYS_* selector, or -1.  Accepts a
+ * leading "v"/"V" (so "v7" == "7") as the tools always have. */
+int filsys_edition_by_name(const char *name);
+/* The canonical edition names joined by "|", for usage strings. */
+const char *filsys_editions_usage(void);
+
 /* Decoded inode -- one shape for every edition (V1, V6, V7/32V, PDP-7).  Each
  * backend decodes its own on-disk inode (V1/V6 32 bytes, V7 64 bytes, PDP-7
  * 12 words) field-by-field into this struct.  mode is 32 bits so PDP-7's

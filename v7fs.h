@@ -235,6 +235,8 @@ typedef struct filsys_edition {
     uint8_t     ndaddr;             /* direct block addresses per inode */
     uint8_t     niaddr;             /* total block addresses per inode */
     uint8_t     addr_width;         /* bytes per on-disk di_addr entry (2/3/4) */
+    uint8_t     daddr_wid;          /* bytes per block address in free list & indirect blocks (2/4) */
+    uint8_t     isize_count;        /* s_isize counts i-list blocks (V6) vs first data block (V7) */
     uint8_t     max_namlen;         /* longest entry name (8 / 14 / 63) */
     uint8_t     dirent_size;        /* bytes per fixed entry (0 = variable) */
     uint8_t     synth_dot;          /* dir_read synthesizes "." / ".." (PDP-7) */
@@ -295,12 +297,35 @@ int v7fs_read_block(filsys_edition_t *fs, uint32_t bno, uint8_t *buf);
 int v7fs_write_block(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf);
 
 /* Block-size-dependent quantities: the logical block size is fs->bsize, not the
- * compile-time V7_BSIZE.  4-byte daddr_t per indirect, 64-byte inodes. */
-static inline uint32_t v7_nindir(const filsys_edition_t *fs) { return fs->bsize / 4; }
+ * compile-time V7_BSIZE.  Indirect blocks and free-list entries hold daddr_t,
+ * which is 2 bytes in V6 and 4 bytes in V7/2.11BSD (fs->daddr_wid). */
+static inline uint32_t v7_nindir(const filsys_edition_t *fs) { return fs->bsize / fs->daddr_wid; }
 static inline uint32_t v7_inopb(const filsys_edition_t *fs)  { return fs->bsize / fs->inode_size; }
 /* itod / itoo: inode number -> block and offset. */
 static inline uint32_t v7_itod(const filsys_edition_t *fs, uint32_t ino) { return 2 + (ino - 1) / v7_inopb(fs); }
 static inline uint32_t v7_itoo(const filsys_edition_t *fs, uint32_t ino) { return (ino - 1) % v7_inopb(fs); }
+
+/* First data block and last inode: V6's s_isize counts i-list blocks (data
+ * starts at isize+2, max inode = isize * inodes/block); V7's s_isize is itself
+ * the first data block (max inode = (isize-2) * inodes/block). */
+static inline uint32_t v7_data_first(const filsys_edition_t *fs) {
+    return fs->isize + (fs->isize_count ? 2u : 0u);
+}
+static inline uint32_t v7_maxinode(const filsys_edition_t *fs) {
+    return (uint32_t)(fs->isize - (fs->isize_count ? 0u : 2u)) * v7_inopb(fs);
+}
+
+/* An on-disk block address in a free-list or indirect block: 2-byte LE for V6,
+ * 4-byte in the descriptor's byte order otherwise. */
+static inline uint32_t v7_get_daddr(const filsys_edition_t *fs, const uint8_t *p) {
+    return fs->daddr_wid == 2 ? (uint32_t)bo_get16le(p) : fs->bo->get32(p);
+}
+static inline void v7_put_daddr(const filsys_edition_t *fs, uint8_t *p, uint32_t v) {
+    if (fs->daddr_wid == 2)
+        bo_put16le(p, v & 0xFFFFu);
+    else
+        fs->bo->put32(p, v);
+}
 
 /* Directory test: V1/PDP-7 carry an is_dir callback (their type bits don't fit
  * the V6/V7 ifmt/ifdir pair); the V6/V7 family derives it from ifmt. */

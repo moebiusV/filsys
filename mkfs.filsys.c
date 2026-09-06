@@ -4,7 +4,7 @@
  * disk image.
  *
  * Usage:
- *     mkfs.filsys [-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>] [-o block] [-b boot]
+ *     mkfs.filsys [-v <pdp7|v1|v6|v7|vax32|coherent|xenix|bsd29|bsd211>] [-o block] [-b boot]
  *                 [-m m] [-n n] image [blocks]
  *
  * Builds a fresh filesystem: a superblock, a zeroed i-list, a free-block list,
@@ -15,8 +15,8 @@
  *
  * -v selects the edition (the default is 7).  Several editions are one on-disk
  * format: 1, 2 and 3 are byte-identical (bitmap allocator, 10-byte dirents,
- * root inode 41); 4, 5 and 6 are byte-identical (the V6 format); 32 is 32V,
- * V7 recompiled for the VAX with little-endian 32-bit fields.  0 is the
+ * root inode 41); 4, 5 and 6 are byte-identical (the V6 format); vax32 (32v,
+ * 32) is 32V, V7 recompiled for the VAX with little-endian 32-bit fields.  0 is the
  * word-addressed PDP-7.  coherent is the Mark Williams Coherent format:
  * middle-endian V7 with a 64-entry free cache and s_m/s_n/s_unique; -m/-n set
  * the interleave factors (s_m/s_n, default 1/1).
@@ -95,36 +95,6 @@ static void     v6_iput(uint32_t ino, uint16_t mode, int16_t nlink,
 
 static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile);
 static void mkfs_v6(const char *path, uint32_t blocks, const char *bootfile);
-
-/* ---- shared helpers ----------------------------------------------------- */
-
-static int parse_edition(const char *s)
-{
-    if (strcmp(s, "vax32") == 0 || strcmp(s, "VAX32") == 0)
-        return FILSYS_32V;
-    if (s[0] == 'v' || s[0] == 'V')
-        s++;
-    if (strcmp(s, "v0") == 0 || strcmp(s, "0") == 0 ||
-        strcmp(s, "pdp7") == 0 || strcmp(s, "p7") == 0)
-        return FILSYS_PDP7;
-    if (strcmp(s, "1") == 0 || strcmp(s, "2") == 0 || strcmp(s, "3") == 0)
-        return FILSYS_V1;   /* V1, V2, V3: one format (10-byte dirents, bitmap, root 41) */
-    if (strcmp(s, "4") == 0 || strcmp(s, "5") == 0 || strcmp(s, "6") == 0)
-        return FILSYS_V6;
-    if (strcmp(s, "7") == 0)
-        return FILSYS_V7;
-    if (strcmp(s, "vax32") == 0 || strcmp(s, "32v") == 0 || strcmp(s, "32") == 0)
-        return FILSYS_32V;
-    if (strcmp(s, "coherent") == 0 || strcmp(s, "coh") == 0 || strcmp(s, "33") == 0)
-        return FILSYS_COHERENT;
-    if (strcmp(s, "xenix") == 0 || strcmp(s, "34") == 0)
-        return FILSYS_XENIX;
-    if (strcmp(s, "bsd29") == 0 || strcmp(s, "35") == 0)
-        return FILSYS_BSD29;
-    if (strcmp(s, "bsd211") == 0 || strcmp(s, "36") == 0)
-        return FILSYS_BSD211;
-    return -1;
-}
 
 /* Open (or create) the image, then work out the filesystem size in blocks:
  * an explicit `blocks` argument, else the image's own size, else a default. */
@@ -963,7 +933,7 @@ int main(int argc, char **argv)
     while ((c = getopt(argc, argv, "v:o:b:m:n:")) != -1) {
         switch (c) {
         case 'v':
-            edition = parse_edition(optarg);
+            edition = filsys_edition_by_name(optarg);
             if (edition < 0) {
                 fprintf(stderr, "mkfs.filsys: bad edition '%s'\n", optarg);
                 return 1;
@@ -975,13 +945,13 @@ int main(int argc, char **argv)
         case 'n': v7_n = (uint16_t)strtoul(optarg, NULL, 0); break;
         default:
             fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-b boot] [-m m] [-n n] image [blocks]\n"
-                            "  editions: pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211\n");
+                            "  editions: %s\n", filsys_editions_usage());
             return 1;
         }
     }
     if (optind >= argc) {
         fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-b boot] [-m m] [-n n] image [blocks]\n"
-                        "  editions: pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211\n");
+                        "  editions: %s\n", filsys_editions_usage());
         return 1;
     }
     if (edition < 0) {
