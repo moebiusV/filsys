@@ -179,17 +179,25 @@ static void mkfs_cleanliness(void) {
     }
 }
 
-/* Directory-entry name widths: 2.11BSD accepts up to 63 characters (its
- * variable-length entries), every fixed-width edition caps at 14.  This is the
- * regression for the facade bug that hardcoded a 14-character component buffer
- * and rejected 2.11BSD's long names before they reached the backend. */
+/* Directory-entry name widths, asserted per edition at 14/30/63/64 characters.
+ * This is the regression for the facade bug that hardcoded a 14-character
+ * component buffer and rejected 2.11BSD's 63-character names before they
+ * reached the backend.  Every edition must accept names up to its limit (8 for
+ * V1, 14 for the fixed-width formats, 63 for 2.11BSD) and reject beyond it. */
 static void namelength(void) {
-    static const struct { int edition; const char *name; size_t ok, bad; } t[] = {
-        { FILSYS_BSD211, "bsd211", 63, 64 },
-        { FILSYS_V7,     "v7",     14, 15 },
+    static const struct { int edition; const char *name; size_t max; } t[] = {
+        { FILSYS_V1,        "v1",       8  },
+        { FILSYS_V6,        "v6",       14 },
+        { FILSYS_V7,        "v7",       14 },
+        { FILSYS_32V,       "32v",      14 },
+        { FILSYS_COHERENT,  "coherent", 14 },
+        { FILSYS_XENIX,     "xenix",    14 },
+        { FILSYS_BSD29,     "bsd29",    14 },
+        { FILSYS_BSD211,    "bsd211",   63 },
     };
+    static const size_t lens[] = { 14, 30, 63, 64 };
     for (size_t i = 0; i < sizeof t / sizeof t[0]; i++) {
-        char img[64], cmd[256], okn[80], badn[80], what[80];
+        char img[64], cmd[256];
         snprintf(img, sizeof img, "test_matrix_nl_%s.img", t[i].name);
         unlink(img);
         snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s 100 >/dev/null 2>&1",
@@ -199,12 +207,19 @@ static void namelength(void) {
         if (filsys_open(&fs, t[i].edition, img, 0, 0, 0, 0)) {
             ok("namelength open", 0); unlink(img); continue;
         }
-        okn[0] = '/'; memset(okn + 1, 'a', t[i].ok); okn[t[i].ok + 1] = 0;
-        badn[0] = '/'; memset(badn + 1, 'b', t[i].bad); badn[t[i].bad + 1] = 0;
-        snprintf(what, sizeof what, "%s %zu-char name accepted", t[i].name, t[i].ok);
-        ok(what, filsys_create(fs, okn, 0644, 0, 0) == 0);
-        snprintf(what, sizeof what, "%s %zu-char name rejected", t[i].name, t[i].bad);
-        ok(what, filsys_create(fs, badn, 0644, 0, 0) == -ENAMETOOLONG);
+        for (size_t j = 0; j < sizeof lens / sizeof lens[0]; j++) {
+            size_t L = lens[j];
+            char path[80], what[96];
+            path[0] = '/';
+            memset(path + 1, 'a', L);
+            path[L + 1] = 0;
+            int want = (L <= t[i].max) ? 0 : -ENAMETOOLONG;
+            int got = filsys_create(fs, path, 0644, 0, 0);
+            snprintf(what, sizeof what, "%s %zu-char %s", t[i].name, L,
+                     want == 0 ? "accepted" : "rejected");
+            ok(what, got == want);
+            if (got == 0) filsys_unlink(fs, path);
+        }
         filsys_close(fs);
         unlink(img);
     }

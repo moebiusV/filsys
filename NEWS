@@ -1,3 +1,13 @@
+filsys 1.3.2 (2026-09-05)
+=========================
+
+- Remove the last fixed-width assumptions from the version-agnostic facade.
+  The block size is now a per-edition switch (edition_bsize) instead of a
+  ternary that silently omitted 2.11BSD; the truncate zero-fill buffer is sized
+  to the largest block size instead of a hardcoded 512 bytes (which would have
+  left the upper half of a 1024-byte block stale).  The name-length regression
+  now asserts every edition at 14/30/63/64 characters.
+
 filsys 1.3.1 (2026-09-05)
 =========================
 
