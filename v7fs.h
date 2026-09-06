@@ -254,6 +254,7 @@ typedef struct filsys_edition {
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
+    uint32_t   maxino;         /* inode slots (V1 reads it; V7/V6 derive it) */
     union {                     /* allocator state: free-list cache or bitmap */
         freelist_state fl;
         bitmap_state   bm;
@@ -299,6 +300,14 @@ static inline uint32_t v7_inopb(const filsys_edition_t *fs)  { return fs->bsize 
 /* itod / itoo: inode number -> block and offset. */
 static inline uint32_t v7_itod(const filsys_edition_t *fs, uint32_t ino) { return 2 + (ino - 1) / v7_inopb(fs); }
 static inline uint32_t v7_itoo(const filsys_edition_t *fs, uint32_t ino) { return (ino - 1) % v7_inopb(fs); }
+
+/* Directory test: V1/PDP-7 carry an is_dir callback (their type bits don't fit
+ * the V6/V7 ifmt/ifdir pair); the V6/V7 family derives it from ifmt. */
+static inline int fs_is_dir(const filsys_edition_t *fs, const filsys_inode_t *ip) {
+    if (fs->is_dir)
+        return fs->is_dir(fs, ip);
+    return (ip->mode & fs->ifmt) == fs->ifdir;
+}
 
 int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip);
 int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip);
