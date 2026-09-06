@@ -3,8 +3,9 @@
  * The PDP-7 filesystem (the first Unix filesystem, Bell Labs 1969) is
  * word-addressed: 18-bit words, 64-word blocks.  It predates the byte-oriented
  * V1 layout entirely -- no timestamps, no group or execute permission, a link
- * count stored negative, an 8-word directory entry holding two 9-bit characters
- * per word, and a "dd" (root) directory instead of "/".  The layout is spelled
+ * count stored negative, an 8-word directory entry holding two 7-bit ASCII
+ * characters per 18-bit word (packed in the low bits of each 9-bit half), and
+ * a "dd" (root) directory instead of "/".  The layout is spelled
  * out in pdp7-unix's tools/mkfs7 (and fsck7) as readable constants; this file
  * mirrors them and the McIlroy sysmap (i.flags/i.dskps/i.uid/i.nlks/i.size/
  * i.uniq, d.i/d.name/d.uniq).
