@@ -1,5 +1,13 @@
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
+	* test_matrix.c, filsys_format.c: drive the per-format regression table
+	from the shared edition table too.  The direct-block capacity and the max
+	file size now derive from the descriptor (ndaddr * bsize, ops->max_file)
+	and the mkfs block count is a test default, so a new edition is exercised
+	with no hand-written row; PDP-7's descriptor gains ndaddr.
+
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
 	* mkfs.filsys.c, v7fs.c: fold mkfs's parallel per-format layout paths
 	into one descriptor-driven driver.  The free-list-cache editions
 	(V7/32V/Coherent/Xenix/2.9BSD/V6/2.11BSD) now build a filesystem through
