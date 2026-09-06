@@ -42,6 +42,19 @@ AS_IF([test "x$have_fuse3" = xno], [
 AC_SUBST([FUSE3_CFLAGS])
 AC_SUBST([FUSE3_LIBS])
 
+# ---------------------------------------------------------------------------
+# Optional end-to-end image tests (test.sh): mount a real V7 disk image through
+# FUSE.  These need rp06-0.disk (./fetch.sh) and a working /dev/fuse, so they
+# are off by default; --enable-image-tests turns them on, and the suite then
+# *fails* (not skips) if the image is absent, so an explicitly-enabled run can
+# never pass silently.
+# ---------------------------------------------------------------------------
+AC_ARG_ENABLE([image-tests],
+    [AS_HELP_STRING([--enable-image-tests],
+                    [run the FUSE image smoke test in `make check'])],
+    [enable_image_tests=$enableval], [enable_image_tests=no])
+AM_CONDITIONAL([ENABLE_IMAGE_TESTS], [test "x$enable_image_tests" = xyes])
+
 AC_CONFIG_FILES([Makefile
                  filsys.pc])
 AC_OUTPUT
