@@ -45,25 +45,7 @@ enum {
     V1_OWRITE = 0000001        /* write, non-owner */
 };
 
-/* ---- byte-order primitives --------------------------------------------- */
-
-static inline uint16_t v1_get16le(const uint8_t *p) {
-    return (uint16_t)(p[0] | (p[1] << 8));
-}
-static inline void v1_put16le(uint8_t *p, uint16_t v) {
-    p[0] = (uint8_t)(v & 0xff);
-    p[1] = (uint8_t)(v >> 8);
-}
-/* 32-bit middle-endian (PDP-11): high word first, each word little-endian. */
-static inline uint32_t v1_get32me(const uint8_t *p) {
-    uint16_t hi = v1_get16le(p);
-    uint16_t lo = v1_get16le(p + 2);
-    return ((uint32_t)hi << 16) | lo;
-}
-static inline void v1_put32me(uint8_t *p, uint32_t v) {
-    v1_put16le(p,     (uint16_t)(v >> 16));
-    v1_put16le(p + 2, (uint16_t)(v & 0xffff));
-}
+/* Byte order lives in bo.h (bo_get_le16/bo_get_me32/...). */
 
 /* ---- core types -------------------------------------------------------- */
 

@@ -53,17 +53,8 @@ enum {
     P7_IWWRITE = 0000001    /* world write */
 };
 
-/* SimH RB09 word packing: an 18-bit word in a 4-byte little-endian slot. */
-static inline uint32_t p7_getword(const uint8_t *p) {
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-static inline void p7_putword(uint8_t *p, uint32_t v) {
-    p[0] = (uint8_t)(v & 0xff);
-    p[1] = (uint8_t)((v >> 8) & 0xff);
-    p[2] = (uint8_t)((v >> 16) & 0xff);
-    p[3] = (uint8_t)((v >> 24) & 0xff);
-}
+/* SimH RB09 word packing: an 18-bit word in a 4-byte little-endian slot
+ * (bo_get_le32 / bo_put_le32). */
 
 /* itod / itoo: inode number -> block and word offset (5 inodes per block). */
 static inline uint32_t p7_itod(uint32_t ino) { return P7_FIRSTINOBLK + ino / P7_INOPB; }

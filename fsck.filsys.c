@@ -258,10 +258,8 @@ int main(int argc, char **argv)
         return err ? 1 : 0;
     }
     v7fs_t fs;
-    int bomode = (edition == FILSYS_32V) ? 1 : (edition == FILSYS_COHERENT) ? 2 :
-                 (edition == FILSYS_XENIX) ? 3 : (edition == FILSYS_BSD29) ? 4 : 0;
-    uint32_t bsize = (edition == FILSYS_XENIX || edition == FILSYS_BSD29) ? 1024 : V7_BSIZE;
-    int rc = v7fs_open(&fs, path, readonly, bomode, offblock * bsize, bsize);
+    filsys_format_t fmt = filsys_getformat(edition);
+    int rc = v7fs_open(&fs, path, readonly, &fmt, offblock * fmt.bsize);
     if (rc < 0) {
         fprintf(stderr, "%s: %s\n", path, strerror(-rc));
         return 1;

@@ -39,10 +39,10 @@ int v1fs_open(v1fs_t *fs, const char *path, int readonly, uint64_t offset) {
         return -EIO;
     }
 
-    fs->freemap_bytes = v1_get16le(sb + 0);
+    fs->freemap_bytes = bo_get_le16(sb + 0);
     uint32_t freemap_off = 2;
     uint32_t inodemap_bytes_off = freemap_off + fs->freemap_bytes;
-    fs->inodemap_bytes = v1_get16le(sb + inodemap_bytes_off);
+    fs->inodemap_bytes = bo_get_le16(sb + inodemap_bytes_off);
     uint32_t inodemap_off = inodemap_bytes_off + 2;
 
     /* Reject a superblock whose maps spill past blocks 0+1, or a zero map. */
@@ -158,18 +158,18 @@ int v1fs_read_inode(v1fs_t *fs, uint32_t ino, v1_inode_t *ip) {
     const uint8_t *d = raw + off * V1_INODESZ;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = v1_get16le(d + 0);
+    ip->mode  = bo_get_le16(d + 0);
     ip->nlink = (int16_t)d[2];        /* char */
     ip->uid   = (int16_t)d[3];        /* char */
     ip->gid   = 0;                    /* V1 has no gid */
-    ip->size  = v1_get16le(d + 4);
+    ip->size  = bo_get_le16(d + 4);
     for (int i = 0; i < V1_NIADDR; i++)
-        ip->addr[i] = v1_get16le(d + 6 + 2 * i);
+        ip->addr[i] = bo_get_le16(d + 6 + 2 * i);
     /* V1 stores times as a 60 Hz clock tick count (60ths of a second), not
      * whole seconds like V6/V7; convert to seconds for the POSIX-facing layer.
      * The 32-bit counter wraps every ~2.27 years -- an inherent V1 quirk. */
-    ip->ctime = v1_get32me(d + 22) / 60;
-    ip->mtime = v1_get32me(d + 26) / 60;
+    ip->ctime = bo_get_me32(d + 22) / 60;
+    ip->mtime = bo_get_me32(d + 26) / 60;
     ip->atime = ip->mtime;            /* V1 has no atime */
     return 0;
 }
@@ -183,14 +183,14 @@ int v1fs_write_inode(v1fs_t *fs, uint32_t ino, const v1_inode_t *ip) {
     if (v1fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * V1_INODESZ;
-    v1_put16le(d + 0, ip->mode);
+    bo_put_le16(d + 0, ip->mode);
     d[2] = (uint8_t)ip->nlink;
     d[3] = (uint8_t)ip->uid;
-    v1_put16le(d + 4, (uint16_t)ip->size);
+    bo_put_le16(d + 4, (uint16_t)ip->size);
     for (int i = 0; i < V1_NIADDR; i++)
-        v1_put16le(d + 6 + 2 * i, (uint16_t)ip->addr[i]);
-    v1_put32me(d + 22, ip->ctime * 60u);   /* seconds -> 60ths of a second */
-    v1_put32me(d + 26, ip->mtime * 60u);
+        bo_put_le16(d + 6 + 2 * i, (uint16_t)ip->addr[i]);
+    bo_put_me32(d + 22, ip->ctime * 60u);   /* seconds -> 60ths of a second */
+    bo_put_me32(d + 26, ip->mtime * 60u);
     return v1fs_write_block(fs, bno, raw);
 }
 
@@ -248,7 +248,7 @@ static void tloop(v1fs_t *fs, uint32_t blk, int level) {
     if (v1fs_read_block(fs, blk, buf))
         return;
     for (int i = V1_NINDIR - 1; i >= 0; i--) {
-        uint32_t nb = v1_get16le(buf + 2 * i);
+        uint32_t nb = bo_get_le16(buf + 2 * i);
         if (nb == 0)
             continue;
         if (level > 0)
@@ -285,7 +285,7 @@ static void tloop_from(v1fs_t *fs, uint32_t blk, int level, uint32_t skip) {
     uint32_t se = skip / sub;
     uint32_t sp = skip % sub;
     for (int i = V1_NINDIR - 1; i >= 0; i--) {
-        uint32_t nb = v1_get16le(buf + 2 * i);
+        uint32_t nb = bo_get_le16(buf + 2 * i);
         if (nb == 0)
             continue;
         if ((uint32_t)i < se)
@@ -295,7 +295,7 @@ static void tloop_from(v1fs_t *fs, uint32_t blk, int level, uint32_t skip) {
         } else {
             if (level == 0) v1fs_bfree(fs, nb);
             else tloop(fs, nb, level - 1);
-            v1_put16le(buf + 2 * i, 0);
+            bo_put_le16(buf + 2 * i, 0);
         }
     }
     v1fs_write_block(fs, blk, buf);
@@ -337,11 +337,11 @@ static int ind1(v1fs_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *
     uint8_t buf[V1_BSIZE];
     if (v1fs_read_block(fs, blk, buf))
         return -EIO;
-    uint32_t nb = v1_get16le(buf + 2 * idx);
+    uint32_t nb = bo_get_le16(buf + 2 * idx);
     if (nb == 0 && create) {
         if (v1fs_balloc(fs, &nb))
             return -ENOSPC;
-        v1_put16le(buf + 2 * idx, (uint16_t)nb);
+        bo_put_le16(buf + 2 * idx, (uint16_t)nb);
         if (v1fs_write_block(fs, blk, buf))
             return -EIO;
     }
@@ -358,7 +358,7 @@ int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
             return -ENOSPC;
         uint8_t buf[V1_BSIZE] = {0};
         for (int i = 0; i < V1_NDADDR; i++)
-            v1_put16le(buf + 2 * i, (uint16_t)ip->addr[i]);
+            bo_put_le16(buf + 2 * i, (uint16_t)ip->addr[i]);
         if (v1fs_write_block(fs, iblk, buf))
             return -EIO;
         for (int i = 0; i < V1_NDADDR; i++)
@@ -479,7 +479,7 @@ int v1fs_dir_read(v1fs_t *fs, v1_inode_t *ip, v1_dirent_t **ents, size_t *count)
 
     size_t cnt = 0;
     for (size_t off = 0; off + V1_DIRENTSZ <= (size_t)n; off += V1_DIRENTSZ) {
-        uint16_t ino = v1_get16le(buf + off);
+        uint16_t ino = bo_get_le16(buf + off);
         if (ino == 0)
             continue;
         out[cnt].ino = ino;
@@ -535,7 +535,7 @@ int v1fs_dir_add(v1fs_t *fs, v1_inode_t *ip, uint32_t ino, const char *name) {
 
     size_t slot = SIZE_MAX;
     for (size_t off = 0; off + V1_DIRENTSZ <= (size_t)n; off += V1_DIRENTSZ) {
-        if (v1_get16le(buf + off) == 0) {
+        if (bo_get_le16(buf + off) == 0) {
             slot = off;
             break;
         }
@@ -545,7 +545,7 @@ int v1fs_dir_add(v1fs_t *fs, v1_inode_t *ip, uint32_t ino, const char *name) {
         n += V1_DIRENTSZ;
     }
 
-    v1_put16le(buf + slot, (uint16_t)ino);
+    bo_put_le16(buf + slot, (uint16_t)ino);
     memset(buf + slot + 2, 0, V1_DIRSIZ);
     memcpy(buf + slot + 2, name, namelen);
 
@@ -565,13 +565,13 @@ int v1fs_dir_remove(v1fs_t *fs, v1_inode_t *ip, const char *name) {
     }
     int rc = -ENOENT;
     for (size_t off = 0; off + V1_DIRENTSZ <= (size_t)n; off += V1_DIRENTSZ) {
-        if (v1_get16le(buf + off) == 0)
+        if (bo_get_le16(buf + off) == 0)
             continue;
         char ent[V1_DIRSIZ + 1];
         memcpy(ent, buf + off + 2, V1_DIRSIZ);
         ent[V1_DIRSIZ] = 0;
         if (strcmp(ent, name) == 0) {
-            v1_put16le(buf + off, 0);
+            bo_put_le16(buf + off, 0);
             memset(buf + off + 2, 0, V1_DIRSIZ);
             ssize_t w = v1fs_file_write(fs, ip, buf, (size_t)n, 0);
             rc = w < 0 ? (int)w : 0;
@@ -676,7 +676,7 @@ static void v1_mark_tree(v1_chkctx_t *cx, uint32_t blk)
         return;
     }
     for (int i = 0; i < V1_NINDIR; i++) {
-        uint32_t nb = v1_get16le(buf + 2 * i);
+        uint32_t nb = bo_get_le16(buf + 2 * i);
         if (nb != 0)
             v1_mark_block(cx, nb);
     }
@@ -1092,10 +1092,9 @@ int v1fs_clri(v1fs_t *fs, uint32_t ino)
  * typed backend function; the `void *` argument converts implicitly to
  * v1fs_t*, so there is no cast anywhere. */
 
-static int v1fs_open_op(void *fs, const char *path, int readonly, int le,
-                        uint64_t offset, uint32_t bsize) {
-    (void)le;   /* V1 has no little-endian variant */
-    (void)bsize;
+static int v1fs_open_op(void *fs, const char *path, int readonly,
+                        const filsys_format_t *fmt, uint64_t offset) {
+    (void)fmt;   /* V1 has no byte-order or block-size variants */
     return v1fs_open(fs, path, readonly, offset);
 }
 static uint32_t v1fs_blocksize_op(const void *fs) { (void)fs; return V1_BSIZE; }
@@ -1140,6 +1139,13 @@ static uint64_t v1fs_max_file_op(void *fs) {
     return (1u << 16) - 1;
 }
 
+static void v1fs_statfs_op(void *fs, struct statvfs *st) {
+    v1fs_t *v1 = fs;
+    st->f_blocks = v1->fsize;
+    st->f_bfree = st->f_bavail = v1->tfree;
+    st->f_files = v1->maxino;
+    st->f_ffree = v1->tinode;
+}
 const struct filsys_ops v1fs_ops = {
     .name        = "v1",
     .blocksize   = v1fs_blocksize_op,
@@ -1163,5 +1169,6 @@ const struct filsys_ops v1fs_ops = {
     .dir_remove  = v1fs_dir_remove_op,
     .lookup      = v1fs_lookup_op,
     .check       = v1fs_check_op,
+    .statfs      = v1fs_statfs_op,
     .max_file    = v1fs_max_file_op,
 };

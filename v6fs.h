@@ -60,34 +60,7 @@ enum {
     V6_IEXEC  = 0000100
 };
 
-/* ---- byte-order primitives --------------------------------------------- */
-
-static inline uint16_t v6_get16le(const uint8_t *p) {
-    return (uint16_t)(p[0] | (p[1] << 8));
-}
-static inline void v6_put16le(uint8_t *p, uint16_t v) {
-    p[0] = (uint8_t)(v & 0xff);
-    p[1] = (uint8_t)(v >> 8);
-}
-/* 32-bit middle-endian: high word first, each word little-endian. */
-static inline uint32_t v6_get32me(const uint8_t *p) {
-    uint16_t hi = v6_get16le(p);
-    uint16_t lo = v6_get16le(p + 2);
-    return ((uint32_t)hi << 16) | lo;
-}
-static inline void v6_put32me(uint8_t *p, uint32_t v) {
-    v6_put16le(p,     (uint16_t)(v >> 16));
-    v6_put16le(p + 2, (uint16_t)(v & 0xffff));
-}
-/* 24-bit block number packed as [ hi, lo, mid ]. */
-static inline uint32_t v6_get24me(const uint8_t *p) {
-    return (uint32_t)p[1] | ((uint32_t)p[2] << 8) | ((uint32_t)p[0] << 16);
-}
-static inline void v6_put24me(uint8_t *p, uint32_t v) {
-    p[0] = (uint8_t)((v >> 16) & 0xff);  /* hi  */
-    p[1] = (uint8_t)(v & 0xff);          /* lo  */
-    p[2] = (uint8_t)((v >> 8) & 0xff);   /* mid */
-}
+/* Byte order lives in bo.h (bo_get_le16/bo_get_me32/bo_get_me24/...). */
 
 /* ---- core types -------------------------------------------------------- */
 

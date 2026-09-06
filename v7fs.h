@@ -25,6 +25,7 @@
 #include <sys/types.h>
 
 #include "filsys.h"
+#include "filsys_format.h"
 
 enum {
     V7_BSIZE    = 512,          /* default / legacy block size */
@@ -65,90 +66,19 @@ enum {
     V7_IEXEC  = 0000100
 };
 
-/* ---- byte-order primitives --------------------------------------------- */
+/* Byte order lives in bo.h (bo_get_le16/bo_get_me32/...); v7fs reads and writes
+ * through fs->bo (a byte_order_ops_t chosen by the format descriptor). */
 
-static inline uint16_t v7_get16le(const uint8_t *p) {
-    return (uint16_t)(p[0] | (p[1] << 8));
-}
-static inline void v7_put16le(uint8_t *p, uint16_t v) {
-    p[0] = (uint8_t)(v & 0xff);
-    p[1] = (uint8_t)(v >> 8);
-}
-/* 32-bit middle-endian: high word first, each word little-endian. */
-static inline uint32_t v7_get32me(const uint8_t *p) {
-    uint16_t hi = v7_get16le(p);
-    uint16_t lo = v7_get16le(p + 2);
-    return ((uint32_t)hi << 16) | lo;
-}
-static inline void v7_put32me(uint8_t *p, uint32_t v) {
-    v7_put16le(p,     (uint16_t)(v >> 16));
-    v7_put16le(p + 2, (uint16_t)(v & 0xffff));
-}
-/* 24-bit block number packed as [ hi, lo, mid ]. */
-static inline uint32_t v7_get24me(const uint8_t *p) {
-    return (uint32_t)p[1] | ((uint32_t)p[2] << 8) | ((uint32_t)p[0] << 16);
-}
-static inline void v7_put24me(uint8_t *p, uint32_t v) {
-    p[0] = (uint8_t)((v >> 16) & 0xff);  /* hi  */
-    p[1] = (uint8_t)(v & 0xff);          /* lo  */
-    p[2] = (uint8_t)((v >> 8) & 0xff);   /* mid */
-}
-
-/* 32V (VAX) stores the same fields little-endian: 32-bit values low word
- * first, and the 3-byte di_addr bytes as [ lo, mid, hi ].  The PDP-11 (V7)
- * layout above is middle-endian.  These dispatch on the edition's byte order,
- * so the rest of the code can stay edition-neutral. */
-static inline uint32_t v7_get32le(const uint8_t *p) {
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-static inline void v7_put32le(uint8_t *p, uint32_t v) {
-    p[0] = (uint8_t)(v & 0xff);
-    p[1] = (uint8_t)((v >> 8) & 0xff);
-    p[2] = (uint8_t)((v >> 16) & 0xff);
-    p[3] = (uint8_t)((v >> 24) & 0xff);
-}
-static inline uint32_t v7_get32(const uint8_t *p, int le) {
-    return le ? v7_get32le(p) : v7_get32me(p);
-}
-static inline void v7_put32(uint8_t *p, int le, uint32_t v) {
-    if (le) v7_put32le(p, v); else v7_put32me(p, v);
-}
-static inline uint32_t v7_get24(const uint8_t *p, int le) {
-    return le ? (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16)
-              : v7_get24me(p);
-}
-static inline void v7_put24(uint8_t *p, int le, uint32_t v) {
-    if (le) {
-        p[0] = (uint8_t)(v & 0xff);
-        p[1] = (uint8_t)((v >> 8) & 0xff);
-        p[2] = (uint8_t)((v >> 16) & 0xff);
-    } else {
-        v7_put24me(p, v);
-    }
-}
-
-/* 32V (VAX) aligns daddr_t/time_t to 4 bytes, so in the superblock and the
- * free-list dump block the fields that follow such a type sit 2 bytes later
- * than they do in V7 (PDP-11, 2-byte alignment).  The inode is unaffected
- * (di_size already lands on a 4-byte boundary).  Coherent keeps the 2-byte
- * packing (8086 heritage) and widens the free cache to 64 entries, but its
- * on-disk byte order is the PDP-11's middle-endian, not 32V's little-endian:
- * the format was fixed on the PDP-11 and Coherent preserved it verbatim on
- * x86.  Xenix is little-endian like 32V but keeps the 2-byte packing and
- * widens the free cache to 100 entries.  `coh`/`xen` select the cache width and
- * packing; `le` selects the byte order. */
-static inline int sb_nicfree(int coh, int xen) { return xen ? V7_XEN_NICFREE : coh ? V7_COH_NICFREE : V7_NICFREE; }
-/* 4-byte field packing: only 32V (VAX) aligns daddr_t/time_t to 4 bytes; V7,
- * Coherent and Xenix keep the 2-byte (PDP-11/8086) packing. */
-static inline int sb_pack4(int le, int coh, int xen) { return le && !coh && !xen; }
-static inline int sb_fsize_off(int le, int coh, int xen)  { return sb_pack4(le, coh, xen) ? 4 : 2; }
-static inline int sb_nfree_off(int le, int coh, int xen)  { return sb_pack4(le, coh, xen) ? 8 : 6; }
-static inline int sb_free_off(int le, int coh, int xen)   { return sb_pack4(le, coh, xen) ? 12 : 8; }
-static inline int sb_ninode_off(int le, int coh, int xen) { return sb_free_off(le, coh, xen) + 4 * sb_nicfree(coh, xen); }
-static inline int sb_inode_off(int le, int coh, int xen)  { return sb_ninode_off(le, coh, xen) + 2; }
-static inline int sb_time_off(int le, int coh, int xen)   { return sb_inode_off(le, coh, xen) + 2*V7_NICINOD + 4 + (sb_pack4(le, coh, xen) ? 2 : 0); }
-static inline int fb_free_off(int le, int coh, int xen)   { return sb_pack4(le, coh, xen) ? 4 : 2; }
+/* Superblock field offsets.  32V (VAX) aligns daddr_t/time_t to 4 bytes, so
+ * the fields after such a type sit 2 bytes later than in V7; Coherent and
+ * Xenix keep the 2-byte packing.  pack4 and nicfree come from the descriptor. */
+static inline int sb_fsize_off(int pack4)  { return pack4 ? 4 : 2; }
+static inline int sb_nfree_off(int pack4)  { return pack4 ? 8 : 6; }
+static inline int sb_free_off(int pack4)   { return pack4 ? 12 : 8; }
+static inline int sb_ninode_off(int pack4, int nicfree) { return sb_free_off(pack4) + 4 * nicfree; }
+static inline int sb_inode_off(int pack4, int nicfree)  { return sb_ninode_off(pack4, nicfree) + 2; }
+static inline int sb_time_off(int pack4, int nicfree)   { return sb_inode_off(pack4, nicfree) + 2*V7_NICINOD + 4 + (pack4 ? 2 : 0); }
+static inline int fb_free_off(int pack4)   { return pack4 ? 4 : 2; }
 
 /* ---- core types -------------------------------------------------------- */
 
@@ -160,12 +90,15 @@ typedef filsys_dirent_t v7_dirent_t;
 typedef struct {
     int        fd;             /* open disk image */
     int        readonly;
-    int        le;             /* 0 = PDP-11 middle-endian (V7/Coherent), 1 = little-endian (32V) */
-    int        coherent;       /* Coherent: 2-byte-packed superblock, NICFREE=64, s_unique */
-    int        xenix;          /* Xenix: little-endian 2-byte-packed superblock, NICFREE=100 */
-    uint32_t   bsize;          /* logical block size (512 or 1024; 512 for all current editions) */
-    int        ndaddr;         /* direct block addresses per inode (10; 4 for bsd29) */
-    int        niaddr;         /* total block addresses per inode (13; 7 for bsd29) */
+    const byte_order_ops_t *bo; /* byte-order ops (bo_me / bo_le) */
+    uint32_t   bsize;           /* logical block size (512 or 1024) */
+    uint8_t    pack4;           /* 4-byte-aligned superblock fields (32V) */
+    uint16_t   nicfree;         /* free-block cache depth (50 / 64 / 100) */
+    uint16_t   inode_size;      /* bytes per on-disk inode */
+    uint8_t    ndaddr;          /* direct block addresses per inode */
+    uint8_t    niaddr;          /* total block addresses per inode */
+    uint8_t    interleave;      /* Coherent s_m/s_n interleave */
+    uint32_t   magic;           /* Xenix magic (0 = none) */
     uint64_t   base;           /* byte offset of this filesystem within the file */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
@@ -185,12 +118,12 @@ typedef struct {
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-/* Open a disk image.  Returns 0, or -errno.  little_endian selects the 32V
- * (VAX) byte order for 32-bit fields and 3-byte block addresses; 0 selects
- * the PDP-11 (V7) middle-endian order.  offset is the byte offset of the
- * filesystem within the file (0 = it starts at block 0 of the file). */
-int v7fs_open(v7fs_t *fs, const char *path, int readonly, int mode,
-              uint64_t offset, uint32_t bsize);
+/* Open a disk image.  Returns 0, or -errno.  fmt is the format descriptor
+ * (byte order, block size, free-cache width, superblock packing); offset is
+ * the byte offset of the filesystem within the file (0 = block 0 of the
+ * file). */
+int v7fs_open(v7fs_t *fs, const char *path, int readonly,
+              const filsys_format_t *fmt, uint64_t offset);
 /* Flush the superblock and close. */
 void v7fs_close(v7fs_t *fs);
 /* Flush the superblock (and pending metadata) to the image without closing. */
@@ -207,7 +140,7 @@ int v7fs_write_block(v7fs_t *fs, uint32_t bno, const uint8_t *buf);
 /* Block-size-dependent quantities: the logical block size is fs->bsize, not the
  * compile-time V7_BSIZE.  4-byte daddr_t per indirect, 64-byte inodes. */
 static inline uint32_t v7_nindir(const v7fs_t *fs) { return fs->bsize / 4; }
-static inline uint32_t v7_inopb(const v7fs_t *fs)  { return fs->bsize / V7_INODESZ; }
+static inline uint32_t v7_inopb(const v7fs_t *fs)  { return fs->bsize / fs->inode_size; }
 /* itod / itoo: inode number -> block and offset. */
 static inline uint32_t v7_itod(const v7fs_t *fs, uint32_t ino) { return 2 + (ino - 1) / v7_inopb(fs); }
 static inline uint32_t v7_itoo(const v7fs_t *fs, uint32_t ino) { return (ino - 1) % v7_inopb(fs); }

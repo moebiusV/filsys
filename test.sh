@@ -25,7 +25,7 @@ rm -f "$COPY"
 cp "$IMG" "$COPY"
 
 echo "== mount read-only on the pristine image =="
-./mount.filsys -r -f "$IMG" "$MNT" >mount.log 2>&1 &
+./mount.filsys -v v7 -r -f "$IMG" "$MNT" >mount.log 2>&1 &
 sleep 1.5
 [ -f "$MNT/etc/passwd" ] || { echo "FAIL: cannot read /etc/passwd"; exit 1; }
 grep -q '^root:' "$MNT/etc/passwd" && echo "  ok: read /etc/passwd"
@@ -33,7 +33,7 @@ ls "$MNT/bin" >/dev/null && echo "  ok: list /bin"
 fusermount3 -uz "$MNT"; sleep 0.5
 
 echo "== mount read-write on a copy =="
-./mount.filsys -f "$COPY" "$MNT" >mount.log 2>&1 &
+./mount.filsys -v v7 -f "$COPY" "$MNT" >mount.log 2>&1 &
 sleep 1.5
 echo "hello v7" > "$MNT/tmp/hosttest.txt"
 [ "$(cat "$MNT/tmp/hosttest.txt")" = "hello v7" ] && echo "  ok: write + read"
@@ -51,7 +51,7 @@ cp "$MNT/bin/ls" ./ls-off
 fusermount3 -uz "$MNT"; sleep 0.5
 
 echo "== truncate must not produce duplicate block references =="
-./mount.filsys -f "$COPY" "$MNT" >mount.log 2>&1 &
+./mount.filsys -v v7 -f "$COPY" "$MNT" >mount.log 2>&1 &
 sleep 1.5
 dd if=/dev/urandom of="$MNT/tmp/trunctest" bs=1024 count=64 2>/dev/null
 for sz in 60000 30000 45000 1000 40000; do
@@ -66,7 +66,7 @@ else
 fi
 
 echo "== persistence across remount =="
-./mount.filsys -r -f "$COPY" "$MNT" >mount.log 2>&1 &
+./mount.filsys -v v7 -r -f "$COPY" "$MNT" >mount.log 2>&1 &
 sleep 1.5
 if [ "$(cat "$MNT/tmp/persist.txt")" = "persist me" ]; then
     echo "  ok: file survived remount"
