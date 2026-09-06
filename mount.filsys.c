@@ -8,10 +8,10 @@
  *
  * One binary, every edition we care about (canonical -v names):
  *
- *     pdp7 v1 v2 v3 v4 v5 v6 v7 32v coherent
+ *     pdp7 v1 v6 v7 vax32 coherent xenix bsd29 bsd211
  *
  * pdp7 is the word-addressed PDP-7; v1/v2/v3 share one bitmap format; v4/v5/v6
- * are byte-identical (the V6 format); v7 is V7; 32v is 32V (VAX, little-endian);
+ * are byte-identical (the V6 format); v7 is V7; vax32 is 32V (VAX, little-endian);
  * coherent is Mark Williams Coherent (V7 middle-endian, 64-entry free cache).
  *
  * The on-disk layout is the 1969 Thompson/Canaday/Ritchie design - a flat
@@ -20,9 +20,9 @@
  * then widened in V7 (64-byte inode, 24-bit block numbers).  See filsys.5.
  *
  * Usage:
- *     mount.filsys -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [-o offset=N[,version=N][,uid=N,gid=N,...]]
+ *     mount.filsys -v <pdp7|v1|v6|v7|vax32|coherent|xenix|bsd29|bsd211> [-o offset=N[,version=N][,uid=N,gid=N,...]]
  *                    [-r] [-f] [-d] <image> <mountpoint>
- *     mount.filsys -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [-o offset=N] -c <image>   # integrity check
+ *     mount.filsys -v <pdp7|v1|v6|v7|vax32|coherent|xenix|bsd29|bsd211> [-o offset=N] -c <image>   # integrity check
  *
  * `-o offset=N` mounts a filesystem that lives at byte offset N within the
  * file (a partition of a larger disk image), instead of one at block 0.
@@ -225,36 +225,10 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
+            "usage: %s -v <%s> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
             "                [-r] [-f] [-d] <image> <mountpoint>\n"
             "       %s -v <edition> [-o offset=N] -c <image>   # integrity check\n",
-            p, p);
-}
-
-/* Parse a -v / -o version= argument.  Returns FILSYS_V6/V7/32V, or -1. */
-static int parse_version(const char *s) {
-    if (!strcmp(s, "vax32") || !strcmp(s, "VAX32"))
-        return FILSYS_32V;
-    if (s[0] == 'v' || s[0] == 'V') s++;   /* accept "v7" and "7" alike */
-    if (!strcmp(s, "v0") || !strcmp(s, "0") || !strcmp(s, "pdp7") || !strcmp(s, "p7"))
-        return FILSYS_PDP7;
-    if (!strcmp(s, "1") || !strcmp(s, "2") || !strcmp(s, "3"))
-        return FILSYS_V1;   /* V1, V2, V3: one format (10-byte dirents, bitmap, root 41) */
-    if (!strcmp(s, "4") || !strcmp(s, "5") || !strcmp(s, "6"))
-        return FILSYS_V6;
-    if (!strcmp(s, "7"))
-        return FILSYS_V7;
-    if (!strcmp(s, "vax32") || !strcmp(s, "32v") || !strcmp(s, "32"))
-        return FILSYS_32V;
-    if (!strcmp(s, "coherent") || !strcmp(s, "coh") || !strcmp(s, "33"))
-        return FILSYS_COHERENT;
-    if (!strcmp(s, "xenix") || !strcmp(s, "34"))
-        return FILSYS_XENIX;
-    if (!strcmp(s, "bsd29") || !strcmp(s, "35"))
-        return FILSYS_BSD29;
-    if (!strcmp(s, "bsd211") || !strcmp(s, "36"))
-        return FILSYS_BSD211;
-    return -1;
+            p, filsys_editions_usage(), p);
 }
 
 int main(int argc, char *argv[]) {
@@ -270,7 +244,7 @@ int main(int argc, char *argv[]) {
     while ((c = getopt(argc, argv, "v:o:rfdc")) != -1) {
         switch (c) {
         case 'v': {
-            int v = parse_version(optarg);
+            int v = filsys_edition_by_name(optarg);
             if (v < 0) {
                 fprintf(stderr, "%s: unknown Unix version \"%s\"\n", argv[0], optarg);
                 usage(argv[0]);
@@ -288,7 +262,7 @@ int main(int argc, char *argv[]) {
                     offset = strtoull(tok + 7, &end, 0);
                     if (!end || *end) { bad = 1; break; }
                 } else if (!strncmp(tok, "version=", 8)) {
-                    int v = parse_version(tok + 8);
+                    int v = filsys_edition_by_name(tok + 8);
                     if (v < 0) bad = 1; else ver = v;
                 } else if (!strncmp(tok, "uid=", 4)) {
                     uid = atoi(tok + 4);

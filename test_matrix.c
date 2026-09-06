@@ -16,6 +16,7 @@
  */
 #include <config.h>
 #include "filsys.h"
+#include "v7fs.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -230,29 +231,34 @@ static void mkfs_cleanliness(void) {
 /* Directory-entry name widths, asserted per edition at 14/30/63/64 characters.
  * This is the regression for the facade bug that hardcoded a 14-character
  * component buffer and rejected 2.11BSD's 63-character names before they
- * reached the backend.  Every edition must accept names up to its limit (8 for
- * V1, 14 for the fixed-width formats, 63 for 2.11BSD) and reject beyond it. */
+ * reached the backend.  It iterates the shared edition table (filsys_format_nth)
+ * so every edition -- including PDP-7, which the earlier hand-written list
+ * skipped -- is exercised, and each edition must accept names up to its limit
+ * (8 for V1/PDP-7, 14 for the fixed-width formats, 63 for 2.11BSD) and reject
+ * beyond it. */
 static void namelength(void) {
-    static const struct { int edition; const char *name; size_t max; } t[] = {
-        { FILSYS_V1,        "v1",       8  },
-        { FILSYS_V6,        "v6",       14 },
-        { FILSYS_V7,        "v7",       14 },
-        { FILSYS_32V,       "32v",      14 },
-        { FILSYS_COHERENT,  "coherent", 14 },
-        { FILSYS_XENIX,     "xenix",    14 },
-        { FILSYS_BSD29,     "bsd29",    14 },
-        { FILSYS_BSD211,    "bsd211",   63 },
-    };
     static const size_t lens[] = { 14, 30, 63, 64 };
-    for (size_t i = 0; i < sizeof t / sizeof t[0]; i++) {
+    for (size_t i = 0; ; i++) {
+        const filsys_format_t *f = filsys_format_nth(i);
+        if (!f)
+            break;
+        filsys_edition_t desc = filsys_getformat(f->edition);
+        if (!desc.ops)
+            continue;
+        size_t max = desc.max_namlen;
+
         char img[64], cmd[256];
-        snprintf(img, sizeof img, "test_matrix_nl_%s.img", t[i].name);
+        snprintf(img, sizeof img, "test_matrix_nl_%s.img", f->name);
         unlink(img);
-        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s 100 >/dev/null 2>&1",
-                 t[i].name, img);
+        if (f->edition == FILSYS_PDP7)   /* fixed RB09 geometry: no size arg */
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
+                     f->name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s 100 >/dev/null 2>&1",
+                     f->name, img);
         if (system(cmd) != 0) { ok("namelength mkfs", 0); continue; }
         filsys_t *fs;
-        if (filsys_open(&fs, t[i].edition, img, 0, 0, 0, 0)) {
+        if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0)) {
             ok("namelength open", 0); unlink(img); continue;
         }
         for (size_t j = 0; j < sizeof lens / sizeof lens[0]; j++) {
@@ -261,9 +267,9 @@ static void namelength(void) {
             path[0] = '/';
             memset(path + 1, 'a', L);
             path[L + 1] = 0;
-            int want = (L <= t[i].max) ? 0 : -ENAMETOOLONG;
+            int want = (L <= max) ? 0 : -ENAMETOOLONG;
             int got = filsys_create(fs, path, 0644, 0, 0);
-            snprintf(what, sizeof what, "%s %zu-char %s", t[i].name, L,
+            snprintf(what, sizeof what, "%s %zu-char %s", f->name, L,
                      want == 0 ? "accepted" : "rejected");
             ok(what, got == want);
             if (got == 0) filsys_unlink(fs, path);
