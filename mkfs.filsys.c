@@ -601,9 +601,10 @@ int main(int argc, char **argv)
     uint32_t blocks = 0;
     uint64_t offblock = 0;
     int edition = -1;   /* no default: the version must be named explicitly */
+    const char *packing = NULL;   /* PDP-7 word container codec */
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:b:m:n:")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:b:m:n:P:")) != -1) {
         switch (c) {
         case 'v':
             edition = filsys_edition_by_name(optarg);
@@ -616,14 +617,15 @@ int main(int argc, char **argv)
         case 'b': bootfile = optarg; break;
         case 'm': v7_m = (uint16_t)strtoul(optarg, NULL, 0); break;
         case 'n': v7_n = (uint16_t)strtoul(optarg, NULL, 0); break;
+        case 'P': packing = optarg; break;
         default:
-            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-b boot] [-m m] [-n n] image [blocks]\n"
+            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-b boot] [-m m] [-n n] image [blocks]\n"
                             "  editions: %s\n", filsys_editions_usage());
             return 1;
         }
     }
     if (optind >= argc) {
-        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-b boot] [-m m] [-n n] image [blocks]\n"
+        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-b boot] [-m m] [-n n] image [blocks]\n"
                         "  editions: %s\n", filsys_editions_usage());
         return 1;
     }
@@ -638,6 +640,10 @@ int main(int argc, char **argv)
     if (edition == FILSYS_PDP7) {
         /* PDP-7 opens its own 2-surface image (fixed RB09 geometry). */
         filsys_edition_t desc = filsys_getformat(FILSYS_PDP7);
+        if (packing && !(desc.word = filsys_word_codec_by_name(packing))) {
+            fprintf(stderr, "mkfs.filsys: unknown packing '%s'\n", packing);
+            return 1;
+        }
         mkfs_pdp7(path, blocks, bootfile, desc.word);
         close(fd);
         return 0;

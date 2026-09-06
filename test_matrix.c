@@ -129,7 +129,7 @@ static void run(const struct fmt *f) {
     }
 
     filsys_t *fs;
-    if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0)) {
+    if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
         ok(f->name, 0);
         fprintf(stderr, "  open failed\n");
         unlink(img);
@@ -251,7 +251,7 @@ static void v6_large_file(void) {
     if (system(cmd) != 0) { ok("v6 large mkfs", 0); unlink(img); return; }
 
     filsys_t *fs;
-    if (filsys_open(&fs, FILSYS_V6, img, 0, 0, 0, 0)) {
+    if (filsys_open(&fs, FILSYS_V6, img, 0, 0, 0, 0, NULL)) {
         ok("v6 large open", 0); unlink(img); return;
     }
 
@@ -308,7 +308,7 @@ static void namelength(void) {
                      f->name, img);
         if (system(cmd) != 0) { ok("namelength mkfs", 0); continue; }
         filsys_t *fs;
-        if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0)) {
+        if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
             ok("namelength open", 0); unlink(img); continue;
         }
         for (size_t j = 0; j < sizeof lens / sizeof lens[0]; j++) {

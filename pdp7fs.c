@@ -74,8 +74,34 @@ static void rb09_put(uint8_t *buf, uint32_t i, uint32_t v) {
     bo_put32le(buf + 4 * i, v & P7_MAXWORD);
 }
 
-const word_codec_t word_rb09     = { rb09_get,      rb09_put,      P7_WSIZE * 4 };
+/* Paper-tape RIM (mkfs7's word2three): 18 bits as three 6-bit frames, high six
+ * bits first, each frame in the low six bits of a byte. */
+static uint32_t rim_get(const uint8_t *buf, uint32_t i) {
+    return ((uint32_t)(buf[3 * i]     & 0x3fu) << 12) |
+           ((uint32_t)(buf[3 * i + 1] & 0x3fu) << 6)  |
+            (uint32_t)(buf[3 * i + 2] & 0x3fu);
+}
+static void rim_put(uint8_t *buf, uint32_t i, uint32_t v) {
+    buf[3 * i]     = (uint8_t)((v >> 12) & 0x3fu);
+    buf[3 * i + 1] = (uint8_t)((v >> 6)  & 0x3fu);
+    buf[3 * i + 2] = (uint8_t)(v         & 0x3fu);
+}
+
+const word_codec_t word_rb09     = { rb09_get,       rb09_put,       P7_WSIZE * 4 };
 const word_codec_t word_packed18 = { bo_get18packed, bo_put18packed, P7_WSIZE * 18 / 8 };
+const word_codec_t word_rim      = { rim_get,        rim_put,        P7_WSIZE * 3 };
+
+const word_codec_t *filsys_word_codec_by_name(const char *name) {
+    if (!name)
+        return NULL;
+    if (!strcmp(name, "rb09") || !strcmp(name, "simh"))
+        return &word_rb09;
+    if (!strcmp(name, "packed18") || !strcmp(name, "packed"))
+        return &word_packed18;
+    if (!strcmp(name, "rim"))
+        return &word_rim;
+    return NULL;
+}
 
 /* Read logical word `woff` of an inode's data (map through bmap). */
 static int inode_read_word(p7fs_t *fs, p7_inode_t *ip, uint32_t woff, uint32_t *out) {

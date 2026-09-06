@@ -4,7 +4,7 @@
  * filesystem on a disk image.
  *
  * Usage:
- *     fsck.filsys [-v <pdp7|v1|v6|v7|vax32|coherent|xenix|bsd29|bsd211>] [-o block] [-s] [-r] [-p] [-f] [-n] image
+ *     fsck.filsys [-v <pdp7|v1|v6|v7|vax32|coherent|xenix|bsd29|bsd211>] [-o block] [-P packing] [-s] [-r] [-p] [-f] [-n] image
  *     fsck.filsys [-v <edition>] [-o block] -N ino image
  *     fsck.filsys [-v <edition>] [-o block] -C ino image
  *
@@ -59,9 +59,10 @@ int main(int argc, char **argv)
     int salvage = 0, resolve = 0, ncheck = 0, clri = 0, nochange = 0;
     int preen = 0, force = 0, yes = 0, ask = 0;
     uint32_t ino = 0;
+    const char *packing = NULL;   /* PDP-7 word container codec */
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:srpfinN:C:y")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:srpfinN:C:yP:")) != -1) {
         switch (c) {
         case 'v':
             edition = filsys_edition_by_name(optarg);
@@ -99,9 +100,12 @@ int main(int argc, char **argv)
             clri = 1;
             ino = (uint32_t)strtoul(optarg, NULL, 0);
             break;
+        case 'P':
+            packing = optarg;
+            break;
         default:
             fprintf(stderr,
-                "usage: fsck.filsys -v <edition> [-o block] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
+                "usage: fsck.filsys -v <edition> [-o block] [-P packing] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
                 "       fsck.filsys -v <edition> [-o block] -N ino image\n"
                 "       fsck.filsys -v <edition> [-o block] -C ino image\n"
                 "  editions: %s\n", filsys_editions_usage());
@@ -110,7 +114,7 @@ int main(int argc, char **argv)
     }
     if (optind >= argc) {
         fprintf(stderr,
-            "usage: fsck.filsys -v <edition> [-o block] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
+            "usage: fsck.filsys -v <edition> [-o block] [-P packing] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
             "       fsck.filsys -v <edition> [-o block] -N ino image\n"
             "       fsck.filsys -v <edition> [-o block] -C ino image\n"
             "  editions: %s\n", filsys_editions_usage());
@@ -192,6 +196,10 @@ int main(int argc, char **argv)
     if (edition == FILSYS_PDP7) {
         int readonly = !(salvage || resolve || clri || preen || yes || ask);
         filsys_edition_t fs = filsys_getformat(edition);
+        if (packing && !(fs.word = filsys_word_codec_by_name(packing))) {
+            fprintf(stderr, "fsck.filsys: unknown packing '%s'\n", packing);
+            return 2;
+        }
         int rc = p7fs_open(&fs, path, readonly, &fs, offblock * fs.word->block_bytes);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
