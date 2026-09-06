@@ -1,4 +1,4 @@
-/* bo.h - byte-order primitives for on-disk multi-byte quantities.
+/* byteorder.h - byte-order primitives for on-disk multi-byte quantities.
  *
  * Research Unix filesystems store multi-byte fields in three byte orders:
  *
@@ -19,8 +19,8 @@
  *
  * SPDX-License-Identifier: ISC
  */
-#ifndef BO_H
-#define BO_H
+#ifndef BYTEORDER_H
+#define BYTEORDER_H
 
 #include <stdint.h>
 
@@ -62,4 +62,4 @@ extern const byte_order_ops_t bo_le;   /* little-endian */
 extern const byte_order_ops_t bo_be;   /* big-endian */
 extern const byte_order_ops_t bo_me;   /* middle-endian (PDP-11) */
 
-#endif /* BO_H */
+#endif /* BYTEORDER_H */

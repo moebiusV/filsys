@@ -1,4 +1,4 @@
-/* filsys 1.3.2 - 2026-09-05 - Copyright (C) 2026 David Walther */
+/* filsys 1.4.0 - 2026-09-06 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v7fs.h - Seventh Edition (V7) Unix filesystem, on-disk access layer.
  *
@@ -25,7 +25,7 @@
 #include <sys/types.h>
 
 #include "filsys.h"
-#include "bo.h"
+#include "byteorder.h"
 
 struct filsys_ops;   /* forward: the per-backend vtable (see filsys_ops.h) */
 

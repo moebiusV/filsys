@@ -1,3 +1,25 @@
+filsys 1.4.0 (2026-09-06)
+=========================
+
+The internal architecture is reworked so every edition runs through one engine
+instead of five near-duplicate backends:
+
+- The V6 and 2.11BSD backends are folded into the V7 engine: v6fs.c and
+  bsd211fs.c are deleted, and their behaviour (V6's s_isize-as-block-count,
+  32-byte inode and ILARG bmap; 2.11BSD's 4-byte block addresses and
+  variable-length directory entries) now lives as per-edition functions in the
+  one v7fs.c.
+- A byte-order ops table (byteorder.c) holds the single copy of each
+  little-/big-/middle-endian primitive, so a consolidated algorithm calls
+  through the descriptor's byte order instead of re-reading fields.
+- A format descriptor (filsys_format.c) replaces the ~40 edition comparisons in
+  the facade with one per-edition row; filsys_getformat() returns the
+  filsys_edition_t that carries both the descriptor and the runtime state.
+
+Net effect is about a thousand fewer lines across eleven byte-identical
+formats; the test matrix and fsck still round-trip every edition with zero
+errors.
+
 filsys 1.3.2 (2026-09-05)
 =========================
 

@@ -1,4 +1,4 @@
-/* filsys 1.3.2 - 2026-09-05 - Copyright (C) 2026 David Walther */
+/* filsys 1.4.0 - 2026-09-06 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* findfs.filsys.c - locate filesystem superblocks on a raw disk image.
  *
@@ -30,7 +30,7 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#include "bo.h"
+#include "byteorder.h"
 
 enum {
     BSIZE      = 512,

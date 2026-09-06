@@ -1,3 +1,20 @@
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
+	* v7fs.c, v7fs.h: fold the V6 and 2.11BSD backends into the V7 engine
+	(v6fs.c and bsd211fs.c deleted).  V6's s_isize-as-block-count, 32-byte
+	inode and ILARG bmap, and 2.11BSD's 4-byte block addresses and
+	variable-length directory entries, become per-edition ops in the shared
+	engine.
+	* byteorder.c, byteorder.h: byte-order ops table (bo_le/bo_be/bo_me),
+	the single copy of each little-/big-/middle-endian primitive.
+	* filsys_format.c: per-edition descriptor table; filsys_getformat()
+	returns filsys_edition_t, which carries both the descriptor and the
+	runtime state.
+	* filsys.c: route every operation through the descriptor's ops table
+	(forty edition comparisons down to two).
+	* Makefile.am: drop v6fs.[ch] and bsd211fs.[ch]; add byteorder.[ch]
+	and filsys_format.c.
+
 2026-09-05  David Walther  <david@clearbrookdistillery.com>
 
 	* filsys.c: edition_bsize() per-edition block size (the open path had

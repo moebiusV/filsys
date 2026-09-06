@@ -24,7 +24,7 @@ sbin_PROGRAMS = mount.filsys
 # internal per-format layer and stays uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c byteorder.c byteorder.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
@@ -41,13 +41,13 @@ mount_filsys_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
 # No -lpthread is needed.
 mount_filsys_LDADD = $(FUSE3_LIBS) libfilsys.a
 
-findfs_filsys_SOURCES = findfs.filsys.c bo.c bo.h
+findfs_filsys_SOURCES = findfs.filsys.c byteorder.c byteorder.h
 findfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
-mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h filsys_format.c byteorder.c byteorder.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 mkfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
-fsck_filsys_SOURCES = fsck.filsys.c filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+fsck_filsys_SOURCES = fsck.filsys.c filsys_ops.h filsys_format.c byteorder.c byteorder.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
