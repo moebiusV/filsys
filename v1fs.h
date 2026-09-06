@@ -55,16 +55,6 @@ enum {
 typedef filsys_inode_t  v1_inode_t;
 typedef filsys_dirent_t v1_dirent_t;
 
-/* V1's dual-bitmap allocator state (the other allocator beside freelist_state). */
-typedef struct {
-    uint16_t   freemap_bytes;
-    uint16_t   inodemap_bytes;
-    uint8_t   *freemap;        /* in-core free-block bitmap (bit=1 free) */
-    uint8_t   *inodemap;       /* in-core inode bitmap (bit=0 free, inode 41+) */
-    uint32_t   tfree;          /* total free blocks */
-    uint32_t   tinode;         /* total free inodes */
-} bitmap_state;
-
 extern const alloc_ops_t bitmap_alloc_ops;
 
 typedef struct {

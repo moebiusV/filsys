@@ -34,6 +34,16 @@ typedef struct {
     int  (*sync)(void *fs);          /* flush the allocator state */
 } alloc_ops_t;
 
+/* V1's dual-bitmap allocator state (the other allocator beside freelist_state). */
+typedef struct {
+    uint16_t   freemap_bytes;
+    uint16_t   inodemap_bytes;
+    uint8_t   *freemap;        /* in-core free-block bitmap (bit=1 free) */
+    uint8_t   *inodemap;       /* in-core inode bitmap (bit=0 free, inode 41+) */
+    uint32_t   tfree;          /* total free blocks */
+    uint32_t   tinode;         /* total free inodes */
+} bitmap_state;
+
 /* Block-usage context for the shared check driver (icheck's bitmaps + counters).
  * The backend state is passed to each op separately; only the format-neutral
  * accounting lives here, so one context serves every edition. */
