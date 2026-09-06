@@ -51,7 +51,6 @@
 #include "v6fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
-#include "bsd211fs.h"
 
 /* Parse the -v edition argument.  Returns a FILSYS_* selector, or -1 on error.
  * Accepts a leading 'v' (v6, v7) and rejects everything else. */
@@ -245,18 +244,6 @@ int main(int argc, char **argv)
     }
 
     int readonly = !(salvage || resolve || clri || preen || yes || ask);
-    if (edition == FILSYS_BSD211) {
-        bsd211fs_t fs;
-        int rc = bsd211fs_open(&fs, path, readonly, offblock * BSD211_BSIZE);
-        if (rc < 0) {
-            fprintf(stderr, "%s: %s\n", path, strerror(-rc));
-            return 1;
-        }
-        bsd211_check_t rep;
-        int err = bsd211fs_check(&fs, &rep, mode);
-        bsd211fs_close(&fs);
-        return err ? 1 : 0;
-    }
     filsys_edition_t fs;
     filsys_edition_t fmt = filsys_getformat(edition);
     int rc = v7fs_open(&fs, path, readonly, &fmt, offblock * fmt.bsize);
@@ -266,7 +253,11 @@ int main(int argc, char **argv)
     }
 
     int err = 0;
-    if (ncheck) {
+    if (edition == FILSYS_BSD211) {
+        /* 2.11BSD: check only (no ncheck/clri/salvage maintenance ops). */
+        v7_check_t rep;
+        err = bsd211_check(&fs, &rep, mode);
+    } else if (ncheck) {
         err = v7fs_ncheck(&fs, ino);
     } else if (clri) {
         err = v7fs_clri(&fs, ino);

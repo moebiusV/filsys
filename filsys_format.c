@@ -122,6 +122,7 @@ static const filsys_edition_t v7 = {
     .bsize = V7_BSIZE, .bo = &bo_me,
     .nicfree = V7_NICFREE, .nicinod = V7_NICINOD,
     .inode_size = V7_INODESZ, .ndaddr = V7_NDADDR, .niaddr = V7_NIADDR,
+    .addr_width = 3, .fmod_back = 2,
     .max_namlen = V7_DIRSIZ, .dirent_size = V7_DIRENTSZ,
     .ifmt = V7_IFMT, .ifdir = V7_IFDIR, .ifreg = V7_IFREG,
     .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .ifmpc = V7_IFMPC, .ifmpb = V7_IFMPB,
@@ -153,10 +154,11 @@ static const filsys_edition_t pdp7 = {
     .chmod_mode = p7_chmod_mode,
 };
 static const filsys_edition_t bsd211 = {
-    .ops = &bsd211fs_ops, .state_size = sizeof(bsd211fs_t), .name = "bsd211",
+    .ops = &bsd211fs_ops, .state_size = sizeof(filsys_edition_t), .name = "bsd211",
     .bsize = BSD211_BSIZE, .bo = &bo_me,
     .nicfree = BSD211_NICFREE, .nicinod = BSD211_NICINOD,
     .inode_size = BSD211_INODESZ, .ndaddr = BSD211_NDADDR, .niaddr = BSD211_NIADDR,
+    .addr_width = 4, .fmod_back = 3,
     .max_namlen = BSD211_MAXNAMLEN, .dirent_size = 0,
     .ifmt = BSD211_IFMT, .ifdir = BSD211_IFDIR, .ifreg = BSD211_IFREG,
     .ifchr = BSD211_IFCHR, .ifblk = BSD211_IFBLK,

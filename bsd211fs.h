@@ -1,24 +1,16 @@
-/* bsd211fs.h - 2.11BSD filesystem, on-disk access layer.
+/* bsd211fs.h - 2.11BSD on-disk constants (see docs/2bsd-format.md).
  *
- * 2.11BSD keeps V7's free-list superblock but swaps in the "new" BSD inode:
- * 32-bit block addresses, 7 address slots (4 direct + 3 indirect), a di_flags
- * field, and live symbolic links.  Directory entries are variable-length with
- * up to 63-char names.  Block size is 1024 bytes; byte order is the PDP-11's
- * middle-endian (16-bit little-endian, 32-bit most-significant word first).
- *
- * The format is documented in docs/2bsd-format.md; this file mirrors the
- * original 2.11BSD headers (h/{fs.h,inode.h,dir.h,types.h}, machine/machparam.h).
+ * 2.11BSD is served by the V7 engine (v7fs.c): it keeps V7's free-list
+ * superblock but swaps in the "new" BSD inode (32-bit block addresses, 4 direct
+ * + 3 indirect, di_flags, symlinks) and variable-length directory entries.  The
+ * engine is parameterized by the filsys_edition_t descriptor; this header holds
+ * only the raw 2.11BSD on-disk numbers, used by the descriptor row
+ * (filsys_format.c) and by mkfs.filsys.c's self-contained 2.11BSD mkfs path.
  *
  * SPDX-License-Identifier: ISC
  */
 #ifndef BSD211FS_H
 #define BSD211FS_H
-
-#include <stdint.h>
-#include <stddef.h>
-#include <sys/types.h>
-
-#include "filsys.h"
 
 enum {
     BSD211_BSIZE      = 1024,
@@ -53,10 +45,7 @@ enum {
     BSD211_IEXEC  = 0000100
 };
 
-/* Byte order lives in bo.h (bo_get16le/bo_get32me/...). */
-
-/* ---- superblock field offsets (struct fs, packed, block 1) --------------- */
-
+/* Superblock field offsets (struct fs, packed, block 1). */
 enum {
     BSD211_SB_ISIZE   = 0,     /* u16: first block after i-list */
     BSD211_SB_FSIZE   = 2,     /* u32: size of entire volume in blocks */
@@ -71,84 +60,5 @@ enum {
     BSD211_SB_STEP    = 424,   /* u16: interleave m */
     BSD211_SB_CYL     = 426,   /* u16: interleave n */
 };
-
-/* ---- core types ---------------------------------------------------------- */
-
-/* Decoded inode/dirent are the public filsys types. */
-typedef filsys_inode_t  bsd211_inode_t;
-typedef filsys_dirent_t bsd211_dirent_t;
-
-typedef struct {
-    int        fd;
-    int        readonly;
-    uint64_t   base;          /* byte offset of this filesystem within the file */
-    /* in-core superblock */
-    uint16_t   isize;
-    uint32_t   fsize;
-    uint16_t   nfree;
-    uint32_t   free[BSD211_NICFREE];
-    uint16_t   ninode;
-    uint16_t   inode[BSD211_NICINOD];
-    uint32_t   time;
-    uint32_t   tfree;
-    uint16_t   tinode;
-    int        fmod;
-} bsd211fs_t;
-
-/* ---- lifecycle ----------------------------------------------------------- */
-
-int bsd211fs_open(bsd211fs_t *fs, const char *path, int readonly, uint64_t offset);
-void bsd211fs_close(bsd211fs_t *fs);
-int bsd211fs_sync(bsd211fs_t *fs);
-int bsd211fs_mark_dirty(bsd211fs_t *fs);
-
-/* ---- block / inode io ---------------------------------------------------- */
-
-int bsd211fs_read_block(bsd211fs_t *fs, uint32_t bno, uint8_t *buf);
-int bsd211fs_write_block(bsd211fs_t *fs, uint32_t bno, const uint8_t *buf);
-
-/* itod / itoo: inode number -> block and offset (16 inodes per block). */
-static inline uint32_t bsd211_itod(uint32_t ino) { return 2 + (ino - 1) / BSD211_INOPB; }
-static inline uint32_t bsd211_itoo(uint32_t ino) { return (ino - 1) % BSD211_INOPB; }
-
-int bsd211fs_read_inode(bsd211fs_t *fs, uint32_t ino, bsd211_inode_t *ip);
-int bsd211fs_write_inode(bsd211fs_t *fs, uint32_t ino, const bsd211_inode_t *ip);
-
-/* ---- allocation ---------------------------------------------------------- */
-
-int bsd211fs_balloc(bsd211fs_t *fs, uint32_t *bno);
-void bsd211fs_bfree(bsd211fs_t *fs, uint32_t bno);
-int bsd211fs_ialloc(bsd211fs_t *fs, uint32_t *ino);
-void bsd211fs_ifree(bsd211fs_t *fs, uint32_t ino);
-int bsd211fs_itrunc(bsd211fs_t *fs, bsd211_inode_t *ip);
-int bsd211fs_itrunc_from(bsd211fs_t *fs, bsd211_inode_t *ip, uint32_t first_blk);
-
-/* ---- file / directory data ----------------------------------------------- */
-
-int bsd211fs_bmap(bsd211fs_t *fs, bsd211_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
-ssize_t bsd211fs_file_read(bsd211fs_t *fs, bsd211_inode_t *ip, uint8_t *buf, size_t size, off_t off);
-ssize_t bsd211fs_file_write(bsd211fs_t *fs, bsd211_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
-
-int bsd211fs_dir_read(bsd211fs_t *fs, bsd211_inode_t *ip, bsd211_dirent_t **ents, size_t *count);
-void bsd211fs_dirents_free(bsd211_dirent_t *ents);
-int bsd211fs_dir_lookup(bsd211fs_t *fs, bsd211_inode_t *ip, const char *name, uint32_t *ino);
-int bsd211fs_dir_add(bsd211fs_t *fs, bsd211_inode_t *ip, uint32_t ino, const char *name);
-int bsd211fs_dir_remove(bsd211fs_t *fs, bsd211_inode_t *ip, const char *name);
-
-int bsd211fs_lookup(bsd211fs_t *fs, const char *path, uint32_t *ino, bsd211_inode_t *ip);
-
-/* ---- integrity check ------------------------------------------------------ */
-
-typedef struct {
-    uint32_t free_blocks;
-    uint32_t used_blocks;
-    uint32_t missing_blocks;
-    uint32_t dup_blocks;
-    uint32_t inodes;
-    uint32_t used_inodes;
-    uint32_t errors;
-} bsd211_check_t;
-
-int bsd211fs_check(bsd211fs_t *fs, bsd211_check_t *rep, int mode);
 
 #endif /* BSD211FS_H */
