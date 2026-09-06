@@ -230,7 +230,8 @@ int main(int argc, char **argv)
 
     int err = 0;
     if (edition == FILSYS_BSD211) {
-        /* 2.11BSD: check only (no ncheck/clri/salvage maintenance ops). */
+        /* 2.11BSD: check/preen/salvage via the shared driver; the ncheck/clri/
+         * resolve maintenance commands are not wired up for it. */
         v7_check_t rep;
         err = bsd211_check(&fs, &rep, mode);
     } else if (ncheck) {

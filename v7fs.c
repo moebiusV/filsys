@@ -1063,8 +1063,7 @@ static uint8_t bsd211_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t m
 static int bsd211_is_clean(filsys_edition_t *fs) { (void)fs; return 0; }
 
 int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
-    (void)mode;   /* 2.11BSD: check only, no salvage/preen */
-    return filsys_check_common(fs, fs, rep, 0);
+    return filsys_check_common(fs, fs, rep, mode);
 }
 
 /* ---- 2.11BSD ops table: the shared V7 engine + variable-length dirents ---- */
