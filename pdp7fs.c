@@ -492,7 +492,7 @@ int p7fs_dir_read(p7fs_t *fs, p7_inode_t *ip, p7_dirent_t **ents, size_t *count)
         return -ENOMEM;
 
     size_t cnt = 0;
-    out[cnt].ino = ip->ino;       strcpy(out[cnt].name, ".");   cnt++;
+    out[cnt].ino = (uint16_t)ip->ino;       strcpy(out[cnt].name, ".");   cnt++;
     out[cnt].ino = P7_ROOTINO;    strcpy(out[cnt].name, "..");  cnt++;
 
     for (size_t d = 0; d < ndirents; d++) {
@@ -510,7 +510,7 @@ int p7fs_dir_read(p7fs_t *fs, p7_inode_t *ip, p7_dirent_t **ents, size_t *count)
         unpack_name(namew, ent);
         if (!strcmp(ent, ".") || !strcmp(ent, ".."))
             continue;   /* synthesized above; a mkdir'd copy is redundant */
-        out[cnt].ino = dino;
+        out[cnt].ino = (uint16_t)dino;
         memcpy(out[cnt].name, ent, P7_DIRSIZ + 1);
         cnt++;
     }
