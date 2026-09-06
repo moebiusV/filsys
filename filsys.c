@@ -101,11 +101,18 @@ static int ialloc(filsys_t *fs, uint32_t *ino) {
 static void ifree(filsys_t *fs, uint32_t ino) {
     fs->ops->ifree(fs->fs, ino);
 }
-static int itrunc(filsys_t *fs, filsys_inode_t *ip) {
-    return filsys_itrunc(fs->fs, ip);
+static int itrunc(filsys_t *fs, filsys_inode_t *ip, filsys_blklist_t **bl) {
+    *bl = filsys_blklist_new();
+    if (!*bl)
+        return -ENOMEM;
+    return filsys_itrunc(fs->fs, ip, *bl);
 }
-static int itrunc_from(filsys_t *fs, filsys_inode_t *ip, uint32_t first_blk) {
-    return filsys_itrunc_from(fs->fs, ip, first_blk);
+static int itrunc_from(filsys_t *fs, filsys_inode_t *ip, uint32_t first_blk,
+                       filsys_blklist_t **bl) {
+    *bl = filsys_blklist_new();
+    if (!*bl)
+        return -ENOMEM;
+    return filsys_itrunc_from(fs->fs, ip, first_blk, *bl);
 }
 static ssize_t file_read(filsys_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t sz, off_t off) {
     return fs->ops->file_read(fs->fs, ip, buf, sz, off);
@@ -292,17 +299,23 @@ int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, o
     uint32_t oldsize = ip.size;
     ssize_t n = file_write(fs, &ip, (const uint8_t *)buf, size, off);
     if (n < 0) {
-        /* A legal-sized write can still fail partway (ENOSPC, EIO): free the
-         * blocks it allocated past the original size, then reset the inode. */
+        /* A legal-sized write can still fail partway (ENOSPC, EIO): collect the
+         * blocks it allocated past the original size, reset the inode, then free
+         * the collected blocks.  The reset is persisted before the free, so a
+         * failed write leaves leaks (recoverable) rather than aliasing. */
         uint32_t bsize = fs->ops->blocksize(fs->fs);
         uint32_t first_blk = oldsize ? (oldsize - 1) / bsize + 1 : 0;
-        rc = itrunc_from(fs, &ip, first_blk);
+        filsys_blklist_t *bl = NULL;
+        rc = itrunc_from(fs, &ip, first_blk, &bl);
         if (rc == 0)
             rc = write_inode(fs, ino, &ip);
         /* A rollback failure is more severe than the write error it was
          * cleaning up: the inode would now hold dangling block pointers. */
-        if (rc)
+        if (rc) {
+            filsys_blklist_discard(bl);
             return rc;
+        }
+        filsys_blklist_drain(fs->fs, bl);
     }
     return (int)n;
 }
@@ -379,10 +392,16 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
 fail:
     /* The parent entry never landed (or its update failed): free the new
      * directory's "." and ".." blocks, then its inode, so it isn't orphaned. */
-    itrunc(fs, &nip);
-    nip.mode = 0;
-    write_inode(fs, nino, &nip);
-    ifree(fs, nino);
+    {
+        filsys_blklist_t *bl = NULL;
+        itrunc(fs, &nip, &bl);          /* best-effort; the dir is freshly made */
+        nip.mode = 0;
+        if (write_inode(fs, nino, &nip) == 0)
+            filsys_blklist_drain(fs->fs, bl);
+        else
+            filsys_blklist_discard(bl);
+        ifree(fs, nino);
+    }
     return rc;
 }
 
@@ -456,13 +475,22 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
     rc = dir_remove(fs, &ddir, name);
     if (rc) return rc;
     ip.nlink--;
+    filsys_blklist_t *bl = NULL;
     if (ip.nlink <= 0) {
-        rc = itrunc(fs, &ip);
-        if (rc) return rc;
+        rc = itrunc(fs, &ip, &bl);
+        if (rc) {
+            filsys_blklist_discard(bl);
+            return rc;
+        }
         ip.mode = 0;
         ifree(fs, ino);
     }
-    return write_inode(fs, ino, &ip);
+    rc = write_inode(fs, ino, &ip);
+    if (rc)
+        filsys_blklist_discard(bl);     /* inode not persisted: blocks stay referenced */
+    else
+        filsys_blklist_drain(fs->fs, bl);
+    return rc;
 }
 
 int filsys_unlink(filsys_t *fs, const char *path) {
@@ -502,11 +530,20 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     ddir.nlink--;
     rc = write_inode(fs, dino, &ddir);
     if (rc) return rc;
-    rc = itrunc(fs, &tip);
-    if (rc) return rc;
+    filsys_blklist_t *bl = NULL;
+    rc = itrunc(fs, &tip, &bl);
+    if (rc) {
+        filsys_blklist_discard(bl);
+        return rc;
+    }
     tip.mode = 0;
     ifree(fs, ino);
-    return write_inode(fs, ino, &tip);
+    rc = write_inode(fs, ino, &tip);
+    if (rc)
+        filsys_blklist_discard(bl);
+    else
+        filsys_blklist_drain(fs->fs, bl);
+    return rc;
 }
 
 static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
@@ -674,8 +711,20 @@ int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
                 if (w < 0) return (int)w;
             }
         }
-        rc = itrunc_from(fs, &ip, newsize ? last + 1 : 0);
-        if (rc) return rc;
+        filsys_blklist_t *bl = NULL;
+        rc = itrunc_from(fs, &ip, newsize ? last + 1 : 0, &bl);
+        if (rc) {
+            filsys_blklist_discard(bl);
+            return rc;
+        }
+        ip.size = newsize;
+        rc = write_inode(fs, ino, &ip);
+        if (rc) {
+            filsys_blklist_discard(bl);
+            return rc;
+        }
+        filsys_blklist_drain(fs->fs, bl);
+        return 0;
     }
 
     ip.size = newsize;

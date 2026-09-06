@@ -205,7 +205,10 @@ static int super_write(filsys_edition_t *fs) {
             fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26, fs->unique);
         }
     }
-    return v7fs_write_block(fs, V7_SUPERB, sb);
+    if (v7fs_write_block(fs, V7_SUPERB, sb))
+        return -EIO;
+    fs->fl_dirty = 0;   /* the on-disk free list now matches the in-core one */
+    return 0;
 }
 
 /* ---- inode io ---------------------------------------------------------- */
@@ -241,6 +244,15 @@ int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
 int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
     if (ino == 0)
         return -EINVAL;
+    /* Allocator state before reference: a block or inode allocated since the
+     * last superblock flush is still listed free on disk.  Flush it first so
+     * this inode's reference to it cannot leave it both free and referenced
+     * (aliasing, which nothing repairs). */
+    if (fs->fl_dirty) {
+        int rc = super_write(fs);
+        if (rc)
+            return rc;
+    }
     uint32_t bno = v7_itod(fs, ino);
     uint32_t off = v7_itoo(fs, ino);
     if (bno >= fs->isize)
@@ -298,6 +310,10 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
     if (v7fs_write_block(fs, blk, z))
         return -EIO;
     if (fs->fl.tfree) fs->fl.tfree--;
+    /* A block just left the free list; until the superblock is flushed the
+     * on-disk free list still lists it as free.  Record that so write_inode can
+     * flush first, closing the "free and referenced" aliasing window. */
+    fs->fl_dirty = 1;
     *bno = blk;
     return 0;
 }
@@ -335,6 +351,7 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
                 ip.ino = cand;
                 fs->ops->write_inode(fs, cand, &ip);
                 if (fs->fl.tinode) fs->fl.tinode--;
+                fs->fl_dirty = 1;   /* inode cache changed: flush before reference */
                 *ino = cand;
                 return 0;
             }
@@ -1144,6 +1161,14 @@ static int v6_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
 static int v6_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
     if (ino == 0)
         return -EINVAL;
+    /* Allocator state before reference: flush the superblock before this
+     * inode's reference to a newly-allocated block/inode (same rule as
+     * v7fs_write_inode). */
+    if (fs->fl_dirty) {
+        int rc = super_write(fs);
+        if (rc)
+            return rc;
+    }
     uint32_t bno = v7_itod(fs, ino);
     uint32_t off = v7_itoo(fs, ino);
     if (bno >= v6_data_start(fs->isize))

@@ -11,7 +11,9 @@
  * SPDX-License-Identifier: ISC
  */
 #include <config.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "v7fs.h"
 #include "filsys_ops.h"
@@ -115,37 +117,99 @@ void filsys_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t
     }
 }
 
-/* Free an indirect subtree: the children first, the block itself last (freeing
- * the block first would let the free-list allocator overwrite the entry list we
- * still need to read). */
-static void free_subtree(filsys_edition_t *fs, uint32_t blk, int level)
+/* A growable list of block numbers, so a truncate can *collect* the blocks it
+ * removes instead of freeing them inline.  The caller persists the unlinked
+ * inode (write_inode) first, then filsys_blklist_drain frees the blocks; this
+ * closes the window where a block sits on the free list *and* is still
+ * referenced by the on-disk inode (aliasing, which nothing repairs).  On a
+ * failed truncate the caller discards the list instead, so the blocks leak --
+ * recoverable by fsck -- rather than being freed while the inode still points
+ * at them. */
+struct filsys_blklist {
+    uint32_t *blk;
+    size_t n, cap;
+};
+
+filsys_blklist_t *filsys_blklist_new(void)
+{
+    filsys_blklist_t *b = malloc(sizeof *b);
+    if (b) {
+        b->blk = NULL;
+        b->n = b->cap = 0;
+    }
+    return b;
+}
+
+static int blklist_push(filsys_blklist_t *b, uint32_t bno)
+{
+    if (b->n == b->cap) {
+        size_t ncap = b->cap ? b->cap * 2 : 128;
+        uint32_t *nb = realloc(b->blk, ncap * sizeof *nb);
+        if (!nb)
+            return -ENOMEM;
+        b->blk = nb;
+        b->cap = ncap;
+    }
+    b->blk[b->n++] = bno;
+    return 0;
+}
+
+/* Free every collected block, then the list itself. */
+void filsys_blklist_drain(filsys_edition_t *fs, filsys_blklist_t *b)
+{
+    if (!b)
+        return;
+    for (size_t i = 0; i < b->n; i++)
+        fs->alloc->bfree(fs, b->blk[i]);
+    free(b->blk);
+    free(b);
+}
+
+/* Free the list without freeing the blocks it names (the truncate failed before
+ * the inode was persisted, so the blocks must stay referenced). */
+void filsys_blklist_discard(filsys_blklist_t *b)
+{
+    if (!b)
+        return;
+    free(b->blk);
+    free(b);
+}
+
+/* Collect an indirect subtree into *b: the children first, the block itself
+ * last.  The whole subtree is going away, so its entries are not rewritten. */
+static int collect_subtree(filsys_edition_t *fs, uint32_t blk, int level, filsys_blklist_t *b)
 {
     if (blk == 0)
-        return;
+        return 0;
     uint8_t buf[V7_MAXBSIZE];
     if (fs->ops->read_block(fs, blk, buf))
-        return;
+        return -EIO;
     for (uint32_t i = 0; i < fs->nindir; i++) {
         uint32_t nb = ind_get(fs, buf, i);
         if (nb == 0)
             continue;
-        if (level > 0)
-            free_subtree(fs, nb, level - 1);
-        else
-            fs->alloc->bfree(fs, nb);
+        if (level > 0) {
+            if (collect_subtree(fs, nb, level - 1, b))
+                return -EIO;
+        } else if (blklist_push(b, nb)) {
+            return -ENOMEM;
+        }
     }
-    fs->alloc->bfree(fs, blk);
+    return blklist_push(b, blk);
 }
 
-/* Free the leaf blocks at indices [skip, ...) of the subtree rooted at `blk`
+/* Collect the leaf blocks at indices [skip, ...) of the subtree rooted at `blk`
  * (which has `level` levels of indirection below it), zeroing the dropped
- * entries.  Only called for a partial (skip > 0) truncate, so the block itself
- * is always kept. */
-static void free_subtree_from(filsys_edition_t *fs, uint32_t blk, int level, uint32_t skip)
+ * entries and writing them back *before* returning, so the block's on-disk
+ * entry list stops referencing the collected children before any of them are
+ * freed.  Only called for a partial (skip > 0) truncate, so the block itself is
+ * always kept. */
+static int collect_subtree_from(filsys_edition_t *fs, uint32_t blk, int level,
+                                uint32_t skip, filsys_blklist_t *b)
 {
     uint8_t buf[V7_MAXBSIZE];
     if (fs->ops->read_block(fs, blk, buf))
-        return;
+        return -EIO;
     uint32_t sub = 1;
     for (int l = 0; l < level; l++)
         sub *= fs->nindir;               /* leaves per entry */
@@ -158,14 +222,19 @@ static void free_subtree_from(filsys_edition_t *fs, uint32_t blk, int level, uin
         if (i < se)
             continue;                    /* whole entry kept */
         if (i == se && sp > 0) {
-            free_subtree_from(fs, nb, level - 1, sp);   /* partial: entry kept */
+            if (collect_subtree_from(fs, nb, level - 1, sp, b))
+                return -EIO;             /* partial: entry kept */
         } else {
-            if (level == 0) fs->alloc->bfree(fs, nb);
-            else free_subtree(fs, nb, level - 1);
-            ind_put(fs, buf, i, 0);      /* drop the freed entry */
+            if (level == 0) {
+                if (blklist_push(b, nb))
+                    return -ENOMEM;
+            } else if (collect_subtree(fs, nb, level - 1, b)) {
+                return -EIO;
+            }
+            ind_put(fs, buf, i, 0);      /* drop the collected entry */
         }
     }
-    fs->ops->write_block(fs, blk, buf);  /* persist dropped entries */
+    return fs->ops->write_block(fs, blk, buf);  /* persist dropped entries */
 }
 
 /* The number of logical blocks a slot at `level` covers (level 0 = single =
@@ -178,8 +247,9 @@ static uint32_t slot_span(const filsys_edition_t *fs, int level)
     return span;
 }
 
-/* Free every block of an inode (truncate to length 0). */
-int filsys_itrunc(filsys_edition_t *fs, filsys_inode_t *ip)
+/* Collect every block of an inode (truncate to length 0) into *b.  The caller
+ * persists the inode (now with a zeroed addr[]), then filsys_blklist_drain. */
+int filsys_itrunc(filsys_edition_t *fs, filsys_inode_t *ip, filsys_blklist_t *b)
 {
     if (!is_data_inode(fs, ip))
         return 0;
@@ -189,19 +259,22 @@ int filsys_itrunc(filsys_edition_t *fs, filsys_inode_t *ip)
             continue;
         ip->addr[i] = 0;
         int level = filsys_slot_level(fs, ip->mode, i);
-        if (level < 0)
-            fs->alloc->bfree(fs, bn);
-        else
-            free_subtree(fs, bn, level);
+        if (level < 0) {
+            if (blklist_push(b, bn))
+                return -ENOMEM;
+        } else if (collect_subtree(fs, bn, level, b)) {
+            return -EIO;
+        }
     }
     ip->size = 0;
     return 0;
 }
 
-/* Free blocks [first_blk, ...) only, leaving the first first_blk blocks in
+/* Collect blocks [first_blk, ...) only, leaving the first first_blk blocks in
  * place; first_blk == 0 is equivalent to filsys_itrunc (except that the inode's
  * size is left to the caller). */
-int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_blk)
+int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_blk,
+                       filsys_blklist_t *b)
 {
     uint32_t lbn = 0;
     for (int i = 0; i < fs->niaddr; i++) {
@@ -217,13 +290,16 @@ int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_
             continue;
         }
         if (level < 0) {                 /* direct block past first_blk */
-            fs->alloc->bfree(fs, a);
+            if (blklist_push(b, a))
+                return -ENOMEM;
             ip->addr[i] = 0;
         } else if (lbn >= first_blk) {   /* whole subtree past first_blk */
-            free_subtree(fs, a, level);
+            if (collect_subtree(fs, a, level, b))
+                return -EIO;
             ip->addr[i] = 0;
         } else {                         /* straddles first_blk */
-            free_subtree_from(fs, a, level, first_blk - lbn);
+            if (collect_subtree_from(fs, a, level, first_blk - lbn, b))
+                return -EIO;
         }
         lbn += span;
     }

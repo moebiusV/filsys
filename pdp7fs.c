@@ -53,7 +53,10 @@ static int super_write(p7fs_t *fs) {
     if (read_words(fs, 0, sb))
         return -EIO;
     sb[0] = fs->freelist & P7_MAXWORD;
-    return write_words(fs, 0, sb);
+    if (write_words(fs, 0, sb))
+        return -EIO;
+    fs->fl_dirty = 0;
+    return 0;
 }
 
 /* Sign-extend an 18-bit word into a signed 32-bit value. */
@@ -295,6 +298,14 @@ int p7fs_write_inode(p7fs_t *fs, uint32_t ino, const p7_inode_t *ip) {
         return -EINVAL;
     if (fs->readonly)
         return -EROFS;
+    /* Allocator state before reference: flush block 0 (the free-list head and
+     * the inode bits) before this inode's reference to a newly-allocated
+     * block/inode, so a crash can't leave it both free and referenced. */
+    if (fs->fl_dirty) {
+        int rc = super_write(fs);
+        if (rc)
+            return rc;
+    }
     uint32_t words[P7_WSIZE];
     if (read_words(fs, p7_itod(ino), words))
         return -EIO;
@@ -337,7 +348,10 @@ int p7fs_balloc(p7fs_t *fs, uint32_t *bno) {
     /* Zero the freshly-allocated block so a deleted file's data doesn't leak
      * into a new one (V7's alloc() clrbuf()s). */
     uint32_t z[P7_WSIZE] = {0};
-    return write_words(fs, *bno, z);
+    if (write_words(fs, *bno, z))
+        return -EIO;
+    fs->fl_dirty = 1;   /* free-list head changed: flush before reference */
+    return 0;
 }
 
 void p7fs_bfree(p7fs_t *fs, uint32_t bno) {
@@ -382,6 +396,7 @@ int p7fs_ialloc(p7fs_t *fs, uint32_t *ino) {
             d[11] = i & P7_MAXWORD;       /* uniq = inode number */
             if (write_words(fs, p7_itod(i), words))
                 return -EIO;
+            fs->fl_dirty = 1;   /* inode list changed: flush before reference */
             *ino = i;
             return 0;
         }

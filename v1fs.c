@@ -139,6 +139,7 @@ static int super_write(v1fs_t *fs) {
     memcpy(sb + inodemap_off, fs->bm.inodemap, fs->bm.inodemap_bytes);
     if (v1fs_write_block(fs, 0, sb) || v1fs_write_block(fs, 1, sb + V1_BSIZE))
         return -EIO;
+    fs->fl_dirty = 0;
     return 0;
 }
 
@@ -174,6 +175,14 @@ int v1fs_read_inode(v1fs_t *fs, uint32_t ino, v1_inode_t *ip) {
 int v1fs_write_inode(v1fs_t *fs, uint32_t ino, const v1_inode_t *ip) {
     if (ino == 0 || ino > fs->maxino)
         return -EINVAL;
+    /* Allocator state before reference: flush the bitmap before this inode's
+     * reference to a newly-allocated block/inode, so a crash can't leave it both
+     * free and referenced. */
+    if (fs->fl_dirty) {
+        int rc = super_write(fs);
+        if (rc)
+            return rc;
+    }
     uint32_t bno = v1_itod(ino);
     uint32_t off = v1_itoo(ino);
     uint8_t raw[V1_BSIZE];
@@ -204,6 +213,7 @@ int v1fs_balloc(v1fs_t *fs, uint32_t *bno) {
             uint8_t z[V1_BSIZE] = {0};
             if (v1fs_write_block(fs, b, z))
                 return -EIO;
+            fs->fl_dirty = 1;   /* free map changed: flush before reference */
             return 0;
         }
     }
@@ -223,6 +233,7 @@ int v1fs_ialloc(v1fs_t *fs, uint32_t *ino) {
         if (!(fs->bm.inodemap[bit >> 3] & (1u << (bit & 7)))) {  /* 0 = free */
             fs->bm.inodemap[bit >> 3] |= (uint8_t)(1u << (bit & 7));
             if (fs->bm.tinode) fs->bm.tinode--;
+            fs->fl_dirty = 1;   /* inode map changed: flush before reference */
             *ino = i;
             return 0;
         }
