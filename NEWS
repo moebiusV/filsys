@@ -1,3 +1,23 @@
+filsys 1.5.1 (2026-09-06)
+=========================
+
+A cleanup and regression release; no on-disk or API change.
+
+- Every -Wsign-conversion warning is fixed by type, not cast: block numbers,
+  counts and interleave factors are unsigned throughout, makefree returns
+  uint32_t, and uid/gid ownership is uid_t/gid_t end to end.  The remaining
+  conversions are explicit POSIX boundary casts (nlink into the stat struct,
+  a byte count into truncate's off_t).  The sign changes that produced the
+  original isize underflow are now impossible by construction.
+- mkfs's sb_put byte-order shims are gone, and its byte order now routes
+  through the byte_order_ops table (v7_fmt.bo->put16/get16 for the V7 family,
+  bo_me.* for the always-PDP-11 V6/V1/2.11BSD paths) instead of the hardcoded
+  bo_put16le/bo_put32me primitives.
+- test_matrix grows from a single-size smoke test into a per-format regression
+  suite: it writes and reads back odd byte counts, the exact direct-to-indirect
+  promotion boundary, and the size-field ceiling, checks the reported size
+  matches, and requires fsck errors=0 missing=0 dup=0 after truncate cycles.
+
 filsys 1.5.0 (2026-09-06)
 =========================
 
