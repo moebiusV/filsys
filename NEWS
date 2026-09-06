@@ -1,3 +1,19 @@
+filsys 1.8.0 (2026-09-06)
+=========================
+
+A format-coverage release; no on-disk or API change to the byte-addressed
+editions.
+
+- PDP-7's word container codec becomes a descriptor entry (word_codec_t: get/
+  put/block_bytes), so the SimH RB09 packing (one 18-bit word per 4-byte
+  little-endian slot) is no longer baked into the backend.  Three codecs ship:
+  word_rb09 (256 bytes/block, the default), word_packed18 (18 bits with no gap,
+  144 bytes/block -- lcm(18,8)=72 makes a 64-word block fill exactly), and
+  word_rim (mkfs7's word2three, three 6-bit frames, 192 bytes/block).
+- The codec is selectable from the tools: mount.filsys takes
+  `-o packing=NAME`, and fsck/mkfs take `-P NAME` (rb09|packed18|rim), so a
+  PDP-7 dump from real hardware is a flag rather than a rewrite.
+
 filsys 1.7.0 (2026-09-06)
 =========================
 
