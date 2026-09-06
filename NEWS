@@ -1,3 +1,23 @@
+filsys 1.7.0 (2026-09-06)
+=========================
+
+A refactor release; no on-disk or API change.
+
+- The block-map tree walk and the check helpers fold into one shared
+  implementation (blocktree.c + check.c).  The per-backend mark_block/
+  mark_tree/mark_blocks, tloop/tloop_from, itrunc/itrunc_from, preen,
+  ncheck/ncheck_dir, clri and resolve_dups -- the same fifteen names in every
+  backend -- collapse into two descriptor-driven paths: the slot topology
+  (ilarg_mask + large_single/large_double, so V6/V1/PDP-7's ILARG
+  reinterpretation is data, not code) and the indirect-entry codec
+  (ind_get/ind_put, defaulting to the daddr width; PDP-7 overrides with its
+  18-bit word).  The ops vtable drops itrunc/itrunc_from/mark_blocks/preen,
+  and PDP-7 gains an alloc_ops row.
+- The shared walk fixes a latent V6 fsck bug: v6_mark_tree walked slot 7 (the
+  double-indirect slot) single-level, so a large V6 file's second-level data
+  blocks were reported missing.  The test matrix gains a regression that
+  writes a 2000-block V6 file and fsck-checks it.
+
 filsys 1.6.0 (2026-09-06)
 =========================
 
