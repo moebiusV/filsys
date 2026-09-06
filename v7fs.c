@@ -42,12 +42,12 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
     }
     fs->isize  = bo_get16le(sb + 0);
     fs->fsize  = fs->bo->get32(sb + sb_fsize_off(fs->pack4));
-    fs->nfree  = bo_get16le(sb + sb_nfree_off(fs->pack4));
+    fs->fl.nfree  = bo_get16le(sb + sb_nfree_off(fs->pack4));
     for (int i = 0; i < fs->nicfree; i++)
-        fs->free[i] = fs->bo->get32(sb + sb_free_off(fs->pack4) + 4 * i);
-    fs->ninode = bo_get16le(sb + sb_ninode_off(fs->pack4, fs->nicfree));
+        fs->fl.free[i] = fs->bo->get32(sb + sb_free_off(fs->pack4) + 4 * i);
+    fs->fl.ninode = bo_get16le(sb + sb_ninode_off(fs->pack4, fs->nicfree));
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->inode[i] = bo_get16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
+        fs->fl.inode[i] = bo_get16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
     fs->time   = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree));
     fs->fmod   = sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back];  /* s_fmod */
     /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
@@ -56,8 +56,8 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
      * immediately after s_time, whose offset already accounts for the layout. */
     if (!fs->pack4 || fs->magic) {
         int toff = sb_time_off(fs->pack4, fs->nicfree);
-        fs->tfree  = fs->bo->get32(sb + toff + 4);
-        fs->tinode = bo_get16le(sb + toff + 8);
+        fs->fl.tfree  = fs->bo->get32(sb + toff + 4);
+        fs->fl.tinode = bo_get16le(sb + toff + 8);
     }
     if (fs->interleave) {
         fs->m      = bo_get16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 10);
@@ -147,18 +147,18 @@ static int super_write(filsys_edition_t *fs) {
         return -EIO;
     bo_put16le(sb + 0, fs->isize);
     fs->bo->put32(sb + sb_fsize_off(fs->pack4), fs->fsize);
-    bo_put16le(sb + sb_nfree_off(fs->pack4), fs->nfree);
+    bo_put16le(sb + sb_nfree_off(fs->pack4), fs->fl.nfree);
     for (int i = 0; i < fs->nicfree; i++)
-        fs->bo->put32(sb + sb_free_off(fs->pack4) + 4 * i, fs->free[i]);
-    bo_put16le(sb + sb_ninode_off(fs->pack4, fs->nicfree), fs->ninode);
+        fs->bo->put32(sb + sb_free_off(fs->pack4) + 4 * i, fs->fl.free[i]);
+    bo_put16le(sb + sb_ninode_off(fs->pack4, fs->nicfree), fs->fl.ninode);
     for (int i = 0; i < V7_NICINOD; i++)
-        bo_put16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i, fs->inode[i]);
+        bo_put16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i, fs->fl.inode[i]);
     fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree), (uint32_t)time(NULL));  /* s_time */
     sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back] = (uint8_t)(fs->fmod != 0); /* s_fmod */
     if (!fs->pack4 || fs->magic) {
         int toff = sb_time_off(fs->pack4, fs->nicfree);
-        fs->bo->put32(sb + toff + 4, fs->tfree);        /* s_tfree */
-        bo_put16le(sb + toff + 8, (uint16_t)fs->tinode);   /* s_tinode */
+        fs->bo->put32(sb + toff + 4, fs->fl.tfree);        /* s_tfree */
+        bo_put16le(sb + toff + 8, (uint16_t)fs->fl.tinode);   /* s_tinode */
     }
     if (fs->interleave) {
         bo_put16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 10, fs->m);
@@ -229,10 +229,10 @@ int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
 /* ---- allocation -------------------------------------------------------- */
 
 int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
-    if (fs->nfree == 0)
+    if (fs->fl.nfree == 0)
         return -ENOSPC;   /* no cached blocks and no dump block to reload */
 
-    uint32_t blk = fs->free[--fs->nfree];
+    uint32_t blk = fs->fl.free[--fs->fl.nfree];
     if (blk == 0)
         return -ENOSPC;
 
@@ -242,14 +242,14 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
     if (blk < fs->isize || blk >= fs->fsize)
         return -EIO;   /* badblock: refuse garbage */
 
-    if (fs->nfree == 0) {
+    if (fs->fl.nfree == 0) {
         /* Just popped the bottom of the stack: it is a free-list block. */
         uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
-        fs->nfree = bo_get16le(buf + 0);
+        fs->fl.nfree = bo_get16le(buf + 0);
         for (int i = 0; i < fs->nicfree; i++)
-            fs->free[i] = fs->bo->get32(buf + fb_free_off(fs->pack4) + 4 * i);
+            fs->fl.free[i] = fs->bo->get32(buf + fb_free_off(fs->pack4) + 4 * i);
     }
     /* Zero the freshly-allocated block: V7's alloc() clrbuf()s it, and without
      * this the previous file's data leaks into a new file. */
@@ -257,7 +257,7 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
     memset(z, 0, fs->bsize);
     if (v7fs_write_block(fs, blk, z))
         return -EIO;
-    if (fs->tfree) fs->tfree--;
+    if (fs->fl.tfree) fs->fl.tfree--;
     *bno = blk;
     return 0;
 }
@@ -265,60 +265,60 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
 void v7fs_bfree(filsys_edition_t *fs, uint32_t bno) {
     if (bno < fs->isize || bno >= fs->fsize)
         return;   /* badblock */
-    if (fs->nfree == 0) {
-        fs->nfree = 1;
-        fs->free[0] = 0;
+    if (fs->fl.nfree == 0) {
+        fs->fl.nfree = 1;
+        fs->fl.free[0] = 0;
     }
-    if (fs->nfree >= fs->nicfree) {
+    if (fs->fl.nfree >= fs->nicfree) {
         uint8_t buf[V7_MAXBSIZE];
         memset(buf, 0, fs->bsize);
-        bo_put16le(buf + 0, fs->nfree);
+        bo_put16le(buf + 0, fs->fl.nfree);
         for (int i = 0; i < fs->nicfree; i++)
-            fs->bo->put32(buf + fb_free_off(fs->pack4) + 4 * i, fs->free[i]);
+            fs->bo->put32(buf + fb_free_off(fs->pack4) + 4 * i, fs->fl.free[i]);
         if (v7fs_write_block(fs, bno, buf) == 0)
-            fs->nfree = 0;
+            fs->fl.nfree = 0;
     }
-    fs->free[fs->nfree++] = bno;
-    fs->tfree++;
+    fs->fl.free[fs->fl.nfree++] = bno;
+    fs->fl.tfree++;
 }
 
 int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
     uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
 
     for (;;) {
-        if (fs->ninode > 0) {
-            uint32_t cand = fs->inode[--fs->ninode];
+        if (fs->fl.ninode > 0) {
+            uint32_t cand = fs->fl.inode[--fs->fl.ninode];
             v7_inode_t ip;
             if (cand >= 2 && cand <= maxino &&
                 v7fs_read_inode(fs, cand, &ip) == 0 && ip.mode == 0) {
                 memset(&ip, 0, sizeof(ip));
                 ip.ino = cand;
                 v7fs_write_inode(fs, cand, &ip);
-                if (fs->tinode) fs->tinode--;
+                if (fs->fl.tinode) fs->fl.tinode--;
                 *ino = cand;
                 return 0;
             }
             continue;   /* was already allocated; look again */
         }
         /* Refill the cache with a linear scan of the i-list. */
-        fs->ninode = 0;
-        for (uint32_t in = 2; in <= maxino && fs->ninode < V7_NICINOD; in++) {
+        fs->fl.ninode = 0;
+        for (uint32_t in = 2; in <= maxino && fs->fl.ninode < V7_NICINOD; in++) {
             v7_inode_t ip;
             if (v7fs_read_inode(fs, in, &ip))
                 break;
             if (ip.mode == 0)
-                fs->inode[fs->ninode++] = (uint16_t)in;
+                fs->fl.inode[fs->fl.ninode++] = (uint16_t)in;
         }
-        if (fs->ninode == 0)
+        if (fs->fl.ninode == 0)
             return -ENOSPC;
     }
 }
 
 void v7fs_ifree(filsys_edition_t *fs, uint32_t ino) {
-    if (fs->ninode >= V7_NICINOD)
+    if (fs->fl.ninode >= V7_NICINOD)
         return;   /* kernel discards beyond the cache */
-    fs->inode[fs->ninode++] = (uint16_t)ino;
-    fs->tinode++;
+    fs->fl.inode[fs->fl.ninode++] = (uint16_t)ino;
+    fs->fl.tinode++;
 }
 
 /* ---- truncate ----------------------------------------------------------- */
@@ -869,12 +869,12 @@ static int v7fs_makefree(void *fs, filsys_chkctx_t *cx)
     uint32_t mapbot = ((f->isize + n - 1) / n) * n;
     uint32_t maptop = (f->fsize / n) * n;
 
-    /* v7fs_bfree increments f->tfree as it goes, so reset the running totals
+    /* v7fs_bfree increments f->fl.tfree as it goes, so reset the running totals
      * first -- otherwise the rebuilt count is added on top of the old one. */
-    f->nfree = 0;
-    f->ninode = 0;
-    f->tfree = 0;
-    f->tinode = 0;
+    f->fl.nfree = 0;
+    f->fl.ninode = 0;
+    f->fl.tfree = 0;
+    f->fl.tinode = 0;
     int nfree = 0;
     for (uint32_t bn = f->isize; bn < f->fsize; bn++) {
         uint32_t blk = bn;
@@ -888,7 +888,7 @@ static int v7fs_makefree(void *fs, filsys_chkctx_t *cx)
             nfree++;
         }
     }
-    super_write(f);   /* writes f->tfree (= nfree) and f->tinode (= 0) */
+    super_write(f);   /* writes f->fl.tfree (= nfree) and f->fl.tinode (= 0) */
     return nfree;
 }
 
@@ -923,9 +923,9 @@ static void v7_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
     uint8_t *seen = calloc(f->fsize ? f->fsize : 1, 1);
     if (!seen)
         return;
-    uint16_t n = f->nfree;
+    uint16_t n = f->fl.nfree;
     uint32_t cur[V7_XEN_NICFREE];
-    memcpy(cur, f->free, sizeof(cur));
+    memcpy(cur, f->fl.free, sizeof(cur));
     uint32_t guard = 0;
     while (n > 0) {
         uint32_t bno = cur[--n];
@@ -1272,9 +1272,9 @@ static uint64_t v7fs_max_file_op(void *fs) {
 static void v7fs_statfs_op(void *fs, struct statvfs *st) {
     filsys_edition_t *v7 = fs;
     st->f_blocks = v7->fsize;
-    st->f_bfree = st->f_bavail = v7->tfree;
+    st->f_bfree = st->f_bavail = v7->fl.tfree;
     st->f_files = (v7->isize - 2) * v7_inopb(v7);
-    st->f_ffree = v7->tinode;
+    st->f_ffree = v7->fl.tinode;
 }
 const struct filsys_ops v7fs_ops = {
     .name        = "v7",
@@ -1589,12 +1589,12 @@ static int v6_open(filsys_edition_t *fs, const char *path, int readonly,
     /* V6 superblock: 16-bit fields, s_free[100]/s_inode[100], s_time[2]. */
     fs->isize  = bo_get16le(sb + 0);
     fs->fsize  = bo_get16le(sb + 2);
-    fs->nfree  = bo_get16le(sb + 4);
+    fs->fl.nfree  = bo_get16le(sb + 4);
     for (int i = 0; i < fs->nicfree; i++)
-        fs->free[i] = bo_get16le(sb + 6 + 2 * i);
-    fs->ninode = bo_get16le(sb + 206);
+        fs->fl.free[i] = bo_get16le(sb + 6 + 2 * i);
+    fs->fl.ninode = bo_get16le(sb + 206);
     for (int i = 0; i < fs->nicinod; i++)
-        fs->inode[i] = bo_get16le(sb + 208 + 2 * i);
+        fs->fl.inode[i] = bo_get16le(sb + 208 + 2 * i);
     fs->time   = fs->bo->get32(sb + 412);
     fs->fmod   = sb[410];              /* s_fmod */
 
@@ -1608,14 +1608,14 @@ static int v6_open(filsys_edition_t *fs, const char *path, int readonly,
         return -EINVAL;
     }
     /* V6's superblock has no s_tfree/s_tinode; compute the totals here. */
-    v6_count_free(fs, &fs->tfree, &fs->tinode);
+    v6_count_free(fs, &fs->fl.tfree, &fs->fl.tinode);
     return 0;
 }
 
 static void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
-    uint32_t n = fs->nfree;
+    uint32_t n = fs->fl.nfree;
     uint32_t cur[V6_NICFREE];
-    memcpy(cur, fs->free, sizeof(cur));
+    memcpy(cur, fs->fl.free, sizeof(cur));
     uint32_t blocks = 0, guard = 0;
     while (n > 0) {
         uint32_t bno = cur[--n];
@@ -1652,12 +1652,12 @@ static int v6_super_write(filsys_edition_t *fs) {
         return -EIO;
     bo_put16le(sb + 0, fs->isize);
     bo_put16le(sb + 2, fs->fsize);
-    bo_put16le(sb + 4, fs->nfree);
+    bo_put16le(sb + 4, fs->fl.nfree);
     for (int i = 0; i < fs->nicfree; i++)
-        bo_put16le(sb + 6 + 2 * i, (uint16_t)fs->free[i]);
-    bo_put16le(sb + 206, fs->ninode);
+        bo_put16le(sb + 6 + 2 * i, (uint16_t)fs->fl.free[i]);
+    bo_put16le(sb + 206, fs->fl.ninode);
     for (int i = 0; i < fs->nicinod; i++)
-        bo_put16le(sb + 208 + 2 * i, fs->inode[i]);
+        bo_put16le(sb + 208 + 2 * i, fs->fl.inode[i]);
     fs->bo->put32(sb + 412, (uint32_t)time(NULL));   /* s_time[2] */
     sb[410] = (uint8_t)(fs->fmod != 0);              /* s_fmod */
     return v7fs_write_block(fs, V6_SUPERB, sb);
@@ -1738,28 +1738,28 @@ static int v6_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *
 }
 
 static int v6_balloc(filsys_edition_t *fs, uint32_t *bno) {
-    if (fs->nfree == 0)
+    if (fs->fl.nfree == 0)
         return -ENOSPC;
 
-    uint32_t blk = fs->free[--fs->nfree];
+    uint32_t blk = fs->fl.free[--fs->fl.nfree];
     if (blk == 0)
         return -ENOSPC;
     if (blk < v6_data_start(fs->isize) || blk >= fs->fsize)
         return -EIO;
 
-    if (fs->nfree == 0) {
+    if (fs->fl.nfree == 0) {
         uint8_t buf[V6_BSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
-        fs->nfree = bo_get16le(buf + 0);
+        fs->fl.nfree = bo_get16le(buf + 0);
         for (int i = 0; i < fs->nicfree; i++)
-            fs->free[i] = bo_get16le(buf + 2 + 2 * i);
+            fs->fl.free[i] = bo_get16le(buf + 2 + 2 * i);
     }
     uint8_t z[V6_BSIZE];
     memset(z, 0, V6_BSIZE);
     if (v7fs_write_block(fs, blk, z))
         return -EIO;
-    if (fs->tfree) fs->tfree--;
+    if (fs->fl.tfree) fs->fl.tfree--;
     *bno = blk;
     return 0;
 }
@@ -1767,59 +1767,59 @@ static int v6_balloc(filsys_edition_t *fs, uint32_t *bno) {
 static void v6_bfree(filsys_edition_t *fs, uint32_t bno) {
     if (bno < v6_data_start(fs->isize) || bno >= fs->fsize)
         return;
-    if (fs->nfree == 0) {
-        fs->nfree = 1;
-        fs->free[0] = 0;
+    if (fs->fl.nfree == 0) {
+        fs->fl.nfree = 1;
+        fs->fl.free[0] = 0;
     }
-    if (fs->nfree >= fs->nicfree) {
+    if (fs->fl.nfree >= fs->nicfree) {
         uint8_t buf[V6_BSIZE];
         memset(buf, 0, V6_BSIZE);
-        bo_put16le(buf + 0, fs->nfree);
+        bo_put16le(buf + 0, fs->fl.nfree);
         for (int i = 0; i < fs->nicfree; i++)
-            bo_put16le(buf + 2 + 2 * i, (uint16_t)fs->free[i]);
+            bo_put16le(buf + 2 + 2 * i, (uint16_t)fs->fl.free[i]);
         if (v7fs_write_block(fs, bno, buf) == 0)
-            fs->nfree = 0;
+            fs->fl.nfree = 0;
     }
-    fs->free[fs->nfree++] = bno;
-    fs->tfree++;
+    fs->fl.free[fs->fl.nfree++] = bno;
+    fs->fl.tfree++;
 }
 
 static int v6_ialloc(filsys_edition_t *fs, uint32_t *ino) {
     uint32_t maxino = v6_maxino(fs->isize);
 
     for (;;) {
-        if (fs->ninode > 0) {
-            uint32_t cand = fs->inode[--fs->ninode];
+        if (fs->fl.ninode > 0) {
+            uint32_t cand = fs->fl.inode[--fs->fl.ninode];
             v7_inode_t ip;
             if (cand >= 2 && cand <= maxino &&
                 v6_read_inode(fs, cand, &ip) == 0 && ip.mode == 0) {
                 memset(&ip, 0, sizeof(ip));
                 ip.ino = cand;
                 v6_write_inode(fs, cand, &ip);
-                if (fs->tinode) fs->tinode--;
+                if (fs->fl.tinode) fs->fl.tinode--;
                 *ino = cand;
                 return 0;
             }
             continue;
         }
-        fs->ninode = 0;
-        for (uint32_t in = 2; in <= maxino && fs->ninode < fs->nicinod; in++) {
+        fs->fl.ninode = 0;
+        for (uint32_t in = 2; in <= maxino && fs->fl.ninode < fs->nicinod; in++) {
             v7_inode_t ip;
             if (v6_read_inode(fs, in, &ip))
                 break;
             if (ip.mode == 0)
-                fs->inode[fs->ninode++] = (uint16_t)in;
+                fs->fl.inode[fs->fl.ninode++] = (uint16_t)in;
         }
-        if (fs->ninode == 0)
+        if (fs->fl.ninode == 0)
             return -ENOSPC;
     }
 }
 
 static void v6_ifree(filsys_edition_t *fs, uint32_t ino) {
-    if (fs->ninode >= fs->nicinod)
+    if (fs->fl.ninode >= fs->nicinod)
         return;
-    fs->inode[fs->ninode++] = (uint16_t)ino;
-    fs->tinode++;
+    fs->fl.inode[fs->fl.ninode++] = (uint16_t)ino;
+    fs->fl.tinode++;
 }
 
 static void v6_tloop(filsys_edition_t *fs, uint32_t blk, int level) {
@@ -2076,8 +2076,8 @@ static int v6_makefree(void *fs, filsys_chkctx_t *cx) {
         i = (i + m) % n;
     }
 
-    f->nfree = 0;
-    f->ninode = 0;
+    f->fl.nfree = 0;
+    f->fl.ninode = 0;
     uint32_t dstart = v6_data_start(f->isize);
     int nfree = 0;
     uint32_t d = f->fsize - 1;
@@ -2201,9 +2201,9 @@ static void v6_chk_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
     uint8_t *seen = calloc(f->fsize ? f->fsize : 1, 1);
     if (!seen)
         return;
-    uint16_t n = f->nfree;
+    uint16_t n = f->fl.nfree;
     uint32_t cur[V6_NICFREE];
-    memcpy(cur, f->free, sizeof(cur));
+    memcpy(cur, f->fl.free, sizeof(cur));
     uint32_t guard = 0;
     while (n > 0) {
         uint32_t bno = cur[--n];
@@ -2448,9 +2448,9 @@ static uint64_t v6_max_file_op(void *fs) {
 static void v6_statfs_op(void *fs, struct statvfs *st) {
     filsys_edition_t *v6 = fs;
     st->f_blocks = v6->fsize;
-    st->f_bfree = st->f_bavail = v6->tfree;
+    st->f_bfree = st->f_bavail = v6->fl.tfree;
     st->f_files = v6_maxino(v6->isize);
-    st->f_ffree = v6->tinode;
+    st->f_ffree = v6->fl.tinode;
 }
 
 const struct filsys_ops v6fs_ops = {
@@ -2490,4 +2490,14 @@ const struct filsys_ops v6fs_ops = {
     .is_clean    = v6_chk_is_clean,
     .statfs      = v6_statfs_op,
     .max_file    = v6_max_file_op,
+};
+
+/* ---- allocator vtable: the free-list cache (V6/V7/BSD211) ---------------- */
+
+const alloc_ops_t freelist_alloc_ops = {
+    .balloc = (int  (*)(void *, uint32_t *))v7fs_balloc,
+    .bfree  = (void (*)(void *, uint32_t))v7fs_bfree,
+    .ialloc = (int  (*)(void *, uint32_t *))v7fs_ialloc,
+    .ifree  = (void (*)(void *, uint32_t))v7fs_ifree,
+    .sync   = (int  (*)(void *))v7fs_sync,
 };

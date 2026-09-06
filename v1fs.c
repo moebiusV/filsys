@@ -39,22 +39,22 @@ int v1fs_open(v1fs_t *fs, const char *path, int readonly, uint64_t offset) {
         return -EIO;
     }
 
-    fs->freemap_bytes = bo_get16le(sb + 0);
+    fs->bm.freemap_bytes = bo_get16le(sb + 0);
     uint32_t freemap_off = 2;
-    uint32_t inodemap_bytes_off = freemap_off + fs->freemap_bytes;
-    fs->inodemap_bytes = bo_get16le(sb + inodemap_bytes_off);
+    uint32_t inodemap_bytes_off = freemap_off + fs->bm.freemap_bytes;
+    fs->bm.inodemap_bytes = bo_get16le(sb + inodemap_bytes_off);
     uint32_t inodemap_off = inodemap_bytes_off + 2;
 
     /* Reject a superblock whose maps spill past blocks 0+1, or a zero map. */
-    if (fs->freemap_bytes == 0 ||
-        inodemap_off + fs->inodemap_bytes > V1_BSIZE * 2) {
+    if (fs->bm.freemap_bytes == 0 ||
+        inodemap_off + fs->bm.inodemap_bytes > V1_BSIZE * 2) {
         close(fs->fd);
         fs->fd = -1;
         return -EINVAL;
     }
 
-    fs->fsize = (uint32_t)fs->freemap_bytes * 8;
-    fs->maxino = (uint32_t)fs->inodemap_bytes * 8;
+    fs->fsize = (uint32_t)fs->bm.freemap_bytes * 8;
+    fs->maxino = (uint32_t)fs->bm.inodemap_bytes * 8;
 
     /* Reject a filesystem that claims more disk than the image holds, or one
      * with no data area (i-list must leave at least one data block). */
@@ -67,26 +67,26 @@ int v1fs_open(v1fs_t *fs, const char *path, int readonly, uint64_t offset) {
         return -EINVAL;
     }
 
-    fs->freemap = malloc(fs->freemap_bytes);
-    fs->inodemap = malloc(fs->inodemap_bytes);
-    if (!fs->freemap || !fs->inodemap) {
-        free(fs->freemap);
-        free(fs->inodemap);
+    fs->bm.freemap = malloc(fs->bm.freemap_bytes);
+    fs->bm.inodemap = malloc(fs->bm.inodemap_bytes);
+    if (!fs->bm.freemap || !fs->bm.inodemap) {
+        free(fs->bm.freemap);
+        free(fs->bm.inodemap);
         close(fs->fd);
         fs->fd = -1;
         return -ENOMEM;
     }
-    memcpy(fs->freemap, sb + freemap_off, fs->freemap_bytes);
-    memcpy(fs->inodemap, sb + inodemap_off, fs->inodemap_bytes);
+    memcpy(fs->bm.freemap, sb + freemap_off, fs->bm.freemap_bytes);
+    memcpy(fs->bm.inodemap, sb + inodemap_off, fs->bm.inodemap_bytes);
 
     /* Seed the free-space totals for statfs. */
     for (uint32_t b = v1_data_start(fs->maxino); b < fs->fsize; b++)
-        if (fs->freemap[b >> 3] & (1u << (b & 7)))
-            fs->tfree++;
+        if (fs->bm.freemap[b >> 3] & (1u << (b & 7)))
+            fs->bm.tfree++;
     for (uint32_t i = V1_ROOTINO; i <= fs->maxino; i++) {
         uint32_t bit = i - V1_ROOTINO;
-        if (!(fs->inodemap[bit >> 3] & (1u << (bit & 7))))
-            fs->tinode++;
+        if (!(fs->bm.inodemap[bit >> 3] & (1u << (bit & 7))))
+            fs->bm.tinode++;
     }
     return 0;
 }
@@ -98,10 +98,10 @@ void v1fs_close(v1fs_t *fs) {
         close(fs->fd);
         fs->fd = -1;
     }
-    free(fs->freemap);
-    free(fs->inodemap);
-    fs->freemap = NULL;
-    fs->inodemap = NULL;
+    free(fs->bm.freemap);
+    free(fs->bm.inodemap);
+    fs->bm.freemap = NULL;
+    fs->bm.inodemap = NULL;
 }
 
 int v1fs_sync(v1fs_t *fs) {
@@ -137,9 +137,9 @@ static int super_write(v1fs_t *fs) {
     if (v1fs_read_block(fs, 0, sb) || v1fs_read_block(fs, 1, sb + V1_BSIZE))
         return -EIO;
     uint32_t freemap_off = 2;
-    uint32_t inodemap_off = freemap_off + fs->freemap_bytes + 2;
-    memcpy(sb + freemap_off, fs->freemap, fs->freemap_bytes);
-    memcpy(sb + inodemap_off, fs->inodemap, fs->inodemap_bytes);
+    uint32_t inodemap_off = freemap_off + fs->bm.freemap_bytes + 2;
+    memcpy(sb + freemap_off, fs->bm.freemap, fs->bm.freemap_bytes);
+    memcpy(sb + inodemap_off, fs->bm.inodemap, fs->bm.inodemap_bytes);
     if (v1fs_write_block(fs, 0, sb) || v1fs_write_block(fs, 1, sb + V1_BSIZE))
         return -EIO;
     return 0;
@@ -198,9 +198,9 @@ int v1fs_write_inode(v1fs_t *fs, uint32_t ino, const v1_inode_t *ip) {
 
 int v1fs_balloc(v1fs_t *fs, uint32_t *bno) {
     for (uint32_t b = v1_data_start(fs->maxino); b < fs->fsize; b++) {
-        if (fs->freemap[b >> 3] & (1u << (b & 7))) {          /* 1 = free */
-            fs->freemap[b >> 3] &= (uint8_t)~(1u << (b & 7)); /* mark used */
-            if (fs->tfree) fs->tfree--;
+        if (fs->bm.freemap[b >> 3] & (1u << (b & 7))) {          /* 1 = free */
+            fs->bm.freemap[b >> 3] &= (uint8_t)~(1u << (b & 7)); /* mark used */
+            if (fs->bm.tfree) fs->bm.tfree--;
             *bno = b;
             /* Zero the freshly-allocated block so a deleted file's data
              * doesn't leak into a new one (V7's alloc() clrbuf()s). */
@@ -216,16 +216,16 @@ int v1fs_balloc(v1fs_t *fs, uint32_t *bno) {
 void v1fs_bfree(v1fs_t *fs, uint32_t bno) {
     if (bno < v1_data_start(fs->maxino) || bno >= fs->fsize)
         return;
-    fs->freemap[bno >> 3] |= (uint8_t)(1u << (bno & 7));
-    fs->tfree++;
+    fs->bm.freemap[bno >> 3] |= (uint8_t)(1u << (bno & 7));
+    fs->bm.tfree++;
 }
 
 int v1fs_ialloc(v1fs_t *fs, uint32_t *ino) {
     for (uint32_t i = V1_ROOTINO; i <= fs->maxino; i++) {
         uint32_t bit = i - V1_ROOTINO;                        /* first bit = inode 41 */
-        if (!(fs->inodemap[bit >> 3] & (1u << (bit & 7)))) {  /* 0 = free */
-            fs->inodemap[bit >> 3] |= (uint8_t)(1u << (bit & 7));
-            if (fs->tinode) fs->tinode--;
+        if (!(fs->bm.inodemap[bit >> 3] & (1u << (bit & 7)))) {  /* 0 = free */
+            fs->bm.inodemap[bit >> 3] |= (uint8_t)(1u << (bit & 7));
+            if (fs->bm.tinode) fs->bm.tinode--;
             *ino = i;
             return 0;
         }
@@ -237,8 +237,8 @@ void v1fs_ifree(v1fs_t *fs, uint32_t ino) {
     if (ino < V1_ROOTINO || ino > fs->maxino)
         return;
     uint32_t bit = ino - V1_ROOTINO;
-    fs->inodemap[bit >> 3] &= (uint8_t)~(1u << (bit & 7));
-    fs->tinode++;
+    fs->bm.inodemap[bit >> 3] &= (uint8_t)~(1u << (bit & 7));
+    fs->bm.tinode++;
 }
 
 /* ---- truncate ----------------------------------------------------------- */
@@ -695,15 +695,15 @@ static int v1fs_makefree(void *fs, filsys_chkctx_t *cx)
     v1fs_t *f = fs;
     uint32_t dstart = v1_data_start(f->maxino);
     uint32_t nfree = 0;
-    memset(f->freemap, 0, f->freemap_bytes);
+    memset(f->bm.freemap, 0, f->bm.freemap_bytes);
     for (uint32_t b = dstart; b < f->fsize; b++) {
         uint32_t off = b - dstart;
         if (!(cx->bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
-            f->freemap[b >> 3] |= (uint8_t)(1u << (b & 7));
+            f->bm.freemap[b >> 3] |= (uint8_t)(1u << (b & 7));
             nfree++;
         }
     }
-    f->tfree = nfree;
+    f->bm.tfree = nfree;
     super_write(f);
     return nfree;
 }
@@ -805,7 +805,7 @@ static void v1_chk_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
     v1fs_t *f = fs;
     uint32_t dstart = v1_data_start(f->maxino);
     for (uint32_t b = dstart; b < f->fsize; b++) {
-        int fre = f->freemap[b >> 3] & (uint8_t)(1u << (b & 7));
+        int fre = f->bm.freemap[b >> 3] & (uint8_t)(1u << (b & 7));
         if (!fre)
             continue;
         rep->free_blocks++;
@@ -1040,9 +1040,9 @@ static uint64_t v1fs_max_file_op(void *fs) {
 static void v1fs_statfs_op(void *fs, struct statvfs *st) {
     v1fs_t *v1 = fs;
     st->f_blocks = v1->fsize;
-    st->f_bfree = st->f_bavail = v1->tfree;
+    st->f_bfree = st->f_bavail = v1->bm.tfree;
     st->f_files = v1->maxino;
-    st->f_ffree = v1->tinode;
+    st->f_ffree = v1->bm.tinode;
 }
 const struct filsys_ops v1fs_ops = {
     .name        = "v1",
@@ -1080,4 +1080,14 @@ const struct filsys_ops v1fs_ops = {
     .is_clean    = v1_chk_is_clean,
     .statfs      = v1fs_statfs_op,
     .max_file    = v1fs_max_file_op,
+};
+
+/* ---- allocator vtable: V1's dual bitmap -------------------------------- */
+
+const alloc_ops_t bitmap_alloc_ops = {
+    .balloc = (int  (*)(void *, uint32_t *))v1fs_balloc,
+    .bfree  = (void (*)(void *, uint32_t))v1fs_bfree,
+    .ialloc = (int  (*)(void *, uint32_t *))v1fs_ialloc,
+    .ifree  = (void (*)(void *, uint32_t))v1fs_ifree,
+    .sync   = (int  (*)(void *))v1fs_sync,
 };

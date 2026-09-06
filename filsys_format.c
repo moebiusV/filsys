@@ -116,7 +116,8 @@ static uint32_t p7_chmod_mode(const filsys_edition_t *f, uint32_t old, mode_t m)
  * Xenix, 2.9BSD): each copies it and overrides only what differs, so a new
  * variant is a few field assignments rather than a full descriptor row. */
 static const filsys_edition_t v7 = {
-    .ops = &v7fs_ops, .state_size = sizeof(filsys_edition_t), .name = "v7",
+    .ops = &v7fs_ops, .alloc = &freelist_alloc_ops,
+    .state_size = sizeof(filsys_edition_t), .name = "v7",
     .bsize = V7_BSIZE, .bo = &bo_me,
     .nicfree = V7_NICFREE, .nicinod = V7_NICINOD,
     .inode_size = V7_INODESZ, .ndaddr = V7_NDADDR, .niaddr = V7_NIADDR,
@@ -126,7 +127,8 @@ static const filsys_edition_t v7 = {
     .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .ifmpc = V7_IFMPC, .ifmpb = V7_IFMPB,
 };
 static const filsys_edition_t v6 = {
-    .ops = &v6fs_ops, .state_size = sizeof(filsys_edition_t), .name = "v6",
+    .ops = &v6fs_ops, .alloc = &freelist_alloc_ops,
+    .state_size = sizeof(filsys_edition_t), .name = "v6",
     .bsize = V6_BSIZE, .bo = &bo_me,
     .nicfree = V6_NICFREE, .nicinod = V6_NICINOD,
     .inode_size = V6_INODESZ, .ndaddr = V6_NDADDR, .niaddr = V6_NIADDR,
@@ -135,7 +137,8 @@ static const filsys_edition_t v6 = {
     .ifmt = V6_IFMT, .ifdir = V6_IFDIR, .ifchr = V6_IFCHR, .ifblk = V6_IFBLK,
 };
 static const filsys_edition_t v1 = {
-    .ops = &v1fs_ops, .state_size = sizeof(v1fs_t), .name = "v1",
+    .ops = &v1fs_ops, .alloc = &bitmap_alloc_ops,
+    .state_size = sizeof(v1fs_t), .name = "v1",
     .bsize = V1_BSIZE, .bo = &bo_me,
     .inode_size = V1_INODESZ, .ndaddr = V1_NDADDR, .niaddr = V1_NIADDR,
     .max_namlen = V1_DIRSIZ, .dirent_size = V1_DIRENTSZ,
@@ -154,7 +157,8 @@ static const filsys_edition_t pdp7 = {
     .chmod_mode = p7_chmod_mode,
 };
 static const filsys_edition_t bsd211 = {
-    .ops = &bsd211fs_ops, .state_size = sizeof(filsys_edition_t), .name = "bsd211",
+    .ops = &bsd211fs_ops, .alloc = &freelist_alloc_ops,
+    .state_size = sizeof(filsys_edition_t), .name = "bsd211",
     .bsize = BSD211_BSIZE, .bo = &bo_me,
     .nicfree = BSD211_NICFREE, .nicinod = BSD211_NICINOD,
     .inode_size = BSD211_INODESZ, .ndaddr = BSD211_NDADDR, .niaddr = BSD211_NIADDR,
