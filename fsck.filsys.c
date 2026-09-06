@@ -198,8 +198,8 @@ int main(int argc, char **argv)
 
     if (edition == FILSYS_V1) {
         int readonly = !(salvage || resolve || clri || preen || yes || ask);
-        v1fs_t fs;
-        int rc = v1fs_open(&fs, path, readonly, offblock * V1_BSIZE);
+        filsys_edition_t fs = filsys_getformat(edition);
+        int rc = v1fs_open(&fs, path, readonly, &fs, offblock * V1_BSIZE);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;

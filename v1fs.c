@@ -25,8 +25,10 @@ static int super_write(v1fs_t *fs);
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int v1fs_open(v1fs_t *fs, const char *path, int readonly, uint64_t offset) {
-    memset(fs, 0, sizeof(*fs));
+int v1fs_open(v1fs_t *fs, const char *path, int readonly,
+              const filsys_edition_t *proto, uint64_t offset) {
+    if (fs != proto)
+        memcpy(fs, proto, sizeof *fs); /* copy the static descriptor fields */
     fs->readonly = readonly;
     fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
@@ -388,239 +390,12 @@ int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
     return 0;
 }
 
-/* ---- file data ---------------------------------------------------------- */
-
-ssize_t v1fs_file_read(v1fs_t *fs, v1_inode_t *ip, uint8_t *buf, size_t size, off_t off) {
-    if (off < 0)
-        return -EINVAL;
-    if ((uint64_t)off >= ip->size)
-        return 0;
-    uint64_t remaining = ip->size - (uint64_t)off;
-    if (size > remaining)
-        size = (size_t)remaining;
-
-    size_t done = 0;
-    while (done < size) {
-        uint32_t lbn  = (uint32_t)((off + (off_t)done) / V1_BSIZE);
-        uint32_t boff = (uint32_t)((off + (off_t)done) % V1_BSIZE);
-        uint32_t pbn;
-        if (v1fs_bmap(fs, ip, lbn, 0, &pbn))
-            return -EIO;
-        uint8_t blk[V1_BSIZE];
-        if (pbn == 0) {
-            memset(blk, 0, V1_BSIZE);
-        } else if (v1fs_read_block(fs, pbn, blk)) {
-            return -EIO;
-        }
-        size_t n = V1_BSIZE - boff;
-        if (n > size - done)
-            n = size - done;
-        memcpy(buf + done, blk + boff, n);
-        done += n;
-    }
-    return (ssize_t)done;
-}
-
-ssize_t v1fs_file_write(v1fs_t *fs, v1_inode_t *ip, const uint8_t *buf, size_t size, off_t off) {
-    if (off < 0)
-        return -EINVAL;
-
-    size_t done = 0;
-    while (done < size) {
-        uint32_t lbn  = (uint32_t)((off + (off_t)done) / V1_BSIZE);
-        uint32_t boff = (uint32_t)((off + (off_t)done) % V1_BSIZE);
-        uint32_t pbn;
-        if (v1fs_bmap(fs, ip, lbn, 1, &pbn))
-            return -ENOSPC;
-        if (pbn == 0)
-            return -ENOSPC;
-
-        uint8_t blk[V1_BSIZE];
-        if (v1fs_read_block(fs, pbn, blk))
-            return -EIO;
-
-        size_t n = V1_BSIZE - boff;
-        if (n > size - done)
-            n = size - done;
-        memcpy(blk + boff, buf + done, n);
-        if (v1fs_write_block(fs, pbn, blk))
-            return -EIO;
-        done += n;
-    }
-    if ((uint64_t)off + size > ip->size)
-        ip->size = (uint32_t)(off + size);
-    v1fs_write_inode(fs, ip->ino, ip);
-    return (ssize_t)done;
-}
-
-/* ---- directories -------------------------------------------------------- */
-
-int v1fs_dir_read(v1fs_t *fs, v1_inode_t *ip, v1_dirent_t **ents, size_t *count) {
-    if (!(ip->mode & V1_IFDIR))
-        return -ENOTDIR;
-    if (ip->size > (uint64_t)(fs->fsize - v1_data_start(fs->maxino)) * V1_BSIZE)
-        return -EFBIG;
-    size_t cap = ip->size / V1_DIRENTSZ + 1;
-    v1_dirent_t *out = calloc(cap, sizeof(v1_dirent_t));
-    if (!out)
-        return -ENOMEM;
-
-    uint8_t *buf = malloc(ip->size);
-    if (!buf) {
-        free(out);
-        return -ENOMEM;
-    }
-    ssize_t n = v1fs_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) {
-        free(buf);
-        free(out);
-        return (int)n;
-    }
-
-    size_t cnt = 0;
-    for (size_t off = 0; off + V1_DIRENTSZ <= (size_t)n; off += V1_DIRENTSZ) {
-        uint16_t ino = bo_get16le(buf + off);
-        if (ino == 0)
-            continue;
-        out[cnt].ino = ino;
-        memcpy(out[cnt].name, buf + off + 2, V1_DIRSIZ);
-        out[cnt].name[V1_DIRSIZ] = 0;
-        cnt++;
-    }
-    free(buf);
-    *ents = out;
-    *count = cnt;
-    return 0;
-}
-
-void v1fs_dirents_free(v1_dirent_t *ents) {
-    free(ents);
-}
-
-int v1fs_dir_lookup(v1fs_t *fs, v1_inode_t *ip, const char *name, uint32_t *ino) {
-    v1_dirent_t *ents = NULL;
-    size_t count = 0;
-    int rc = v1fs_dir_read(fs, ip, &ents, &count);
-    if (rc)
-        return rc;
-    rc = -ENOENT;
-    for (size_t i = 0; i < count; i++) {
-        if (strcmp(ents[i].name, name) == 0) {
-            *ino = ents[i].ino;
-            rc = 0;
-            break;
-        }
-    }
-    v1fs_dirents_free(ents);
-    return rc;
-}
-
-int v1fs_dir_add(v1fs_t *fs, v1_inode_t *ip, uint32_t ino, const char *name) {
-    size_t namelen = strlen(name);
-    if (namelen == 0 || namelen > V1_DIRSIZ)
-        return -ENAMETOOLONG;
-    if (strchr(name, '/'))
-        return -EINVAL;
-
-    size_t newsize = ip->size + V1_DIRENTSZ;
-    uint8_t *buf = malloc(newsize);
-    if (!buf)
-        return -ENOMEM;
-    memset(buf, 0, newsize);
-    ssize_t n = v1fs_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) {
-        free(buf);
-        return (int)n;
-    }
-
-    size_t slot = SIZE_MAX;
-    for (size_t off = 0; off + V1_DIRENTSZ <= (size_t)n; off += V1_DIRENTSZ) {
-        if (bo_get16le(buf + off) == 0) {
-            slot = off;
-            break;
-        }
-    }
-    if (slot == SIZE_MAX) {
-        slot = (size_t)n;
-        n += V1_DIRENTSZ;
-    }
-
-    bo_put16le(buf + slot, (uint16_t)ino);
-    memset(buf + slot + 2, 0, V1_DIRSIZ);
-    memcpy(buf + slot + 2, name, namelen);
-
-    ssize_t w = v1fs_file_write(fs, ip, buf, (size_t)n, 0);
-    free(buf);
-    return w < 0 ? (int)w : 0;
-}
-
-int v1fs_dir_remove(v1fs_t *fs, v1_inode_t *ip, const char *name) {
-    uint8_t *buf = malloc(ip->size);
-    if (!buf)
-        return -ENOMEM;
-    ssize_t n = v1fs_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) {
-        free(buf);
-        return (int)n;
-    }
-    int rc = -ENOENT;
-    for (size_t off = 0; off + V1_DIRENTSZ <= (size_t)n; off += V1_DIRENTSZ) {
-        if (bo_get16le(buf + off) == 0)
-            continue;
-        char ent[V1_DIRSIZ + 1];
-        memcpy(ent, buf + off + 2, V1_DIRSIZ);
-        ent[V1_DIRSIZ] = 0;
-        if (strcmp(ent, name) == 0) {
-            bo_put16le(buf + off, 0);
-            memset(buf + off + 2, 0, V1_DIRSIZ);
-            ssize_t w = v1fs_file_write(fs, ip, buf, (size_t)n, 0);
-            rc = w < 0 ? (int)w : 0;
-            break;
-        }
-    }
-    free(buf);
-    return rc;
-}
-
-/* ---- path lookup -------------------------------------------------------- */
-
-int v1fs_lookup(v1fs_t *fs, const char *path, uint32_t *ino, v1_inode_t *ip) {
-    if (path[0] != '/')
-        return -EINVAL;
-    uint32_t cur = V1_ROOTINO;
-    v1_inode_t dip;
-    if (v1fs_read_inode(fs, cur, &dip))
-        return -EIO;
-
-    const char *p = path + 1;
-    while (*p) {
-        const char *slash = strchr(p, '/');
-        size_t len = slash ? (size_t)(slash - p) : strlen(p);
-        if (len == 0) {
-            p++;
-            continue;
-        }
-        if (len > V1_DIRSIZ)
-            return -ENAMETOOLONG;
-        char name[V1_DIRSIZ + 1];
-        memcpy(name, p, len);
-        name[len] = 0;
-
-        if (!(dip.mode & V1_IFDIR))
-            return -ENOTDIR;
-        uint32_t next;
-        int rc = v1fs_dir_lookup(fs, &dip, name, &next);
-        if (rc)
-            return rc;
-        if (v1fs_read_inode(fs, next, &dip))
-            return -EIO;
-        p = slash ? slash + 1 : p + len;
-    }
-    *ino = dip.ino;
-    if (ip)
-        *ip = dip;
-    return 0;
-}
+/* ---- file / directory / lookup ------------------------------------------
+ * Shared with the V7 engine: V1 is byte-addressed with 512-byte blocks, so
+ * v7fs_file_read/write, the dirent codec (dirent_size=10, max_namlen=8) and
+ * v7fs_lookup all apply unchanged once fs->ops/bsize/rootino/is_dir are set.
+ * Only the inode codec, the ILARG bmap topology, and the bitmap allocator
+ * stay V1-specific (elsewhere in this file). */
 
 /* ---- integrity check ---------------------------------------------------- */
 
@@ -730,7 +505,7 @@ static void v1fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
     /* V1 names are 8 chars, so the recovery directory is "lostfils"
      * ("lost files"; the canonical "lost+found" doesn't fit in 8 chars). */
     if (v1fs_read_inode(fs, V1_ROOTINO, &root) == 0 &&
-        v1fs_dir_lookup(fs, &root, "lostfils", &lf_ino) != 0) {
+        v7fs_dir_lookup(fs, &root, "lostfils", &lf_ino) != 0) {
         v1_inode_t lf;
         if (v1fs_ialloc(fs, &lf_ino) == 0) {
             memset(&lf, 0, sizeof(lf));
@@ -738,9 +513,9 @@ static void v1fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
             lf.mode = V1_IALLOC | V1_IFDIR | V1_IREAD | V1_IWRITE | V1_IEXEC | V1_OREAD;
             lf.nlink = 2;
             v1fs_write_inode(fs, lf_ino, &lf);
-            v1fs_dir_add(fs, &lf, lf_ino, ".");
-            v1fs_dir_add(fs, &lf, V1_ROOTINO, "..");
-            v1fs_dir_add(fs, &root, lf_ino, "lostfils");
+            v7fs_dir_add(fs, &lf, lf_ino, ".");
+            v7fs_dir_add(fs, &lf, V1_ROOTINO, "..");
+            v7fs_dir_add(fs, &root, lf_ino, "lostfils");
             root.nlink++;
             v1fs_write_inode(fs, V1_ROOTINO, &root);
             printf("created lost+found (inode %u)\n", lf_ino);
@@ -776,7 +551,7 @@ static void v1fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
             snprintf(name, sizeof(name), "%u", ino);
             if (filsys_query(mode, "reconnect inode %u to lost+found", ino) &&
                 v1fs_read_inode(fs, lf_ino, &lf) == 0 &&
-                v1fs_dir_add(fs, &lf, ino, name) == 0) {
+                v7fs_dir_add(fs, &lf, ino, name) == 0) {
                 ip.nlink = 1;
                 v1fs_write_inode(fs, ino, &ip);
                 v1fs_write_inode(fs, lf_ino, &lf);
@@ -937,7 +712,7 @@ static void v1_ncheck_dir(v1fs_t *fs, uint32_t dirino, const char *prefix,
         return;
     v1_dirent_t *ents = NULL;
     size_t cnt = 0;
-    if (v1fs_dir_read(fs, &ip, &ents, &cnt))
+    if (v7fs_dir_read(fs, &ip, &ents, &cnt))
         return;
     for (size_t i = 0; i < cnt; i++) {
         uint32_t eino = ents[i].ino;
@@ -960,7 +735,7 @@ static void v1_ncheck_dir(v1fs_t *fs, uint32_t dirino, const char *prefix,
         if (v1fs_read_inode(fs, eino, &cip) == 0 && (cip.mode & V1_IFDIR))
             v1_ncheck_dir(fs, eino, path, target, found, depth + 1);
     }
-    v1fs_dirents_free(ents);
+    free(ents);
 }
 
 int v1fs_ncheck(v1fs_t *fs, uint32_t ino)
@@ -992,8 +767,7 @@ int v1fs_clri(v1fs_t *fs, uint32_t ino)
 
 static int v1fs_open_op(void *fs, const char *path, int readonly,
                         const filsys_edition_t *proto, uint64_t offset) {
-    (void)proto;   /* V1 has no byte-order or block-size variants */
-    return v1fs_open(fs, path, readonly, offset);
+    return v1fs_open(fs, path, readonly, proto, offset);
 }
 static uint32_t v1fs_blocksize_op(const void *fs) { (void)fs; return V1_BSIZE; }
 static void v1fs_close_op(void *fs) { v1fs_close(fs); }
@@ -1016,19 +790,19 @@ static int v1fs_itrunc_op(void *fs, filsys_inode_t *ip)
 static int v1fs_itrunc_from_op(void *fs, filsys_inode_t *ip, uint32_t first_blk)
 { return v1fs_itrunc_from(fs, ip, first_blk); }
 static ssize_t v1fs_file_read_op(void *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off)
-{ return v1fs_file_read(fs, ip, buf, size, off); }
+{ return v7fs_file_read(fs, ip, buf, size, off); }
 static ssize_t v1fs_file_write_op(void *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off)
-{ return v1fs_file_write(fs, ip, buf, size, off); }
+{ return v7fs_file_write(fs, ip, buf, size, off); }
 static int v1fs_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
-{ return v1fs_dir_read(fs, ip, ents, count); }
+{ return v7fs_dir_read(fs, ip, ents, count); }
 static int v1fs_dir_lookup_op(void *fs, filsys_inode_t *ip, const char *name, uint32_t *ino)
-{ return v1fs_dir_lookup(fs, ip, name, ino); }
+{ return v7fs_dir_lookup(fs, ip, name, ino); }
 static int v1fs_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
-{ return v1fs_dir_add(fs, ip, ino, name); }
+{ return v7fs_dir_add(fs, ip, ino, name); }
 static int v1fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
-{ return v1fs_dir_remove(fs, ip, name); }
+{ return v7fs_dir_remove(fs, ip, name); }
 static int v1fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
-{ return v1fs_lookup(fs, path, ino, ip); }
+{ return v7fs_lookup(fs, path, ino, ip); }
 static int v1fs_check_op(void *fs) { v1_check_t rep; return v1fs_check(fs, &rep, 0); }
 static uint64_t v1fs_max_file_op(void *fs) {
     (void)fs;

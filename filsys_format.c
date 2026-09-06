@@ -138,10 +138,10 @@ static const filsys_edition_t v6 = {
 };
 static const filsys_edition_t v1 = {
     .ops = &v1fs_ops, .alloc = &bitmap_alloc_ops,
-    .state_size = sizeof(v1fs_t), .name = "v1",
+    .state_size = sizeof(filsys_edition_t), .name = "v1",
     .bsize = V1_BSIZE, .bo = &bo_me,
     .inode_size = V1_INODESZ, .ndaddr = V1_NDADDR, .niaddr = V1_NIADDR,
-    .max_namlen = V1_DIRSIZ, .dirent_size = V1_DIRENTSZ,
+    .rootino = V1_ROOTINO, .max_namlen = V1_DIRSIZ, .dirent_size = V1_DIRENTSZ,
     .to_posix_mode = v1_to_posix_mode, .is_dir = v1_is_dir,
     .is_device = v1_is_device, .to_disk_mode = v1_to_disk_mode,
     .chmod_mode = v1_chmod_mode,

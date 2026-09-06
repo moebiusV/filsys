@@ -580,14 +580,14 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
 /* ---- directories -------------------------------------------------------- */
 
 int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count) {
-    if ((ip->mode & fs->ifmt) != fs->ifdir)
+    if (!fs_is_dir(fs, ip))
         return -ENOTDIR;
     /* A directory's data cannot exceed the filesystem's data area; reject a
      * corrupt size before the malloc below, else a bogus di_size (up to 4 GiB)
      * turns into a multi-gigabyte allocation. */
-    if (ip->size > (uint64_t)(fs->fsize - fs->isize) * fs->bsize)
+    if (ip->size > (uint64_t)(fs->fsize - fs->ops->data_start(fs)) * fs->bsize)
         return -EFBIG;
-    size_t cap = ip->size / 16 + 1;
+    size_t cap = ip->size / fs->dirent_size + 1;
     v7_dirent_t *out = calloc(cap, sizeof(v7_dirent_t));
     if (!out)
         return -ENOMEM;
@@ -605,13 +605,13 @@ int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size
     }
 
     size_t cnt = 0;
-    for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
+    for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
         uint16_t ino = bo_get16le(buf + off);
         if (ino == 0)
             continue;
         out[cnt].ino = ino;
-        memcpy(out[cnt].name, buf + off + 2, V7_DIRSIZ);
-        out[cnt].name[V7_DIRSIZ] = 0;
+        memcpy(out[cnt].name, buf + off + 2, fs->max_namlen);
+        out[cnt].name[fs->max_namlen] = 0;
         cnt++;
     }
     free(buf);
@@ -644,12 +644,12 @@ int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint
 
 int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
     size_t namelen = strlen(name);
-    if (namelen == 0 || namelen > V7_DIRSIZ)
+    if (namelen == 0 || namelen > fs->max_namlen)
         return -ENAMETOOLONG;
     if (strchr(name, '/'))
         return -EINVAL;
 
-    size_t newsize = ip->size + 16;
+    size_t newsize = ip->size + fs->dirent_size;
     uint8_t *buf = malloc(newsize);
     if (!buf)
         return -ENOMEM;
@@ -662,7 +662,7 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
 
     /* find an empty slot, else append */
     size_t slot = SIZE_MAX;
-    for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
+    for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
         if (bo_get16le(buf + off) == 0) {
             slot = off;
             break;
@@ -670,11 +670,11 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
     }
     if (slot == SIZE_MAX) {
         slot = (size_t)n;
-        n += 16;
+        n += fs->dirent_size;
     }
 
     bo_put16le(buf + slot, (uint16_t)ino);
-    memset(buf + slot + 2, 0, V7_DIRSIZ);
+    memset(buf + slot + 2, 0, fs->max_namlen);
     memcpy(buf + slot + 2, name, namelen);
 
     ssize_t w = v7fs_file_write(fs, ip, buf, (size_t)n, 0);
@@ -692,15 +692,15 @@ int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
         return (int)n;
     }
     int rc = -ENOENT;
-    for (size_t off = 0; off + 16 <= (size_t)n; off += 16) {
+    for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
         if (bo_get16le(buf + off) == 0)
             continue;
-        char ent[V7_DIRSIZ + 1];
-        memcpy(ent, buf + off + 2, V7_DIRSIZ);
-        ent[V7_DIRSIZ] = 0;
+        char ent[64];
+        memcpy(ent, buf + off + 2, fs->max_namlen);
+        ent[fs->max_namlen] = 0;
         if (strcmp(ent, name) == 0) {
             bo_put16le(buf + off, 0);
-            memset(buf + off + 2, 0, V7_DIRSIZ);
+            memset(buf + off + 2, 0, fs->max_namlen);
             ssize_t w = v7fs_file_write(fs, ip, buf, (size_t)n, 0);
             rc = w < 0 ? (int)w : 0;
             break;
@@ -734,7 +734,7 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
         memcpy(name, p, len);
         name[len] = 0;
 
-        if ((dip.mode & fs->ifmt) != fs->ifdir)
+        if (!fs_is_dir(fs, &dip))
             return -ENOTDIR;
         uint32_t next;
         int rc = fs->ops->dir_lookup(fs, &dip, name, &next);

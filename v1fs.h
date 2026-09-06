@@ -17,6 +17,7 @@
 #include <sys/types.h>
 
 #include "filsys.h"
+#include "v7fs.h"       /* filsys_edition_t (v1fs_t aliases it) */
 #include "check.h"
 
 enum {
@@ -57,18 +58,15 @@ typedef filsys_dirent_t v1_dirent_t;
 
 extern const alloc_ops_t bitmap_alloc_ops;
 
-typedef struct {
-    int        fd;
-    int        readonly;
-    uint64_t   base;
-    uint32_t   fsize;          /* total blocks = free-map bytes * 8 */
-    uint32_t   maxino;         /* total inode slots = inode-map bytes * 8 */
-    bitmap_state bm;           /* dual-bitmap allocator state */
-} v1fs_t;
+/* V1's backend state is the shared filsys_edition_t (byte-addressed, bitmap
+ * allocator in the .bm union arm).  It is aliased rather than a separate struct
+ * so V1's functions can move into the shared engine one at a time. */
+typedef filsys_edition_t v1fs_t;
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int v1fs_open(v1fs_t *fs, const char *path, int readonly, uint64_t offset);
+int v1fs_open(v1fs_t *fs, const char *path, int readonly,
+              const filsys_edition_t *proto, uint64_t offset);
 void v1fs_close(v1fs_t *fs);
 int v1fs_sync(v1fs_t *fs);
 
@@ -95,20 +93,13 @@ void v1fs_ifree(v1fs_t *fs, uint32_t ino);
 int v1fs_itrunc(v1fs_t *fs, v1_inode_t *ip);
 int v1fs_itrunc_from(v1fs_t *fs, v1_inode_t *ip, uint32_t first_blk);
 
-/* ---- file / directory data --------------------------------------------- */
+/* ---- block mapping ------------------------------------------------------ */
 
 int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
 
-ssize_t v1fs_file_read(v1fs_t *fs, v1_inode_t *ip, uint8_t *buf, size_t size, off_t off);
-ssize_t v1fs_file_write(v1fs_t *fs, v1_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
-
-int v1fs_dir_read(v1fs_t *fs, v1_inode_t *ip, v1_dirent_t **ents, size_t *count);
-void v1fs_dirents_free(v1_dirent_t *ents);
-int v1fs_dir_lookup(v1fs_t *fs, v1_inode_t *ip, const char *name, uint32_t *ino);
-int v1fs_dir_add(v1fs_t *fs, v1_inode_t *ip, uint32_t ino, const char *name);
-int v1fs_dir_remove(v1fs_t *fs, v1_inode_t *ip, const char *name);
-
-int v1fs_lookup(v1fs_t *fs, const char *path, uint32_t *ino, v1_inode_t *ip);
+/* File/directory data and path lookup are shared with the V7 engine
+ * (v7fs_file_read/write, the dirent codec, v7fs_lookup); only the inode codec,
+ * the ILARG bmap topology and the bitmap allocator stay V1-specific. */
 
 /* ---- integrity check ---------------------------------------------------- */
 
