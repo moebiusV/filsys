@@ -200,9 +200,25 @@ enum {
 typedef filsys_inode_t  v7_inode_t;
 typedef filsys_dirent_t v7_dirent_t;
 
+/* In-core free-list allocator state (V6/V7/BSD211; the PDP-7 keeps its own
+ * on-disk head, V1 a bitmap).  This was the free-list cache living directly in
+ * filsys_edition_t; it moves here so the generic descriptor no longer carries
+ * one allocator's runtime state. */
+typedef struct {
+    uint16_t nfree;
+    uint32_t free[V7_XEN_NICFREE];   /* max free-cache depth: 50/64/100 */
+    uint16_t ninode;
+    uint16_t inode[V7_NICINOD];
+    uint32_t tfree;                  /* total free blocks (s_tfree) */
+    uint32_t tinode;                 /* total free inodes (s_tinode) */
+} freelist_state;
+
+extern const alloc_ops_t freelist_alloc_ops;
+
 typedef struct filsys_edition {
     /* ---- format descriptor (static; set by filsys_getformat) ---- */
     const struct filsys_ops *ops;   /* backend vtable */
+    const alloc_ops_t *alloc;       /* allocator (free-list or bitmap) */
     size_t      state_size;         /* sizeof the backend state struct */
     const char *name;               /* "-v" spelling */
     const byte_order_ops_t *bo;     /* byte-order ops (bo_le / bo_be / bo_me) */
@@ -238,13 +254,8 @@ typedef struct filsys_edition {
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
-    uint16_t   nfree;
-    uint32_t   free[V7_XEN_NICFREE];   /* max free-cache depth: 50/64/100 */
-    uint16_t   ninode;
-    uint16_t   inode[V7_NICINOD];
+    freelist_state fl;          /* free-list allocator state */
     uint32_t   time;           /* last superblock update */
-    uint32_t   tfree;          /* total free blocks (s_tfree) */
-    uint32_t   tinode;         /* total free inodes (s_tinode) */
     uint16_t   m;              /* s_m interleave factor (coherent) */
     uint16_t   n;              /* s_n interleave factor (coherent) */
     uint32_t   unique;         /* s_unique (coherent) */
