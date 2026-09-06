@@ -1587,6 +1587,7 @@ const struct filsys_ops bsd211fs_ops = {
     .inode_state = bsd211_inode_state,
     .mark_blocks = bsd211_mark_blocks,
     .walk_free   = v7_walk_free,
+    .makefree    = v7fs_makefree,
     .is_clean    = bsd211_is_clean,
     .statfs      = v7fs_statfs_op,
     .max_file    = v7fs_max_file_op,

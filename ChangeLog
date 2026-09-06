@@ -1,5 +1,16 @@
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
+	* mkfs.filsys.c, v7fs.c: fold mkfs's parallel per-format layout paths
+	into one descriptor-driven driver.  The free-list-cache editions
+	(V7/32V/Coherent/Xenix/2.9BSD/V6/2.11BSD) now build a filesystem through
+	the library's ops/alloc vtable -- alloc_ops for balloc/bfree, write_inode
+	for the on-disk inode codec, and the check driver's makefree for the
+	per-edition interleave -- leaving only the i-list sizing and the seed
+	(reserved + root) inodes as per-format hooks.  bsd211 gains a makefree
+	(sequential salvage).  V1 and PDP-7 stay their own paths.
+
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
 	* v7fs.c, v7fs.h, filsys_format.c: fold V6 into the V7 engine.  The
 	allocator (balloc/bfree/ialloc/ifree), the superblock open/sync/write,
 	and the check-driver seams (mark_block, walk_free, maxino/data_start/
