@@ -13,7 +13,6 @@
 #include "filsys.h"
 #include "filsys_ops.h"
 #include "v1fs.h"
-#include "v6fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
 
@@ -27,7 +26,7 @@
 struct filsys {
     const struct filsys_ops *ops;
     filsys_edition_t            fmt;      /* the format (by value) */
-    void *fs;                  /* backend state (v6fs_t / filsys_edition_t / ...) */
+    void *fs;                  /* backend state (filsys_edition_t / v1fs_t / p7fs_t) */
     int ver;
     int uid, gid;              /* reported ownership (default: the mounting user) */
     int readonly;

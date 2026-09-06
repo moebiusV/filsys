@@ -155,8 +155,8 @@ libfilsys_a_RANLIB = $(RANLIB)
 libfilsys_a_LIBADD =
 am_libfilsys_a_OBJECTS = libfilsys_a-filsys.$(OBJEXT) \
 	libfilsys_a-filsys_format.$(OBJEXT) libfilsys_a-bo.$(OBJEXT) \
-	libfilsys_a-v1fs.$(OBJEXT) libfilsys_a-v6fs.$(OBJEXT) \
-	libfilsys_a-v7fs.$(OBJEXT) libfilsys_a-pdp7fs.$(OBJEXT)
+	libfilsys_a-v1fs.$(OBJEXT) libfilsys_a-v7fs.$(OBJEXT) \
+	libfilsys_a-pdp7fs.$(OBJEXT)
 libfilsys_a_OBJECTS = $(am_libfilsys_a_OBJECTS)
 am_findfs_filsys_OBJECTS = findfs_filsys-findfs.filsys.$(OBJEXT) \
 	findfs_filsys-bo.$(OBJEXT)
@@ -166,16 +166,16 @@ findfs_filsys_LINK = $(CCLD) $(findfs_filsys_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_fsck_filsys_OBJECTS = fsck_filsys-fsck.filsys.$(OBJEXT) \
 	fsck_filsys-filsys_format.$(OBJEXT) fsck_filsys-bo.$(OBJEXT) \
-	fsck_filsys-v1fs.$(OBJEXT) fsck_filsys-v6fs.$(OBJEXT) \
-	fsck_filsys-v7fs.$(OBJEXT) fsck_filsys-pdp7fs.$(OBJEXT)
+	fsck_filsys-v1fs.$(OBJEXT) fsck_filsys-v7fs.$(OBJEXT) \
+	fsck_filsys-pdp7fs.$(OBJEXT)
 fsck_filsys_OBJECTS = $(am_fsck_filsys_OBJECTS)
 fsck_filsys_LDADD = $(LDADD)
 fsck_filsys_LINK = $(CCLD) $(fsck_filsys_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_mkfs_filsys_OBJECTS = mkfs_filsys-mkfs.filsys.$(OBJEXT) \
 	mkfs_filsys-filsys_format.$(OBJEXT) mkfs_filsys-bo.$(OBJEXT) \
-	mkfs_filsys-v1fs.$(OBJEXT) mkfs_filsys-v6fs.$(OBJEXT) \
-	mkfs_filsys-v7fs.$(OBJEXT) mkfs_filsys-pdp7fs.$(OBJEXT)
+	mkfs_filsys-v1fs.$(OBJEXT) mkfs_filsys-v7fs.$(OBJEXT) \
+	mkfs_filsys-pdp7fs.$(OBJEXT)
 mkfs_filsys_OBJECTS = $(am_mkfs_filsys_OBJECTS)
 mkfs_filsys_LDADD = $(LDADD)
 mkfs_filsys_LINK = $(CCLD) $(mkfs_filsys_CFLAGS) $(CFLAGS) \
@@ -213,19 +213,16 @@ am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-bo.Po \
 	./$(DEPDIR)/fsck_filsys-fsck.filsys.Po \
 	./$(DEPDIR)/fsck_filsys-pdp7fs.Po \
 	./$(DEPDIR)/fsck_filsys-v1fs.Po \
-	./$(DEPDIR)/fsck_filsys-v6fs.Po \
 	./$(DEPDIR)/fsck_filsys-v7fs.Po ./$(DEPDIR)/libfilsys_a-bo.Po \
 	./$(DEPDIR)/libfilsys_a-filsys.Po \
 	./$(DEPDIR)/libfilsys_a-filsys_format.Po \
 	./$(DEPDIR)/libfilsys_a-pdp7fs.Po \
 	./$(DEPDIR)/libfilsys_a-v1fs.Po \
-	./$(DEPDIR)/libfilsys_a-v6fs.Po \
 	./$(DEPDIR)/libfilsys_a-v7fs.Po ./$(DEPDIR)/mkfs_filsys-bo.Po \
 	./$(DEPDIR)/mkfs_filsys-filsys_format.Po \
 	./$(DEPDIR)/mkfs_filsys-mkfs.filsys.Po \
 	./$(DEPDIR)/mkfs_filsys-pdp7fs.Po \
 	./$(DEPDIR)/mkfs_filsys-v1fs.Po \
-	./$(DEPDIR)/mkfs_filsys-v6fs.Po \
 	./$(DEPDIR)/mkfs_filsys-v7fs.Po \
 	./$(DEPDIR)/mount_filsys-mount.filsys.Po \
 	./$(DEPDIR)/test_matrix-test_matrix.Po
@@ -608,7 +605,7 @@ GZIP_ENV = --best -n
 # are the internal per-format layer and stay uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v6fs.c v6fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h bsd211fs.h
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v6fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h bsd211fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
@@ -626,9 +623,9 @@ mount_filsys_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
 mount_filsys_LDADD = $(FUSE3_LIBS) libfilsys.a
 findfs_filsys_SOURCES = findfs.filsys.c bo.c bo.h
 findfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
-mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v6fs.c v6fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h bsd211fs.h
+mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v6fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h bsd211fs.h
 mkfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
-fsck_filsys_SOURCES = fsck.filsys.c filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v6fs.c v6fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h bsd211fs.h
+fsck_filsys_SOURCES = fsck.filsys.c filsys_ops.h filsys_format.c bo.c bo.h v1fs.c v1fs.h v6fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h bsd211fs.h
 fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
 EXTRA_DIST = test.sh fetch.sh boot/hpuboot.s boot/rpuboot.s
@@ -859,21 +856,18 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-fsck.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-pdp7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-v1fs.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-v6fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-v7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-bo.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys_format.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-pdp7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-v1fs.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-v6fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-v7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-bo.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-filsys_format.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-mkfs.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-pdp7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-v1fs.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-v6fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-v7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-mount.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_matrix-test_matrix.Po@am__quote@ # am--include-marker
@@ -953,20 +947,6 @@ libfilsys_a-v1fs.obj: v1fs.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v1fs.c' object='libfilsys_a-v1fs.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-v1fs.obj `if test -f 'v1fs.c'; then $(CYGPATH_W) 'v1fs.c'; else $(CYGPATH_W) '$(srcdir)/v1fs.c'; fi`
-
-libfilsys_a-v6fs.o: v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-v6fs.o -MD -MP -MF $(DEPDIR)/libfilsys_a-v6fs.Tpo -c -o libfilsys_a-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-v6fs.Tpo $(DEPDIR)/libfilsys_a-v6fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='libfilsys_a-v6fs.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
-
-libfilsys_a-v6fs.obj: v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-v6fs.obj -MD -MP -MF $(DEPDIR)/libfilsys_a-v6fs.Tpo -c -o libfilsys_a-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-v6fs.Tpo $(DEPDIR)/libfilsys_a-v6fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='libfilsys_a-v6fs.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
 
 libfilsys_a-v7fs.o: v7fs.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-v7fs.o -MD -MP -MF $(DEPDIR)/libfilsys_a-v7fs.Tpo -c -o libfilsys_a-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
@@ -1080,20 +1060,6 @@ fsck_filsys-v1fs.obj: v1fs.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -c -o fsck_filsys-v1fs.obj `if test -f 'v1fs.c'; then $(CYGPATH_W) 'v1fs.c'; else $(CYGPATH_W) '$(srcdir)/v1fs.c'; fi`
 
-fsck_filsys-v6fs.o: v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -MT fsck_filsys-v6fs.o -MD -MP -MF $(DEPDIR)/fsck_filsys-v6fs.Tpo -c -o fsck_filsys-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/fsck_filsys-v6fs.Tpo $(DEPDIR)/fsck_filsys-v6fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='fsck_filsys-v6fs.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -c -o fsck_filsys-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
-
-fsck_filsys-v6fs.obj: v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -MT fsck_filsys-v6fs.obj -MD -MP -MF $(DEPDIR)/fsck_filsys-v6fs.Tpo -c -o fsck_filsys-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/fsck_filsys-v6fs.Tpo $(DEPDIR)/fsck_filsys-v6fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='fsck_filsys-v6fs.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -c -o fsck_filsys-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
-
 fsck_filsys-v7fs.o: v7fs.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -MT fsck_filsys-v7fs.o -MD -MP -MF $(DEPDIR)/fsck_filsys-v7fs.Tpo -c -o fsck_filsys-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/fsck_filsys-v7fs.Tpo $(DEPDIR)/fsck_filsys-v7fs.Po
@@ -1177,20 +1143,6 @@ mkfs_filsys-v1fs.obj: v1fs.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v1fs.c' object='mkfs_filsys-v1fs.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -c -o mkfs_filsys-v1fs.obj `if test -f 'v1fs.c'; then $(CYGPATH_W) 'v1fs.c'; else $(CYGPATH_W) '$(srcdir)/v1fs.c'; fi`
-
-mkfs_filsys-v6fs.o: v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -MT mkfs_filsys-v6fs.o -MD -MP -MF $(DEPDIR)/mkfs_filsys-v6fs.Tpo -c -o mkfs_filsys-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mkfs_filsys-v6fs.Tpo $(DEPDIR)/mkfs_filsys-v6fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='mkfs_filsys-v6fs.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -c -o mkfs_filsys-v6fs.o `test -f 'v6fs.c' || echo '$(srcdir)/'`v6fs.c
-
-mkfs_filsys-v6fs.obj: v6fs.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -MT mkfs_filsys-v6fs.obj -MD -MP -MF $(DEPDIR)/mkfs_filsys-v6fs.Tpo -c -o mkfs_filsys-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mkfs_filsys-v6fs.Tpo $(DEPDIR)/mkfs_filsys-v6fs.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='v6fs.c' object='mkfs_filsys-v6fs.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -c -o mkfs_filsys-v6fs.obj `if test -f 'v6fs.c'; then $(CYGPATH_W) 'v6fs.c'; else $(CYGPATH_W) '$(srcdir)/v6fs.c'; fi`
 
 mkfs_filsys-v7fs.o: v7fs.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -MT mkfs_filsys-v7fs.o -MD -MP -MF $(DEPDIR)/mkfs_filsys-v7fs.Tpo -c -o mkfs_filsys-v7fs.o `test -f 'v7fs.c' || echo '$(srcdir)/'`v7fs.c
@@ -1889,21 +1841,18 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/fsck_filsys-fsck.filsys.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-v1fs.Po
-	-rm -f ./$(DEPDIR)/fsck_filsys-v6fs.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-bo.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_format.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v1fs.Po
-	-rm -f ./$(DEPDIR)/libfilsys_a-v6fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v7fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-bo.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-filsys_format.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-mkfs.filsys.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v1fs.Po
-	-rm -f ./$(DEPDIR)/mkfs_filsys-v6fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
@@ -1963,21 +1912,18 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/fsck_filsys-fsck.filsys.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-v1fs.Po
-	-rm -f ./$(DEPDIR)/fsck_filsys-v6fs.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-bo.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_format.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v1fs.Po
-	-rm -f ./$(DEPDIR)/libfilsys_a-v6fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v7fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-bo.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-filsys_format.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-mkfs.filsys.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v1fs.Po
-	-rm -f ./$(DEPDIR)/mkfs_filsys-v6fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
