@@ -103,7 +103,10 @@ static int p7_is_device(const filsys_edition_t *f, const filsys_inode_t *ip) {
 }
 static uint32_t p7_to_disk_mode(const filsys_edition_t *f, mode_t m, int type) {
     (void)f;
-    return to_p7_mode(m, type == FILSYS_FT_DIR);
+    uint32_t mode = to_p7_mode(m, type == FILSYS_FT_DIR);
+    if (type == FILSYS_FT_CHR || type == FILSYS_FT_BLK)
+        mode |= P7_ISPEC;
+    return mode;
 }
 static uint32_t p7_chmod_mode(const filsys_edition_t *f, uint32_t old, mode_t m) {
     (void)f;
