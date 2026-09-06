@@ -533,7 +533,7 @@ ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_
         uint8_t blk[V7_MAXBSIZE];
         if (pbn == 0) {
             memset(blk, 0, fs->bsize);   /* sparse hole */
-        } else if (v7fs_read_block(fs, pbn, blk)) {
+        } else if (fs->ops->blk_get(fs, pbn, blk)) {
             return -EIO;
         }
         size_t n = fs->bsize - boff;
@@ -560,14 +560,14 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
             return -ENOSPC;
 
         uint8_t blk[V7_MAXBSIZE];
-        if (v7fs_read_block(fs, pbn, blk))
+        if (fs->ops->blk_get(fs, pbn, blk))
             return -EIO;
 
         size_t n = fs->bsize - boff;
         if (n > size - done)
             n = size - done;
         memcpy(blk + boff, buf + done, n);
-        if (v7fs_write_block(fs, pbn, blk))
+        if (fs->ops->blk_put(fs, pbn, blk))
             return -EIO;
         done += n;
     }
@@ -1285,6 +1285,8 @@ const struct filsys_ops v7fs_ops = {
     .mark_dirty  = v7fs_mark_dirty_op,
     .read_block  = v7fs_read_block_op,
     .write_block = v7fs_write_block_op,
+    .blk_get     = v7fs_read_block_op,
+    .blk_put     = v7fs_write_block_op,
     .read_inode  = v7fs_read_inode_op,
     .write_inode = v7fs_write_inode_op,
     .ialloc      = v7fs_ialloc_op,
@@ -1528,6 +1530,8 @@ const struct filsys_ops bsd211fs_ops = {
     .mark_dirty  = v7fs_mark_dirty_op,
     .read_block  = v7fs_read_block_op,
     .write_block = v7fs_write_block_op,
+    .blk_get     = v7fs_read_block_op,
+    .blk_put     = v7fs_write_block_op,
     .read_inode  = v7fs_read_inode_op,
     .write_inode = v7fs_write_inode_op,
     .ialloc      = v7fs_ialloc_op,
@@ -2458,6 +2462,8 @@ const struct filsys_ops v6fs_ops = {
     .mark_dirty  = v6_mark_dirty_op,
     .read_block  = v7fs_read_block_op,
     .write_block = v7fs_write_block_op,
+    .blk_get     = v7fs_read_block_op,
+    .blk_put     = v7fs_write_block_op,
     .read_inode  = v6_read_inode_op,
     .write_inode = v6_write_inode_op,
     .ialloc      = v6_ialloc_op,

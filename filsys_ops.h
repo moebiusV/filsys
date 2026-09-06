@@ -110,6 +110,13 @@ struct filsys_ops {
     int  (*read_block)(void *fs, uint32_t bno, uint8_t *buf);
     int  (*write_block)(void *fs, uint32_t bno, const uint8_t *buf);
 
+    /* data-block codec: read/write a block as `blocksize` *logical* bytes.
+     * For byte-addressed editions logical == physical, so this is read_block;
+     * for the word-addressed PDP-7 it is read_words + the 2-chars-per-word
+     * pack/unpack (a 128-logical-byte block from a 256-byte container). */
+    int  (*blk_get)(void *fs, uint32_t bno, uint8_t *buf);
+    int  (*blk_put)(void *fs, uint32_t bno, const uint8_t *buf);
+
     /* inode io: on-disk bytes <-> decoded filsys_inode_t */
     int  (*read_inode)(void *fs, uint32_t ino, filsys_inode_t *ip);
     int  (*write_inode)(void *fs, uint32_t ino, const filsys_inode_t *ip);

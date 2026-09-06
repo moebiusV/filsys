@@ -185,6 +185,29 @@ int p7fs_write_block(p7fs_t *fs, uint32_t bno, const uint8_t *buf) {
     return write_words(fs, bno, words);
 }
 
+/* Data-block codec: 64 words <-> bsize (128) logical bytes, two 7-bit ASCII
+ * characters per word in the low bits of each 9-bit half. */
+static int p7fs_blk_get(void *fs, uint32_t bno, uint8_t *buf) {
+    p7fs_t *f = fs;
+    uint32_t words[P7_WSIZE];
+    if (read_words(f, bno, words))
+        return -EIO;
+    for (int i = 0; i < P7_WSIZE; i++) {
+        buf[2 * i]     = (uint8_t)((words[i] >> 9) & 0x7f);
+        buf[2 * i + 1] = (uint8_t)(words[i] & 0x7f);
+    }
+    return 0;
+}
+static int p7fs_blk_put(void *fs, uint32_t bno, const uint8_t *buf) {
+    p7fs_t *f = fs;
+    if (f->readonly)
+        return -EROFS;
+    uint32_t words[P7_WSIZE];
+    for (int i = 0; i < P7_WSIZE; i++)
+        words[i] = ((uint32_t)(buf[2 * i] & 0x7f) << 9) | (uint32_t)(buf[2 * i + 1] & 0x7f);
+    return write_words(f, bno, words);
+}
+
 int p7fs_read_inode(p7fs_t *fs, uint32_t ino, p7_inode_t *ip) {
     if (ino == 0 || ino > P7_MAXINO)
         return -EINVAL;
@@ -1140,6 +1163,8 @@ const struct filsys_ops p7fs_ops = {
     .sync        = p7fs_sync_op,
     .read_block  = p7fs_read_block_op,
     .write_block = p7fs_write_block_op,
+    .blk_get     = p7fs_blk_get,
+    .blk_put     = p7fs_blk_put,
     .read_inode  = p7fs_read_inode_op,
     .write_inode = p7fs_write_inode_op,
     .ialloc      = p7fs_ialloc_op,
