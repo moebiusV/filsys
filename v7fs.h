@@ -90,6 +90,108 @@ static inline int sb_inode_off(int pack4, int nicfree)  { return sb_ninode_off(p
 static inline int sb_time_off(int pack4, int nicfree)   { return sb_inode_off(pack4, nicfree) + 2*V7_NICINOD + 4 + (pack4 ? 2 : 0); }
 static inline int fb_free_off(int pack4)   { return pack4 ? 4 : 2; }
 
+/* ---- V6 on-disk constants (the V6 backend runs on this engine) ---------- */
+
+/* V6 keeps V7's free-list superblock but with 16-bit block numbers, s_isize as
+ * the *number* of i-list blocks, a 32-byte inode, and the ILARG large-file
+ * layout.  These are the raw on-disk numbers plus the isize-semantics helpers,
+ * shared by the V6 code in v7fs.c, the descriptor row, and mkfs. */
+enum {
+    V6_BSIZE   = 512,
+    V6_INOPB   = 16,           /* inodes per block */
+    V6_INODESZ = 32,           /* sizeof(struct inode on disk) */
+    V6_NICFREE = 100,          /* superblock free-block cache size */
+    V6_NICINOD = 100,          /* superblock free-inode cache size */
+    V6_ROOTINO = 1,
+    V6_SUPERB  = 1,            /* block number of superblock */
+    V6_NIADDR  = 8,            /* total address slots per inode */
+    V6_NDADDR  = 8,            /* direct blocks in a small file */
+    V6_NINDIR  = V6_BSIZE / 2, /* 2-byte addresses per indirect block */
+    V6_DIRSIZ  = 14            /* chars per directory entry name */
+};
+
+/* i_mode type/mode bits.  V6 has no IFREG (regular = type 0) and no
+ * IFMPC/IFMPB; bit 010000 is the ILARG large-file flag. */
+enum {
+    V6_IALLOC = 0100000,   /* allocated bit (set in every live inode) */
+    V6_IFMT   = 0060000,
+    V6_IFCHR  = 0020000,
+    V6_IFDIR  = 0040000,
+    V6_IFBLK  = 0060000,
+    V6_ILARG  = 0010000,
+    V6_ISUID  = 0004000,
+    V6_ISGID  = 0002000,
+    V6_ISVTX  = 0001000,
+    V6_IREAD  = 0000400,
+    V6_IWRITE = 0000200,
+    V6_IEXEC  = 0000100
+};
+
+/* V6 stores the NUMBER of i-list blocks in s_isize (unlike V7, which stores
+ * the first data block).  The i-list occupies blocks 2..s_isize+1, so the
+ * first data block is s_isize+2 and the inode count is s_isize*16. */
+static inline uint32_t v6_data_start(uint32_t isize) { return isize + 2; }
+static inline uint32_t v6_maxino(uint32_t isize) { return (uint32_t)isize * V6_INOPB; }
+
+/* itod / itoo: inode number -> block and offset (16 inodes per block). */
+static inline uint32_t v6_itod(uint32_t ino) { return (ino + 31) >> 4; }
+static inline uint32_t v6_itoo(uint32_t ino) { return (ino + 31) & 15; }
+
+/* ---- 2.11BSD on-disk constants (see docs/2bsd-format.md) ---------------- */
+
+/* 2.11BSD keeps V7's free-list superblock but swaps in the "new" BSD inode
+ * (32-bit block addresses, 4 direct + 3 indirect, di_flags, symlinks) and
+ * variable-length directory entries.  Raw on-disk numbers, shared by the
+ * descriptor row and mkfs's self-contained 2.11BSD path. */
+enum {
+    BSD211_BSIZE      = 1024,
+    BSD211_INODESZ    = 64,     /* sizeof(struct dinode) */
+    BSD211_INOPB      = 16,     /* inodes per block (1024/64) */
+    BSD211_NICFREE    = 50,     /* superblock free-block cache size */
+    BSD211_NICINOD    = 100,    /* superblock free-inode cache size */
+    BSD211_ROOTINO    = 2,
+    BSD211_LOSTFOUNDINO = 3,
+    BSD211_SUPERB     = 1,      /* block number of superblock */
+    BSD211_NDADDR     = 4,      /* direct addresses per inode */
+    BSD211_NIADDR     = 7,      /* total address slots (4 direct + 3 indirect) */
+    BSD211_NINDIR     = 256,    /* 4-byte addresses per indirect block (1024/4) */
+    BSD211_MAXNAMLEN  = 63,
+    BSD211_DIRBLKSIZ  = 512,    /* directory framing (still 512 inside 1024 blocks) */
+};
+
+/* di_mode type/mode bits.  Note IFLNK (symlink) and IFSOCK. */
+enum {
+    BSD211_IFMT   = 0170000,
+    BSD211_IFCHR  = 0020000,
+    BSD211_IFDIR  = 0040000,
+    BSD211_IFBLK  = 0060000,
+    BSD211_IFREG  = 0100000,
+    BSD211_IFLNK  = 0120000,   /* symbolic link */
+    BSD211_IFSOCK = 0140000,   /* socket */
+    BSD211_ISUID  = 0004000,
+    BSD211_ISGID  = 0002000,
+    BSD211_ISVTX  = 0001000,
+    BSD211_IREAD  = 0000400,
+    BSD211_IWRITE = 0000200,
+    BSD211_IEXEC  = 0000100
+};
+
+/* Superblock field offsets (struct fs, packed, block 1). */
+enum {
+    BSD211_SB_ISIZE   = 0,     /* u16: first block after i-list */
+    BSD211_SB_FSIZE   = 2,     /* u32: size of entire volume in blocks */
+    BSD211_SB_NFREE   = 6,     /* u16 */
+    BSD211_SB_FREE    = 8,     /* u32 x NICFREE */
+    BSD211_SB_NINODE  = 208,   /* u16 */
+    BSD211_SB_INODE   = 210,   /* u16 x NICINOD */
+    BSD211_SB_FMOD    = 411,   /* u8: superblock modified flag */
+    BSD211_SB_TIME    = 414,   /* u32 */
+    BSD211_SB_TFREE   = 418,   /* u32: total free blocks */
+    BSD211_SB_TINODE  = 422,   /* u16: total free inodes */
+    BSD211_SB_STEP    = 424,   /* u16: interleave m */
+    BSD211_SB_CYL     = 426,   /* u16: interleave n */
+};
+
 /* ---- core types -------------------------------------------------------- */
 
 /* Decoded inode/dirent are the public filsys types (no per-backend copy, so

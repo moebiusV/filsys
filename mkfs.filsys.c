@@ -48,10 +48,8 @@
 
 #include "filsys.h"
 #include "v1fs.h"
-#include "v6fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
-#include "bsd211fs.h"
 
 enum { A_MAGIC1 = 0407 };  /* V7 normal a.out magic (boot block) */
 
