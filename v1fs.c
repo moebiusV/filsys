@@ -258,8 +258,11 @@ static int ind1(v1fs_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *
         if (!create) { *out = 0; return 0; }
         uint8_t z[V1_BSIZE];
         memset(z, 0, V1_BSIZE);
-        if (v1fs_balloc(fs, &blk) || v1fs_write_block(fs, blk, z))
-            return -ENOSPC;
+        int rc = v1fs_balloc(fs, &blk);
+        if (rc)
+            return rc;   /* -EIO (zeroing write) or -ENOSPC */
+        if (v1fs_write_block(fs, blk, z))
+            return -EIO;
         *slot = blk;
     }
     uint8_t buf[V1_BSIZE];
@@ -267,8 +270,9 @@ static int ind1(v1fs_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *
         return -EIO;
     uint32_t nb = bo_get16le(buf + 2 * idx);
     if (nb == 0 && create) {
-        if (v1fs_balloc(fs, &nb))
-            return -ENOSPC;
+        int rc = v1fs_balloc(fs, &nb);
+        if (rc)
+            return rc;
         bo_put16le(buf + 2 * idx, (uint16_t)nb);
         if (v1fs_write_block(fs, blk, buf))
             return -EIO;
@@ -282,8 +286,9 @@ int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
      * the eight direct block numbers move into the first indirect block. */
     if (!(ip->mode & V1_ILARG) && create && lbn >= V1_NDADDR) {
         uint32_t iblk;
-        if (v1fs_balloc(fs, &iblk))
-            return -ENOSPC;
+        int rc = v1fs_balloc(fs, &iblk);
+        if (rc)
+            return rc;
         uint8_t buf[V1_BSIZE] = {0};
         for (int i = 0; i < V1_NDADDR; i++)
             bo_put16le(buf + 2 * i, (uint16_t)ip->addr[i]);
@@ -308,8 +313,9 @@ int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
     }
     uint32_t nb = ip->addr[lbn];
     if (nb == 0 && create) {
-        if (v1fs_balloc(fs, &nb))
-            return -ENOSPC;
+        int rc = v1fs_balloc(fs, &nb);
+        if (rc)
+            return rc;
         ip->addr[lbn] = nb;
     }
     *bno = nb;
