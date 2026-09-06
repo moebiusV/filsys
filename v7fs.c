@@ -21,23 +21,14 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-static int super_write(v7fs_t *fs);
+static int super_write(filsys_edition_t *fs);
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int v7fs_open(v7fs_t *fs, const char *path, int readonly,
-              const filsys_format_t *fmt, uint64_t offset) {
-    memset(fs, 0, sizeof(*fs));
+int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
+              const filsys_edition_t *proto, uint64_t offset) {
+    memcpy(fs, proto, sizeof *fs);     /* copy the static descriptor fields */
     fs->readonly = readonly;
-    fs->bo = fmt->bo;                  /* byte-order ops */
-    fs->bsize = fmt->bsize;            /* set before the superblock read */
-    fs->pack4 = fmt->pack4;            /* 4-byte-packed superblock (32V) */
-    fs->nicfree = fmt->nicfree;        /* free-block cache depth */
-    fs->inode_size = fmt->inode_size;  /* bytes per on-disk inode */
-    fs->ndaddr = fmt->ndaddr;          /* direct addresses */
-    fs->niaddr = fmt->niaddr;          /* total addresses */
-    fs->interleave = fmt->interleave;  /* Coherent interleave */
-    fs->magic = fmt->magic;            /* Xenix magic */
     fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
@@ -97,7 +88,7 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly,
     return 0;
 }
 
-void v7fs_close(v7fs_t *fs) {
+void v7fs_close(filsys_edition_t *fs) {
     if (fs->fd >= 0) {
         /* The superblock is flushed once here, not per alloc/free: V7's kernel
          * syncs the superblock periodically rather than on every block handoff,
@@ -112,13 +103,13 @@ void v7fs_close(v7fs_t *fs) {
     }
 }
 
-int v7fs_sync(v7fs_t *fs) {
+int v7fs_sync(filsys_edition_t *fs) {
     if (fs->readonly)
         return 0;
     return super_write(fs);
 }
 
-int v7fs_mark_dirty(v7fs_t *fs) {
+int v7fs_mark_dirty(filsys_edition_t *fs) {
     if (fs->readonly)
         return 0;
     fs->fmod = 1;
@@ -127,14 +118,14 @@ int v7fs_mark_dirty(v7fs_t *fs) {
 
 /* ---- block io ---------------------------------------------------------- */
 
-int v7fs_read_block(v7fs_t *fs, uint32_t bno, uint8_t *buf) {
+int v7fs_read_block(filsys_edition_t *fs, uint32_t bno, uint8_t *buf) {
     ssize_t n = pread(fs->fd, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
     if (n != fs->bsize)
         return -EIO;
     return 0;
 }
 
-int v7fs_write_block(v7fs_t *fs, uint32_t bno, const uint8_t *buf) {
+int v7fs_write_block(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
     ssize_t n = pwrite(fs->fd, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
@@ -145,7 +136,7 @@ int v7fs_write_block(v7fs_t *fs, uint32_t bno, const uint8_t *buf) {
 
 /* ---- superblock persistence --------------------------------------------- */
 
-static int super_write(v7fs_t *fs) {
+static int super_write(filsys_edition_t *fs) {
     if (fs->readonly)
         return 0;
     uint8_t sb[V7_MAXBSIZE];
@@ -178,7 +169,7 @@ static int super_write(v7fs_t *fs) {
 
 /* ---- inode io ---------------------------------------------------------- */
 
-int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip) {
+int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
     if (ino == 0)
         return -EINVAL;
     uint32_t bno = v7_itod(fs, ino);
@@ -204,7 +195,7 @@ int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip) {
     return 0;
 }
 
-int v7fs_write_inode(v7fs_t *fs, uint32_t ino, const v7_inode_t *ip) {
+int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
     if (ino == 0)
         return -EINVAL;
     uint32_t bno = v7_itod(fs, ino);
@@ -230,7 +221,7 @@ int v7fs_write_inode(v7fs_t *fs, uint32_t ino, const v7_inode_t *ip) {
 
 /* ---- allocation -------------------------------------------------------- */
 
-int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
+int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
     if (fs->nfree == 0)
         return -ENOSPC;   /* no cached blocks and no dump block to reload */
 
@@ -264,7 +255,7 @@ int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
     return 0;
 }
 
-void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
+void v7fs_bfree(filsys_edition_t *fs, uint32_t bno) {
     if (bno < fs->isize || bno >= fs->fsize)
         return;   /* badblock */
     if (fs->nfree == 0) {
@@ -284,7 +275,7 @@ void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
     fs->tfree++;
 }
 
-int v7fs_ialloc(v7fs_t *fs, uint32_t *ino) {
+int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
     uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
 
     for (;;) {
@@ -316,7 +307,7 @@ int v7fs_ialloc(v7fs_t *fs, uint32_t *ino) {
     }
 }
 
-void v7fs_ifree(v7fs_t *fs, uint32_t ino) {
+void v7fs_ifree(filsys_edition_t *fs, uint32_t ino) {
     if (fs->ninode >= V7_NICINOD)
         return;   /* kernel discards beyond the cache */
     fs->inode[fs->ninode++] = (uint16_t)ino;
@@ -325,7 +316,7 @@ void v7fs_ifree(v7fs_t *fs, uint32_t ino) {
 
 /* ---- truncate ----------------------------------------------------------- */
 
-static void tloop(v7fs_t *fs, uint32_t blk, int level) {
+static void tloop(filsys_edition_t *fs, uint32_t blk, int level) {
     uint8_t buf[V7_MAXBSIZE];
     if (v7fs_read_block(fs, blk, buf))
         return;
@@ -341,7 +332,7 @@ static void tloop(v7fs_t *fs, uint32_t blk, int level) {
     v7fs_bfree(fs, blk);
 }
 
-int v7fs_itrunc(v7fs_t *fs, v7_inode_t *ip) {
+int v7fs_itrunc(filsys_edition_t *fs, v7_inode_t *ip) {
     int t = ip->mode & V7_IFMT;
     if (t != V7_IFREG && t != V7_IFDIR)
         return 0;
@@ -363,7 +354,7 @@ int v7fs_itrunc(v7fs_t *fs, v7_inode_t *ip) {
 /* Free the leaf blocks at indices [skip, ...) of the subtree rooted at `blk`
  * (which has `level` levels of indirection below it).  When skip == 0 the whole
  * subtree and `blk` itself are freed. */
-static void tloop_from(v7fs_t *fs, uint32_t blk, int level, uint32_t skip) {
+static void tloop_from(filsys_edition_t *fs, uint32_t blk, int level, uint32_t skip) {
     uint8_t buf[V7_MAXBSIZE];
     if (v7fs_read_block(fs, blk, buf))
         return;
@@ -393,7 +384,7 @@ static void tloop_from(v7fs_t *fs, uint32_t blk, int level, uint32_t skip) {
 
 /* Free every block from logical block `first_blk` onwards, leaving the first
  * `first_blk` blocks in place.  `first_blk == 0` is equivalent to itrunc. */
-int v7fs_itrunc_from(v7fs_t *fs, v7_inode_t *ip, uint32_t first_blk) {
+int v7fs_itrunc_from(filsys_edition_t *fs, v7_inode_t *ip, uint32_t first_blk) {
     uint32_t rem = first_blk;
 
     /* Direct blocks [0, ndaddr) */
@@ -440,7 +431,7 @@ int v7fs_itrunc_from(v7fs_t *fs, v7_inode_t *ip, uint32_t first_blk) {
 
 /* Follow an indirect chain of `levels` levels (1/2/3) from *slot.
  * indices[0] is the outermost index.  Allocates when create is set. */
-static int ind_follow(v7fs_t *fs, uint32_t *slot, int levels,
+static int ind_follow(filsys_edition_t *fs, uint32_t *slot, int levels,
                       const uint32_t *indices, int create, uint32_t *out) {
     uint32_t blk = *slot;
     for (int L = 0; L < levels; L++) {
@@ -489,7 +480,7 @@ static int ind_follow(v7fs_t *fs, uint32_t *slot, int levels,
     return -EIO;   /* unreachable */
 }
 
-int v7fs_bmap(v7fs_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
+int v7fs_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
     if (lbn < (uint32_t)fs->ndaddr) {
         uint32_t nb = ip->addr[lbn];
         if (nb == 0 && create) {
@@ -516,7 +507,7 @@ int v7fs_bmap(v7fs_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
 
 /* ---- file data ---------------------------------------------------------- */
 
-ssize_t v7fs_file_read(v7fs_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off) {
+ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off) {
     if (off < 0)
         return -EINVAL;
     if ((uint64_t)off >= ip->size)
@@ -547,7 +538,7 @@ ssize_t v7fs_file_read(v7fs_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, of
     return (ssize_t)done;
 }
 
-ssize_t v7fs_file_write(v7fs_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off) {
+ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off) {
     if (off < 0)
         return -EINVAL;
 
@@ -581,7 +572,7 @@ ssize_t v7fs_file_write(v7fs_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t s
 
 /* ---- directories -------------------------------------------------------- */
 
-int v7fs_dir_read(v7fs_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count) {
+int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count) {
     if ((ip->mode & V7_IFMT) != V7_IFDIR)
         return -ENOTDIR;
     /* A directory's data cannot exceed the filesystem's data area; reject a
@@ -626,7 +617,7 @@ void v7fs_dirents_free(v7_dirent_t *ents) {
     free(ents);
 }
 
-int v7fs_dir_lookup(v7fs_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
+int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
     v7_dirent_t *ents = NULL;
     size_t count = 0;
     int rc = v7fs_dir_read(fs, ip, &ents, &count);
@@ -644,7 +635,7 @@ int v7fs_dir_lookup(v7fs_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino)
     return rc;
 }
 
-int v7fs_dir_add(v7fs_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
+int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
     size_t namelen = strlen(name);
     if (namelen == 0 || namelen > V7_DIRSIZ)
         return -ENAMETOOLONG;
@@ -684,7 +675,7 @@ int v7fs_dir_add(v7fs_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
     return w < 0 ? (int)w : 0;
 }
 
-int v7fs_dir_remove(v7fs_t *fs, v7_inode_t *ip, const char *name) {
+int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
     uint8_t *buf = malloc(ip->size);
     if (!buf)
         return -ENOMEM;
@@ -714,7 +705,7 @@ int v7fs_dir_remove(v7fs_t *fs, v7_inode_t *ip, const char *name) {
 
 /* ---- path lookup -------------------------------------------------------- */
 
-int v7fs_lookup(v7fs_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
+int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
     if (path[0] != '/')
         return -EINVAL;
     uint32_t cur = V7_ROOTINO;
@@ -759,7 +750,7 @@ int v7fs_lookup(v7fs_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
  * list); a block reached twice is a duplicate, a block never reached is
  * "missing". */
 typedef struct {
-    v7fs_t  *fs;
+    filsys_edition_t  *fs;
     uint8_t *bmap;        /* bit i = data block (isize + i) */
     uint32_t *owner;      /* owner[block - isize] = first inode to claim it (or NULL) */
     uint32_t nblk;        /* number of data blocks (fsize - isize) */
@@ -842,7 +833,7 @@ static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
  * resulting physical (interleaved) numbers, so the read/write path uses them
  * directly -- no runtime mapping.  V7/32V have no interleave: s_m = s_n = 1,
  * the identity map. */
-static int v7fs_makefree(v7fs_t *fs, v7_chkctx_t *cx)
+static int v7fs_makefree(filsys_edition_t *fs, v7_chkctx_t *cx)
 {
     int m, n;
     if (fs->interleave) {
@@ -903,7 +894,7 @@ static uint8_t v7_inode_state(uint16_t mode) {
     }
 }
 
-static void v7fs_preen(v7fs_t *fs, const uint8_t *ecount, const uint8_t *state,
+static void v7fs_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
                        uint32_t maxino, int mode)
 {
     v7_inode_t root;
@@ -973,7 +964,7 @@ static void v7fs_preen(v7fs_t *fs, const uint8_t *ecount, const uint8_t *state,
     }
 }
 
-int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
+int v7fs_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
     memset(rep, 0, sizeof(*rep));
 
     if (fs->fmod == 0 && !(mode & (FILSYS_CK_SALVAGE | FILSYS_CK_FORCE))) {
@@ -1220,7 +1211,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
 
 /* Recursively walk the directory tree from `dirino`, printing the pathname(s)
  * of `target` and descending into subdirectories. */
-static void ncheck_dir(v7fs_t *fs, uint32_t dirino, const char *prefix,
+static void ncheck_dir(filsys_edition_t *fs, uint32_t dirino, const char *prefix,
                        uint32_t target, int *found, int depth)
 {
     if (depth > 64)
@@ -1259,7 +1250,7 @@ static void ncheck_dir(v7fs_t *fs, uint32_t dirino, const char *prefix,
     v7fs_dirents_free(ents);
 }
 
-int v7fs_ncheck(v7fs_t *fs, uint32_t ino)
+int v7fs_ncheck(filsys_edition_t *fs, uint32_t ino)
 {
     int found = 0;
     ncheck_dir(fs, V7_ROOTINO, "/", ino, &found, 0);
@@ -1268,7 +1259,7 @@ int v7fs_ncheck(v7fs_t *fs, uint32_t ino)
     return 0;
 }
 
-int v7fs_clri(v7fs_t *fs, uint32_t ino)
+int v7fs_clri(filsys_edition_t *fs, uint32_t ino)
 {
     uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
     if (ino == 0 || ino > maxino)
@@ -1282,7 +1273,7 @@ int v7fs_clri(v7fs_t *fs, uint32_t ino)
     return rc;
 }
 
-int v7fs_resolve_dups(v7fs_t *fs)
+int v7fs_resolve_dups(filsys_edition_t *fs)
 {
     uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
     uint32_t nblk = fs->fsize - fs->isize;
@@ -1385,14 +1376,14 @@ int v7fs_resolve_dups(v7fs_t *fs)
 /* ---- ops table ----------------------------------------------------------
  * Each op takes `void *` (the backend state).  The adapters forward to the
  * typed backend function; the `void *` argument converts implicitly to
- * v7fs_t*, so there is no cast anywhere. */
+ * filsys_edition_t*, so there is no cast anywhere. */
 
 static int v7fs_open_op(void *fs, const char *path, int readonly,
-                        const filsys_format_t *fmt, uint64_t offset) {
-    return v7fs_open(fs, path, readonly, fmt, offset);
+                        const filsys_edition_t *proto, uint64_t offset) {
+    return v7fs_open(fs, path, readonly, proto, offset);
 }
 static uint32_t v7fs_blocksize_op(const void *fs) {
-    return ((const v7fs_t *)fs)->bsize;
+    return ((const filsys_edition_t *)fs)->bsize;
 }
 static void v7fs_close_op(void *fs) { v7fs_close(fs); }
 static int v7fs_sync_op(void *fs) { return v7fs_sync(fs); }
@@ -1430,13 +1421,13 @@ static int v7fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inod
 { return v7fs_lookup(fs, path, ino, ip); }
 static int v7fs_check_op(void *fs) { v7_check_t rep; return v7fs_check(fs, &rep, 0); }
 static uint64_t v7fs_max_file_op(void *fs) {
-    const v7fs_t *v7 = fs;
+    const filsys_edition_t *v7 = fs;
     uint64_t n = v7_nindir(v7);
     return ((uint64_t)v7->ndaddr + n + n * n + n * n * n) * v7->bsize;
 }
 
 static void v7fs_statfs_op(void *fs, struct statvfs *st) {
-    v7fs_t *v7 = fs;
+    filsys_edition_t *v7 = fs;
     st->f_blocks = v7->fsize;
     st->f_bfree = st->f_bavail = v7->tfree;
     st->f_files = (v7->isize - 2) * v7_inopb(v7);

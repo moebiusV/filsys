@@ -257,8 +257,8 @@ int main(int argc, char **argv)
         bsd211fs_close(&fs);
         return err ? 1 : 0;
     }
-    v7fs_t fs;
-    filsys_format_t fmt = filsys_getformat(edition);
+    filsys_edition_t fs;
+    filsys_edition_t fmt = filsys_getformat(edition);
     int rc = v7fs_open(&fs, path, readonly, &fmt, offblock * fmt.bsize);
     if (rc < 0) {
         fprintf(stderr, "%s: %s\n", path, strerror(-rc));

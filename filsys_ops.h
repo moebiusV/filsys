@@ -15,7 +15,7 @@
 #define FILSYS_OPS_H
 
 #include "filsys.h"
-#include "filsys_format.h"
+#include "v7fs.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -98,7 +98,7 @@ struct filsys_ops {
 
     /* lifecycle */
     int  (*open)(void *fs, const char *path, int readonly,
-                 const filsys_format_t *fmt, uint64_t offset);
+                 const filsys_edition_t *proto, uint64_t offset);
     void (*close)(void *fs);
     int  (*sync)(void *fs);
     /* Mark the superblock dirty (s_fmod) and flush.  Optional: only the V6/V7

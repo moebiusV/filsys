@@ -2,7 +2,7 @@
  * images.  Dispatches to the internal v6fs/v7fs backends; this is the library
  * behind both mount.filsys (FUSE) and the standalone tools.
  *
- * An edition is described by a filsys_format_t (constants + mode conversion,
+ * An edition is described by a filsys_edition_t (constants + mode conversion,
  * in filsys_format.c) and a filsys_ops vtable (operations).  filsys_getformat()
  * is the single lookup: adding a format is a new descriptor row, not another
  * arm of a dozen `== FILSYS_` switches here.
@@ -12,7 +12,6 @@
 #include <config.h>
 #include "filsys.h"
 #include "filsys_ops.h"
-#include "filsys_format.h"
 #include "v1fs.h"
 #include "v6fs.h"
 #include "v7fs.h"
@@ -28,8 +27,8 @@
 
 struct filsys {
     const struct filsys_ops *ops;
-    filsys_format_t   fmt;      /* the format (by value) */
-    void *fs;                  /* backend state (v6fs_t / v7fs_t / ...) */
+    filsys_edition_t            fmt;      /* the format (by value) */
+    void *fs;                  /* backend state (v6fs_t / filsys_edition_t / ...) */
     int ver;
     int uid, gid;              /* reported ownership (default: the mounting user) */
     int readonly;
@@ -41,7 +40,7 @@ struct filsys {
  * constants in the descriptor, so its fn-ptr slots are NULL and these wrappers
  * fall through to the shared logic below.  V1 and PDP-7 supply their own (in
  * filsys_format.c). */
-static mode_t mode_to_posix(const filsys_format_t *f, const filsys_inode_t *ip) {
+static mode_t mode_to_posix(const filsys_edition_t *f, const filsys_inode_t *ip) {
     if (f->to_posix_mode)
         return f->to_posix_mode(f, ip);
     mode_t m = ip->mode & 07777;
@@ -60,19 +59,19 @@ static mode_t mode_to_posix(const filsys_format_t *f, const filsys_inode_t *ip) 
         m |= S_IFREG;   /* V6: regular file = type 0 */
     return m;
 }
-static int mode_is_dir(const filsys_format_t *f, const filsys_inode_t *ip) {
+static int mode_is_dir(const filsys_edition_t *f, const filsys_inode_t *ip) {
     if (f->is_dir)
         return f->is_dir(f, ip);
     return (ip->mode & f->ifmt) == f->ifdir;
 }
-static int mode_is_device(const filsys_format_t *f, const filsys_inode_t *ip) {
+static int mode_is_device(const filsys_edition_t *f, const filsys_inode_t *ip) {
     if (f->is_device)
         return f->is_device(f, ip);
     uint32_t t = ip->mode & f->ifmt;
     return t == f->ifchr || t == f->ifblk ||
            (f->ifmpc && t == f->ifmpc) || (f->ifmpb && t == f->ifmpb);
 }
-static uint32_t mode_to_disk(const filsys_format_t *f, mode_t m, int type) {
+static uint32_t mode_to_disk(const filsys_edition_t *f, mode_t m, int type) {
     if (f->to_disk_mode)
         return f->to_disk_mode(f, m, type);
     uint32_t base = (uint32_t)(m & 07777);
@@ -83,7 +82,7 @@ static uint32_t mode_to_disk(const filsys_format_t *f, mode_t m, int type) {
     default:            return f->ifreg ? (base | f->ifreg) : base;
     }
 }
-static uint32_t mode_chmod(const filsys_format_t *f, uint32_t old, mode_t m) {
+static uint32_t mode_chmod(const filsys_edition_t *f, uint32_t old, mode_t m) {
     if (f->chmod_mode)
         return f->chmod_mode(f, old, m);
     return (old & f->ifmt) | ((uint32_t)m & 07777);
@@ -167,7 +166,7 @@ static int split_path(const char *path, char *dir, size_t dirsz,
 
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
                 uint64_t offset, int uid, int gid) {
-    filsys_format_t fmt = filsys_getformat(edition);
+    filsys_edition_t fmt = filsys_getformat(edition);
     if (!fmt.ops)
         return -EINVAL;
     filsys_t *fs = calloc(1, sizeof(*fs));
