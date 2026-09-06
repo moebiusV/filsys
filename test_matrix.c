@@ -329,6 +329,47 @@ static void namelength(void) {
     }
 }
 
+/* Crash-consistency: allocator state must reach disk before any reference to an
+ * allocated block.  Write a file (allocating blocks and inodes) and, *before*
+ * the close that would flush the superblock/bitmap, run fsck: write_inode must
+ * have already flushed the allocator, so no block is both free and referenced
+ * (dup==0).  Without the fl_dirty flush this fails on every format: the batched
+ * superblock leaves the allocated blocks listed free while the inode references
+ * them. */
+static void crash_consistency(void) {
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        if (!fmt_at(i, &f))
+            break;
+        char img[64], cmd[512], what[96];
+        snprintf(img, sizeof img, "test_matrix_%s_crash.img", f.name);
+        unlink(img);
+        if (f.edition == FILSYS_PDP7)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                     f.name, img, f.blocks);
+        if (system(cmd) != 0) { ok("crash mkfs", 0); unlink(img); continue; }
+
+        filsys_t *fs;
+        if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
+            ok("crash open", 0); unlink(img); continue;
+        }
+        /* Enough blocks to overflow the free-list cache (50/100) and force
+         * indirect blocks, so the allocator is genuinely exercised. */
+        uint64_t size = f.direct * 12;
+        uint8_t *buf = malloc(size ? size : 1);
+        memset(buf, 'c', size);
+        filsys_create(fs, "/big", 0644, 0, 0);
+        int wr = filsys_write(fs, "/big", buf, (size_t)size, 0);
+        free(buf);
+        snprintf(what, sizeof what, "%s crash-consistency", f.name);
+        ok(what, wr == (int)size && fsck_is_clean(f.name, img));
+        filsys_close(fs);
+        unlink(img);
+    }
+}
+
 int main(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
@@ -340,6 +381,7 @@ int main(void) {
     mkfs_cleanliness();
     namelength();
     v6_large_file();
+    crash_consistency();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;

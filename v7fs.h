@@ -290,6 +290,10 @@ typedef struct filsys_edition {
     uint16_t   n;              /* s_n interleave factor (coherent) */
     uint32_t   unique;         /* s_unique (coherent) */
     int        fmod;           /* s_fmod: superblock modified flag (dirty) */
+    int        fl_dirty;       /* the free list has unflushed allocations: the
+                                  superblock must be flushed before an inode that
+                                  references a newly-allocated block (else a crash
+                                  leaves the block both free and referenced) */
 } filsys_edition_t;
 
 /* The descriptor for an edition: a copy of the V7 default with the edition's
@@ -454,10 +458,19 @@ void filsys_mark_tree(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t blk, i
 void filsys_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
                         filsys_chkctx_t *cx);
 
-/* Free every block of an inode (truncate to length 0). */
-int filsys_itrunc(filsys_edition_t *fs, filsys_inode_t *ip);
-/* Free blocks [first_blk, ...) only; first_blk == 0 == filsys_itrunc. */
-int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_blk);
+/* A deferred block-free list: filsys_itrunc/_from collect the blocks they
+ * remove into one of these instead of freeing inline, so the caller can persist
+ * the unlinked inode (write_inode) *before* any block returns to the free list. */
+typedef struct filsys_blklist filsys_blklist_t;
+filsys_blklist_t *filsys_blklist_new(void);
+void filsys_blklist_drain(filsys_edition_t *fs, filsys_blklist_t *b);   /* bfree all + free list */
+void filsys_blklist_discard(filsys_blklist_t *b);                        /* free list, keep blocks */
+
+/* Collect every block of an inode (truncate to length 0) into *b. */
+int filsys_itrunc(filsys_edition_t *fs, filsys_inode_t *ip, filsys_blklist_t *b);
+/* Collect blocks [first_blk, ...) only; first_blk == 0 == filsys_itrunc. */
+int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_blk,
+                       filsys_blklist_t *b);
 
 /* ---- shared maintenance (check.c): ncheck / clri / preen / resolve-dups -- */
 
