@@ -327,7 +327,7 @@ static void tloop(filsys_edition_t *fs, uint32_t blk, int level) {
     uint8_t buf[V7_MAXBSIZE];
     if (v7fs_read_block(fs, blk, buf))
         return;
-    for (int i = v7_nindir(fs) - 1; i >= 0; i--) {
+    for (uint32_t i = v7_nindir(fs); i-- > 0; ) {
         uint32_t nb = fs->bo->get32(buf + 4 * i);
         if (nb == 0)
             continue;
@@ -340,7 +340,7 @@ static void tloop(filsys_edition_t *fs, uint32_t blk, int level) {
 }
 
 int v7fs_itrunc(filsys_edition_t *fs, v7_inode_t *ip) {
-    int t = ip->mode & fs->ifmt;
+    uint32_t t = ip->mode & fs->ifmt;
     if (t != fs->ifreg && t != fs->ifdir && !(fs->iflnk && t == fs->iflnk))
         return 0;
     for (int i = fs->niaddr - 1; i >= 0; i--) {
@@ -369,13 +369,13 @@ static void tloop_from(filsys_edition_t *fs, uint32_t blk, int level, uint32_t s
     for (int l = 0; l < level; l++) sub *= v7_nindir(fs);   /* leaves per entry */
     uint32_t se = skip / sub;                            /* whole entries to skip */
     uint32_t sp = skip % sub;                            /* partial skip within entry se */
-    for (int i = v7_nindir(fs) - 1; i >= 0; i--) {
+    for (uint32_t i = v7_nindir(fs); i-- > 0; ) {
         uint32_t nb = fs->bo->get32(buf + 4 * i);
         if (nb == 0)
             continue;
-        if ((uint32_t)i < se)
+        if (i < se)
             continue;                                    /* whole entry kept */
-        if ((uint32_t)i == se && sp > 0) {
+        if (i == se && sp > 0) {
             tloop_from(fs, nb, level - 1, sp);           /* partial: entry kept */
         } else {
             if (level == 0) v7fs_bfree(fs, nb);
@@ -572,7 +572,7 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
         done += n;
     }
     if ((uint64_t)off + size > ip->size)
-        ip->size = (uint32_t)(off + size);
+        ip->size = (uint32_t)((uint64_t)off + size);
     fs->ops->write_inode(fs, ip->ino, ip);
     return (ssize_t)done;
 }
@@ -842,15 +842,15 @@ static void v7_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
  * resulting physical (interleaved) numbers, so the read/write path uses them
  * directly -- no runtime mapping.  V7/32V have no interleave: s_m = s_n = 1,
  * the identity map. */
-static int v7fs_makefree(void *fs, filsys_chkctx_t *cx)
+static uint32_t v7fs_makefree(void *fs, filsys_chkctx_t *cx)
 {
     filsys_edition_t *f = fs;
-    int m, n;
+    uint32_t m, n;
     if (f->interleave) {
         m = f->m;
         n = f->n;
         if (n < 1 || n > V7_COH_MAXINTN || m < 1 || m > n || n % m != 0) {
-            printf("invalid interleave factors in superblock (m=%d n=%d); defaulting\n", m, n);
+            printf("invalid interleave factors in superblock (m=%u n=%u); defaulting\n", m, n);
             m = 1;
             n = 1;
         }
@@ -859,9 +859,9 @@ static int v7fs_makefree(void *fs, filsys_chkctx_t *cx)
         n = 1;   /* V7/32V: no interleave */
     }
 
-    int maptab[V7_COH_MAXINTN];
-    int ratio = n / m;
-    for (int i = 0; i < n; i++)
+    uint32_t maptab[V7_COH_MAXINTN];
+    uint32_t ratio = n / m;
+    for (uint32_t i = 0; i < n; i++)
         maptab[i] = (i / ratio) + (i % ratio) * m;
 
     /* Interleave only within the data band, aligned to n blocks (phase6's
@@ -875,11 +875,11 @@ static int v7fs_makefree(void *fs, filsys_chkctx_t *cx)
     f->fl.ninode = 0;
     f->fl.tfree = 0;
     f->fl.tinode = 0;
-    int nfree = 0;
+    uint32_t nfree = 0;
     for (uint32_t bn = f->isize; bn < f->fsize; bn++) {
         uint32_t blk = bn;
         if (bn >= mapbot && bn < maptop)
-            blk = (bn / n) * n + (uint32_t)maptab[bn % n];
+            blk = (bn / n) * n + maptab[bn % n];
         uint32_t off = blk - f->isize;
         if (off >= cx->nblk)
             continue;   /* interleave stays within [isize, fsize), but be safe */
@@ -1129,7 +1129,7 @@ int v7fs_resolve_dups(filsys_edition_t *fs)
     if (!cx.bmap)
         return -ENOMEM;
 
-    struct dup { uint32_t blk, ino, idx; };
+    struct dup { uint32_t blk, ino; int idx; };
     struct dup *dups = NULL;
     size_t ndup = 0, cap = 0;
 
@@ -1185,7 +1185,8 @@ int v7fs_resolve_dups(filsys_edition_t *fs)
 
     int resolved = 0;
     for (size_t k = 0; k < ndup; k++) {
-        uint32_t blk = dups[k].blk, ino = dups[k].ino, idx = dups[k].idx;
+        uint32_t blk = dups[k].blk, ino = dups[k].ino;
+        int idx = dups[k].idx;
         v7_inode_t ip;
         if (v7fs_read_inode(fs, ino, &ip))
             continue;
@@ -1380,7 +1381,7 @@ static int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, co
             bo_put16le(buf + off + 2, reclen);
             bo_put16le(buf + off + 4, (uint16_t)namlen);
             memcpy(buf + off + 6, name, namlen);
-            ssize_t w = v7fs_file_write(fs, ip, buf, n, 0);
+            ssize_t w = v7fs_file_write(fs, ip, buf, ip->size, 0);
             free(buf);
             return w < 0 ? (int)w : 0;
         }
@@ -1415,7 +1416,7 @@ static int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *n
         if (d_ino != 0 && namlen == strlen(name) &&
             memcmp(buf + off + 6, name, namlen) == 0) {
             bo_put16le(buf + off, 0);   /* mark free */
-            ssize_t w = v7fs_file_write(fs, ip, buf, n, 0);
+            ssize_t w = v7fs_file_write(fs, ip, buf, ip->size, 0);
             free(buf);
             return w < 0 ? (int)w : 0;
         }
@@ -2061,12 +2062,12 @@ static void v6_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
     }
 }
 
-static int v6_makefree(void *fs, filsys_chkctx_t *cx) {
+static uint32_t v6_makefree(void *fs, filsys_chkctx_t *cx) {
     filsys_edition_t *f = fs;
-    int m = 3, n = 100;
-    int adr[100];
+    uint32_t m = 3, n = 100;
+    uint32_t adr[100];
     uint8_t flg[100] = {0};
-    int i, j;
+    uint32_t i, j;
     i = 0;
     for (j = 0; j < n; j++) {
         while (flg[i])
@@ -2079,7 +2080,7 @@ static int v6_makefree(void *fs, filsys_chkctx_t *cx) {
     f->fl.nfree = 0;
     f->fl.ninode = 0;
     uint32_t dstart = v6_data_start(f->isize);
-    int nfree = 0;
+    uint32_t nfree = 0;
     uint32_t d = f->fsize - 1;
     while (d % n)
         d++;
@@ -2332,7 +2333,7 @@ int v6_resolve_dups(filsys_edition_t *fs) {
     if (!cx.bmap)
         return -ENOMEM;
 
-    struct dup { uint32_t blk, ino, idx; };
+    struct dup { uint32_t blk, ino; int idx; };
     struct dup *dups = NULL;
     size_t ndup = 0, cap = 0;
 
@@ -2387,7 +2388,8 @@ int v6_resolve_dups(filsys_edition_t *fs) {
 
     int resolved = 0;
     for (size_t k = 0; k < ndup; k++) {
-        uint32_t blk = dups[k].blk, ino = dups[k].ino, idx = dups[k].idx;
+        uint32_t blk = dups[k].blk, ino = dups[k].ino;
+        int idx = dups[k].idx;
         v7_inode_t ip;
         if (v6_read_inode(fs, ino, &ip))
             continue;

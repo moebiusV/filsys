@@ -158,7 +158,7 @@ struct filsys_ops {
     void     (*walk_free)(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep);
                               /* walk the allocator, marking free blocks into cx->bmap
                                * (detecting used+free as dup), counting free_blocks */
-    int      (*makefree)(void *fs, filsys_chkctx_t *cx); /* salvage: rebuild free space */
+    uint32_t (*makefree)(void *fs, filsys_chkctx_t *cx); /* salvage: rebuild free space */
     void     (*preen)(void *fs, const uint8_t *ecount, const uint8_t *state,
                       uint32_t maxino, int mode);  /* auto-repair the safe subset */
     int      (*is_clean)(void *fs);            /* 1 = superblock marked clean (fmod==0) */

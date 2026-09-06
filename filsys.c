@@ -28,7 +28,8 @@ struct filsys {
     filsys_edition_t            fmt;      /* the format (by value) */
     void *fs;                  /* backend state (filsys_edition_t / v1fs_t / p7fs_t) */
     int ver;
-    int uid, gid;              /* reported ownership (default: the mounting user) */
+    uid_t uid;                 /* reported ownership (default: the mounting user) */
+    gid_t gid;
     int readonly;
 };
 
@@ -163,7 +164,7 @@ static int split_path(const char *path, char *dir, size_t dirsz,
 /* ---- public API ---------------------------------------------------------- */
 
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
-                uint64_t offset, int uid, int gid) {
+                uint64_t offset, uid_t uid, gid_t gid) {
     filsys_edition_t fmt = filsys_getformat(edition);
     if (!fmt.ops)
         return -EINVAL;
@@ -217,11 +218,11 @@ int filsys_edition(const filsys_t *fs) {
 }
 
 uid_t filsys_uid(const filsys_t *fs) {
-    return (uid_t)fs->uid;
+    return fs->uid;
 }
 
 gid_t filsys_gid(const filsys_t *fs) {
-    return (gid_t)fs->gid;
+    return fs->gid;
 }
 
 int filsys_check(filsys_t *fs) {
@@ -241,7 +242,7 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     memset(st, 0, sizeof(*st));
     st->st_ino   = ip->ino;
     st->st_mode  = mode_to_posix(&fs->fmt, ip);
-    st->st_nlink = ip->nlink;
+    st->st_nlink = (nlink_t)ip->nlink;
     st->st_uid   = fs->uid;
     st->st_gid   = fs->gid;
     st->st_size  = ip->size;

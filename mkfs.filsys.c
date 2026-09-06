@@ -72,8 +72,8 @@ static filsys_edition_t v7_fmt; /* format descriptor (bo, bsize, pack4, ...) */
 static uint32_t v7_ipb = V7_INOPB;  /* inodes per block (bsize / inode_size) */
 static uint16_t v7_m = 1, v7_n = 1;   /* interleave factors (s_m/s_n, coherent) */
 
-static void     v7_sb_put16(uint32_t off, uint16_t v);
-static void     v7_sb_put32(uint32_t off, uint32_t v);
+static void     v7_sb_put16(int off, uint16_t v);
+static void     v7_sb_put32(int off, uint32_t v);
 static uint32_t v7_alloc(void);
 static void     v7_bfree(uint32_t bno);
 static void     v7_bflist(void);
@@ -88,11 +88,11 @@ static uint8_t  v6_sbuf[V6_BSIZE];    /* in-core superblock (block 1) */
 static uint8_t  v6_freebuf[V6_BSIZE];
 static uint16_t v6_nfree;
 
-static void     v6_sb_put16(uint32_t off, uint16_t v);
-static void     v6_sb_put32(uint32_t off, uint32_t v);
+static void     v6_sb_put16(int off, uint16_t v);
+static void     v6_sb_put32(int off, uint32_t v);
 static uint32_t v6_alloc(void);
 static void     v6_bfree(uint32_t bno);
-static void     v6_bflist(int m, int n);
+static void     v6_bflist(uint32_t m, uint32_t n);
 static void     v6_mkroot(void);
 static void     v6_iput(uint32_t ino, uint16_t mode, int16_t nlink,
                         uint32_t size, const uint32_t *addr);
@@ -143,7 +143,7 @@ static uint32_t resolve_blocks(const char *path, uint64_t offblock, uint32_t blo
     if (blocks == 0) {
         struct stat st;
         if (fstat(fd, &st) == 0 && (uint64_t)st.st_size >= base + bsize)
-            blocks = (uint32_t)((st.st_size - base) / bsize);
+            blocks = (uint32_t)(((uint64_t)st.st_size - base) / bsize);
         if (blocks < 16)
             blocks = 4000;      /* small usable volume */
     }
@@ -191,8 +191,8 @@ static void die(const char *fmt, ...)
 
 /* ---- V7 implementation -------------------------------------------------- */
 
-static void v7_sb_put16(uint32_t off, uint16_t v) { bo_put16le(v7_sbuf + off, v); }
-static void v7_sb_put32(uint32_t off, uint32_t v) { v7_fmt.bo->put32(v7_sbuf + off, v); }
+static void v7_sb_put16(int off, uint16_t v) { bo_put16le(v7_sbuf + off, v); }
+static void v7_sb_put32(int off, uint32_t v) { v7_fmt.bo->put32(v7_sbuf + off, v); }
 
 static uint32_t v7_alloc(void)
 {
@@ -249,16 +249,16 @@ static void v7_bfree(uint32_t bno)
  * carries them. */
 static void v7_bflist(void)
 {
-    int m = v7_fmt.interleave ? v7_m : 1;
-    int n = v7_fmt.interleave ? v7_n : 1;
+    uint32_t m = v7_fmt.interleave ? v7_m : 1u;
+    uint32_t n = v7_fmt.interleave ? v7_n : 1u;
     if (n < 1 || n > V7_COH_MAXINTN || m < 1 || m > n || n % m != 0) {
         m = 1;
         n = 1;
     }
 
-    int maptab[V7_COH_MAXINTN];
-    int ratio = n / m;
-    for (int i = 0; i < n; i++)
+    uint32_t maptab[V7_COH_MAXINTN];
+    uint32_t ratio = n / m;
+    for (uint32_t i = 0; i < n; i++)
         maptab[i] = (i / ratio) + (i % ratio) * m;
 
     /* Interleave only within the data band, aligned to n blocks. */
@@ -273,7 +273,7 @@ static void v7_bflist(void)
     for (uint32_t bn = v7_isize; bn < v7_fsize; bn++) {
         uint32_t blk = bn;
         if (bn >= mapbot && bn < maptop)
-            blk = (bn / n) * n + (uint32_t)maptab[bn % n];
+            blk = (bn / n) * n + maptab[bn % n];
         v7_bfree(blk);
     }
 }
@@ -385,8 +385,8 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
 
 /* ---- V6 implementation -------------------------------------------------- */
 
-static void v6_sb_put16(uint32_t off, uint16_t v) { bo_put16le(v6_sbuf + off, v); }
-static void v6_sb_put32(uint32_t off, uint32_t v) { bo_put32me(v6_sbuf + off, v); }
+static void v6_sb_put16(int off, uint16_t v) { bo_put16le(v6_sbuf + off, v); }
+static void v6_sb_put32(int off, uint32_t v) { bo_put32me(v6_sbuf + off, v); }
 
 static uint32_t v6_alloc(void)
 {
@@ -425,12 +425,12 @@ static void v6_bfree(uint32_t bno)
 }
 
 /* Interleave free blocks with stride m modulo n, as V6's mkfs does. */
-static void v6_bflist(int m, int n)
+static void v6_bflist(uint32_t m, uint32_t n)
 {
     uint8_t  flg[100];
     uint32_t adr[100];
     uint32_t d, f;
-    int i, j;
+    uint32_t i, j;
 
     if (n <= 0 || n > 100)
         n = 100;
@@ -783,8 +783,8 @@ static uint8_t  bsd211_freebuf[BSD211_BSIZE];
 static uint16_t bsd211_nfree;
 static uint32_t bsd211_tinode, bsd211_tfree;
 
-static void bsd211_sb_put16(uint32_t off, uint16_t v) { bo_put16le(bsd211_sbuf + off, v); }
-static void bsd211_sb_put32(uint32_t off, uint32_t v) { bo_put32me(bsd211_sbuf + off, v); }
+static void bsd211_sb_put16(int off, uint16_t v) { bo_put16le(bsd211_sbuf + off, v); }
+static void bsd211_sb_put32(int off, uint32_t v) { bo_put32me(bsd211_sbuf + off, v); }
 
 static uint32_t bsd211_alloc(void)
 {

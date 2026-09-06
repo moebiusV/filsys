@@ -323,8 +323,8 @@ int main(int argc, char *argv[]) {
 
     filsys_t *k = NULL;
     int rc = filsys_open(&k, ver, image, readonly || check, offset,
-                         uid >= 0 ? uid : (int)getuid(),
-                         gid >= 0 ? gid : (int)getgid());
+                         uid >= 0 ? (uid_t)uid : getuid(),
+                         gid >= 0 ? (gid_t)gid : getgid());
     if (rc) {
         fprintf(stderr, "filsys: cannot open %s: %s\n", image, strerror(-rc));
         return 1;

@@ -465,7 +465,7 @@ static void v1_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
 
 /* Rebuild the free-block map from the usage bitmap (icheck -s).  Only the
  * data area can be free; the superblock, i-list and device slots stay used. */
-static int v1fs_makefree(void *fs, filsys_chkctx_t *cx)
+static uint32_t v1fs_makefree(void *fs, filsys_chkctx_t *cx)
 {
     v1fs_t *f = fs;
     uint32_t dstart = v1_data_start(f->maxino);
@@ -613,7 +613,7 @@ int v1fs_resolve_dups(v1fs_t *fs)
     if (!cx.bmap)
         return -ENOMEM;
 
-    struct dup { uint32_t blk, ino, idx; };
+    struct dup { uint32_t blk, ino; int idx; };
     struct dup *dups = NULL;
     size_t ndup = 0, cap = 0;
 
@@ -667,7 +667,8 @@ int v1fs_resolve_dups(v1fs_t *fs)
 
     int resolved = 0;
     for (size_t k = 0; k < ndup; k++) {
-        uint32_t blk = dups[k].blk, ino = dups[k].ino, idx = dups[k].idx;
+        uint32_t blk = dups[k].blk, ino = dups[k].ino;
+        int idx = dups[k].idx;
         v1_inode_t ip;
         if (v1fs_read_inode(fs, ino, &ip))
             continue;
