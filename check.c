@@ -22,7 +22,7 @@
  * blocks are walked, how the allocator is walked, how a mode maps to a
  * checker state, and the salvage/repair actions) are vtable seams, so every
  * edition's *_check is a one-line call into this. */
-int filsys_check_common(filsys_edition_t *fmt, void *fs,
+int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
                         filsys_check_t *rep, int mode)
 {
     const struct filsys_ops *o = fmt->ops;

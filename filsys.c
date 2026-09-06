@@ -26,7 +26,7 @@
 struct filsys {
     const struct filsys_ops *ops;
     filsys_edition_t            fmt;      /* the format (by value) */
-    void *fs;                  /* backend state (filsys_edition_t / v1fs_t / p7fs_t) */
+    filsys_edition_t *fs;                  /* backend state (filsys_edition_t / v1fs_t / p7fs_t) */
     int ver;
     uid_t uid;                 /* reported ownership (default: the mounting user) */
     gid_t gid;

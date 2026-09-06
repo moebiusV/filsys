@@ -851,7 +851,7 @@ static void v7_mark_tree(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t blk
 }
 
 /* The vtable mark_blocks seam: mark every block referenced by an inode. */
-static void v7_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
+static void v7_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
                            filsys_chkctx_t *cx)
 {
     filsys_edition_t *f = fs;
@@ -878,7 +878,7 @@ static void v7_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
  * resulting physical (interleaved) numbers, so the read/write path uses them
  * directly -- no runtime mapping.  V7/32V have no interleave: s_m = s_n = 1,
  * the identity map. */
-static uint32_t v7fs_makefree(void *fs, filsys_chkctx_t *cx)
+static uint32_t v7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
 {
     filsys_edition_t *f = fs;
     uint32_t m, n;
@@ -929,7 +929,7 @@ static uint32_t v7fs_makefree(void *fs, filsys_chkctx_t *cx)
 }
 
 /* Classify an inode's mode into a checker state (the low three type bits). */
-static uint8_t v7_inode_state(void *fs, uint32_t ino, uint32_t mode) {
+static uint8_t v7_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode) {
     (void)fs; (void)ino;
     if (mode == 0)
         return FILSYS_IN_UNALLOC;
@@ -943,14 +943,14 @@ static uint8_t v7_inode_state(void *fs, uint32_t ino, uint32_t mode) {
     }
 }
 
-static uint32_t v7_maxino(void *fs)    { return v7_maxinode(fs); }
-static uint32_t v7_data_start(void *fs) { return v7_data_first(fs); }
-static uint32_t v7_data_end(void *fs)   { return ((filsys_edition_t *)fs)->fsize; }
-static int v7_is_clean(void *fs)        { return ((filsys_edition_t *)fs)->fmod == 0; }
+static uint32_t v7_maxino(filsys_edition_t *fs)    { return v7_maxinode(fs); }
+static uint32_t v7_data_start(filsys_edition_t *fs) { return v7_data_first(fs); }
+static uint32_t v7_data_end(filsys_edition_t *fs)   { return ((filsys_edition_t *)fs)->fsize; }
+static int v7_is_clean(filsys_edition_t *fs)        { return ((filsys_edition_t *)fs)->fmod == 0; }
 
 /* Walk the free list exactly as alloc() would, marking free blocks into cx->bmap
  * (a free block already used is a duplicate) and counting free_blocks. */
-static void v7_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
+static void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
 {
     filsys_edition_t *f = fs;
     uint8_t *seen = calloc(f->fsize ? f->fsize : 1, 1);
@@ -1010,7 +1010,7 @@ static void v7_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
     free(seen);
 }
 
-static void v7fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
+static void v7fs_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
                        uint32_t maxino, int mode)
 {
     v7_inode_t root;
@@ -1255,55 +1255,37 @@ int v7fs_resolve_dups(filsys_edition_t *fs)
  * typed backend function; the `void *` argument converts implicitly to
  * filsys_edition_t*, so there is no cast anywhere. */
 
-static int v7fs_open_op(void *fs, const char *path, int readonly,
-                        const filsys_edition_t *proto, uint64_t offset) {
-    return v7fs_open(fs, path, readonly, proto, offset);
-}
-static uint32_t v7fs_blocksize_op(const void *fs) {
+
+static uint32_t v7fs_blocksize_op(const filsys_edition_t *fs) {
     return ((const filsys_edition_t *)fs)->bsize;
 }
-static void v7fs_close_op(void *fs) { v7fs_close(fs); }
-static int v7fs_sync_op(void *fs) { return v7fs_sync(fs); }
-static int v7fs_mark_dirty_op(void *fs) { return v7fs_mark_dirty(fs); }
-static int v7fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
-{ return v7fs_read_block(fs, bno, buf); }
-static int v7fs_write_block_op(void *fs, uint32_t bno, const uint8_t *buf)
-{ return v7fs_write_block(fs, bno, buf); }
-static int v7fs_read_inode_op(void *fs, uint32_t ino, filsys_inode_t *ip)
-{ return v7fs_read_inode(fs, ino, ip); }
-static int v7fs_write_inode_op(void *fs, uint32_t ino, const filsys_inode_t *ip)
-{ return v7fs_write_inode(fs, ino, ip); }
-static int v7fs_ialloc_op(void *fs, uint32_t *ino)
-{ return v7fs_ialloc(fs, ino); }
-static void v7fs_ifree_op(void *fs, uint32_t ino) { v7fs_ifree(fs, ino); }
-static int v7fs_bmap_op(void *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno)
-{ return v7fs_bmap(fs, ip, lbn, create, bno); }
-static int v7fs_itrunc_op(void *fs, filsys_inode_t *ip)
-{ return v7fs_itrunc(fs, ip); }
-static int v7fs_itrunc_from_op(void *fs, filsys_inode_t *ip, uint32_t first_blk)
-{ return v7fs_itrunc_from(fs, ip, first_blk); }
-static ssize_t v7fs_file_read_op(void *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off)
-{ return v7fs_file_read(fs, ip, buf, size, off); }
-static ssize_t v7fs_file_write_op(void *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off)
-{ return v7fs_file_write(fs, ip, buf, size, off); }
-static int v7fs_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
-{ return v7fs_dir_read(fs, ip, ents, count); }
-static int v7fs_dir_lookup_op(void *fs, filsys_inode_t *ip, const char *name, uint32_t *ino)
-{ return v7fs_dir_lookup(fs, ip, name, ino); }
-static int v7fs_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
-{ return v7fs_dir_add(fs, ip, ino, name); }
-static int v7fs_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
-{ return v7fs_dir_remove(fs, ip, name); }
-static int v7fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inode_t *ip)
-{ return v7fs_lookup(fs, path, ino, ip); }
-static int v7fs_check_op(void *fs) { v7_check_t rep; return v7fs_check(fs, &rep, 0); }
-static uint64_t v7fs_max_file_op(void *fs) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int v7fs_check_op(filsys_edition_t *fs) { v7_check_t rep; return v7fs_check(fs, &rep, 0); }
+static uint64_t v7fs_max_file_op(filsys_edition_t *fs) {
     const filsys_edition_t *v7 = fs;
     uint64_t n = v7_nindir(v7);
     return ((uint64_t)v7->ndaddr + n + n * n + n * n * n) * v7->bsize;
 }
 
-static void v7fs_statfs_op(void *fs, struct statvfs *st) {
+static void v7fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     filsys_edition_t *v7 = fs;
     st->f_blocks = v7->fsize;
     st->f_bfree = st->f_bavail = v7->fl.tfree;
@@ -1313,28 +1295,28 @@ static void v7fs_statfs_op(void *fs, struct statvfs *st) {
 const struct filsys_ops v7fs_ops = {
     .name        = "v7",
     .blocksize   = v7fs_blocksize_op,
-    .open        = v7fs_open_op,
-    .close       = v7fs_close_op,
-    .sync        = v7fs_sync_op,
-    .mark_dirty  = v7fs_mark_dirty_op,
-    .read_block  = v7fs_read_block_op,
-    .write_block = v7fs_write_block_op,
-    .blk_get     = v7fs_read_block_op,
-    .blk_put     = v7fs_write_block_op,
-    .read_inode  = v7fs_read_inode_op,
-    .write_inode = v7fs_write_inode_op,
-    .ialloc      = v7fs_ialloc_op,
-    .ifree       = v7fs_ifree_op,
-    .bmap        = v7fs_bmap_op,
-    .itrunc      = v7fs_itrunc_op,
-    .itrunc_from = v7fs_itrunc_from_op,
-    .file_read   = v7fs_file_read_op,
-    .file_write  = v7fs_file_write_op,
-    .dir_read    = v7fs_dir_read_op,
-    .dir_lookup  = v7fs_dir_lookup_op,
-    .dir_add     = v7fs_dir_add_op,
-    .dir_remove  = v7fs_dir_remove_op,
-    .lookup      = v7fs_lookup_op,
+    .open        = v7fs_open,
+    .close       = v7fs_close,
+    .sync        = v7fs_sync,
+    .mark_dirty  = v7fs_mark_dirty,
+    .read_block  = v7fs_read_block,
+    .write_block = v7fs_write_block,
+    .blk_get     = v7fs_read_block,
+    .blk_put     = v7fs_write_block,
+    .read_inode  = v7fs_read_inode,
+    .write_inode = v7fs_write_inode,
+    .ialloc      = v7fs_ialloc,
+    .ifree       = v7fs_ifree,
+    .bmap        = v7fs_bmap,
+    .itrunc      = v7fs_itrunc,
+    .itrunc_from = v7fs_itrunc_from,
+    .file_read   = v7fs_file_read,
+    .file_write  = v7fs_file_write,
+    .dir_read    = v7fs_dir_read,
+    .dir_lookup  = v7fs_dir_lookup,
+    .dir_add     = v7fs_dir_add,
+    .dir_remove  = v7fs_dir_remove,
+    .lookup      = v7fs_lookup,
     .check       = v7fs_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
@@ -1508,7 +1490,7 @@ static void bsd211_mark_tree(filsys_edition_t *fs, uint8_t *bmap,
     }
 }
 
-static uint8_t bsd211_inode_state(void *fs, uint32_t ino, uint32_t mode) {
+static uint8_t bsd211_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode) {
     (void)fs; (void)ino;
     if (mode == 0)
         return FILSYS_IN_UNALLOC;
@@ -1521,7 +1503,7 @@ static uint8_t bsd211_inode_state(void *fs, uint32_t ino, uint32_t mode) {
     }
 }
 
-static void bsd211_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
+static void bsd211_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
                                filsys_chkctx_t *cx)
 {
     filsys_edition_t *f = fs;
@@ -1538,7 +1520,7 @@ static void bsd211_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
     }
 }
 
-static int bsd211_is_clean(void *fs) { (void)fs; return 0; }
+static int bsd211_is_clean(filsys_edition_t *fs) { (void)fs; return 0; }
 
 int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
     (void)mode;   /* 2.11BSD: check only, no salvage/preen */
@@ -1547,39 +1529,36 @@ int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
 
 /* ---- 2.11BSD ops table: the shared V7 engine + variable-length dirents ---- */
 
-static int bsd211_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
-{ return bsd211_dir_read(fs, ip, ents, count); }
-static int bsd211_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
-{ return bsd211_dir_add(fs, ip, ino, name); }
-static int bsd211_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
-{ return bsd211_dir_remove(fs, ip, name); }
-static int bsd211_check_op(void *fs) { v7_check_t rep; return bsd211_check(fs, &rep, 0); }
+
+
+
+static int bsd211_check_op(filsys_edition_t *fs) { v7_check_t rep; return bsd211_check(fs, &rep, 0); }
 
 const struct filsys_ops bsd211fs_ops = {
     .name        = "bsd211",
     .blocksize   = v7fs_blocksize_op,
-    .open        = v7fs_open_op,
-    .close       = v7fs_close_op,
-    .sync        = v7fs_sync_op,
-    .mark_dirty  = v7fs_mark_dirty_op,
-    .read_block  = v7fs_read_block_op,
-    .write_block = v7fs_write_block_op,
-    .blk_get     = v7fs_read_block_op,
-    .blk_put     = v7fs_write_block_op,
-    .read_inode  = v7fs_read_inode_op,
-    .write_inode = v7fs_write_inode_op,
-    .ialloc      = v7fs_ialloc_op,
-    .ifree       = v7fs_ifree_op,
-    .bmap        = v7fs_bmap_op,
-    .itrunc      = v7fs_itrunc_op,
-    .itrunc_from = v7fs_itrunc_from_op,
-    .file_read   = v7fs_file_read_op,
-    .file_write  = v7fs_file_write_op,
-    .dir_read    = bsd211_dir_read_op,
-    .dir_lookup  = v7fs_dir_lookup_op,
-    .dir_add     = bsd211_dir_add_op,
-    .dir_remove  = bsd211_dir_remove_op,
-    .lookup      = v7fs_lookup_op,
+    .open        = v7fs_open,
+    .close       = v7fs_close,
+    .sync        = v7fs_sync,
+    .mark_dirty  = v7fs_mark_dirty,
+    .read_block  = v7fs_read_block,
+    .write_block = v7fs_write_block,
+    .blk_get     = v7fs_read_block,
+    .blk_put     = v7fs_write_block,
+    .read_inode  = v7fs_read_inode,
+    .write_inode = v7fs_write_inode,
+    .ialloc      = v7fs_ialloc,
+    .ifree       = v7fs_ifree,
+    .bmap        = v7fs_bmap,
+    .itrunc      = v7fs_itrunc,
+    .itrunc_from = v7fs_itrunc_from,
+    .file_read   = v7fs_file_read,
+    .file_write  = v7fs_file_write,
+    .dir_read    = bsd211_dir_read,
+    .dir_lookup  = v7fs_dir_lookup,
+    .dir_add     = bsd211_dir_add,
+    .dir_remove  = bsd211_dir_remove,
+    .lookup      = v7fs_lookup,
     .check       = bsd211_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
@@ -1886,7 +1865,7 @@ static void v6_mark_tree(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t blk
 }
 
 /* The vtable mark_blocks seam: V6's ILARG layout (all slots single-indirect). */
-static void v6_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
+static void v6_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
                            filsys_chkctx_t *cx)
 {
     filsys_edition_t *f = fs;
@@ -1902,7 +1881,7 @@ static void v6_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
     }
 }
 
-static uint32_t v6_makefree(void *fs, filsys_chkctx_t *cx) {
+static uint32_t v6_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx) {
     filsys_edition_t *f = fs;
     uint32_t m = 3, n = 100;
     uint32_t adr[100];
@@ -1940,7 +1919,7 @@ static uint32_t v6_makefree(void *fs, filsys_chkctx_t *cx) {
     return nfree;
 }
 
-static uint8_t v6_inode_state(void *fs, uint32_t ino, uint32_t mode) {
+static uint8_t v6_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode) {
     (void)fs; (void)ino;
     if (mode == 0)
         return FILSYS_IN_UNALLOC;
@@ -1953,7 +1932,7 @@ static uint8_t v6_inode_state(void *fs, uint32_t ino, uint32_t mode) {
     }
 }
 
-static void v6_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
+static void v6_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
                      uint32_t maxino, int mode) {
     filsys_edition_t *f = fs;
     v7_inode_t root;
@@ -2189,17 +2168,13 @@ int v6_resolve_dups(filsys_edition_t *fs) {
 
 /* ---- V6 ops table: shared engine + V6 inode/bmap/check ------------------- */
 
-static int v6_read_inode_op(void *fs, uint32_t ino, filsys_inode_t *ip)
-{ return v6_read_inode(fs, ino, ip); }
-static int v6_write_inode_op(void *fs, uint32_t ino, const filsys_inode_t *ip)
-{ return v6_write_inode(fs, ino, ip); }
-static int v6_bmap_op(void *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno)
-{ return v6_bmap(fs, ip, lbn, create, bno); }
-static int v6_itrunc_op(void *fs, filsys_inode_t *ip) { return v6_itrunc(fs, ip); }
-static int v6_itrunc_from_op(void *fs, filsys_inode_t *ip, uint32_t first_blk)
-{ return v6_itrunc_from(fs, ip, first_blk); }
-static int v6_check_op(void *fs) { v7_check_t rep; return v6_check(fs, &rep, 0); }
-static uint64_t v6_max_file_op(void *fs) {
+
+
+
+
+
+static int v6_check_op(filsys_edition_t *fs) { v7_check_t rep; return v6_check(fs, &rep, 0); }
+static uint64_t v6_max_file_op(filsys_edition_t *fs) {
     (void)fs;
     /* The large-file layout can address ~32 MB, but the 24-bit size field
      * caps a file at 16777215 bytes. */
@@ -2209,28 +2184,28 @@ static uint64_t v6_max_file_op(void *fs) {
 const struct filsys_ops v6fs_ops = {
     .name        = "v6",
     .blocksize   = v7fs_blocksize_op,
-    .open        = v7fs_open_op,
-    .close       = v7fs_close_op,
-    .sync        = v7fs_sync_op,
-    .mark_dirty  = v7fs_mark_dirty_op,
-    .read_block  = v7fs_read_block_op,
-    .write_block = v7fs_write_block_op,
-    .blk_get     = v7fs_read_block_op,
-    .blk_put     = v7fs_write_block_op,
-    .read_inode  = v6_read_inode_op,
-    .write_inode = v6_write_inode_op,
-    .ialloc      = v7fs_ialloc_op,
-    .ifree       = v7fs_ifree_op,
-    .bmap        = v6_bmap_op,
-    .itrunc      = v6_itrunc_op,
-    .itrunc_from = v6_itrunc_from_op,
-    .file_read   = v7fs_file_read_op,
-    .file_write  = v7fs_file_write_op,
-    .dir_read    = v7fs_dir_read_op,
-    .dir_lookup  = v7fs_dir_lookup_op,
-    .dir_add     = v7fs_dir_add_op,
-    .dir_remove  = v7fs_dir_remove_op,
-    .lookup      = v7fs_lookup_op,
+    .open        = v7fs_open,
+    .close       = v7fs_close,
+    .sync        = v7fs_sync,
+    .mark_dirty  = v7fs_mark_dirty,
+    .read_block  = v7fs_read_block,
+    .write_block = v7fs_write_block,
+    .blk_get     = v7fs_read_block,
+    .blk_put     = v7fs_write_block,
+    .read_inode  = v6_read_inode,
+    .write_inode = v6_write_inode,
+    .ialloc      = v7fs_ialloc,
+    .ifree       = v7fs_ifree,
+    .bmap        = v6_bmap,
+    .itrunc      = v6_itrunc,
+    .itrunc_from = v6_itrunc_from,
+    .file_read   = v7fs_file_read,
+    .file_write  = v7fs_file_write,
+    .dir_read    = v7fs_dir_read,
+    .dir_lookup  = v7fs_dir_lookup,
+    .dir_add     = v7fs_dir_add,
+    .dir_remove  = v7fs_dir_remove,
+    .lookup      = v7fs_lookup,
     .check       = v6_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
