@@ -74,19 +74,25 @@ boot:
 	$(V7AS) -o boot/rpuboot boot/rpuboot.s
 	chmod 644 boot/hpuboot boot/rpuboot
 
-# `make check` runs the end-to-end smoke test.  It needs a disk image
-# (./fetch.sh) and a working FUSE mount (/dev/fuse + fusermount3).  Without the
-# image test.sh exits 77, which automake's test harness reports as SKIP, so a
-# build from the tarball (make distcheck) passes in any environment.
-# `make check` also builds and runs test_matrix, which exercises every backend
-# through the library (no FUSE): create/write/read/truncate/delete at sizes
-# straddling each format's direct-block and max-file boundaries, then fsck and
-# require errors=0.  It runs wherever the tools build.
-TESTS = test.sh test_matrix
+# `make check` always runs test_matrix, which exercises every backend through
+# the library (no FUSE): create/write/read/truncate/delete at sizes straddling
+# each format's direct-block and max-file boundaries, then fsck and require
+# errors=0.  It runs wherever the tools build.
+#
+# The end-to-end FUSE smoke test (test.sh) is opt-in: it mounts a real V7 disk
+# image and needs rp06-0.disk (./fetch.sh) plus a working /dev/fuse.  Enable it
+# with `./configure --enable-image-tests`; when enabled it *fails* -- rather
+# than skip -- if the image is absent, so the suite can't silently pass having
+# only run half its tests.
+TESTS = test_matrix
 check_PROGRAMS = test_matrix
 test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
+
+if ENABLE_IMAGE_TESTS
+TESTS += test.sh
+endif
 
 # Rebuild the dist tarball and check every checksum the packaging pins (sha256,
 # sha512, blake2s, size) against it.  This is the mechanical guard against the

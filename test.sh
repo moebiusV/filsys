@@ -12,7 +12,7 @@ IMG=rp06-0.disk
 COPY=testcopy.disk
 MNT=mnt
 
-[ -f "$IMG" ] || { echo "SKIP: disk image absent (run ./fetch.sh first)"; exit 77; }
+[ -f "$IMG" ] || { echo "FAIL: disk image absent (run ./fetch.sh first)"; exit 1; }
 [ -x ./mount.filsys ] || { echo "run make first"; exit 1; }
 
 cleanup() {

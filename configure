@@ -646,6 +646,8 @@ ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
+ENABLE_IMAGE_TESTS_FALSE
+ENABLE_IMAGE_TESTS_TRUE
 FUSE3_LIBS
 FUSE3_CFLAGS
 PKG_CONFIG_LIBDIR
@@ -752,6 +754,7 @@ enable_silent_rules
 enable_maintainer_mode
 enable_dependency_tracking
 enable_largefile
+enable_image_tests
 enable_year2038
 '
       ac_precious_vars='build_alias
@@ -1400,6 +1403,7 @@ Optional Features:
   --disable-dependency-tracking
                           speeds up one-time build
   --disable-largefile     omit support for large files
+  --enable-image-tests    run the FUSE image smoke test in `make check'
   --enable-year2038       support timestamps after 2038
 
 Some influential environment variables:
@@ -5460,6 +5464,31 @@ fi
 
 
 
+# ---------------------------------------------------------------------------
+# Optional end-to-end image tests (test.sh): mount a real V7 disk image through
+# FUSE.  These need rp06-0.disk (./fetch.sh) and a working /dev/fuse, so they
+# are off by default; --enable-image-tests turns them on, and the suite then
+# *fails* (not skips) if the image is absent, so an explicitly-enabled run can
+# never pass silently.
+# ---------------------------------------------------------------------------
+# Check whether --enable-image-tests was given.
+if test ${enable_image_tests+y}
+then :
+  enableval=$enable_image_tests; enable_image_tests=$enableval
+else case e in #(
+  e) enable_image_tests=no ;;
+esac
+fi
+
+ if test "x$enable_image_tests" = xyes; then
+  ENABLE_IMAGE_TESTS_TRUE=
+  ENABLE_IMAGE_TESTS_FALSE='#'
+else
+  ENABLE_IMAGE_TESTS_TRUE='#'
+  ENABLE_IMAGE_TESTS_FALSE=
+fi
+
+
 ac_config_files="$ac_config_files Makefile filsys.pc"
 
 cat >confcache <<\_ACEOF
@@ -5617,6 +5646,10 @@ then :
   enableval=$enable_year2038;
 fi
 
+if test -z "${ENABLE_IMAGE_TESTS_TRUE}" && test -z "${ENABLE_IMAGE_TESTS_FALSE}"; then
+  as_fn_error $? "conditional \"ENABLE_IMAGE_TESTS\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
 
 : "${CONFIG_STATUS=./config.status}"
 ac_write_fail=0

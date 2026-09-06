@@ -97,8 +97,9 @@ POST_UNINSTALL = :
 bin_PROGRAMS = findfs.filsys$(EXEEXT) mkfs.filsys$(EXEEXT) \
 	fsck.filsys$(EXEEXT)
 sbin_PROGRAMS = mount.filsys$(EXEEXT)
-TESTS = test.sh test_matrix$(EXEEXT)
+TESTS = test_matrix$(EXEEXT) $(am__append_1)
 check_PROGRAMS = test_matrix$(EXEEXT)
+@ENABLE_IMAGE_TESTS_TRUE@am__append_1 = test.sh
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -1678,16 +1679,16 @@ recheck: all $(check_PROGRAMS)
 	        am__force_recheck=am--force-recheck \
 	        TEST_LOGS="$$log_list"; \
 	exit $$?
-test.sh.log: test.sh
-	@p='test.sh'; \
-	b='test.sh'; \
+test_matrix.log: test_matrix$(EXEEXT)
+	@p='test_matrix$(EXEEXT)'; \
+	b='test_matrix'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
-test_matrix.log: test_matrix$(EXEEXT)
-	@p='test_matrix$(EXEEXT)'; \
-	b='test_matrix'; \
+test.sh.log: test.sh
+	@p='test.sh'; \
+	b='test.sh'; \
 	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
