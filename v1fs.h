@@ -5,7 +5,7 @@
  * inode map), and directory entries are 10 bytes (2-byte i-number + 8-char
  * name).  Device files are identified by inode number (< 41), not by mode bits,
  * and the permission model is a two-class owner/non-owner read/write set rather
- * than V6's rwx-rwx-rwx.  See docs/v1-format.md for the verified layout.
+ * than V6's rwx-rwx-rwx.
  *
  * SPDX-License-Identifier: ISC
  */

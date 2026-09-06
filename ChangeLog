@@ -1,3 +1,20 @@
+2026-09-05  David Walther  <david@clearbrookdistillery.com>
+
+	* bsd211fs.c, bsd211fs.h: new backend for 2.11BSD (4-byte block
+	addresses, di_flags, symlinks, variable-length directory entries).
+	* v7fs.c, v7fs.h: Xenix (mode 3) and 2.9BSD (mode 4) support; the block
+	size is now a runtime property (512 or 1024); Xenix magic validation at
+	superblock offset 1016.
+	* mkfs.filsys.c: mkfs for Xenix, 2.9BSD and 2.11BSD; the v7fs mkfs path
+	is generalized to 1024-byte blocks, per-edition byte order, free-cache
+	width and address count.
+	* mount.filsys.c, fsck.filsys.c, mkfs.filsys.c: require -v (no default
+	edition); 32v renamed vax32.
+	* filsys.h, filsys.c, filsys_ops.h, test_matrix.c: FILSYS_BSD211
+	edition; test_matrix covers all nine editions.
+	* filsys.5, mount.filsys.1, fsck.filsys.1, mkfs.filsys.1,
+	findfs.filsys.1, README.md: document the new editions and the rename.
+
 2026-08-31  David Walther  <david@clearbrookdistillery.com>
 
 	* mount.filsys.c, findfs.filsys.c: renamed from filsysmount.c and

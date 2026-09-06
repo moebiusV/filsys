@@ -42,6 +42,9 @@ static const struct fmt {
     { FILSYS_V7,   "7",   4000, 1082201088ULL }, /* triple indirect */
     { FILSYS_32V,  "32v", 4000, 1082201088ULL },
     { FILSYS_COHERENT, "coherent", 4000, 1082201088ULL },
+    { FILSYS_XENIX, "xenix", 4000, 17247250432ULL },  /* 10+3 indirect, 1K blocks */
+    { FILSYS_BSD29, "bsd29", 4000, 17247244288ULL },  /* 4+3 indirect, 1K blocks */
+    { FILSYS_BSD211, "bsd211", 4000, 17247244288ULL },  /* 4+3 indirect, 32-bit addr */
 };
 
 static void run(const struct fmt *f) {
