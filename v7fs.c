@@ -11,7 +11,6 @@
 #include <config.h>
 #include "v7fs.h"
 #include "filsys_ops.h"
-#include "v6fs.h"
 
 #include <errno.h>
 #include <fcntl.h>

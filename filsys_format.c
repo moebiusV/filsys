@@ -13,9 +13,7 @@
 #include "v7fs.h"
 #include "filsys_ops.h"
 #include "v1fs.h"
-#include "v6fs.h"
 #include "pdp7fs.h"
-#include "bsd211fs.h"
 
 /* POSIX mode -> V1's on-disk flag word.  V1 has a two-class permission model
  * (owner r/w/x, non-owner r/w) with no group or sticky bit, a single universal
