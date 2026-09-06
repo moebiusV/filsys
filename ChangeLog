@@ -1,5 +1,28 @@
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
+	* blocktree.c (new), v7fs.h, filsys_format.c, filsys_ops.h, check.c,
+	v7fs.c, v1fs.c, pdp7fs.c, filsys.c: fold the block-map tree walk and the
+	check helpers into one shared implementation.  The per-backend
+	mark_block/mark_tree/mark_blocks, tloop/tloop_from, itrunc/itrunc_from,
+	preen, ncheck/ncheck_dir, clri and resolve_dups bodies (the same fifteen
+	names four times) collapse into blocktree.c and check.c, driven by two
+	descriptor additions: the slot topology (ilarg_mask + large_single/
+	large_double, so V6/V1/PDP-7's ILARG reinterpretation is data, not code)
+	and the indirect-entry codec (ind_get/ind_put, defaulting to daddr_wid;
+	PDP-7 overrides with its 18-bit word).  The vtable loses .itrunc,
+	.itrunc_from, .mark_blocks and .preen; .nindir becomes a field (PDP-7's
+	container block is 256 bytes of words against a 128-byte logical block,
+	so it is not bsize/daddr_wid).  PDP-7 gains an alloc_ops row (pdp7_alloc_ops)
+	so the shared walk's bfree/balloc reaches it.
+	* The shared walk fixes a latent V6 fsck bug: v6_mark_tree walked slot 7
+	(the double-indirect slot) single-level, so a large V6 file's second-level
+	blocks were reported missing.
+	* test_matrix.c: a V6 large-file regression (write 2000 blocks, past the
+	1792-block single-indirect boundary, then fsck) that fails on the old
+	single-level walk.
+
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
 	* filsys_ops.h, check.c, v7fs.c, v1fs.c, pdp7fs.c, filsys.c: fold the
 	*_op wrapper layer.  The ops vtable now takes filsys_edition_t * (not
 	void *) -- every backend already aliases that type -- so the ~66 one-line

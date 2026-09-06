@@ -153,11 +153,11 @@ int main(int argc, char **argv)
         }
         int err;
         if (ncheck)
-            err = v6_ncheck(&fs, ino);
+            err = filsys_ncheck(&fs, ino);
         else if (clri)
-            err = v6_clri(&fs, ino);
+            err = filsys_clri(&fs, ino);
         else if (resolve)
-            err = v6_resolve_dups(&fs);
+            err = filsys_resolve_dups(&fs);
         else {
             v7_check_t rep;
             err = v6_check(&fs, &rep, mode);
@@ -176,11 +176,11 @@ int main(int argc, char **argv)
         }
         int err;
         if (ncheck)
-            err = v1fs_ncheck(&fs, ino);
+            err = filsys_ncheck(&fs, ino);
         else if (clri)
-            err = v1fs_clri(&fs, ino);
+            err = filsys_clri(&fs, ino);
         else if (resolve)
-            err = v1fs_resolve_dups(&fs);
+            err = filsys_resolve_dups(&fs);
         else {
             v1_check_t rep;
             err = v1fs_check(&fs, &rep, mode);
@@ -199,11 +199,11 @@ int main(int argc, char **argv)
         }
         int err;
         if (ncheck)
-            err = p7fs_ncheck(&fs, ino);
+            err = filsys_ncheck(&fs, ino);
         else if (clri)
-            err = p7fs_clri(&fs, ino);
+            err = filsys_clri(&fs, ino);
         else if (resolve)
-            err = p7fs_resolve_dups(&fs);
+            err = filsys_resolve_dups(&fs);
         else {
             p7_check_t rep;
             err = p7fs_check(&fs, &rep, mode);
@@ -226,11 +226,11 @@ int main(int argc, char **argv)
         v7_check_t rep;
         err = bsd211_check(&fs, &rep, mode);
     } else if (ncheck) {
-        err = v7fs_ncheck(&fs, ino);
+        err = filsys_ncheck(&fs, ino);
     } else if (clri) {
-        err = v7fs_clri(&fs, ino);
+        err = filsys_clri(&fs, ino);
     } else if (resolve) {
-        err = v7fs_resolve_dups(&fs);
+        err = filsys_resolve_dups(&fs);
     } else {
         v7_check_t rep;
         err = v7fs_check(&fs, &rep, mode);

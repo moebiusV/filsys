@@ -90,7 +90,7 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
         if (st == FILSYS_IN_ICHR || st == FILSYS_IN_IBLK)
             continue;   /* device inode: addr[0] is a device number, not a block */
         cx.ino = ino;
-        o->mark_blocks(fs, &ip, ino, &cx);
+        filsys_mark_blocks(fs, &ip, ino, &cx);
     }
     rep->errors += cx.errors;
 
@@ -185,7 +185,7 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
             rep->errors++;
         }
         if (mode & (FILSYS_CK_PREEN | FILSYS_CK_YES | FILSYS_CK_ASK))
-            o->preen(fs, ecount, state, maxino, mode);
+            filsys_preen(fs, ecount, state, maxino, mode);
         free(ecount);
     }
 
@@ -197,5 +197,277 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
            rep->used_blocks, rep->free_blocks, rep->missing_blocks,
            rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
     return rep->errors ? -1 : 0;
+}
+
+/* ---- shared maintenance: ncheck / clri / preen / resolve-dups ------------ */
+
+/* True if the inode is a regular file (not a directory or device).  V1/PDP-7
+ * detect directories and devices through their callbacks; the V6/V7 family
+ * derives both from the type bits (V6's regular file is type 0, so ifreg==0). */
+static int is_regular(const filsys_edition_t *fs, const filsys_inode_t *ip) {
+    if (fs->is_dir)
+        return !fs->is_dir(fs, ip) && !fs->is_device(fs, ip);
+    return (ip->mode & fs->ifmt) == fs->ifreg;
+}
+
+/* True if the inode is a device (char/block/multiplexed), whose addr[0] is a
+ * device number rather than a block. */
+static int is_device(const filsys_edition_t *fs, const filsys_inode_t *ip) {
+    if (fs->is_device)
+        return fs->is_device(fs, ip);
+    uint32_t t = ip->mode & fs->ifmt;
+    return t == fs->ifchr || t == fs->ifblk ||
+           (fs->ifmpc && t == fs->ifmpc) || (fs->ifmpb && t == fs->ifmpb);
+}
+
+/* The on-disk mode for a freshly created recovery directory. */
+static uint32_t dir_mode(const filsys_edition_t *fs) {
+    if (fs->to_disk_mode)
+        return fs->to_disk_mode(fs, 0777, FILSYS_FT_DIR);
+    return 0777 | fs->ifdir;
+}
+
+/* Recursively walk the directory tree from `dirino`, printing the pathname(s)
+ * of `target` and descending into subdirectories. */
+static void ncheck_dir(filsys_edition_t *fs, uint32_t dirino, const char *prefix,
+                       uint32_t target, int *found, int depth)
+{
+    if (depth > 64)
+        return;                       /* guard against a directory cycle */
+    filsys_inode_t ip;
+    if (fs->ops->read_inode(fs, dirino, &ip))
+        return;
+    if (!fs_is_dir(fs, &ip))
+        return;
+    filsys_dirent_t *ents = NULL;
+    size_t cnt = 0;
+    if (fs->ops->dir_read(fs, &ip, &ents, &cnt))
+        return;
+    for (size_t i = 0; i < cnt; i++) {
+        uint32_t eino = ents[i].ino;
+        if (eino == 0)
+            continue;
+        if (ents[i].name[0] == '.' &&
+            (ents[i].name[1] == 0 ||
+             (ents[i].name[1] == '.' && ents[i].name[2] == 0)))
+            continue;                 /* skip "." and ".." */
+        char path[1024];
+        if (prefix[1] == 0)           /* prefix is "/" */
+            snprintf(path, sizeof(path), "/%s", ents[i].name);
+        else
+            snprintf(path, sizeof(path), "%s/%s", prefix, ents[i].name);
+        if (eino == target) {
+            printf("%u\t%s\n", target, path);
+            *found = 1;
+        }
+        filsys_inode_t cip;
+        if (fs->ops->read_inode(fs, eino, &cip) == 0 && fs_is_dir(fs, &cip))
+            ncheck_dir(fs, eino, path, target, found, depth + 1);
+    }
+    free(ents);
+}
+
+int filsys_ncheck(filsys_edition_t *fs, uint32_t ino)
+{
+    int found = 0;
+    ncheck_dir(fs, fs->rootino, "/", ino, &found, 0);
+    if (!found)
+        printf("%u: not found\n", ino);
+    return 0;
+}
+
+int filsys_clri(filsys_edition_t *fs, uint32_t ino)
+{
+    uint32_t maxino = fs->ops->maxino(fs);
+    if (ino == 0 || ino > maxino)
+        return -EINVAL;
+    filsys_inode_t ip;
+    memset(&ip, 0, sizeof(ip));
+    ip.ino = ino;
+    int rc = fs->ops->write_inode(fs, ino, &ip);
+    if (rc == 0)
+        printf("cleared inode %u\n", ino);
+    return rc;
+}
+
+/* Preen: fix the safe subset without prompting.  Ensures lost+found exists
+ * (named "lostfils" where 8-char names can't hold "lost+found"), clears
+ * free-but-referenced inodes, reconnects orphaned regular files, and corrects
+ * link counts. */
+void filsys_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
+                  uint32_t maxino, int mode)
+{
+    const char *lfname = fs->max_namlen < 10 ? "lostfils" : "lost+found";
+    filsys_inode_t root;
+    uint32_t lf_ino = 0;
+    if (fs->ops->read_inode(fs, fs->rootino, &root) == 0 &&
+        fs->ops->dir_lookup(fs, &root, lfname, &lf_ino) != 0) {
+        filsys_inode_t lf;
+        if (fs->ops->ialloc(fs, &lf_ino) == 0) {
+            memset(&lf, 0, sizeof(lf));
+            lf.ino = lf_ino;
+            lf.mode = dir_mode(fs);
+            lf.nlink = 2;
+            fs->ops->write_inode(fs, lf_ino, &lf);
+            if (!fs->synth_dot) {     /* PDP-7 synthesizes "." / ".." */
+                fs->ops->dir_add(fs, &lf, lf_ino, ".");
+                fs->ops->dir_add(fs, &lf, fs->rootino, "..");
+            }
+            fs->ops->dir_add(fs, &root, lf_ino, lfname);
+            root.nlink++;
+            fs->ops->write_inode(fs, fs->rootino, &root);
+            printf("created lost+found (inode %u)\n", lf_ino);
+        }
+    }
+
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        int cnt = ecount[ino] & 0377;
+        filsys_inode_t ip;
+        if (fs->ops->read_inode(fs, ino, &ip) != 0)
+            continue;
+        if (!filsys_in_allocated(state[ino])) {
+            if (cnt != 0 && filsys_query(mode, "clear free-but-referenced inode %u", ino)) {
+                ip.mode = 0;
+                ip.nlink = 0;
+                fs->ops->write_inode(fs, ino, &ip);
+                printf("cleared free-but-referenced inode %u\n", ino);
+            }
+            continue;
+        }
+        if (cnt == ip.nlink)
+            continue;
+        if (ino == fs->rootino || ino == lf_ino)
+            continue;   /* nlink just set by lost+found creation; ecount is stale */
+        if (cnt == 0) {
+            if (lf_ino == 0)
+                continue;
+            if (!is_regular(fs, &ip))   /* directory or device: leave it */
+                continue;
+            filsys_inode_t lf;
+            char name[16];
+            snprintf(name, sizeof(name), "%u", ino);
+            if (filsys_query(mode, "reconnect inode %u to lost+found", ino) &&
+                fs->ops->read_inode(fs, lf_ino, &lf) == 0 &&
+                fs->ops->dir_add(fs, &lf, ino, name) == 0) {
+                ip.nlink = 1;
+                fs->ops->write_inode(fs, ino, &ip);
+                fs->ops->write_inode(fs, lf_ino, &lf);
+                printf("reconnected inode %u to lost+found\n", ino);
+            }
+        } else {
+            if (fs->synth_dot && !is_regular(fs, &ip))
+                continue;   /* PDP-7: dir/device nlink is synthesized */
+            int old = ip.nlink;
+            if (filsys_query(mode, "fix link count of inode %u from %d to %d",
+                             ino, old, cnt)) {
+                ip.nlink = (int16_t)(cnt & 0377);
+                fs->ops->write_inode(fs, ino, &ip);
+                printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+            }
+        }
+    }
+}
+
+/* Resolve duplicate blocks (salv -a): copy each block referenced twice to a
+ * fresh block and re-point the second reference, then rebuild the free list. */
+int filsys_resolve_dups(filsys_edition_t *fs)
+{
+    uint32_t maxino = fs->ops->maxino(fs);
+    uint32_t dstart = fs->ops->data_start(fs);
+    uint32_t dend   = fs->ops->data_end(fs);
+    uint32_t nblk   = dend - dstart;
+
+    filsys_chkctx_t cx;
+    memset(&cx, 0, sizeof(cx));
+    cx.nblk = nblk;
+    cx.bmap = calloc((nblk + 7) / 8, 1);
+    if (!cx.bmap)
+        return -ENOMEM;
+
+    struct dup { uint32_t blk, ino; int idx; };
+    struct dup *dups = NULL;
+    size_t ndup = 0, cap = 0;
+
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        filsys_inode_t ip;
+        if (fs->ops->read_inode(fs, ino, &ip))
+            continue;
+        if (ip.mode == 0)
+            continue;
+        if (is_device(fs, &ip))
+            continue;   /* device inode: addr[0] is a device number */
+        cx.ino = ino;
+        for (int i = 0; i < fs->niaddr; i++) {
+            uint32_t a = ip.addr[i];
+            if (a == 0)
+                continue;
+            int level = filsys_slot_level(fs, ip.mode, i);
+            if (level >= 0) {
+                filsys_mark_tree(fs, &cx, a, level);
+                continue;
+            }
+            if (a < dstart || a >= dend) {
+                printf("block %u bad; inode=%u\n", a, ino);
+                continue;
+            }
+            uint32_t off = a - dstart;
+            uint8_t  m = (uint8_t)(1u << (off & 7));
+            if (cx.bmap[off >> 3] & m) {
+                if (ndup == cap) {
+                    cap = cap ? cap * 2 : 16;
+                    dups = realloc(dups, cap * sizeof(*dups));
+                }
+                dups[ndup].blk = a;
+                dups[ndup].ino = ino;
+                dups[ndup].idx = i;
+                ndup++;
+            } else {
+                cx.bmap[off >> 3] |= m;
+                cx.used_blocks++;
+            }
+        }
+    }
+
+    if (ndup == 0) {
+        printf("no duplicate blocks\n");
+        free(cx.bmap);
+        return 0;
+    }
+
+    printf("%zu duplicate block(s); rebuilding free list\n", ndup);
+    fs->ops->makefree(fs, &cx);
+
+    int resolved = 0;
+    for (size_t k = 0; k < ndup; k++) {
+        uint32_t blk = dups[k].blk, ino = dups[k].ino;
+        int idx = dups[k].idx;
+        filsys_inode_t ip;
+        if (fs->ops->read_inode(fs, ino, &ip))
+            continue;
+        if (ip.addr[idx] != blk)
+            continue;
+        uint32_t nb;
+        if (fs->alloc->balloc(fs, &nb)) {
+            printf("block %u dup; inode=%u: out of space\n", blk, ino);
+            continue;
+        }
+        uint8_t buf[V7_MAXBSIZE];
+        if (fs->ops->read_block(fs, blk, buf) || fs->ops->write_block(fs, nb, buf)) {
+            printf("block %u dup; inode=%u: copy failed\n", blk, ino);
+            continue;
+        }
+        ip.addr[idx] = nb;
+        fs->ops->write_inode(fs, ino, &ip);
+        uint32_t off = nb - dstart;
+        cx.bmap[off >> 3] |= (uint8_t)(1u << (off & 7));
+        printf("block %u dup; inode=%u: copied to %u\n", blk, ino, nb);
+        resolved++;
+    }
+    free(dups);
+
+    printf("resolved %d/%zu duplicates; finalizing free list\n", resolved, ndup);
+    fs->ops->makefree(fs, &cx);
+    free(cx.bmap);
+    return resolved == (int)ndup ? 0 : -1;
 }
 
