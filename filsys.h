@@ -61,7 +61,7 @@ typedef struct filsys filsys_t;  /* opaque */
 /* Open an image.  Returns 0 and *out, or -errno.  uid/gid are the ownership
  * reported by filsys_fill_stat (the "mounting user"). */
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
-                uint64_t offset, int uid, int gid);
+                uint64_t offset, uid_t uid, gid_t gid);
 /* Flush the superblock (and pending metadata) and close. */
 void filsys_close(filsys_t *fs);
 /* Flush the superblock (and pending metadata) without closing. */

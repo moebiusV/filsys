@@ -503,7 +503,7 @@ int p7fs_dir_read(p7fs_t *fs, p7_inode_t *ip, p7_dirent_t **ents, size_t *count)
         if (dino == 0)
             continue;
         uint32_t namew[4];
-        for (int w = 0; w < 4; w++)
+        for (uint32_t w = 0; w < 4; w++)
             if (inode_read_word(fs, ip, base + 1 + w, &namew[w]))
                 goto fail;
         char ent[P7_DIRSIZ + 1];
@@ -544,7 +544,7 @@ int p7fs_dir_add(p7fs_t *fs, p7_inode_t *ip, uint32_t ino, const char *name) {
     memset(padded, ' ', P7_DIRSIZ);
     memcpy(padded, name, namelen);
     uint32_t namew[4];
-    for (int w = 0; w < 4; w++)
+    for (uint32_t w = 0; w < 4; w++)
         namew[w] = ((uint32_t)(padded[2 * w] & 0x7f) << 9) | (padded[2 * w + 1] & 0x7f);
 
     /* find a free slot (inode number word == 0) */
@@ -565,7 +565,7 @@ int p7fs_dir_add(p7fs_t *fs, p7_inode_t *ip, uint32_t ino, const char *name) {
 
     if (inode_write_word(fs, ip, (uint32_t)slot, ino))
         return -EIO;
-    for (int w = 0; w < 4; w++)
+    for (uint32_t w = 0; w < 4; w++)
         if (inode_write_word(fs, ip, (uint32_t)slot + 1 + w, namew[w]))
             return -EIO;
     if (inode_write_word(fs, ip, (uint32_t)slot + 5, ino & P7_MAXWORD))   /* uniq */
@@ -588,7 +588,7 @@ int p7fs_dir_remove(p7fs_t *fs, p7_inode_t *ip, const char *name) {
         if (dino == 0)
             continue;
         uint32_t namew[4];
-        for (int w = 0; w < 4; w++)
+        for (uint32_t w = 0; w < 4; w++)
             if (inode_read_word(fs, ip, base + 1 + w, &namew[w]))
                 return -EIO;
         char ent[P7_DIRSIZ + 1];
@@ -671,7 +671,7 @@ static void p7_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
 
 /* Rebuild the free list from the usage bitmap (icheck -s), chaining unused
  * data blocks back through the 9-per-node free-list allocator. */
-static int p7fs_makefree(void *fs, filsys_chkctx_t *cx)
+static uint32_t p7fs_makefree(void *fs, filsys_chkctx_t *cx)
 {
     p7fs_t *f = fs;
     uint32_t nfree = 0;
@@ -846,7 +846,7 @@ int p7fs_resolve_dups(p7fs_t *fs)
     if (!cx.bmap)
         return -ENOMEM;
 
-    struct dup { uint32_t blk, ino, idx; };
+    struct dup { uint32_t blk, ino; int idx; };
     struct dup *dups = NULL;
     size_t ndup = 0, cap = 0;
 
@@ -900,7 +900,8 @@ int p7fs_resolve_dups(p7fs_t *fs)
 
     int resolved = 0;
     for (size_t k = 0; k < ndup; k++) {
-        uint32_t blk = dups[k].blk, ino = dups[k].ino, idx = dups[k].idx;
+        uint32_t blk = dups[k].blk, ino = dups[k].ino;
+        int idx = dups[k].idx;
         p7_inode_t ip;
         if (p7fs_read_inode(fs, ino, &ip))
             continue;

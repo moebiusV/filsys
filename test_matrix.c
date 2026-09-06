@@ -85,8 +85,8 @@ static void run(const struct fmt *f) {
     rc = filsys_read(fs, "/big", back, large, 0);
     ok("large read round-trip", rc == (int)large && memcmp(buf, back, large) == 0);
 
-    ok("truncate down", filsys_truncate(fs, "/big", large / 2) == 0);
-    ok("truncate up", filsys_truncate(fs, "/big", large) == 0);
+    ok("truncate down", filsys_truncate(fs, "/big", (off_t)(large / 2)) == 0);
+    ok("truncate up", filsys_truncate(fs, "/big", (off_t)large) == 0);
     ok("truncate small", filsys_truncate(fs, "/big", 100) == 0);
 
     /* A write starting at the ceiling must fail EFBIG and leak nothing. */

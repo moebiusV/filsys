@@ -107,8 +107,8 @@ int filsys_check_common(filsys_edition_t *fmt, void *fs,
     }
 
     if (mode & FILSYS_CK_SALVAGE) {
-        int nf = o->makefree(fs, &cx);
-        printf("salvaged: free space rebuilt (%d free blocks)\n", nf);
+        uint32_t nf = o->makefree(fs, &cx);
+        printf("salvaged: free space rebuilt (%u free blocks)\n", nf);
         free(state);
         free(cx.owner);
         free(cx.bmap);
