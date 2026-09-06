@@ -1,6 +1,6 @@
-/* bo.c - byte-order primitives (see bo.h).  The one copy of each order. */
+/* byteorder.c - byte-order primitives (see byteorder.h).  The one copy of each order. */
 /* SPDX-License-Identifier: ISC */
-#include "bo.h"
+#include "byteorder.h"
 
 /* ---- little-endian ------------------------------------------------------ */
 
