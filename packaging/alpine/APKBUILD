@@ -1,6 +1,6 @@
 # Maintainer: maintainer <email>
 pkgname=filsys
-pkgver=1.3.0
+pkgver=1.3.1
 pkgrel=0
 pkgdesc="FUSE driver for Research Unix (V0-V7, 32V) filesystem images"
 url="https://github.com/moebiusV/filsys"
@@ -10,7 +10,7 @@ makedepends="fuse3-dev build-base"
 depends="fuse3"
 # recommended (optional): v7unix-toolchain prebsd
 source="https://github.com/moebiusV/filsys/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz"
-sha512sums="ee26ef0e498d9e891b4d6cfd85f4fd496ffe1198ab497d85b13d165d0513480929cae1ed26bb842f8247ff2205cfd4fc71b3ef37ee6927702b0e9b87b052a836  filsys-1.3.0.tar.gz"
+sha512sums="aad12f8abeb65d0b9e6fcbaec40fd605c9a631b1e8767e0b60d9fa95ab51365e72b3809b769e2e15fb9b9b40294cf2ed11e735595e5d7e81664c46f01cb8213a  filsys-1.3.1.tar.gz"
 
 build() {
 	./configure --prefix=/usr || return 1

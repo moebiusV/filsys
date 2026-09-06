@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        1.3.0
+Version:        1.3.1
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (V0-V7, 32V) filesystem images
 
@@ -48,6 +48,9 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Sat Sep 05 2026 David Walther <david@clearbrookdistillery.com> - 1.3.1-1
+- Fix 2.11BSD long filenames (63-character names were rejected by the facade).
+
 * Sat Sep 05 2026 David Walther <david@clearbrookdistillery.com> - 1.3.0-1
 - Xenix, 2.9BSD and 2.11BSD filesystem support (mount, fsck, mkfs, findfs).
 - 32V renamed vax32; mount/fsck/mkfs require an explicit -v.
