@@ -1,3 +1,33 @@
+filsys 1.5.0 (2026-09-06)
+=========================
+
+The "one engine" rework from 1.4.0 is carried to completion: the V1 and PDP-7
+backends fold into the shared engine, and the five near-duplicate fsck checkers
+collapse into one shared driver.
+
+- The four per-edition *_check() bodies (776 lines across V7/V6/V1/PDP-7) are
+  folded into one filsys_check_common() driver (check.c); each edition supplies
+  only its maxino/data-start/data-end, inode classifier, block walker, free-list
+  walker, makefree and preen.
+- The block layer is a data-block codec: blk_get/blk_put move a block as
+  logical bytes (bsize) while read_block/write_block move the raw container
+  bytes.  Byte-addressed editions share them; the PDP-7's 2-chars-per-18-bit-
+  word pack/unpack is the one codec that differs.
+- The allocator is a vtable (alloc_ops): the free-list cache (V6/V7/2.11BSD)
+  and V1's dual bitmap are two implementations behind balloc/bfree/ialloc/ifree.
+- V1's backend state becomes the shared filsys_edition_t (bitmap in a union
+  arm, maxino a field); V1's file/dir/lookup layer rides the shared engine,
+  leaving only the 32-byte inode codec, the ILARG bmap and the bitmap allocator
+  V1-specific.
+- PDP-7's state likewise becomes filsys_edition_t (free-list head in
+  .freelist); its file/write/lookup layer rides the shared engine, leaving only
+  the word container codec, the 8-word dirent and the single-indirect bmap
+  PDP-7-specific.
+
+Net: about 1,500 lines removed from the 1.3.2 peak, the longest function is
+96 lines, and the test matrix plus fsck still round-trip all eleven formats
+with zero errors.
+
 filsys 1.4.0 (2026-09-06)
 =========================
 
