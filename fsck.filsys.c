@@ -48,7 +48,6 @@
 #include "filsys.h"
 #include "filsys_ops.h"
 #include "v1fs.h"
-#include "v6fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
 
@@ -176,24 +175,24 @@ int main(int argc, char **argv)
 
     if (edition == FILSYS_V6) {
         int readonly = !(salvage || resolve || clri || preen || yes || ask);
-        v6fs_t fs;
-        int rc = v6fs_open(&fs, path, readonly, offblock * V6_BSIZE);
+        filsys_edition_t fs = filsys_getformat(edition);
+        int rc = fs.ops->open(&fs, path, readonly, &fs, offblock * fs.bsize);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;
         }
         int err;
         if (ncheck)
-            err = v6fs_ncheck(&fs, ino);
+            err = v6_ncheck(&fs, ino);
         else if (clri)
-            err = v6fs_clri(&fs, ino);
+            err = v6_clri(&fs, ino);
         else if (resolve)
-            err = v6fs_resolve_dups(&fs);
+            err = v6_resolve_dups(&fs);
         else {
-            v6_check_t rep;
-            err = v6fs_check(&fs, &rep, mode);
+            v7_check_t rep;
+            err = v6_check(&fs, &rep, mode);
         }
-        v6fs_close(&fs);
+        fs.ops->close(&fs);
         return err ? 1 : 0;
     }
 
@@ -244,9 +243,8 @@ int main(int argc, char **argv)
     }
 
     int readonly = !(salvage || resolve || clri || preen || yes || ask);
-    filsys_edition_t fs;
-    filsys_edition_t fmt = filsys_getformat(edition);
-    int rc = v7fs_open(&fs, path, readonly, &fmt, offblock * fmt.bsize);
+    filsys_edition_t fs = filsys_getformat(edition);
+    int rc = v7fs_open(&fs, path, readonly, &fs, offblock * fs.bsize);
     if (rc < 0) {
         fprintf(stderr, "%s: %s\n", path, strerror(-rc));
         return 1;

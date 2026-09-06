@@ -111,6 +111,7 @@ typedef struct filsys_edition {
     uint32_t    magic;              /* superblock magic word (0 = none) */
     int         magic_off;          /* byte offset of magic in the superblock */
     uint8_t     fmod_back;          /* s_fmod sits N bytes before s_time (V7 2, 2.11BSD 3) */
+    uint16_t    rootino;            /* root directory inode (1 / 2 / 41) */
     uint8_t     inode_size;         /* bytes per on-disk inode */
     uint8_t     ndaddr;             /* direct block addresses per inode */
     uint8_t     niaddr;             /* total block addresses per inode */
@@ -241,6 +242,13 @@ int v7fs_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
 /* 2.11BSD's check: icheck+dcheck without the V7 repair modes (mode is ignored).
  * The on-disk layout is the V7 engine's, so it shares filsys_edition_t. */
 int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
+/* V6's check/maintenance: its isize semantics (s_isize = i-list block count),
+ * ILARG bmap and 32-byte inode make these V6-specific, but they operate on the
+ * shared filsys_edition_t. */
+int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
+int v6_ncheck(filsys_edition_t *fs, uint32_t ino);
+int v6_clri(filsys_edition_t *fs, uint32_t ino);
+int v6_resolve_dups(filsys_edition_t *fs);
 
 /* ---- maintenance (V7's ncheck / clri / salv -a) ------------------------ */
 

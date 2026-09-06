@@ -122,16 +122,17 @@ static const filsys_edition_t v7 = {
     .bsize = V7_BSIZE, .bo = &bo_me,
     .nicfree = V7_NICFREE, .nicinod = V7_NICINOD,
     .inode_size = V7_INODESZ, .ndaddr = V7_NDADDR, .niaddr = V7_NIADDR,
-    .addr_width = 3, .fmod_back = 2,
+    .addr_width = 3, .fmod_back = 2, .rootino = V7_ROOTINO,
     .max_namlen = V7_DIRSIZ, .dirent_size = V7_DIRENTSZ,
     .ifmt = V7_IFMT, .ifdir = V7_IFDIR, .ifreg = V7_IFREG,
     .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .ifmpc = V7_IFMPC, .ifmpb = V7_IFMPB,
 };
 static const filsys_edition_t v6 = {
-    .ops = &v6fs_ops, .state_size = sizeof(v6fs_t), .name = "v6",
+    .ops = &v6fs_ops, .state_size = sizeof(filsys_edition_t), .name = "v6",
     .bsize = V6_BSIZE, .bo = &bo_me,
     .nicfree = V6_NICFREE, .nicinod = V6_NICINOD,
     .inode_size = V6_INODESZ, .ndaddr = V6_NDADDR, .niaddr = V6_NIADDR,
+    .rootino = V6_ROOTINO,
     .max_namlen = V6_DIRSIZ, .dirent_size = 2 + V6_DIRSIZ,
     .ifmt = V6_IFMT, .ifdir = V6_IFDIR, .ifchr = V6_IFCHR, .ifblk = V6_IFBLK,
 };
@@ -158,7 +159,7 @@ static const filsys_edition_t bsd211 = {
     .bsize = BSD211_BSIZE, .bo = &bo_me,
     .nicfree = BSD211_NICFREE, .nicinod = BSD211_NICINOD,
     .inode_size = BSD211_INODESZ, .ndaddr = BSD211_NDADDR, .niaddr = BSD211_NIADDR,
-    .addr_width = 4, .fmod_back = 3,
+    .addr_width = 4, .fmod_back = 3, .rootino = BSD211_ROOTINO,
     .max_namlen = BSD211_MAXNAMLEN, .dirent_size = 0,
     .ifmt = BSD211_IFMT, .ifdir = BSD211_IFDIR, .ifreg = BSD211_IFREG,
     .ifchr = BSD211_IFCHR, .ifblk = BSD211_IFBLK,
