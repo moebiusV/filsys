@@ -1320,8 +1320,8 @@ int v6fs_resolve_dups(v6fs_t *fs)
  * v6fs_t*, so there is no cast anywhere. */
 
 static int v6fs_open_op(void *fs, const char *path, int readonly,
-                        const filsys_format_t *fmt, uint64_t offset) {
-    (void)fmt;   /* V6 has no byte-order or block-size variants */
+                        const filsys_edition_t *proto, uint64_t offset) {
+    (void)proto;   /* V6 has no byte-order or block-size variants */
     return v6fs_open(fs, path, readonly, offset);
 }
 static uint32_t v6fs_blocksize_op(const void *fs) { (void)fs; return V6_BSIZE; }

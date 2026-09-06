@@ -1,19 +1,19 @@
 /* filsys_format.c - the per-format descriptor table.
  *
  * Each edition's on-disk constants and structural predicates (mode conversion,
- * device/directory detection) live here as a filsys_format_t row; filsys.c and
+ * device/directory detection) live here as a filsys_edition_t row; filsys.c and
  * the standalone tools look a format up by edition and read its descriptor
  * rather than switching on the edition.  Adding a format is a new row.
  *
  * SPDX-License-Identifier: ISC
  */
 #include <config.h>
+#include <string.h>
 #include "filsys.h"
-#include "filsys_format.h"
+#include "v7fs.h"
 #include "filsys_ops.h"
 #include "v1fs.h"
 #include "v6fs.h"
-#include "v7fs.h"
 #include "pdp7fs.h"
 #include "bsd211fs.h"
 
@@ -49,7 +49,7 @@ static uint32_t to_p7_mode(mode_t m, int isdir) {
 /* V1's mode conversion: a two-class permission model, a single universal exec
  * bit, devices identified by inode number (< 41), and regular files carrying
  * no type bit. */
-static mode_t v1_to_posix_mode(const filsys_format_t *f, const filsys_inode_t *ip) {
+static mode_t v1_to_posix_mode(const filsys_edition_t *f, const filsys_inode_t *ip) {
     (void)f;
     mode_t m = (ip->mode & V1_IFDIR) ? S_IFDIR : S_IFREG;
     if (ip->mode & V1_IREAD)  m |= S_IRUSR;
@@ -60,19 +60,19 @@ static mode_t v1_to_posix_mode(const filsys_format_t *f, const filsys_inode_t *i
     if (ip->mode & V1_ISUID)  m |= S_ISUID;
     return m;
 }
-static int v1_is_dir(const filsys_format_t *f, const filsys_inode_t *ip) {
+static int v1_is_dir(const filsys_edition_t *f, const filsys_inode_t *ip) {
     (void)f;
     return (ip->mode & V1_IFDIR) != 0;
 }
-static int v1_is_device(const filsys_format_t *f, const filsys_inode_t *ip) {
+static int v1_is_device(const filsys_edition_t *f, const filsys_inode_t *ip) {
     (void)f;
     return ip->ino < V1_ROOTINO;   /* V1: devices by inode number */
 }
-static uint32_t v1_to_disk_mode(const filsys_format_t *f, mode_t m, int type) {
+static uint32_t v1_to_disk_mode(const filsys_edition_t *f, mode_t m, int type) {
     (void)f;
     return to_v1_mode(m, type == FILSYS_FT_DIR);
 }
-static uint32_t v1_chmod_mode(const filsys_format_t *f, uint32_t old, mode_t m) {
+static uint32_t v1_chmod_mode(const filsys_edition_t *f, uint32_t old, mode_t m) {
     (void)f;
     /* V1 chmod replaces the low six permission bits (preserving IALLOC/IFDIR/
      * ILARG) and, like V1's sys/chmod, clears setuid+exec on directories. */
@@ -84,7 +84,7 @@ static uint32_t v1_chmod_mode(const filsys_format_t *f, uint32_t old, mode_t m) 
 
 /* PDP-7's mode conversion: four permission bits (owner r/w, world r/w), no
  * execute, devices as I_SPECIAL inodes, directories as I_DIRECTORY. */
-static mode_t p7_to_posix_mode(const filsys_format_t *f, const filsys_inode_t *ip) {
+static mode_t p7_to_posix_mode(const filsys_edition_t *f, const filsys_inode_t *ip) {
     (void)f;
     mode_t m = (ip->mode & P7_IDIR)  ? S_IFDIR :
                (ip->mode & P7_ISPEC) ? S_IFCHR : S_IFREG;
@@ -94,19 +94,19 @@ static mode_t p7_to_posix_mode(const filsys_format_t *f, const filsys_inode_t *i
     if (ip->mode & P7_IWWRITE) m |= S_IWGRP | S_IWOTH;
     return m;
 }
-static int p7_is_dir(const filsys_format_t *f, const filsys_inode_t *ip) {
+static int p7_is_dir(const filsys_edition_t *f, const filsys_inode_t *ip) {
     (void)f;
     return (ip->mode & P7_IDIR) != 0;
 }
-static int p7_is_device(const filsys_format_t *f, const filsys_inode_t *ip) {
+static int p7_is_device(const filsys_edition_t *f, const filsys_inode_t *ip) {
     (void)f;
     return (ip->mode & P7_ISPEC) != 0;
 }
-static uint32_t p7_to_disk_mode(const filsys_format_t *f, mode_t m, int type) {
+static uint32_t p7_to_disk_mode(const filsys_edition_t *f, mode_t m, int type) {
     (void)f;
     return to_p7_mode(m, type == FILSYS_FT_DIR);
 }
-static uint32_t p7_chmod_mode(const filsys_format_t *f, uint32_t old, mode_t m) {
+static uint32_t p7_chmod_mode(const filsys_edition_t *f, uint32_t old, mode_t m) {
     (void)f;
     uint32_t bits = to_p7_mode(m, 0) & (uint32_t)017;
     return (old & ~(uint32_t)017) | bits;
@@ -117,8 +117,8 @@ static uint32_t p7_chmod_mode(const filsys_format_t *f, uint32_t old, mode_t m) 
 /* The V7 format is the prototype for the V7-family variants (32V, Coherent,
  * Xenix, 2.9BSD): each copies it and overrides only what differs, so a new
  * variant is a few field assignments rather than a full descriptor row. */
-static const filsys_format_t v7 = {
-    .ops = &v7fs_ops, .state_size = sizeof(v7fs_t), .name = "v7",
+static const filsys_edition_t v7 = {
+    .ops = &v7fs_ops, .state_size = sizeof(filsys_edition_t), .name = "v7",
     .bsize = V7_BSIZE, .bo = &bo_me,
     .nicfree = V7_NICFREE, .nicinod = V7_NICINOD,
     .inode_size = V7_INODESZ, .ndaddr = V7_NDADDR, .niaddr = V7_NIADDR,
@@ -126,7 +126,7 @@ static const filsys_format_t v7 = {
     .ifmt = V7_IFMT, .ifdir = V7_IFDIR, .ifreg = V7_IFREG,
     .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .ifmpc = V7_IFMPC, .ifmpb = V7_IFMPB,
 };
-static const filsys_format_t v6 = {
+static const filsys_edition_t v6 = {
     .ops = &v6fs_ops, .state_size = sizeof(v6fs_t), .name = "v6",
     .bsize = V6_BSIZE, .bo = &bo_me,
     .nicfree = V6_NICFREE, .nicinod = V6_NICINOD,
@@ -134,7 +134,7 @@ static const filsys_format_t v6 = {
     .max_namlen = V6_DIRSIZ, .dirent_size = 2 + V6_DIRSIZ,
     .ifmt = V6_IFMT, .ifdir = V6_IFDIR, .ifchr = V6_IFCHR, .ifblk = V6_IFBLK,
 };
-static const filsys_format_t v1 = {
+static const filsys_edition_t v1 = {
     .ops = &v1fs_ops, .state_size = sizeof(v1fs_t), .name = "v1",
     .bsize = V1_BSIZE, .bo = &bo_me,
     .inode_size = V1_INODESZ, .ndaddr = V1_NDADDR, .niaddr = V1_NIADDR,
@@ -143,7 +143,7 @@ static const filsys_format_t v1 = {
     .is_device = v1_is_device, .to_disk_mode = v1_to_disk_mode,
     .chmod_mode = v1_chmod_mode,
 };
-static const filsys_format_t pdp7 = {
+static const filsys_edition_t pdp7 = {
     .ops = &p7fs_ops, .state_size = sizeof(p7fs_t), .name = "pdp7",
     .bsize = P7_WSIZE * 2, .bo = &bo_me,
     .inode_size = P7_INODESZ, .niaddr = P7_NIADDR,
@@ -152,7 +152,7 @@ static const filsys_format_t pdp7 = {
     .is_device = p7_is_device, .to_disk_mode = p7_to_disk_mode,
     .chmod_mode = p7_chmod_mode,
 };
-static const filsys_format_t bsd211 = {
+static const filsys_edition_t bsd211 = {
     .ops = &bsd211fs_ops, .state_size = sizeof(bsd211fs_t), .name = "bsd211",
     .bsize = BSD211_BSIZE, .bo = &bo_me,
     .nicfree = BSD211_NICFREE, .nicinod = BSD211_NICINOD,
@@ -163,7 +163,7 @@ static const filsys_format_t bsd211 = {
     .iflnk = BSD211_IFLNK, .ifsock = BSD211_IFSOCK,
 };
 
-filsys_format_t filsys_getformat(int edition) {
+filsys_edition_t filsys_getformat(int edition) {
     switch (edition) {
     case FILSYS_PDP7:   return pdp7;
     case FILSYS_V1:     return v1;
@@ -171,28 +171,28 @@ filsys_format_t filsys_getformat(int edition) {
     case FILSYS_BSD211: return bsd211;
     case FILSYS_V7:     return v7;
     case FILSYS_32V: {
-        filsys_format_t f = v7;
+        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
         f.name = "vax32"; f.bo = &bo_le; f.pack4 = 1;
         return f;
     }
     case FILSYS_COHERENT: {
-        filsys_format_t f = v7;
+        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
         f.name = "coherent"; f.nicfree = V7_COH_NICFREE; f.interleave = 1;
         return f;
     }
     case FILSYS_XENIX: {
-        filsys_format_t f = v7;
+        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
         f.name = "xenix"; f.bsize = 1024; f.bo = &bo_le; f.nicfree = V7_XEN_NICFREE;
         f.magic = V7_XEN_MAGIC; f.magic_off = 0x3F8;
         return f;
     }
     case FILSYS_BSD29: {
-        filsys_format_t f = v7;
+        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
         f.name = "bsd29"; f.bsize = 1024; f.ndaddr = 4; f.niaddr = 7;
         return f;
     }
     default: {
-        filsys_format_t f = {0};
+        filsys_edition_t f = {0};
         return f;   /* ops == NULL marks an unknown edition */
     }
     }

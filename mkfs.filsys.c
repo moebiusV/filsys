@@ -70,7 +70,7 @@ static uint8_t  v7_sbuf[V7_MAXBSIZE]; /* in-core superblock (block 1) */
 static uint8_t  v7_freebuf[V7_MAXBSIZE];
 static uint16_t v7_nfree;
 static uint32_t v7_tinode, v7_tfree;
-static filsys_format_t v7_fmt; /* format descriptor (bo, bsize, pack4, ...) */
+static filsys_edition_t v7_fmt; /* format descriptor (bo, bsize, pack4, ...) */
 static uint32_t v7_ipb = V7_INOPB;  /* inodes per block (bsize / inode_size) */
 static uint16_t v7_m = 1, v7_n = 1;   /* interleave factors (s_m/s_n, coherent) */
 

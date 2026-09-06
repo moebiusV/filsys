@@ -25,7 +25,17 @@
 #include <sys/types.h>
 
 #include "filsys.h"
-#include "filsys_format.h"
+#include "bo.h"
+
+struct filsys_ops;   /* forward: the per-backend vtable (see filsys_ops.h) */
+
+/* The type a to_disk_mode caller is encoding (create / mkdir / mknod). */
+enum {
+    FILSYS_FT_REG = 0,
+    FILSYS_FT_DIR,
+    FILSYS_FT_CHR,
+    FILSYS_FT_BLK
+};
 
 enum {
     V7_BSIZE    = 512,          /* default / legacy block size */
@@ -87,18 +97,36 @@ static inline int fb_free_off(int pack4)   { return pack4 ? 4 : 2; }
 typedef filsys_inode_t  v7_inode_t;
 typedef filsys_dirent_t v7_dirent_t;
 
-typedef struct {
+typedef struct filsys_edition {
+    /* ---- format descriptor (static; set by filsys_getformat) ---- */
+    const struct filsys_ops *ops;   /* backend vtable */
+    size_t      state_size;         /* sizeof the backend state struct */
+    const char *name;               /* "-v" spelling */
+    const byte_order_ops_t *bo;     /* byte-order ops (bo_le / bo_be / bo_me) */
+    uint32_t    bsize;              /* logical block size (512 / 1024) */
+    uint16_t    nicfree;            /* free-block cache depth (50 / 64 / 100) */
+    uint16_t    nicinod;            /* free-inode cache depth */
+    uint8_t     pack4;              /* 4-byte-aligned superblock fields (32V) */
+    uint8_t     interleave;         /* Coherent s_m/s_n interleave */
+    uint32_t    magic;              /* superblock magic word (0 = none) */
+    int         magic_off;          /* byte offset of magic in the superblock */
+    uint8_t     inode_size;         /* bytes per on-disk inode */
+    uint8_t     ndaddr;             /* direct block addresses per inode */
+    uint8_t     niaddr;             /* total block addresses per inode */
+    uint8_t     max_namlen;         /* longest entry name (8 / 14 / 63) */
+    uint8_t     dirent_size;        /* bytes per fixed entry (0 = variable) */
+    /* on-disk type field (V6/V7/BSD211 family); 0 for V1/PDP-7 */
+    uint16_t    ifmt, ifdir, ifreg, ifchr, ifblk, iflnk, ifsock, ifmpc, ifmpb;
+    /* mode conversion (NULL = derive from the constants above) */
+    mode_t   (*to_posix_mode)(const struct filsys_edition *, const filsys_inode_t *);
+    int      (*is_dir)(const struct filsys_edition *, const filsys_inode_t *);
+    int      (*is_device)(const struct filsys_edition *, const filsys_inode_t *);
+    uint32_t (*to_disk_mode)(const struct filsys_edition *, mode_t m, int type);
+    uint32_t (*chmod_mode)(const struct filsys_edition *, uint32_t old_mode, mode_t m);
+
+    /* ---- runtime (filled by v7fs_open) ---- */
     int        fd;             /* open disk image */
     int        readonly;
-    const byte_order_ops_t *bo; /* byte-order ops (bo_me / bo_le) */
-    uint32_t   bsize;           /* logical block size (512 or 1024) */
-    uint8_t    pack4;           /* 4-byte-aligned superblock fields (32V) */
-    uint16_t   nicfree;         /* free-block cache depth (50 / 64 / 100) */
-    uint16_t   inode_size;      /* bytes per on-disk inode */
-    uint8_t    ndaddr;          /* direct block addresses per inode */
-    uint8_t    niaddr;          /* total block addresses per inode */
-    uint8_t    interleave;      /* Coherent s_m/s_n interleave */
-    uint32_t   magic;           /* Xenix magic (0 = none) */
     uint64_t   base;           /* byte offset of this filesystem within the file */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
@@ -114,74 +142,80 @@ typedef struct {
     uint16_t   n;              /* s_n interleave factor (coherent) */
     uint32_t   unique;         /* s_unique (coherent) */
     int        fmod;           /* s_fmod: superblock modified flag (dirty) */
-} v7fs_t;
+} filsys_edition_t;
+
+/* The descriptor for an edition: a copy of the V7 default with the edition's
+ * overrides.  Returns a zeroed descriptor (ops == NULL) for an unknown
+ * edition. */
+filsys_edition_t filsys_getformat(int edition);
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-/* Open a disk image.  Returns 0, or -errno.  fmt is the format descriptor
- * (byte order, block size, free-cache width, superblock packing); offset is
- * the byte offset of the filesystem within the file (0 = block 0 of the
- * file). */
-int v7fs_open(v7fs_t *fs, const char *path, int readonly,
-              const filsys_format_t *fmt, uint64_t offset);
+/* Open a disk image.  Returns 0, or -errno.  proto is the format descriptor
+ * returned by filsys_getformat() (byte order, block size, free-cache width,
+ * superblock packing); v7fs_open copies it into *fs and fills the runtime
+ * fields.  offset is the byte offset of the filesystem within the file (0 =
+ * block 0 of the file). */
+int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
+              const filsys_edition_t *proto, uint64_t offset);
 /* Flush the superblock and close. */
-void v7fs_close(v7fs_t *fs);
+void v7fs_close(filsys_edition_t *fs);
 /* Flush the superblock (and pending metadata) to the image without closing. */
-int v7fs_sync(v7fs_t *fs);
+int v7fs_sync(filsys_edition_t *fs);
 /* Mark the filesystem dirty (s_fmod) and flush: a read-write mount is dirty
  * until a clean close clears it, so a crash leaves the image flagged for fsck. */
-int v7fs_mark_dirty(v7fs_t *fs);
+int v7fs_mark_dirty(filsys_edition_t *fs);
 
 /* ---- block / inode io -------------------------------------------------- */
 
-int v7fs_read_block(v7fs_t *fs, uint32_t bno, uint8_t *buf);
-int v7fs_write_block(v7fs_t *fs, uint32_t bno, const uint8_t *buf);
+int v7fs_read_block(filsys_edition_t *fs, uint32_t bno, uint8_t *buf);
+int v7fs_write_block(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf);
 
 /* Block-size-dependent quantities: the logical block size is fs->bsize, not the
  * compile-time V7_BSIZE.  4-byte daddr_t per indirect, 64-byte inodes. */
-static inline uint32_t v7_nindir(const v7fs_t *fs) { return fs->bsize / 4; }
-static inline uint32_t v7_inopb(const v7fs_t *fs)  { return fs->bsize / fs->inode_size; }
+static inline uint32_t v7_nindir(const filsys_edition_t *fs) { return fs->bsize / 4; }
+static inline uint32_t v7_inopb(const filsys_edition_t *fs)  { return fs->bsize / fs->inode_size; }
 /* itod / itoo: inode number -> block and offset. */
-static inline uint32_t v7_itod(const v7fs_t *fs, uint32_t ino) { return 2 + (ino - 1) / v7_inopb(fs); }
-static inline uint32_t v7_itoo(const v7fs_t *fs, uint32_t ino) { return (ino - 1) % v7_inopb(fs); }
+static inline uint32_t v7_itod(const filsys_edition_t *fs, uint32_t ino) { return 2 + (ino - 1) / v7_inopb(fs); }
+static inline uint32_t v7_itoo(const filsys_edition_t *fs, uint32_t ino) { return (ino - 1) % v7_inopb(fs); }
 
-int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip);
-int v7fs_write_inode(v7fs_t *fs, uint32_t ino, const v7_inode_t *ip);
+int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip);
+int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip);
 
 /* ---- allocation -------------------------------------------------------- */
 
 /* Allocate a free data block into *bno (0 = absent/sparse). */
-int v7fs_balloc(v7fs_t *fs, uint32_t *bno);
-void v7fs_bfree(v7fs_t *fs, uint32_t bno);
+int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno);
+void v7fs_bfree(filsys_edition_t *fs, uint32_t bno);
 /* Allocate a free inode into *ino. */
-int v7fs_ialloc(v7fs_t *fs, uint32_t *ino);
-void v7fs_ifree(v7fs_t *fs, uint32_t ino);
+int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino);
+void v7fs_ifree(filsys_edition_t *fs, uint32_t ino);
 /* Free every data block referenced by an inode (truncate to 0). */
-int v7fs_itrunc(v7fs_t *fs, v7_inode_t *ip);
+int v7fs_itrunc(filsys_edition_t *fs, v7_inode_t *ip);
 /* Free blocks [first_blk, ...) only; first_blk == 0 == v7fs_itrunc. */
-int v7fs_itrunc_from(v7fs_t *fs, v7_inode_t *ip, uint32_t first_blk);
+int v7fs_itrunc_from(filsys_edition_t *fs, v7_inode_t *ip, uint32_t first_blk);
 
 /* ---- file / directory data --------------------------------------------- */
 
 /* Map a logical block of an inode to a physical block (allocate if create). */
-int v7fs_bmap(v7fs_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
+int v7fs_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
 
-ssize_t v7fs_file_read(v7fs_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off);
-ssize_t v7fs_file_write(v7fs_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
+ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off);
+ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
 
 /* Read a directory's entries.  Caller frees with v7fs_dirents_free. */
-int v7fs_dir_read(v7fs_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count);
+int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count);
 void v7fs_dirents_free(v7_dirent_t *ents);
 
 /* Look up name in a directory; returns 0 and *ino, or -ENOENT. */
-int v7fs_dir_lookup(v7fs_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino);
+int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino);
 /* Add an entry (name must be <= V7_DIRSIZ, no '/'); 0 or -errno. */
-int v7fs_dir_add(v7fs_t *fs, v7_inode_t *ip, uint32_t ino, const char *name);
+int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name);
 /* Remove an entry; 0 or -errno. */
-int v7fs_dir_remove(v7fs_t *fs, v7_inode_t *ip, const char *name);
+int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name);
 
 /* Resolve a path into an inode number.  0 or -errno. */
-int v7fs_lookup(v7fs_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip);
+int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip);
 
 /* ---- integrity check ---------------------------------------------------- */
 
@@ -201,16 +235,16 @@ typedef struct {
  * free list from the block-usage map (icheck -s) instead of checking it; the
  * filesystem must have been opened read-write.  Reports to stdout; returns 0
  * if no errors were found, -1 otherwise. */
-int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode);
+int v7fs_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
 
 /* ---- maintenance (V7's ncheck / clri / salv -a) ------------------------ */
 
 /* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
-int v7fs_ncheck(v7fs_t *fs, uint32_t ino);
+int v7fs_ncheck(filsys_edition_t *fs, uint32_t ino);
 /* Zero inode `ino` (clri).  Returns 0 or -errno. */
-int v7fs_clri(v7fs_t *fs, uint32_t ino);
+int v7fs_clri(filsys_edition_t *fs, uint32_t ino);
 /* Resolve duplicate blocks (salv -a): give each second reference a private
  * copy of the block, then rebuild the free list.  Returns 0 or -errno. */
-int v7fs_resolve_dups(v7fs_t *fs);
+int v7fs_resolve_dups(filsys_edition_t *fs);
 
 #endif /* V7FS_H */

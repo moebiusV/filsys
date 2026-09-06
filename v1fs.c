@@ -1093,8 +1093,8 @@ int v1fs_clri(v1fs_t *fs, uint32_t ino)
  * v1fs_t*, so there is no cast anywhere. */
 
 static int v1fs_open_op(void *fs, const char *path, int readonly,
-                        const filsys_format_t *fmt, uint64_t offset) {
-    (void)fmt;   /* V1 has no byte-order or block-size variants */
+                        const filsys_edition_t *proto, uint64_t offset) {
+    (void)proto;   /* V1 has no byte-order or block-size variants */
     return v1fs_open(fs, path, readonly, offset);
 }
 static uint32_t v1fs_blocksize_op(const void *fs) { (void)fs; return V1_BSIZE; }
