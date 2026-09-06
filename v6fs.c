@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v6fs.c - Sixth Edition Unix filesystem, on-disk access layer.
  *
@@ -1320,10 +1320,12 @@ int v6fs_resolve_dups(v6fs_t *fs)
  * v6fs_t*, so there is no cast anywhere. */
 
 static int v6fs_open_op(void *fs, const char *path, int readonly, int le,
-                        uint64_t offset) {
+                        uint64_t offset, uint32_t bsize) {
     (void)le;   /* V6 has no little-endian variant */
+    (void)bsize;
     return v6fs_open(fs, path, readonly, offset);
 }
+static uint32_t v6fs_blocksize_op(const void *fs) { (void)fs; return V6_BSIZE; }
 static void v6fs_close_op(void *fs) { v6fs_close(fs); }
 static int v6fs_sync_op(void *fs) { return v6fs_sync(fs); }
 static int v6fs_mark_dirty_op(void *fs) { return v6fs_mark_dirty(fs); }
@@ -1368,7 +1370,7 @@ static uint64_t v6fs_max_file_op(void *fs) {
 
 const struct filsys_ops v6fs_ops = {
     .name        = "v6",
-    .blocksize   = V6_BSIZE,
+    .blocksize   = v6fs_blocksize_op,
     .open        = v6fs_open_op,
     .close       = v6fs_close_op,
     .sync        = v6fs_sync_op,

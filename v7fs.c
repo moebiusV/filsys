@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v7fs.c - Seventh Edition Unix filesystem, on-disk access layer.
  *
@@ -26,44 +26,55 @@ static int super_write(v7fs_t *fs);
 /* ---- lifecycle --------------------------------------------------------- */
 
 int v7fs_open(v7fs_t *fs, const char *path, int readonly, int mode,
-              uint64_t offset) {
+              uint64_t offset, uint32_t bsize) {
     memset(fs, 0, sizeof(*fs));
     fs->readonly = readonly;
-    fs->le = (mode == 1);            /* only 32V is little-endian */
+    fs->le = (mode == 1 || mode == 3);   /* 32V and Xenix are little-endian */
     fs->coherent = (mode == 2);      /* Coherent: middle-endian like V7, NICFREE=64 */
+    fs->xenix = (mode == 3);         /* Xenix: little-endian, 2-byte packing, NICFREE=100 */
+    fs->bsize = bsize;               /* logical block size (set before the superblock read) */
+    fs->ndaddr = (mode == 4) ? 4 : V7_NDADDR;   /* bsd29: 4 direct + 3 indirect */
+    fs->niaddr = (mode == 4) ? 7 : V7_NIADDR;
     fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
         return -errno;
 
-    uint8_t sb[V7_BSIZE];
+    uint8_t sb[V7_MAXBSIZE];
     if (v7fs_read_block(fs, V7_SUPERB, sb)) {
         close(fs->fd);
         return -EIO;
     }
     fs->isize  = v7_get16le(sb + 0);
-    fs->fsize  = v7_get32(sb + sb_fsize_off(fs->le, fs->coherent), fs->le);
-    fs->nfree  = v7_get16le(sb + sb_nfree_off(fs->le, fs->coherent));
-    for (int i = 0; i < sb_nicfree(fs->coherent); i++)
-        fs->free[i] = v7_get32(sb + sb_free_off(fs->le, fs->coherent) + 4 * i, fs->le);
-    fs->ninode = v7_get16le(sb + sb_ninode_off(fs->le, fs->coherent));
+    fs->fsize  = v7_get32(sb + sb_fsize_off(fs->le, fs->coherent, fs->xenix), fs->le);
+    fs->nfree  = v7_get16le(sb + sb_nfree_off(fs->le, fs->coherent, fs->xenix));
+    for (int i = 0; i < sb_nicfree(fs->coherent, fs->xenix); i++)
+        fs->free[i] = v7_get32(sb + sb_free_off(fs->le, fs->coherent, fs->xenix) + 4 * i, fs->le);
+    fs->ninode = v7_get16le(sb + sb_ninode_off(fs->le, fs->coherent, fs->xenix));
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->inode[i] = v7_get16le(sb + sb_inode_off(fs->le, fs->coherent) + 2 * i);
-    fs->time   = v7_get32(sb + sb_time_off(fs->le, fs->coherent), fs->le);
-    fs->fmod   = sb[sb_time_off(fs->le, fs->coherent) - 2];  /* s_fmod */
+        fs->inode[i] = v7_get16le(sb + sb_inode_off(fs->le, fs->coherent, fs->xenix) + 2 * i);
+    fs->time   = v7_get32(sb + sb_time_off(fs->le, fs->coherent, fs->xenix), fs->le);
+    fs->fmod   = sb[sb_time_off(fs->le, fs->coherent, fs->xenix) - 2];  /* s_fmod */
     /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
      * them); the 50/100-entry caches are only the in-core spill.  Read them so
      * statfs can report real free space rather than the cache depth.  They sit
      * immediately after s_time, whose offset already accounts for the layout. */
-    if (fs->le == 0) {
-        int toff = sb_time_off(fs->le, fs->coherent);
+    if (fs->le == 0 || fs->xenix) {
+        int toff = sb_time_off(fs->le, fs->coherent, fs->xenix);
         fs->tfree  = v7_get32(sb + toff + 4, fs->le);
         fs->tinode = v7_get16le(sb + toff + 8);
     }
     if (fs->coherent) {
-        fs->m      = v7_get16le(sb + sb_time_off(fs->le, fs->coherent) + 10);
-        fs->n      = v7_get16le(sb + sb_time_off(fs->le, fs->coherent) + 12);
-        fs->unique = v7_get32(sb + sb_time_off(fs->le, fs->coherent) + 26, fs->le);
+        fs->m      = v7_get16le(sb + sb_time_off(fs->le, fs->coherent, fs->xenix) + 10);
+        fs->n      = v7_get16le(sb + sb_time_off(fs->le, fs->coherent, fs->xenix) + 12);
+        fs->unique = v7_get32(sb + sb_time_off(fs->le, fs->coherent, fs->xenix) + 26, fs->le);
+    }
+    if (fs->xenix && v7_get32le(sb + 0x3F8) != V7_XEN_MAGIC) {
+        /* Xenix carries a magic at superblock offset 1016; validate it rather
+         * than mis-decoding a non-Xenix volume named -v xenix. */
+        close(fs->fd);
+        fs->fd = -1;
+        return -EINVAL;
     }
 
     /* Reject a superblock that claims more disk than the image file actually
@@ -74,7 +85,7 @@ int v7fs_open(v7fs_t *fs, const char *path, int readonly, int mode,
     struct stat st;
     if (fstat(fs->fd, &st) != 0 ||
         fs->isize < 2 ||
-        fs->base + (uint64_t)fs->fsize * V7_BSIZE > (uint64_t)st.st_size ||
+        fs->base + (uint64_t)fs->fsize * fs->bsize > (uint64_t)st.st_size ||
         fs->fsize <= fs->isize) {
         close(fs->fd);
         fs->fd = -1;
@@ -114,8 +125,8 @@ int v7fs_mark_dirty(v7fs_t *fs) {
 /* ---- block io ---------------------------------------------------------- */
 
 int v7fs_read_block(v7fs_t *fs, uint32_t bno, uint8_t *buf) {
-    ssize_t n = pread(fs->fd, buf, V7_BSIZE, (off_t)bno * V7_BSIZE + (off_t)fs->base);
-    if (n != V7_BSIZE)
+    ssize_t n = pread(fs->fd, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
+    if (n != fs->bsize)
         return -EIO;
     return 0;
 }
@@ -123,8 +134,8 @@ int v7fs_read_block(v7fs_t *fs, uint32_t bno, uint8_t *buf) {
 int v7fs_write_block(v7fs_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
-    ssize_t n = pwrite(fs->fd, buf, V7_BSIZE, (off_t)bno * V7_BSIZE + (off_t)fs->base);
-    if (n != V7_BSIZE)
+    ssize_t n = pwrite(fs->fd, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
+    if (n != fs->bsize)
         return -EIO;
     return 0;
 }
@@ -134,30 +145,30 @@ int v7fs_write_block(v7fs_t *fs, uint32_t bno, const uint8_t *buf) {
 static int super_write(v7fs_t *fs) {
     if (fs->readonly)
         return 0;
-    uint8_t sb[V7_BSIZE];
+    uint8_t sb[V7_MAXBSIZE];
     /* Read the current block to preserve the fields we don't maintain
      * (s_tfree, s_tinode, s_m, s_n, s_fname, s_fpack, ...). */
     if (v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
     v7_put16le(sb + 0, fs->isize);
-    v7_put32(sb + sb_fsize_off(fs->le, fs->coherent), fs->le, fs->fsize);
-    v7_put16le(sb + sb_nfree_off(fs->le, fs->coherent), fs->nfree);
-    for (int i = 0; i < sb_nicfree(fs->coherent); i++)
-        v7_put32(sb + sb_free_off(fs->le, fs->coherent) + 4 * i, fs->le, fs->free[i]);
-    v7_put16le(sb + sb_ninode_off(fs->le, fs->coherent), fs->ninode);
+    v7_put32(sb + sb_fsize_off(fs->le, fs->coherent, fs->xenix), fs->le, fs->fsize);
+    v7_put16le(sb + sb_nfree_off(fs->le, fs->coherent, fs->xenix), fs->nfree);
+    for (int i = 0; i < sb_nicfree(fs->coherent, fs->xenix); i++)
+        v7_put32(sb + sb_free_off(fs->le, fs->coherent, fs->xenix) + 4 * i, fs->le, fs->free[i]);
+    v7_put16le(sb + sb_ninode_off(fs->le, fs->coherent, fs->xenix), fs->ninode);
     for (int i = 0; i < V7_NICINOD; i++)
-        v7_put16le(sb + sb_inode_off(fs->le, fs->coherent) + 2 * i, fs->inode[i]);
-    v7_put32(sb + sb_time_off(fs->le, fs->coherent), fs->le, (uint32_t)time(NULL));  /* s_time */
-    sb[sb_time_off(fs->le, fs->coherent) - 2] = (uint8_t)(fs->fmod != 0);            /* s_fmod */
-    if (fs->le == 0) {
-        int toff = sb_time_off(fs->le, fs->coherent);
+        v7_put16le(sb + sb_inode_off(fs->le, fs->coherent, fs->xenix) + 2 * i, fs->inode[i]);
+    v7_put32(sb + sb_time_off(fs->le, fs->coherent, fs->xenix), fs->le, (uint32_t)time(NULL));  /* s_time */
+    sb[sb_time_off(fs->le, fs->coherent, fs->xenix) - 2] = (uint8_t)(fs->fmod != 0);            /* s_fmod */
+    if (fs->le == 0 || fs->xenix) {
+        int toff = sb_time_off(fs->le, fs->coherent, fs->xenix);
         v7_put32(sb + toff + 4, fs->le, fs->tfree);        /* s_tfree */
         v7_put16le(sb + toff + 8, (uint16_t)fs->tinode);   /* s_tinode */
     }
     if (fs->coherent) {
-        v7_put16le(sb + sb_time_off(fs->le, fs->coherent) + 10, fs->m);
-        v7_put16le(sb + sb_time_off(fs->le, fs->coherent) + 12, fs->n);
-        v7_put32(sb + sb_time_off(fs->le, fs->coherent) + 26, fs->le, fs->unique);
+        v7_put16le(sb + sb_time_off(fs->le, fs->coherent, fs->xenix) + 10, fs->m);
+        v7_put16le(sb + sb_time_off(fs->le, fs->coherent, fs->xenix) + 12, fs->n);
+        v7_put32(sb + sb_time_off(fs->le, fs->coherent, fs->xenix) + 26, fs->le, fs->unique);
     }
     return v7fs_write_block(fs, V7_SUPERB, sb);
 }
@@ -167,11 +178,11 @@ static int super_write(v7fs_t *fs) {
 int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip) {
     if (ino == 0)
         return -EINVAL;
-    uint32_t bno = v7_itod(ino);
-    uint32_t off = v7_itoo(ino);
+    uint32_t bno = v7_itod(fs, ino);
+    uint32_t off = v7_itoo(fs, ino);
     if (bno >= fs->isize)   /* i-list lives in blocks 2..s_isize-1 */
         return -EINVAL;
-    uint8_t raw[V7_BSIZE];
+    uint8_t raw[V7_MAXBSIZE];
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     const uint8_t *d = raw + off * V7_INODESZ;
@@ -182,7 +193,7 @@ int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip) {
     ip->uid   = (int16_t)v7_get16le(d + 4);
     ip->gid   = (int16_t)v7_get16le(d + 6);
     ip->size  = v7_get32(d + 8, fs->le);
-    for (int i = 0; i < V7_NIADDR; i++)
+    for (int i = 0; i < fs->niaddr; i++)
         ip->addr[i] = v7_get24(d + 12 + 3 * i, fs->le);
     ip->atime = v7_get32(d + 52, fs->le);
     ip->mtime = v7_get32(d + 56, fs->le);
@@ -193,11 +204,11 @@ int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip) {
 int v7fs_write_inode(v7fs_t *fs, uint32_t ino, const v7_inode_t *ip) {
     if (ino == 0)
         return -EINVAL;
-    uint32_t bno = v7_itod(ino);
-    uint32_t off = v7_itoo(ino);
+    uint32_t bno = v7_itod(fs, ino);
+    uint32_t off = v7_itoo(fs, ino);
     if (bno >= fs->isize)
         return -EINVAL;
-    uint8_t raw[V7_BSIZE];
+    uint8_t raw[V7_MAXBSIZE];
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * V7_INODESZ;
@@ -206,7 +217,7 @@ int v7fs_write_inode(v7fs_t *fs, uint32_t ino, const v7_inode_t *ip) {
     v7_put16le(d + 4, (uint16_t)ip->uid);
     v7_put16le(d + 6, (uint16_t)ip->gid);
     v7_put32(d + 8, fs->le, ip->size);
-    for (int i = 0; i < V7_NIADDR; i++)
+    for (int i = 0; i < fs->niaddr; i++)
         v7_put24(d + 12 + 3 * i, fs->le, ip->addr[i]);
     v7_put32(d + 52, fs->le, ip->atime);
     v7_put32(d + 56, fs->le, ip->mtime);
@@ -232,17 +243,17 @@ int v7fs_balloc(v7fs_t *fs, uint32_t *bno) {
 
     if (fs->nfree == 0) {
         /* Just popped the bottom of the stack: it is a free-list block. */
-        uint8_t buf[V7_BSIZE];
+        uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
         fs->nfree = v7_get16le(buf + 0);
-        for (int i = 0; i < sb_nicfree(fs->coherent); i++)
-            fs->free[i] = v7_get32(buf + fb_free_off(fs->le, fs->coherent) + 4 * i, fs->le);
+        for (int i = 0; i < sb_nicfree(fs->coherent, fs->xenix); i++)
+            fs->free[i] = v7_get32(buf + fb_free_off(fs->le, fs->coherent, fs->xenix) + 4 * i, fs->le);
     }
     /* Zero the freshly-allocated block: V7's alloc() clrbuf()s it, and without
      * this the previous file's data leaks into a new file. */
-    uint8_t z[V7_BSIZE];
-    memset(z, 0, V7_BSIZE);
+    uint8_t z[V7_MAXBSIZE];
+    memset(z, 0, fs->bsize);
     if (v7fs_write_block(fs, blk, z))
         return -EIO;
     if (fs->tfree) fs->tfree--;
@@ -257,12 +268,12 @@ void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
         fs->nfree = 1;
         fs->free[0] = 0;
     }
-    if (fs->nfree >= sb_nicfree(fs->coherent)) {
-        uint8_t buf[V7_BSIZE];
-        memset(buf, 0, V7_BSIZE);
+    if (fs->nfree >= sb_nicfree(fs->coherent, fs->xenix)) {
+        uint8_t buf[V7_MAXBSIZE];
+        memset(buf, 0, fs->bsize);
         v7_put16le(buf + 0, fs->nfree);
-        for (int i = 0; i < sb_nicfree(fs->coherent); i++)
-            v7_put32(buf + fb_free_off(fs->le, fs->coherent) + 4 * i, fs->le, fs->free[i]);
+        for (int i = 0; i < sb_nicfree(fs->coherent, fs->xenix); i++)
+            v7_put32(buf + fb_free_off(fs->le, fs->coherent, fs->xenix) + 4 * i, fs->le, fs->free[i]);
         if (v7fs_write_block(fs, bno, buf) == 0)
             fs->nfree = 0;
     }
@@ -271,7 +282,7 @@ void v7fs_bfree(v7fs_t *fs, uint32_t bno) {
 }
 
 int v7fs_ialloc(v7fs_t *fs, uint32_t *ino) {
-    uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
+    uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
 
     for (;;) {
         if (fs->ninode > 0) {
@@ -312,10 +323,10 @@ void v7fs_ifree(v7fs_t *fs, uint32_t ino) {
 /* ---- truncate ----------------------------------------------------------- */
 
 static void tloop(v7fs_t *fs, uint32_t blk, int level) {
-    uint8_t buf[V7_BSIZE];
+    uint8_t buf[V7_MAXBSIZE];
     if (v7fs_read_block(fs, blk, buf))
         return;
-    for (int i = V7_NINDIR - 1; i >= 0; i--) {
+    for (int i = v7_nindir(fs) - 1; i >= 0; i--) {
         uint32_t nb = v7_get32(buf + 4 * i, fs->le);
         if (nb == 0)
             continue;
@@ -331,17 +342,16 @@ int v7fs_itrunc(v7fs_t *fs, v7_inode_t *ip) {
     int t = ip->mode & V7_IFMT;
     if (t != V7_IFREG && t != V7_IFDIR)
         return 0;
-    for (int i = V7_NIADDR - 1; i >= 0; i--) {
+    for (int i = fs->niaddr - 1; i >= 0; i--) {
         uint32_t bn = ip->addr[i];
         if (bn == 0)
             continue;
         ip->addr[i] = 0;
-        switch (i) {
-        case V7_NIADDR - 1: tloop(fs, bn, 2); break;   /* triple */
-        case V7_NIADDR - 2: tloop(fs, bn, 1); break;   /* double */
-        case V7_NIADDR - 3: tloop(fs, bn, 0); break;   /* single */
-        default:            v7fs_bfree(fs, bn); break; /* direct */
-        }
+        int level = i - fs->ndaddr;   /* 0=single, 1=double, 2=triple; <0=direct */
+        if (level >= 0)
+            tloop(fs, bn, level);
+        else
+            v7fs_bfree(fs, bn);
     }
     ip->size = 0;
     return 0;
@@ -351,14 +361,14 @@ int v7fs_itrunc(v7fs_t *fs, v7_inode_t *ip) {
  * (which has `level` levels of indirection below it).  When skip == 0 the whole
  * subtree and `blk` itself are freed. */
 static void tloop_from(v7fs_t *fs, uint32_t blk, int level, uint32_t skip) {
-    uint8_t buf[V7_BSIZE];
+    uint8_t buf[V7_MAXBSIZE];
     if (v7fs_read_block(fs, blk, buf))
         return;
     uint32_t sub = 1;
-    for (int l = 0; l < level; l++) sub *= V7_NINDIR;   /* leaves per entry */
+    for (int l = 0; l < level; l++) sub *= v7_nindir(fs);   /* leaves per entry */
     uint32_t se = skip / sub;                            /* whole entries to skip */
     uint32_t sp = skip % sub;                            /* partial skip within entry se */
-    for (int i = V7_NINDIR - 1; i >= 0; i--) {
+    for (int i = v7_nindir(fs) - 1; i >= 0; i--) {
         uint32_t nb = v7_get32(buf + 4 * i, fs->le);
         if (nb == 0)
             continue;
@@ -383,42 +393,42 @@ static void tloop_from(v7fs_t *fs, uint32_t blk, int level, uint32_t skip) {
 int v7fs_itrunc_from(v7fs_t *fs, v7_inode_t *ip, uint32_t first_blk) {
     uint32_t rem = first_blk;
 
-    /* Direct blocks [0, V7_NDADDR) */
-    if (rem < V7_NDADDR) {
-        for (int i = V7_NDADDR - 1; i >= (int)rem; i--) {
+    /* Direct blocks [0, ndaddr) */
+    if (rem < (uint32_t)fs->ndaddr) {
+        for (int i = fs->ndaddr - 1; i >= (int)rem; i--) {
             if (ip->addr[i]) { v7fs_bfree(fs, ip->addr[i]); ip->addr[i] = 0; }
         }
         rem = 0;
     } else {
-        rem -= V7_NDADDR;
+        rem -= fs->ndaddr;
     }
 
-    /* Single indirect [V7_NDADDR, V7_NDADDR+V7_NINDIR) */
-    if (rem < V7_NINDIR) {
-        if (ip->addr[V7_NDADDR]) {
-            if (rem == 0) { tloop(fs, ip->addr[V7_NDADDR], 0); ip->addr[V7_NDADDR] = 0; }
-            else tloop_from(fs, ip->addr[V7_NDADDR], 0, rem);
+    /* Single indirect [ndaddr, ndaddr + nindir) */
+    if (rem < v7_nindir(fs)) {
+        if (ip->addr[fs->ndaddr]) {
+            if (rem == 0) { tloop(fs, ip->addr[fs->ndaddr], 0); ip->addr[fs->ndaddr] = 0; }
+            else tloop_from(fs, ip->addr[fs->ndaddr], 0, rem);
         }
         rem = 0;
     } else {
-        rem -= V7_NINDIR;
+        rem -= v7_nindir(fs);
     }
 
-    /* Double indirect [V7_NDADDR+V7_NINDIR, ...+V7_NINDIR^2) */
-    if (rem < (uint32_t)V7_NINDIR * V7_NINDIR) {
-        if (ip->addr[V7_NDADDR + 1]) {
-            if (rem == 0) { tloop(fs, ip->addr[V7_NDADDR + 1], 1); ip->addr[V7_NDADDR + 1] = 0; }
-            else tloop_from(fs, ip->addr[V7_NDADDR + 1], 1, rem);
+    /* Double indirect [ndaddr + nindir, ... + nindir^2) */
+    if (rem < (uint32_t)v7_nindir(fs) * v7_nindir(fs)) {
+        if (ip->addr[fs->ndaddr + 1]) {
+            if (rem == 0) { tloop(fs, ip->addr[fs->ndaddr + 1], 1); ip->addr[fs->ndaddr + 1] = 0; }
+            else tloop_from(fs, ip->addr[fs->ndaddr + 1], 1, rem);
         }
         rem = 0;
     } else {
-        rem -= (uint32_t)V7_NINDIR * V7_NINDIR;
+        rem -= (uint32_t)v7_nindir(fs) * v7_nindir(fs);
     }
 
-    /* Triple indirect [V7_NDADDR+V7_NINDIR+V7_NINDIR^2, ...) */
-    if (ip->addr[V7_NDADDR + 2]) {
-        if (rem == 0) { tloop(fs, ip->addr[V7_NDADDR + 2], 2); ip->addr[V7_NDADDR + 2] = 0; }
-        else tloop_from(fs, ip->addr[V7_NDADDR + 2], 2, rem);
+    /* Triple indirect [ndaddr + nindir + nindir^2, ...) */
+    if (ip->addr[fs->ndaddr + 2]) {
+        if (rem == 0) { tloop(fs, ip->addr[fs->ndaddr + 2], 2); ip->addr[fs->ndaddr + 2] = 0; }
+        else tloop_from(fs, ip->addr[fs->ndaddr + 2], 2, rem);
     }
     return 0;
 }
@@ -436,13 +446,13 @@ static int ind_follow(v7fs_t *fs, uint32_t *slot, int levels,
                 *out = 0;
                 return 0;
             }
-            uint8_t z[V7_BSIZE];
-            memset(z, 0, V7_BSIZE);
+            uint8_t z[V7_MAXBSIZE];
+            memset(z, 0, fs->bsize);
             if (v7fs_balloc(fs, &blk) || v7fs_write_block(fs, blk, z))
                 return -ENOSPC;
             *slot = blk;
         }
-        uint8_t buf[V7_BSIZE];
+        uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
         uint32_t next = v7_get32(buf + 4 * indices[L], fs->le);
@@ -463,8 +473,8 @@ static int ind_follow(v7fs_t *fs, uint32_t *slot, int levels,
                 *out = 0;
                 return 0;
             }
-            uint8_t z[V7_BSIZE];
-            memset(z, 0, V7_BSIZE);
+            uint8_t z[V7_MAXBSIZE];
+            memset(z, 0, fs->bsize);
             if (v7fs_balloc(fs, &next) || v7fs_write_block(fs, next, z))
                 return -ENOSPC;
             v7_put32(buf + 4 * indices[L], fs->le, next);
@@ -477,7 +487,7 @@ static int ind_follow(v7fs_t *fs, uint32_t *slot, int levels,
 }
 
 int v7fs_bmap(v7fs_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    if (lbn < V7_NDADDR) {
+    if (lbn < (uint32_t)fs->ndaddr) {
         uint32_t nb = ip->addr[lbn];
         if (nb == 0 && create) {
             if (v7fs_balloc(fs, &nb))
@@ -487,18 +497,18 @@ int v7fs_bmap(v7fs_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
         *bno = nb;
         return 0;
     }
-    uint32_t r = lbn - V7_NDADDR;
-    if (r < V7_NINDIR)
-        return ind_follow(fs, &ip->addr[10], 1, &r, create, bno);
-    r -= V7_NINDIR;
-    if (r < (uint32_t)V7_NINDIR * V7_NINDIR) {
-        uint32_t idx[2] = { r / V7_NINDIR, r % V7_NINDIR };
-        return ind_follow(fs, &ip->addr[11], 2, idx, create, bno);
+    uint32_t r = lbn - fs->ndaddr;
+    if (r < v7_nindir(fs))
+        return ind_follow(fs, &ip->addr[fs->ndaddr], 1, &r, create, bno);
+    r -= v7_nindir(fs);
+    if (r < (uint32_t)v7_nindir(fs) * v7_nindir(fs)) {
+        uint32_t idx[2] = { r / v7_nindir(fs), r % v7_nindir(fs) };
+        return ind_follow(fs, &ip->addr[fs->ndaddr + 1], 2, idx, create, bno);
     }
-    r -= (uint32_t)V7_NINDIR * V7_NINDIR;
-    uint32_t idx[3] = { r / (V7_NINDIR * V7_NINDIR),
-                        (r / V7_NINDIR) % V7_NINDIR, r % V7_NINDIR };
-    return ind_follow(fs, &ip->addr[12], 3, idx, create, bno);
+    r -= (uint32_t)v7_nindir(fs) * v7_nindir(fs);
+    uint32_t idx[3] = { r / (v7_nindir(fs) * v7_nindir(fs)),
+                        (r / v7_nindir(fs)) % v7_nindir(fs), r % v7_nindir(fs) };
+    return ind_follow(fs, &ip->addr[fs->ndaddr + 2], 3, idx, create, bno);
 }
 
 /* ---- file data ---------------------------------------------------------- */
@@ -514,18 +524,18 @@ ssize_t v7fs_file_read(v7fs_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, of
 
     size_t done = 0;
     while (done < size) {
-        uint32_t lbn  = (uint32_t)((off + (off_t)done) / V7_BSIZE);
-        uint32_t boff = (uint32_t)((off + (off_t)done) % V7_BSIZE);
+        uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->bsize);
+        uint32_t boff = (uint32_t)((off + (off_t)done) % fs->bsize);
         uint32_t pbn;
         if (v7fs_bmap(fs, ip, lbn, 0, &pbn))
             return -EIO;
-        uint8_t blk[V7_BSIZE];
+        uint8_t blk[V7_MAXBSIZE];
         if (pbn == 0) {
-            memset(blk, 0, V7_BSIZE);   /* sparse hole */
+            memset(blk, 0, fs->bsize);   /* sparse hole */
         } else if (v7fs_read_block(fs, pbn, blk)) {
             return -EIO;
         }
-        size_t n = V7_BSIZE - boff;
+        size_t n = fs->bsize - boff;
         if (n > size - done)
             n = size - done;
         memcpy(buf + done, blk + boff, n);
@@ -540,19 +550,19 @@ ssize_t v7fs_file_write(v7fs_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t s
 
     size_t done = 0;
     while (done < size) {
-        uint32_t lbn  = (uint32_t)((off + (off_t)done) / V7_BSIZE);
-        uint32_t boff = (uint32_t)((off + (off_t)done) % V7_BSIZE);
+        uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->bsize);
+        uint32_t boff = (uint32_t)((off + (off_t)done) % fs->bsize);
         uint32_t pbn;
         if (v7fs_bmap(fs, ip, lbn, 1, &pbn))
             return -ENOSPC;
         if (pbn == 0)
             return -ENOSPC;
 
-        uint8_t blk[V7_BSIZE];
+        uint8_t blk[V7_MAXBSIZE];
         if (v7fs_read_block(fs, pbn, blk))
             return -EIO;
 
-        size_t n = V7_BSIZE - boff;
+        size_t n = fs->bsize - boff;
         if (n > size - done)
             n = size - done;
         memcpy(blk + boff, buf + done, n);
@@ -574,7 +584,7 @@ int v7fs_dir_read(v7fs_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count)
     /* A directory's data cannot exceed the filesystem's data area; reject a
      * corrupt size before the malloc below, else a bogus di_size (up to 4 GiB)
      * turns into a multi-gigabyte allocation. */
-    if (ip->size > (uint64_t)(fs->fsize - fs->isize) * V7_BSIZE)
+    if (ip->size > (uint64_t)(fs->fsize - fs->isize) * fs->bsize)
         return -EFBIG;
     size_t cap = ip->size / 16 + 1;
     v7_dirent_t *out = calloc(cap, sizeof(v7_dirent_t));
@@ -802,13 +812,13 @@ static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
         return;
     if (v7_mark_block(cx, blk) != 0)
         return;                       /* bad or duplicate: don't chase it */
-    uint8_t buf[V7_BSIZE];
+    uint8_t buf[V7_MAXBSIZE];
     if (v7fs_read_block(cx->fs, blk, buf)) {
         printf("cannot read indirect block %u\n", blk);
         cx->errors++;
         return;
     }
-    for (int i = 0; i < V7_NINDIR; i++) {
+    for (int i = 0; i < (int)v7_nindir(cx->fs); i++) {
         uint32_t nb = v7_get32(buf + 4 * i, cx->fs->le);
         if (nb == 0)
             continue;
@@ -977,8 +987,8 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
         rep->errors++;
         errflag = 1;
     }
-    if (fs->nfree > sb_nicfree(fs->coherent)) {
-        printf("bad nfree=%u (>%d)\n", fs->nfree, sb_nicfree(fs->coherent));
+    if (fs->nfree > sb_nicfree(fs->coherent, fs->xenix)) {
+        printf("bad nfree=%u (>%d)\n", fs->nfree, sb_nicfree(fs->coherent, fs->xenix));
         rep->errors++;
     }
     if (fs->ninode > V7_NICINOD) {
@@ -990,7 +1000,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
         return -1;
     }
 
-    uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
+    uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
     rep->inodes = maxino;
 
     uint32_t nblk = fs->fsize - fs->isize;
@@ -1037,14 +1047,14 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
         if (state[ino] == FILSYS_IN_ICHR || state[ino] == FILSYS_IN_IBLK)
             continue;   /* device inode: addr[0] is a device number, not a block */
         cx.ino = ino;
-        for (int i = 0; i < V7_NIADDR; i++) {
+        for (int i = 0; i < fs->niaddr; i++) {
             uint32_t a = ip.addr[i];
             if (a == 0)
                 continue;
-            if (i < V7_NDADDR)
+            if (i < fs->ndaddr)
                 v7_mark_block(&cx, a);
             else
-                v7_mark_tree(&cx, a, i - V7_NDADDR);
+                v7_mark_tree(&cx, a, i - fs->ndaddr);
         }
     }
 
@@ -1081,7 +1091,7 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
         return -ENOMEM;
     }
     uint16_t n = fs->nfree;
-    uint32_t cur[V7_COH_NICFREE];
+    uint32_t cur[V7_XEN_NICFREE];
     memcpy(cur, fs->free, sizeof(cur));
     uint32_t guard = 0;
     while (n > 0) {
@@ -1111,26 +1121,26 @@ int v7fs_check(v7fs_t *fs, v7_check_t *rep, int mode) {
         } else {
             cx.bmap[off >> 3] |= m;
         }
-        if (++guard > fs->fsize + sb_nicfree(fs->coherent)) {
+        if (++guard > fs->fsize + sb_nicfree(fs->coherent, fs->xenix)) {
             printf("free list does not terminate\n");
             rep->errors++;
             break;
         }
         if (n == 0) {
-            uint8_t blk[V7_BSIZE];
+            uint8_t blk[V7_MAXBSIZE];
             if (v7fs_read_block(fs, bno, blk)) {
                 printf("cannot read free-list block %u\n", bno);
                 rep->errors++;
                 break;
             }
             n = v7_get16le(blk);
-            if (n > sb_nicfree(fs->coherent)) {
+            if (n > sb_nicfree(fs->coherent, fs->xenix)) {
                 printf("free-list block %u has bad count %u\n", bno, n);
                 rep->errors++;
                 break;
             }
-            for (int i = 0; i < sb_nicfree(fs->coherent); i++)
-                cur[i] = v7_get32(blk + fb_free_off(fs->le, fs->coherent) + 4 * i, fs->le);
+            for (int i = 0; i < sb_nicfree(fs->coherent, fs->xenix); i++)
+                cur[i] = v7_get32(blk + fb_free_off(fs->le, fs->coherent, fs->xenix) + 4 * i, fs->le);
         }
     }
     free(seen);
@@ -1257,7 +1267,7 @@ int v7fs_ncheck(v7fs_t *fs, uint32_t ino)
 
 int v7fs_clri(v7fs_t *fs, uint32_t ino)
 {
-    uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
+    uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
     if (ino == 0 || ino > maxino)
         return -EINVAL;
     v7_inode_t ip;
@@ -1271,7 +1281,7 @@ int v7fs_clri(v7fs_t *fs, uint32_t ino)
 
 int v7fs_resolve_dups(v7fs_t *fs)
 {
-    uint32_t maxino = (uint32_t)(fs->isize - 2) * V7_INOPB;
+    uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
     uint32_t nblk = fs->fsize - fs->isize;
 
     v7_chkctx_t cx;
@@ -1296,11 +1306,11 @@ int v7fs_resolve_dups(v7fs_t *fs)
         if (fmt == V7_IFCHR || fmt == V7_IFBLK ||
             fmt == V7_IFMPC || fmt == V7_IFMPB)
             continue;   /* device inode: addr[0] is a device number, not a block */
-        for (int i = 0; i < V7_NIADDR; i++) {
+        for (int i = 0; i < fs->niaddr; i++) {
             uint32_t a = ip.addr[i];
             if (a == 0)
                 continue;
-            if (i < V7_NDADDR) {
+            if (i < fs->ndaddr) {
                 if (a < fs->isize || a >= fs->fsize) {
                     printf("block %u bad; inode=%u\n", a, ino);
                     continue;
@@ -1322,7 +1332,7 @@ int v7fs_resolve_dups(v7fs_t *fs)
                 }
             } else {
                 cx.ino = ino;
-                v7_mark_tree(&cx, a, i - V7_NDADDR);
+                v7_mark_tree(&cx, a, i - fs->ndaddr);
             }
         }
     }
@@ -1349,7 +1359,7 @@ int v7fs_resolve_dups(v7fs_t *fs)
             printf("block %u dup; inode=%u: out of space\n", blk, ino);
             continue;
         }
-        uint8_t buf[V7_BSIZE];
+        uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf) || v7fs_write_block(fs, nb, buf)) {
             printf("block %u dup; inode=%u: copy failed\n", blk, ino);
             continue;
@@ -1375,8 +1385,11 @@ int v7fs_resolve_dups(v7fs_t *fs)
  * v7fs_t*, so there is no cast anywhere. */
 
 static int v7fs_open_op(void *fs, const char *path, int readonly, int mode,
-                        uint64_t offset) {
-    return v7fs_open(fs, path, readonly, mode, offset);
+                        uint64_t offset, uint32_t bsize) {
+    return v7fs_open(fs, path, readonly, mode, offset, bsize);
+}
+static uint32_t v7fs_blocksize_op(const void *fs) {
+    return ((const v7fs_t *)fs)->bsize;
 }
 static void v7fs_close_op(void *fs) { v7fs_close(fs); }
 static int v7fs_sync_op(void *fs) { return v7fs_sync(fs); }
@@ -1414,14 +1427,14 @@ static int v7fs_lookup_op(void *fs, const char *path, uint32_t *ino, filsys_inod
 { return v7fs_lookup(fs, path, ino, ip); }
 static int v7fs_check_op(void *fs) { v7_check_t rep; return v7fs_check(fs, &rep, 0); }
 static uint64_t v7fs_max_file_op(void *fs) {
-    (void)fs;
-    uint64_t n = V7_NINDIR;
-    return ((uint64_t)V7_NDADDR + n + n * n + n * n * n) * V7_BSIZE;
+    const v7fs_t *v7 = fs;
+    uint64_t n = v7_nindir(v7);
+    return ((uint64_t)v7->ndaddr + n + n * n + n * n * n) * v7->bsize;
 }
 
 const struct filsys_ops v7fs_ops = {
     .name        = "v7",
-    .blocksize   = V7_BSIZE,
+    .blocksize   = v7fs_blocksize_op,
     .open        = v7fs_open_op,
     .close       = v7fs_close_op,
     .sync        = v7fs_sync_op,

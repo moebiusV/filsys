@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* fsck.filsys.c - check and repair a Research Unix (PDP-7 through 32V)
  * filesystem on a disk image.
@@ -51,11 +51,14 @@
 #include "v6fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
+#include "bsd211fs.h"
 
 /* Parse the -v edition argument.  Returns a FILSYS_* selector, or -1 on error.
  * Accepts a leading 'v' (v6, v7) and rejects everything else. */
 static int parse_edition(const char *s)
 {
+    if (strcmp(s, "vax32") == 0 || strcmp(s, "VAX32") == 0)
+        return FILSYS_32V;
     if (s[0] == 'v' || s[0] == 'V')
         s++;
     if (strcmp(s, "v0") == 0 || strcmp(s, "0") == 0 ||
@@ -67,10 +70,16 @@ static int parse_edition(const char *s)
         return FILSYS_V6;
     if (strcmp(s, "7") == 0)
         return FILSYS_V7;
-    if (strcmp(s, "32") == 0 || strcmp(s, "32v") == 0)
+    if (strcmp(s, "vax32") == 0 || strcmp(s, "32v") == 0 || strcmp(s, "32") == 0)
         return FILSYS_32V;
     if (strcmp(s, "coherent") == 0 || strcmp(s, "coh") == 0 || strcmp(s, "33") == 0)
         return FILSYS_COHERENT;
+    if (strcmp(s, "xenix") == 0 || strcmp(s, "34") == 0)
+        return FILSYS_XENIX;
+    if (strcmp(s, "bsd29") == 0 || strcmp(s, "35") == 0)
+        return FILSYS_BSD29;
+    if (strcmp(s, "bsd211") == 0 || strcmp(s, "36") == 0)
+        return FILSYS_BSD211;
     return -1;
 }
 
@@ -78,7 +87,7 @@ int main(int argc, char **argv)
 {
     const char *path;
     uint64_t offblock = 0;
-    int edition = FILSYS_V7;   /* default: V7, matching mount.filsys's requirement */
+    int edition = -1;   /* no default: the version must be named explicitly */
     int salvage = 0, resolve = 0, ncheck = 0, clri = 0, nochange = 0;
     int preen = 0, force = 0, yes = 0, ask = 0;
     uint32_t ino = 0;
@@ -89,7 +98,7 @@ int main(int argc, char **argv)
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "fsck.filsys: bad edition '%s' (want pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent)\n", optarg);
+                fprintf(stderr, "fsck.filsys: bad edition '%s'\n", optarg);
                 return 2;
             }
             break;
@@ -124,20 +133,27 @@ int main(int argc, char **argv)
             break;
         default:
             fprintf(stderr,
-                "usage: fsck.filsys [-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>] [-o block] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
-                "       fsck.filsys [-v <edition>] [-o block] -N ino image\n"
-                "       fsck.filsys [-v <edition>] [-o block] -C ino image\n");
+                "usage: fsck.filsys -v <edition> [-o block] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
+                "       fsck.filsys -v <edition> [-o block] -N ino image\n"
+                "       fsck.filsys -v <edition> [-o block] -C ino image\n"
+                "  editions: pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211\n");
             return 2;
         }
     }
     if (optind >= argc) {
         fprintf(stderr,
-            "usage: fsck.filsys [-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>] [-o block] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
-            "       fsck.filsys [-v <edition>] [-o block] -N ino image\n"
-            "       fsck.filsys [-v <edition>] [-o block] -C ino image\n");
+            "usage: fsck.filsys -v <edition> [-o block] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
+            "       fsck.filsys -v <edition> [-o block] -N ino image\n"
+            "       fsck.filsys -v <edition> [-o block] -C ino image\n"
+            "  editions: pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211\n");
         return 2;
     }
     path = argv[optind];
+
+    if (edition < 0) {
+        fprintf(stderr, "fsck.filsys: no filesystem version given; use -v <edition>\n");
+        return 2;
+    }
 
     /* -s (salvage), -r (resolve dups), -N (ncheck) and -C (clri) all work on
      * every edition: V1 rebuilds its free map, PDP-7 its free list.  -i and -y
@@ -229,9 +245,23 @@ int main(int argc, char **argv)
     }
 
     int readonly = !(salvage || resolve || clri || preen || yes || ask);
+    if (edition == FILSYS_BSD211) {
+        bsd211fs_t fs;
+        int rc = bsd211fs_open(&fs, path, readonly, offblock * BSD211_BSIZE);
+        if (rc < 0) {
+            fprintf(stderr, "%s: %s\n", path, strerror(-rc));
+            return 1;
+        }
+        bsd211_check_t rep;
+        int err = bsd211fs_check(&fs, &rep, mode);
+        bsd211fs_close(&fs);
+        return err ? 1 : 0;
+    }
     v7fs_t fs;
-    int bomode = (edition == FILSYS_32V) ? 1 : (edition == FILSYS_COHERENT) ? 2 : 0;
-    int rc = v7fs_open(&fs, path, readonly, bomode, offblock * V7_BSIZE);
+    int bomode = (edition == FILSYS_32V) ? 1 : (edition == FILSYS_COHERENT) ? 2 :
+                 (edition == FILSYS_XENIX) ? 3 : (edition == FILSYS_BSD29) ? 4 : 0;
+    uint32_t bsize = (edition == FILSYS_XENIX || edition == FILSYS_BSD29) ? 1024 : V7_BSIZE;
+    int rc = v7fs_open(&fs, path, readonly, bomode, offblock * bsize, bsize);
     if (rc < 0) {
         fprintf(stderr, "%s: %s\n", path, strerror(-rc));
         return 1;

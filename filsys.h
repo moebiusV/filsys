@@ -29,7 +29,10 @@ enum {
     FILSYS_V6   = 6,
     FILSYS_V7   = 7,
     FILSYS_32V  = 32,
-    FILSYS_COHERENT = 33 /* Coherent (Mark Williams): V7-family, middle-endian, NICFREE=64 */
+    FILSYS_COHERENT = 33, /* Coherent (Mark Williams): V7-family, middle-endian, NICFREE=64 */
+    FILSYS_XENIX = 34,   /* Xenix (SCO): V7-family, little-endian 2-byte, NICFREE=100 */
+    FILSYS_BSD29 = 35,   /* 2.9BSD: V7 inode, 1024-byte blocks, 4 direct + 3 indirect */
+    FILSYS_BSD211 = 36    /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
 };
 
 /* Decoded inode -- one shape for every edition (V1, V6, V7/32V, PDP-7).  Each
@@ -50,7 +53,7 @@ typedef struct {
 /* One directory entry. */
 typedef struct {
     uint16_t ino;
-    char     name[15];           /* 14-char name + NUL */
+    char     name[64];           /* name + NUL (14 for V6/V7; 63 for 2.11BSD) */
 } filsys_dirent_t;
 
 typedef struct filsys filsys_t;  /* opaque */

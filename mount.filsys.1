@@ -1,8 +1,8 @@
-.\" mount.filsys.1 - part of filsys 1.2.7
+.\" mount.filsys.1 - part of filsys 1.3.0
 .\" Derived from the Seventh Edition mount(8) page (usr/man/man1/mount.1m),
 .\" distributed under the Caldera International "Ancient UNIX License" (2002).
 .\" The LICENSE section below retains that license's notice and terms.
-.TH MOUNT.FILSYS 1 "September 4, 2026" "filsys 1.2.7" "File Format and Disk Utilities"
+.TH MOUNT.FILSYS 1 "September 5, 2026" "filsys 1.3.0" "File Format and Disk Utilities"
 .SH NAME
 mount.filsys, umount.filsys \- mount and dismount a Research Unix filesystem
 .SH SYNOPSIS
@@ -43,13 +43,17 @@ The on-disk edition is selected at run time with
 pdp7 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
 through Third Edition format (one on-disk layout); v4, v5, or v6 select the
 Sixth Edition format (V4 and V5 are byte-identical to V6 on disk); v7 selects
-Seventh Edition; 32v selects 32V (V7 recompiled for the VAX, whose multi-byte
+Seventh Edition; vax32 selects 32V (V7 recompiled for the VAX, whose multi-byte
 fields are little-endian rather than PDP-11 middle-endian); coherent selects
 the Mark Williams Coherent format (V7 with a 64-entry free cache, an
 .I s_unique
 field, and an
 .I s_m/s_n
-cylinder interleave; byte order is PDP-11 middle-endian like V7).  A bare number
+cylinder interleave; byte order is PDP-11 middle-endian like V7); xenix selects
+the SCO Xenix format (little-endian, 1024-byte blocks, a 100-entry free cache,
+and a magic checked at open); bsd29 and bsd211 select 2.9BSD and 2.11BSD
+(1024-byte blocks; bsd29 keeps V7's 24-bit addresses, bsd211 widens them to
+32 bits and uses variable-length directory entries).  A bare number
 .RB ( 0 ,
 .BR 1 ,
 .BR 2 ,
@@ -98,7 +102,8 @@ supersedes.
 .SH OPTIONS
 .TP
 .BI \-v " edition"
-Filesystem edition: one of pdp7, v1, v2, v3, v4, v5, v6, v7, 32v, or coherent.  Required.
+Filesystem edition: one of pdp7, v1, v2, v3, v4, v5, v6, v7, vax32, coherent,
+xenix, bsd29, or bsd211.  Required (there is no default).
 .TP
 .BI \-o " offset= N [, version= N ][, uid= N , gid= N ,...]"
 Comma-separated options.  The filsys-specific
@@ -134,7 +139,7 @@ Run the integrity check instead of mounting (see
 mount.filsys -v v7 rp06-0.disk /mnt/v7
 mount.filsys -v v7 -o offset=9416704 rp06-0.disk /mnt/usr
 mount.filsys -v v6 v6root.dsk /mnt/v6        # V4/V5/V6 (identical on disk)
-mount.filsys -v 32v 32v-root.disk /mnt/32v
+mount.filsys -v vax32 32v-root.disk /mnt/32v
 mount.filsys -v v7 -c rp06-0.disk            # check instead of mounting
 .fi
 .SH SEE ALSO

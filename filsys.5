@@ -2,7 +2,7 @@
 .\" filsys(5)/dir(5) (V7, 32V) pages, distributed under the Caldera
 .\" International "Ancient UNIX License" (2002).  The LICENSE section below
 .\" retains that license's copyright notice, conditions and disclaimer.
-.TH FILSYS 5 "September 4, 2026" "filsys 1.2.7" "File Formats and Mounting"
+.TH FILSYS 5 "September 5, 2026" "filsys 1.3.0" "File Formats and Mounting"
 .SH NAME
 mount.filsys, filsys \- mount a Research Unix filesystem image; format
 .SH SYNOPSIS
@@ -43,7 +43,7 @@ does not mount; it walks the free list and the inode table and reports any
 integrity problems on standard output.
 .SH OPTIONS
 .TP
-.B \-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>
+.B \-v <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211>
 Select the on-disk edition.
 .B pdp7
 is the word-addressed PDP-7;
@@ -60,13 +60,22 @@ and
 are byte-identical (the V6 format);
 .B v7
 is the V7 format;
-.B 32v
+.B vax32
 selects 32V (VAX), whose 32-bit fields and 3-byte block addresses are
 little-endian rather than PDP-11 middle-endian (see
 .B "FILESYSTEM FORMAT"
-below); and
+below);
 .B coherent
-selects the Coherent format.  A bare number
+selects the Coherent format;
+.B xenix
+selects SCO Xenix (little-endian, 1024-byte blocks, a 100-entry free cache, and
+a magic at superblock offset 1016 validated at open);
+.B bsd29
+and
+.B bsd211
+select 2.9BSD and 2.11BSD (1024-byte blocks; bsd29 keeps V7's 24-bit addresses,
+bsd211 widens them to 32 bits and uses variable-length directory entries).
+The edition is required; there is no default.  A bare number
 .RB ( 0 ,
 .BR 1 ,
 .BR 4 ,
@@ -436,7 +445,7 @@ began as a PDP-11 OS and preserved the on-disk format verbatim on x86, so it
 takes the
 .B v7
 decode path, not
-.BR 32v .
+.BR vax32 .
 .PP
 The interleave maps a logical block
 .I bn
@@ -450,6 +459,33 @@ It is applied only when building (mkfs) or rebuilding
 .RB ( fsck\ \-s )
 the free list; the free list and inode addresses store the resulting physical
 (interleaved) block numbers, so the read/write path needs no runtime mapping.
+.SS Xenix
+SCO Xenix is V7-shaped at 1024-byte blocks with three differences: the byte
+order is little-endian throughout (like 32V), the superblock keeps the 2-byte
+packing of V7 (not 32V's 4-byte alignment), and the free cache widens to 100
+entries, so
+.I s_ninode
+moves from +208 to +408 and
+.I s_time
+from +414 to +614.  A magic number
+.I 0x2b5544
+sits at superblock offset 1016; it is validated at open to catch a volume named
+.I \-v\ xenix
+that is not actually Xenix, and is never used to autodetect the edition.  The
+inode and directory entry are byte-identical to V7 (10 direct + 3 indirect
+addresses, 24-bit packed block numbers, 14-character names).
+
+.SS 2.9BSD and 2.11BSD
+Both keep V7's free-list superblock and PDP-11 middle-endian byte order, at
+1024-byte blocks with the 50-entry free cache, so the superblock is
+byte-identical to V7's apart from the block size.  Each shortens the inode to 7
+addresses (4 direct + 3 indirect).  2.9BSD keeps V7's 24-bit packed block
+numbers, so it is byte-identical to V7 except for the block size and address
+count.  2.11BSD widens each address to a full 4 bytes, adds a
+.I di_flags
+field, and replaces the fixed 14-character directory entry with variable-length
+entries of up to 63 characters (DIRBLKSIZ 512 framing inside the 1024-byte
+blocks); it also adds symbolic links (IFLNK).
 .SS Reserved i-numbers
 .I V4, V5, V6:
 i-number 1 is the root directory; no bad-block file exists.

@@ -11,6 +11,7 @@
 #include "v6fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
+#include "bsd211fs.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -54,6 +55,18 @@ static mode_t to_posix_mode(int ver, uint32_t mode) {
         return m;
     }
     mode_t m = mode & 07777;
+    if (ver == FILSYS_BSD211) {
+        switch (mode & BSD211_IFMT) {
+        case BSD211_IFDIR:  m |= S_IFDIR; break;
+        case BSD211_IFREG:  m |= S_IFREG; break;
+        case BSD211_IFCHR:  m |= S_IFCHR; break;
+        case BSD211_IFBLK:  m |= S_IFBLK; break;
+        case BSD211_IFLNK:  m |= S_IFLNK; break;
+        case BSD211_IFSOCK: m |= S_IFSOCK; break;
+        default:           m |= S_IFREG; break;
+        }
+        return m;
+    }
     if (ver == FILSYS_V6) {
         switch (mode & V6_IFMT) {
         case V6_IFDIR: m |= S_IFDIR; break;
@@ -212,6 +225,9 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
     } else if (edition == FILSYS_PDP7) {
         fs->ops = &p7fs_ops;
         fs->fs  = calloc(1, sizeof(p7fs_t));
+    } else if (edition == FILSYS_BSD211) {
+        fs->ops = &bsd211fs_ops;
+        fs->fs  = calloc(1, sizeof(bsd211fs_t));
     } else {
         fs->ops = &v7fs_ops;
         fs->fs  = calloc(1, sizeof(v7fs_t));
@@ -222,9 +238,13 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
     }
     /* The open op's 4th arg is a byte-order/layout mode: 0 = V7 (middle-endian,
      * 2-byte), 1 = 32V (little-endian, 4-byte), 2 = Coherent (middle-endian,
-     * 2-byte, NICFREE=64).  Only v7fs reads it. */
-    int mode = (edition == FILSYS_32V) ? 1 : (edition == FILSYS_COHERENT) ? 2 : 0;
-    int rc = fs->ops->open(fs->fs, path, readonly, mode, offset);
+     * 2-byte, NICFREE=64), 3 = Xenix (little-endian, 2-byte, NICFREE=100).
+     * Only v7fs reads it.  The 6th arg is the block size (PDP-7 is
+     * word-addressed and ignores it). */
+    int mode = (edition == FILSYS_32V) ? 1 : (edition == FILSYS_COHERENT) ? 2 :
+               (edition == FILSYS_XENIX) ? 3 : (edition == FILSYS_BSD29) ? 4 : 0;
+    uint32_t bsize = (edition == FILSYS_XENIX || edition == FILSYS_BSD29) ? 1024 : 512;
+    int rc = fs->ops->open(fs->fs, path, readonly, mode, offset, bsize);
     if (rc) {
         free(fs->fs);
         free(fs);
@@ -255,6 +275,7 @@ int filsys_is_readonly(const filsys_t *fs) {
     if (fs->ver == FILSYS_V6) return ((const v6fs_t *)fs->fs)->readonly;
     if (fs->ver == FILSYS_V1) return ((const v1fs_t *)fs->fs)->readonly;
     if (fs->ver == FILSYS_PDP7) return ((const p7fs_t *)fs->fs)->readonly;
+    if (fs->ver == FILSYS_BSD211) return ((const bsd211fs_t *)fs->fs)->readonly;
     return ((const v7fs_t *)fs->fs)->readonly;
 }
 
@@ -306,8 +327,8 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     st->st_atime   = ip->atime;
     st->st_mtime   = ip->mtime;
     st->st_ctime   = ip->ctime;
-    st->st_blksize = 512;
-    st->st_blocks  = (ip->size + 511) / 512;
+    st->st_blksize = fs->ops->blocksize(fs->fs);
+    st->st_blocks  = (ip->size + st->st_blksize - 1) / st->st_blksize;
 }
 
 int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents, size_t *count) {
@@ -343,7 +364,7 @@ int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, o
     if (n < 0) {
         /* A legal-sized write can still fail partway (ENOSPC, EIO): free the
          * blocks it allocated past the original size, then reset the inode. */
-        uint32_t bsize = fs->ops->blocksize;
+        uint32_t bsize = fs->ops->blocksize(fs->fs);
         uint32_t first_blk = oldsize ? (oldsize - 1) / bsize + 1 : 0;
         itrunc_from(fs, &ip, first_blk);
         write_inode(fs, ino, &ip);
@@ -666,7 +687,7 @@ int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
      * the blocks strictly past the new end, and leave everything else alone.
      * (Extension is a no-op: holes read back as zero.) */
     if (newsize < oldsize) {
-        uint32_t bsize = fs->ops->blocksize;
+        uint32_t bsize = fs->ops->blocksize(fs->fs);
         uint32_t last  = newsize ? (newsize - 1) / bsize : 0;
         uint32_t blk_end = newsize ? (last + 1) * bsize : 0;
         uint32_t tail = oldsize < blk_end ? oldsize : blk_end;
@@ -750,7 +771,7 @@ int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]) 
 
 int filsys_statfs(filsys_t *fs, struct statvfs *st) {
     memset(st, 0, sizeof(*st));
-    st->f_bsize = st->f_frsize = 512;
+    st->f_bsize = st->f_frsize = fs->ops->blocksize(fs->fs);
     if (fs->ver == FILSYS_V6) {
         const v6fs_t *v6 = fs->fs;
         st->f_blocks = v6->fsize;
@@ -769,11 +790,17 @@ int filsys_statfs(filsys_t *fs, struct statvfs *st) {
         st->f_bfree = st->f_bavail = p7->tfree;
         st->f_files = P7_MAXINO;
         st->f_ffree = 0;   /* not tracked (read-only) */
+    } else if (fs->ver == FILSYS_BSD211) {
+        const bsd211fs_t *b11 = fs->fs;
+        st->f_blocks = b11->fsize;
+        st->f_bfree = st->f_bavail = b11->tfree;
+        st->f_files = (b11->isize - 2) * BSD211_INOPB;
+        st->f_ffree = b11->tinode;
     } else {
         const v7fs_t *v7 = fs->fs;
         st->f_blocks = v7->fsize;
         st->f_bfree = st->f_bavail = v7->tfree;
-        st->f_files = (v7->isize - 2) * 8;
+        st->f_files = (v7->isize - 2) * v7_inopb(v7);
         st->f_ffree = v7->tinode;
     }
     st->f_namemax = fs->ver == FILSYS_V1 ? V1_DIRSIZ :

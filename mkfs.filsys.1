@@ -1,14 +1,14 @@
-.\" mkfs.filsys.1 - part of filsys 1.2.7
+.\" mkfs.filsys.1 - part of filsys 1.3.0
 .\" Derived from the Seventh Edition mkfs(8) page (usr/man/man1/mkfs.1m),
 .\" distributed under the Caldera International "Ancient UNIX License" (2002).
 .\" The LICENSE section below retains that license's notice and terms.
-.TH MKFS.FILSYS 1 "September 4, 2026" "filsys 1.2.7" "File Format and Disk Utilities"
+.TH MKFS.FILSYS 1 "September 5, 2026" "filsys 1.3.0" "File Format and Disk Utilities"
 .SH NAME
 mkfs.filsys \- construct a Research Unix filesystem in a disk image
 .SH SYNOPSIS
 .B mkfs.filsys
 .RB [ \-v
-.IR <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> ]
+.IR <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-b
@@ -33,14 +33,17 @@ The edition of the filesystem is selected with
 pdp7 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
 through Third Edition (one format, bitmap-allocated); v4, v5, or v6 select the
 Sixth Edition format (V4 and V5
-are byte-identical to V6 on disk); v7 selects Seventh Edition; 32v selects 32V
+are byte-identical to V6 on disk); v7 selects Seventh Edition; vax32 selects 32V
 (V7 for the VAX, little-endian); coherent selects the Mark Williams Coherent
 format (see
-.BR filsys (5)
-and
-.IR docs/coherent-format.md ).
-The default is
-v7.  V6 and V7 differ
+.BR filsys (5));
+xenix selects SCO Xenix (little-endian, 1024-byte blocks, a 100-entry free
+cache, and a magic at superblock offset 1016); bsd29 and bsd211 select 2.9BSD
+and 2.11BSD (1024-byte blocks; bsd29 keeps V7's 24-bit addresses, bsd211 widens
+them to 32 bits and uses variable-length directory entries).  There is no
+default edition;
+.B \-v
+is required.  V6 and V7 differ
 on disk: V6 has 16 32-byte inodes per block, 16-bit block numbers, and an
 i-list whose size is stored as a block count; V7 has 8 64-byte inodes per
 block, 24-bit block numbers, and an i-list whose size is stored as the first
@@ -57,12 +60,13 @@ each filesystem is the boot block; block 1 is the superblock; blocks 2 onward
 are the i-list.
 .SH OPTIONS
 .TP
-.BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>"
+.BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211>"
 Filesystem edition.  pdp7 is the word-addressed PDP-7; v1, v2 and v3 are one
 format (First through Third Edition); v4, v5 and v6 are byte-identical (the V6
-format); v7 is V7; 32v is 32V (little-endian); coherent is the Coherent format
-(middle-endian V7 with a 64-entry free cache).
-Default v7.  A bare number
+format); v7 is V7; vax32 is 32V (little-endian); coherent is the Coherent format
+(middle-endian V7 with a 64-entry free cache); xenix is SCO Xenix; bsd29 is
+2.9BSD; bsd211 is 2.11BSD.
+Required (there is no default).  A bare number
 .RB ( 0 ,
 .BR 1 ,
 .BR 4 ,
@@ -80,8 +84,7 @@ Interleave factors
 .I s_m
 and
 .I s_n
-for a Coherent filesystem (see
-.IR docs/coherent-format.md ).
+for a Coherent filesystem.
 Both default to 1 (no interleave), which matches the Coherent base floppies;
 a hard-disk image can use e.g.\&
 .BR "\-m 3 \-n 255" .
@@ -145,11 +148,11 @@ explicit
 argument; the i-list is sized automatically.
 .SH EXAMPLES
 .nf
-mkfs.filsys image.dk             # size the fs to the whole image (V7)
-mkfs.filsys -v 6 image.dk        # ...as a V6 (V4/V5) filesystem
-mkfs.filsys -o 18392 image.dk    # start the fs at block 18392 (a partition)
-mkfs.filsys -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block
-mkfs.filsys image.dk 5000        # an explicit 5000-block filesystem
+mkfs.filsys -v v7 image.dk             # size the fs to the whole image (V7)
+mkfs.filsys -v v6 image.dk             # ...as a V6 (V4/V5) filesystem
+mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partition)
+mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block
+mkfs.filsys -v v7 image.dk 5000        # an explicit 5000-block filesystem
 .fi
 .SH SEE ALSO
 .BR fsck.filsys (1),

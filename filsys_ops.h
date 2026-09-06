@@ -93,11 +93,11 @@ static inline int filsys_in_allocated(uint8_t st) {
 
 struct filsys_ops {
     const char *name;
-    uint32_t blocksize;   /* logical block size in bytes (bmap/truncate unit) */
+    uint32_t (*blocksize)(const void *fs);  /* logical block size in bytes */
 
     /* lifecycle */
     int  (*open)(void *fs, const char *path, int readonly, int little_endian,
-                 uint64_t offset);
+                 uint64_t offset, uint32_t bsize);
     void (*close)(void *fs);
     int  (*sync)(void *fs);
     /* Mark the superblock dirty (s_fmod) and flush.  Optional: only the V6/V7
@@ -145,5 +145,6 @@ extern const struct filsys_ops v6fs_ops;
 extern const struct filsys_ops v7fs_ops;
 extern const struct filsys_ops v1fs_ops;
 extern const struct filsys_ops p7fs_ops;
+extern const struct filsys_ops bsd211fs_ops;
 
 #endif /* FILSYS_OPS_H */

@@ -1,5 +1,5 @@
-.\" findfs.filsys.1 - part of filsys 1.2.7
-.TH FINDFS.FILSYS 1 "September 4, 2026" "filsys 1.2.7" "File Format and Disk Utilities"
+.\" findfs.filsys.1 - part of filsys 1.3.0
+.TH FINDFS.FILSYS 1 "September 5, 2026" "filsys 1.3.0" "File Format and Disk Utilities"
 .SH NAME
 findfs.filsys \- locate filesystem superblocks (partitions) on a raw disk image
 .SH SYNOPSIS
@@ -23,7 +23,8 @@ recovers them two ways.  First it scans every block (or every
 .IR N -th
 block) for a filesystem
 .I superblock ,
-validating the edition (V6, V7, 32V, or Coherent), the i-list size, the volume size, and
+validating the edition (V6, V7, 32V, Coherent, Xenix, 2.9BSD, or 2.11BSD), the
+i-list size, the volume size, and
 that the free-block list holds only in-range block numbers.  Second, with
 .BR \-i ,
 it scans for runs of
@@ -36,7 +37,7 @@ Each hit is printed as:
 .PP
 .RS
 .nf
-fs @ block START  (byte BYTES)  V7  isize=N fsize=M   (or 32V / Coherent / V6)
+fs @ block START  (byte BYTES)  V7  isize=N fsize=M   (or 32V / Coherent / Xenix / 2BSD / V6)
 .fi
 .RE
 .PP

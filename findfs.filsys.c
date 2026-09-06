@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* findfs.filsys.c - locate filesystem superblocks on a raw disk image.
  *
@@ -36,6 +36,8 @@ enum {
     V6_NICINOD = 100,
     V7_NICFREE = 50,
     V7_COH_NICFREE = 64,   /* Coherent free-list cache depth */
+    V7_XEN_NICFREE = 100,  /* Xenix free-list cache depth */
+    XENIX_MAGIC = 0x2b5544,/* Xenix superblock magic (offset 1016) */
     V7_NICINOD = 100
 };
 
@@ -112,6 +114,51 @@ static int super_v6(const uint8_t *b, uint32_t bno, uint32_t nblocks,
         return 0;
     for (int i = 0; i < nfree; i++) {
         uint16_t fb = get16le(b + 6 + 2 * i);
+        if (fb != 0 && (fb < isz || fb >= fsz))
+            return 0;
+    }
+    *isize = isz; *fsize = fsz;
+    return 1;
+}
+
+/* Xenix superblock (1024-byte blocks, magic 0x2b5544 at offset 1016). */
+static int super_xenix(const uint8_t *b, uint32_t bno, uint32_t nblocks,
+                       uint16_t *isize, uint32_t *fsize) {
+    if (get32le(b + 0x3F8) != XENIX_MAGIC)
+        return 0;
+    uint16_t isz = get16le(b + 0);
+    uint32_t fsz = get32le(b + 2);
+    uint16_t nfree = get16le(b + 6);
+    uint16_t ninode = get16le(b + 0x198);
+    if (isz < 3 || fsz <= isz || nfree > V7_XEN_NICFREE || ninode > V7_NICINOD)
+        return 0;
+    if ((uint64_t)bno - 1 + fsz > nblocks)
+        return 0;
+    for (int i = 0; i < nfree; i++) {
+        uint32_t fb = get32le(b + 8 + 4 * i);
+        if (fb != 0 && (fb < isz || fb >= fsz))
+            return 0;
+    }
+    *isize = isz; *fsize = fsz;
+    return 1;
+}
+
+/* 2.9BSD superblock (1024-byte blocks, V7-shaped, no magic): middle-endian,
+ * 2-byte packing, NICFREE=50. */
+static int super_bsd29(const uint8_t *b, uint32_t bno, uint32_t nblocks,
+                       uint16_t *isize, uint32_t *fsize) {
+    uint16_t isz = get16le(b);
+    if (isz < 3)
+        return 0;
+    uint16_t nfree = get16le(b + 6);
+    uint16_t ninode = get16le(b + 208);
+    if (nfree > V7_NICFREE || ninode > V7_NICINOD)
+        return 0;
+    uint32_t fsz = get32me(b + 2);
+    if (fsz <= isz || (uint64_t)bno - 1 + fsz > nblocks)
+        return 0;
+    for (int i = 0; i < nfree; i++) {
+        uint32_t fb = get32me(b + 8 + 4 * i);
         if (fb != 0 && (fb < isz || fb >= fsz))
             return 0;
     }
@@ -196,6 +243,25 @@ int main(int argc, char **argv) {
             }
         }
     }
+    /* 1024-byte-block scan: Xenix (magic at offset 1016) and 2.9BSD
+     * (V7-shaped, no magic -- so only tried when Xenix's magic is absent). */
+    uint8_t xb[1024];
+    uint32_t xnblocks = (uint32_t)(st.st_size / 1024);
+    for (uint32_t xbno = 1; xbno < xnblocks; xbno += (uint32_t)stride) {
+        if (pread(fd, xb, 1024, (off_t)xbno * 1024) != 1024)
+            continue;
+        uint16_t isz = 0; uint32_t fsz = 0;
+        if (super_xenix(xb, xbno, xnblocks, &isz, &fsz)) {
+            printf("fs @ block %u  (byte %llu)  Xenix  isize=%u fsize=%u\n",
+                   (xbno - 1) * 2, (unsigned long long)(xbno - 1) * 1024, isz, fsz);
+            found++;
+        } else if (super_bsd29(xb, xbno, xnblocks, &isz, &fsz)) {
+            printf("fs @ block %u  (byte %llu)  2.9BSD  isize=%u fsize=%u\n",
+                   (xbno - 1) * 2, (unsigned long long)(xbno - 1) * 1024, isz, fsz);
+            found++;
+        }
+    }
+
     close(fd);
     return found ? 0 : 1;
 }

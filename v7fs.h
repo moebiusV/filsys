@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v7fs.h - Seventh Edition (V7) Unix filesystem, on-disk access layer.
  *
@@ -27,11 +27,14 @@
 #include "filsys.h"
 
 enum {
-    V7_BSIZE    = 512,
-    V7_INOPB    = 8,           /* inodes per block */
-    V7_INODESZ  = 64,          /* sizeof(struct dinode) */
+    V7_BSIZE    = 512,          /* default / legacy block size */
+    V7_MAXBSIZE = 2048,         /* largest block size the engine supports (512/1024/2048) */
+    V7_INOPB    = 8,            /* inodes per block (at V7_BSIZE) */
+    V7_INODESZ  = 64,           /* sizeof(struct dinode) */
     V7_NICFREE  = 50,          /* superblock free-block cache size (V7/32V) */
     V7_COH_NICFREE = 64,       /* Coherent free-block cache size */
+    V7_XEN_NICFREE = 100,      /* Xenix free-block cache size */
+    V7_XEN_MAGIC   = 0x2b5544, /* Xenix superblock magic (offset 1016) */
     V7_COH_MAXINTN  = 255,     /* Coherent interleave bound (fsck MAXINTN) */
     V7_NICINOD  = 100,         /* superblock free-inode cache size */
     V7_ROOTINO  = 2,
@@ -132,15 +135,20 @@ static inline void v7_put24(uint8_t *p, int le, uint32_t v) {
  * packing (8086 heritage) and widens the free cache to 64 entries, but its
  * on-disk byte order is the PDP-11's middle-endian, not 32V's little-endian:
  * the format was fixed on the PDP-11 and Coherent preserved it verbatim on
- * x86.  `coh` selects that layout, `le` the byte order. */
-static inline int sb_nicfree(int coh)       { return coh ? V7_COH_NICFREE : V7_NICFREE; }
-static inline int sb_fsize_off(int le, int coh)  { return (le && !coh) ? 4 : 2; }
-static inline int sb_nfree_off(int le, int coh)  { return (le && !coh) ? 8 : 6; }
-static inline int sb_free_off(int le, int coh)   { return (le && !coh) ? 12 : 8; }
-static inline int sb_ninode_off(int le, int coh) { return sb_free_off(le, coh) + 4 * sb_nicfree(coh); }
-static inline int sb_inode_off(int le, int coh)  { return sb_ninode_off(le, coh) + 2; }
-static inline int sb_time_off(int le, int coh)   { return sb_inode_off(le, coh) + 2*V7_NICINOD + 4 + ((le && !coh) ? 2 : 0); }
-static inline int fb_free_off(int le, int coh)   { return (le && !coh) ? 4 : 2; }
+ * x86.  Xenix is little-endian like 32V but keeps the 2-byte packing and
+ * widens the free cache to 100 entries.  `coh`/`xen` select the cache width and
+ * packing; `le` selects the byte order. */
+static inline int sb_nicfree(int coh, int xen) { return xen ? V7_XEN_NICFREE : coh ? V7_COH_NICFREE : V7_NICFREE; }
+/* 4-byte field packing: only 32V (VAX) aligns daddr_t/time_t to 4 bytes; V7,
+ * Coherent and Xenix keep the 2-byte (PDP-11/8086) packing. */
+static inline int sb_pack4(int le, int coh, int xen) { return le && !coh && !xen; }
+static inline int sb_fsize_off(int le, int coh, int xen)  { return sb_pack4(le, coh, xen) ? 4 : 2; }
+static inline int sb_nfree_off(int le, int coh, int xen)  { return sb_pack4(le, coh, xen) ? 8 : 6; }
+static inline int sb_free_off(int le, int coh, int xen)   { return sb_pack4(le, coh, xen) ? 12 : 8; }
+static inline int sb_ninode_off(int le, int coh, int xen) { return sb_free_off(le, coh, xen) + 4 * sb_nicfree(coh, xen); }
+static inline int sb_inode_off(int le, int coh, int xen)  { return sb_ninode_off(le, coh, xen) + 2; }
+static inline int sb_time_off(int le, int coh, int xen)   { return sb_inode_off(le, coh, xen) + 2*V7_NICINOD + 4 + (sb_pack4(le, coh, xen) ? 2 : 0); }
+static inline int fb_free_off(int le, int coh, int xen)   { return sb_pack4(le, coh, xen) ? 4 : 2; }
 
 /* ---- core types -------------------------------------------------------- */
 
@@ -154,12 +162,16 @@ typedef struct {
     int        readonly;
     int        le;             /* 0 = PDP-11 middle-endian (V7/Coherent), 1 = little-endian (32V) */
     int        coherent;       /* Coherent: 2-byte-packed superblock, NICFREE=64, s_unique */
+    int        xenix;          /* Xenix: little-endian 2-byte-packed superblock, NICFREE=100 */
+    uint32_t   bsize;          /* logical block size (512 or 1024; 512 for all current editions) */
+    int        ndaddr;         /* direct block addresses per inode (10; 4 for bsd29) */
+    int        niaddr;         /* total block addresses per inode (13; 7 for bsd29) */
     uint64_t   base;           /* byte offset of this filesystem within the file */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
     uint16_t   nfree;
-    uint32_t   free[V7_COH_NICFREE];
+    uint32_t   free[V7_XEN_NICFREE];   /* max free-cache depth: 50/64/100 */
     uint16_t   ninode;
     uint16_t   inode[V7_NICINOD];
     uint32_t   time;           /* last superblock update */
@@ -178,7 +190,7 @@ typedef struct {
  * the PDP-11 (V7) middle-endian order.  offset is the byte offset of the
  * filesystem within the file (0 = it starts at block 0 of the file). */
 int v7fs_open(v7fs_t *fs, const char *path, int readonly, int mode,
-              uint64_t offset);
+              uint64_t offset, uint32_t bsize);
 /* Flush the superblock and close. */
 void v7fs_close(v7fs_t *fs);
 /* Flush the superblock (and pending metadata) to the image without closing. */
@@ -192,9 +204,13 @@ int v7fs_mark_dirty(v7fs_t *fs);
 int v7fs_read_block(v7fs_t *fs, uint32_t bno, uint8_t *buf);
 int v7fs_write_block(v7fs_t *fs, uint32_t bno, const uint8_t *buf);
 
+/* Block-size-dependent quantities: the logical block size is fs->bsize, not the
+ * compile-time V7_BSIZE.  4-byte daddr_t per indirect, 64-byte inodes. */
+static inline uint32_t v7_nindir(const v7fs_t *fs) { return fs->bsize / 4; }
+static inline uint32_t v7_inopb(const v7fs_t *fs)  { return fs->bsize / V7_INODESZ; }
 /* itod / itoo: inode number -> block and offset. */
-static inline uint32_t v7_itod(uint32_t ino) { return (ino + 15) >> 3; }
-static inline uint32_t v7_itoo(uint32_t ino) { return (ino + 15) & 7; }
+static inline uint32_t v7_itod(const v7fs_t *fs, uint32_t ino) { return 2 + (ino - 1) / v7_inopb(fs); }
+static inline uint32_t v7_itoo(const v7fs_t *fs, uint32_t ino) { return (ino - 1) % v7_inopb(fs); }
 
 int v7fs_read_inode(v7fs_t *fs, uint32_t ino, v7_inode_t *ip);
 int v7fs_write_inode(v7fs_t *fs, uint32_t ino, const v7_inode_t *ip);

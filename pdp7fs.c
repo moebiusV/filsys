@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* pdp7fs.c - PDP-7 Unix filesystem, on-disk access layer.
  *
@@ -1192,10 +1192,12 @@ int p7fs_clri(p7fs_t *fs, uint32_t ino)
  * typed backend function; the `void *` argument converts implicitly to
  * p7fs_t*, so there is no cast anywhere. */
 
-static int p7fs_open_op(void *fs, const char *path, int readonly, int le, uint64_t offset) {
+static int p7fs_open_op(void *fs, const char *path, int readonly, int le, uint64_t offset, uint32_t bsize) {
     (void)le;   /* no byte-order variant */
+    (void)bsize;
     return p7fs_open(fs, path, readonly, offset);
 }
+static uint32_t p7fs_blocksize_op(const void *fs) { (void)fs; return P7_WSIZE * 2; }
 static void p7fs_close_op(void *fs) { p7fs_close(fs); }
 static int p7fs_sync_op(void *fs) { return p7fs_sync(fs); }
 static int p7fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
@@ -1237,7 +1239,7 @@ static uint64_t p7fs_max_file_op(void *fs) {
 
 const struct filsys_ops p7fs_ops = {
     .name        = "pdp7",
-    .blocksize   = P7_WSIZE * 2,   /* 64 words x 2 chars = 128 bytes */
+    .blocksize   = p7fs_blocksize_op,   /* 64 words x 2 chars = 128 bytes */
     .open        = p7fs_open_op,
     .close       = p7fs_close_op,
     .sync        = p7fs_sync_op,

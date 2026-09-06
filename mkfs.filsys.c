@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* mkfs.filsys.c - create a Research Unix (PDP-7 through 32V) filesystem in a
  * disk image.
@@ -17,9 +17,9 @@
  * format: 1, 2 and 3 are byte-identical (bitmap allocator, 10-byte dirents,
  * root inode 41); 4, 5 and 6 are byte-identical (the V6 format); 32 is 32V,
  * V7 recompiled for the VAX with little-endian 32-bit fields.  0 is the
- * word-addressed PDP-7.  coherent is the Mark Williams Coherent format (see
- * docs/coherent-format.md): middle-endian V7 with a 64-entry free cache and
- * s_m/s_n/s_unique; -m/-n set the interleave factors (s_m/s_n, default 1/1).
+ * word-addressed PDP-7.  coherent is the Mark Williams Coherent format:
+ * middle-endian V7 with a 64-entry free cache and s_m/s_n/s_unique; -m/-n set
+ * the interleave factors (s_m/s_n, default 1/1).
  * The V6 and V7 layouts differ on disk (see README): V6 has 16 32-byte inodes
  * per block, 16-bit block numbers, an s_isize that counts i-list *blocks*
  * (first data block = s_isize+2), and no bad-block file; V7 has 8 64-byte
@@ -51,11 +51,13 @@
 #include "v6fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
+#include "bsd211fs.h"
 
 enum { A_MAGIC1 = 0407 };  /* V7 normal a.out magic (boot block) */
 
 static int      fd;
 static uint64_t base;   /* byte offset of the filesystem in the image */
+static uint32_t bsize = V7_BSIZE;   /* logical block size (512 or 1024) */
 
 static void pblock(uint32_t bno, const uint8_t *buf);
 static void write_boot(const char *path);
@@ -64,12 +66,15 @@ static void die(const char *fmt, ...);
 /* ---- V7 ----------------------------------------------------------------- */
 
 static uint32_t v7_isize, v7_fsize;
-static uint8_t  v7_sbuf[V7_BSIZE];    /* in-core superblock (block 1) */
-static uint8_t  v7_freebuf[V7_BSIZE];
+static uint8_t  v7_sbuf[V7_MAXBSIZE]; /* in-core superblock (block 1) */
+static uint8_t  v7_freebuf[V7_MAXBSIZE];
 static uint16_t v7_nfree;
 static uint32_t v7_tinode, v7_tfree;
-static int      v7_le;                /* 0 = V7 middle-endian, 1 = 32V little-endian */
+static int      v7_le;                /* 0 = V7 middle-endian, 1 = little-endian (32V/Xenix) */
 static int      v7_coh;               /* Coherent: NICFREE=64, s_m/s_n/s_unique */
+static int      v7_xen;               /* Xenix: little-endian, NICFREE=100, magic tail */
+static uint32_t v7_ipb = V7_INOPB;  /* inodes per block (bsize / 64) */
+static int      v7_niaddr = V7_NIADDR; /* total address slots (13, or 7 for bsd29) */
 static uint16_t v7_m = 1, v7_n = 1;   /* interleave factors (s_m/s_n, coherent) */
 
 static void     v7_sb_put16(uint32_t off, uint16_t v);
@@ -104,6 +109,8 @@ static void mkfs_v6(const char *path, uint32_t blocks, const char *bootfile);
 
 static int parse_edition(const char *s)
 {
+    if (strcmp(s, "vax32") == 0 || strcmp(s, "VAX32") == 0)
+        return FILSYS_32V;
     if (s[0] == 'v' || s[0] == 'V')
         s++;
     if (strcmp(s, "v0") == 0 || strcmp(s, "0") == 0 ||
@@ -115,10 +122,16 @@ static int parse_edition(const char *s)
         return FILSYS_V6;
     if (strcmp(s, "7") == 0)
         return FILSYS_V7;
-    if (strcmp(s, "32") == 0 || strcmp(s, "32v") == 0)
+    if (strcmp(s, "vax32") == 0 || strcmp(s, "32v") == 0 || strcmp(s, "32") == 0)
         return FILSYS_32V;
     if (strcmp(s, "coherent") == 0 || strcmp(s, "coh") == 0 || strcmp(s, "33") == 0)
         return FILSYS_COHERENT;
+    if (strcmp(s, "xenix") == 0 || strcmp(s, "34") == 0)
+        return FILSYS_XENIX;
+    if (strcmp(s, "bsd29") == 0 || strcmp(s, "35") == 0)
+        return FILSYS_BSD29;
+    if (strcmp(s, "bsd211") == 0 || strcmp(s, "36") == 0)
+        return FILSYS_BSD211;
     return -1;
 }
 
@@ -126,7 +139,7 @@ static int parse_edition(const char *s)
  * an explicit `blocks` argument, else the image's own size, else a default. */
 static uint32_t resolve_blocks(const char *path, uint64_t offblock, uint32_t blocks)
 {
-    base = offblock * V7_BSIZE;
+    base = offblock * bsize;
 
     fd = open(path, O_RDWR | O_CREAT, 0666);
     if (fd < 0)
@@ -134,8 +147,8 @@ static uint32_t resolve_blocks(const char *path, uint64_t offblock, uint32_t blo
 
     if (blocks == 0) {
         struct stat st;
-        if (fstat(fd, &st) == 0 && (uint64_t)st.st_size >= base + V7_BSIZE)
-            blocks = (uint32_t)((st.st_size - base) / V7_BSIZE);
+        if (fstat(fd, &st) == 0 && (uint64_t)st.st_size >= base + bsize)
+            blocks = (uint32_t)((st.st_size - base) / bsize);
         if (blocks < 16)
             blocks = 4000;      /* small usable volume */
     }
@@ -144,7 +157,7 @@ static uint32_t resolve_blocks(const char *path, uint64_t offblock, uint32_t blo
 
 static void pblock(uint32_t bno, const uint8_t *buf)
 {
-    if (pwrite(fd, buf, V7_BSIZE, (off_t)(base + (uint64_t)bno * V7_BSIZE)) != V7_BSIZE)
+    if (pwrite(fd, buf, bsize, (off_t)(base + (uint64_t)bno * bsize)) != (ssize_t)bsize)
         die("write error at block %u\n", bno);
 }
 
@@ -165,7 +178,7 @@ static void write_boot(const char *path)
     uint32_t c = (uint32_t)text + data;
     if (c > V7_BSIZE)
         die("%s: boot too big (%u > %d bytes)\n", path, c, V7_BSIZE);
-    uint8_t buf[V7_BSIZE] = {0};
+    uint8_t buf[V7_MAXBSIZE] = {0};
     if (read(f, buf, c) != (ssize_t)c)
         die("%s: short boot\n", path);
     close(f);
@@ -193,18 +206,18 @@ static uint32_t v7_alloc(void)
 
     v7_tfree--;
     v7_nfree--;
-    bno = v7_get32(v7_sbuf + sb_free_off(v7_le, v7_coh) + 4 * v7_nfree, v7_le);
+    bno = v7_get32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen) + 4 * v7_nfree, v7_le);
     if (bno == 0)
         die("out of free space\n");
     if (v7_nfree == 0) {
         /* free-list exhausted: block bno holds the next batch */
-        uint8_t fb[V7_BSIZE];
-        if (pread(fd, fb, V7_BSIZE, (off_t)(base + (uint64_t)bno * V7_BSIZE)) != V7_BSIZE)
+        uint8_t fb[V7_MAXBSIZE];
+        if (pread(fd, fb, bsize, (off_t)(base + (uint64_t)bno * bsize)) != (ssize_t)bsize)
             die("read error at block %u\n", bno);
         v7_nfree = v7_get16le(fb);
-        for (i = 0; i < sb_nicfree(v7_coh); i++)
-            v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh) + 4 * i, v7_le,
-                     v7_get32(fb + fb_free_off(v7_le, v7_coh) + 4 * i, v7_le));
+        for (i = 0; i < sb_nicfree(v7_coh, v7_xen); i++)
+            v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen) + 4 * i, v7_le,
+                     v7_get32(fb + fb_free_off(v7_le, v7_coh, v7_xen) + 4 * i, v7_le));
     }
     return bno;
 }
@@ -216,19 +229,19 @@ static void v7_bfree(uint32_t bno)
     if (v7_nfree == 0) {
         /* Seed the 0 sentinel at the bottom of the stack, mirroring v7fs_bfree;
          * it terminates the free-list chain and is not itself a free block. */
-        v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh), v7_le, 0);
+        v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen), v7_le, 0);
         v7_nfree = 1;
     }
-    if (v7_nfree >= sb_nicfree(v7_coh)) {
-        memset(v7_freebuf, 0, V7_BSIZE);
+    if (v7_nfree >= sb_nicfree(v7_coh, v7_xen)) {
+        memset(v7_freebuf, 0, bsize);
         v7_put16le(v7_freebuf, (uint16_t)v7_nfree);
-        for (i = 0; i < sb_nicfree(v7_coh); i++)
-            v7_put32(v7_freebuf + fb_free_off(v7_le, v7_coh) + 4 * i, v7_le,
-                     v7_get32(v7_sbuf + sb_free_off(v7_le, v7_coh) + 4 * i, v7_le));
+        for (i = 0; i < sb_nicfree(v7_coh, v7_xen); i++)
+            v7_put32(v7_freebuf + fb_free_off(v7_le, v7_coh, v7_xen) + 4 * i, v7_le,
+                     v7_get32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen) + 4 * i, v7_le));
         pblock(bno, v7_freebuf);
         v7_nfree = 0;
     }
-    v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh) + 4 * v7_nfree, v7_le, bno);
+    v7_put32(v7_sbuf + sb_free_off(v7_le, v7_coh, v7_xen) + 4 * v7_nfree, v7_le, bno);
     v7_nfree++;
     v7_tfree++;
 }
@@ -274,9 +287,9 @@ static void v7_mkroot(void)
 {
     uint32_t addr[V7_NIADDR] = {0};
     uint32_t bno = v7_alloc();
-    uint8_t db[V7_BSIZE];
+    uint8_t db[V7_MAXBSIZE];
 
-    memset(db, 0, V7_BSIZE);
+    memset(db, 0, bsize);
     v7_put16le(db, V7_ROOTINO);
     memcpy(db + 2, ".", 1);
     v7_put16le(db + V7_DIRENTSZ, V7_ROOTINO);
@@ -290,12 +303,12 @@ static void v7_mkroot(void)
 static void v7_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
                     const uint32_t *addr)
 {
-    uint32_t d = (ino + 15) >> 3;
-    uint32_t o = (ino + 15) & 7;
-    uint8_t ib[V7_BSIZE];
+    uint32_t d = 2 + (ino - 1) / v7_ipb;
+    uint32_t o = (ino - 1) % v7_ipb;
+    uint8_t ib[V7_MAXBSIZE];
     int i;
 
-    if (pread(fd, ib, V7_BSIZE, (off_t)(base + (uint64_t)d * V7_BSIZE)) != V7_BSIZE)
+    if (pread(fd, ib, bsize, (off_t)(base + (uint64_t)d * bsize)) != (ssize_t)bsize)
         die("read error at inode block %u\n", d);
 
     uint8_t *ip = ib + o * V7_INODESZ;
@@ -303,7 +316,7 @@ static void v7_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
     v7_put16le(ip + 0, mode);
     v7_put16le(ip + 2, (uint16_t)nlink);
     v7_put32(ip + 8, v7_le, size);
-    for (i = 0; i < V7_NIADDR; i++)
+    for (i = 0; i < v7_niaddr; i++)
         v7_put24(ip + 12 + 3 * i, v7_le, addr[i]);
     v7_put32(ip + 52, v7_le, (uint32_t)time(NULL));
     v7_put32(ip + 56, v7_le, (uint32_t)time(NULL));
@@ -319,8 +332,8 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
     uint32_t isz = blocks / 25;
     if (isz == 0)
         isz = 1;
-    if (isz > 65500 / V7_INOPB)
-        isz = 65500 / V7_INOPB;
+    if (isz > 65500 / v7_ipb)
+        isz = 65500 / v7_ipb;
     isz += 2;
     if (isz >= blocks)
         die("%s: %u blocks too small for an i-list of %u blocks\n",
@@ -332,43 +345,44 @@ static void mkfs_v7(const char *path, uint32_t blocks, const char *bootfile)
     if (bootfile)
         write_boot(bootfile);
 
-    memset(v7_sbuf, 0, V7_BSIZE);
+    memset(v7_sbuf, 0, bsize);
     v7_sb_put16(0, (uint16_t)v7_isize);
-    v7_sb_put32(sb_fsize_off(v7_le, v7_coh), v7_fsize);
+    v7_sb_put32(sb_fsize_off(v7_le, v7_coh, v7_xen), v7_fsize);
+    if (v7_xen)
+        v7_put32le(v7_sbuf + 0x3F8, V7_XEN_MAGIC);   /* Xenix magic (offset 1016) */
     if (v7_coh) {
-        int toff = sb_time_off(v7_le, v7_coh);
+        int toff = sb_time_off(v7_le, v7_coh, v7_xen);
         v7_sb_put16(toff + 10, v7_m);             /* s_m */
         v7_sb_put16(toff + 12, v7_n);             /* s_n */
         v7_sb_put32(toff + 26, 0);                /* s_unique (4-byte `long`) */
     }
 
     /* s_isize is the first data block (not the i-list size), so the i-list is
-     * blocks 2..s_isize-1 and the inode count is (s_isize-2) * 8.  V7's own
-     * mkfs prints (n)*NIPB for n = s_isize-2; print the same, not isize*8. */
+     * blocks 2..s_isize-1 and the inode count is (s_isize-2) * inodes/block. */
     if (v7_coh)
         printf("m/n = %u %u, ", v7_m, v7_n);
     printf("isize = %u, fsize = %u\n",
-           (v7_isize - 2) * V7_INOPB, v7_fsize);
+           (v7_isize - 2) * v7_ipb, v7_fsize);
 
-    uint8_t zb[V7_BSIZE] = {0};
+    uint8_t zb[V7_MAXBSIZE] = {0};
     for (uint32_t b = 2; b < v7_isize; b++) {
         pblock(b, zb);
-        v7_tinode += V7_INOPB;
+        v7_tinode += v7_ipb;
     }
 
     v7_bflist();
     v7_mkroot();
 
-    v7_sb_put16(sb_nfree_off(v7_le, v7_coh), (uint16_t)v7_nfree);
-    v7_sb_put32(sb_time_off(v7_le, v7_coh), (uint32_t)time(NULL));   /* s_time */
-    if (!v7_le) {
-        int toff = sb_time_off(v7_le, v7_coh);
+    v7_sb_put16(sb_nfree_off(v7_le, v7_coh, v7_xen), (uint16_t)v7_nfree);
+    v7_sb_put32(sb_time_off(v7_le, v7_coh, v7_xen), (uint32_t)time(NULL));   /* s_time */
+    if (!v7_le || v7_xen) {
+        int toff = sb_time_off(v7_le, v7_coh, v7_xen);
         v7_sb_put32(toff + 4, v7_tfree);          /* s_tfree */
         v7_sb_put16(toff + 8, (uint16_t)v7_tinode); /* s_tinode */
     }
     pblock(1, v7_sbuf);
 
-    if (ftruncate(fd, (off_t)(base + (uint64_t)v7_fsize * V7_BSIZE)) < 0)
+    if (ftruncate(fd, (off_t)(base + (uint64_t)v7_fsize * bsize)) < 0)
         die("%s: ftruncate: %s\n", path, strerror(errno));
 
     printf("%s: %u blocks, %u inodes written\n", path, v7_fsize, v7_tinode);
@@ -766,6 +780,190 @@ static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile)
            path, p7_free_count, P7_ROOTINO);
 }
 
+/* ---- 2.11BSD -------------------------------------------------------------- */
+
+static uint32_t bsd211_isize, bsd211_fsize;
+static uint8_t  bsd211_sbuf[BSD211_BSIZE];
+static uint8_t  bsd211_freebuf[BSD211_BSIZE];
+static uint16_t bsd211_nfree;
+static uint32_t bsd211_tinode, bsd211_tfree;
+
+static void bsd211_sb_put16(uint32_t off, uint16_t v) { bsd211_put16le(bsd211_sbuf + off, v); }
+static void bsd211_sb_put32(uint32_t off, uint32_t v) { bsd211_put32me(bsd211_sbuf + off, v); }
+
+static uint32_t bsd211_alloc(void)
+{
+    uint32_t bno;
+    int i;
+
+    bsd211_tfree--;
+    bsd211_nfree--;
+    bno = bsd211_get32me(bsd211_sbuf + BSD211_SB_FREE + 4 * bsd211_nfree);
+    if (bno == 0)
+        die("out of free space\n");
+    if (bsd211_nfree == 0) {
+        uint8_t fb[BSD211_BSIZE];
+        if (pread(fd, fb, BSD211_BSIZE, (off_t)(base + (uint64_t)bno * BSD211_BSIZE)) != BSD211_BSIZE)
+            die("read error at block %u\n", bno);
+        bsd211_nfree = bsd211_get16le(fb);
+        for (i = 0; i < BSD211_NICFREE; i++)
+            bsd211_put32me(bsd211_sbuf + BSD211_SB_FREE + 4 * i, bsd211_get32me(fb + 2 + 4 * i));
+    }
+    return bno;
+}
+
+static void bsd211_bfree(uint32_t bno)
+{
+    int i;
+
+    if (bsd211_nfree == 0) {
+        /* Seed the 0 sentinel, mirroring the kernel's free(): it terminates the
+         * free-list chain and is not itself a free block. */
+        bsd211_put32me(bsd211_sbuf + BSD211_SB_FREE, 0);
+        bsd211_nfree = 1;
+    }
+    if (bsd211_nfree >= BSD211_NICFREE) {
+        memset(bsd211_freebuf, 0, BSD211_BSIZE);
+        bsd211_put16le(bsd211_freebuf, (uint16_t)bsd211_nfree);
+        for (i = 0; i < BSD211_NICFREE; i++)
+            bsd211_put32me(bsd211_freebuf + 2 + 4 * i,
+                          bsd211_get32me(bsd211_sbuf + BSD211_SB_FREE + 4 * i));
+        pblock(bno, bsd211_freebuf);
+        bsd211_nfree = 0;
+    }
+    bsd211_put32me(bsd211_sbuf + BSD211_SB_FREE + 4 * bsd211_nfree, bno);
+    bsd211_nfree++;
+    bsd211_tfree++;
+}
+
+static void bsd211_iput(uint32_t ino, uint16_t mode, int16_t nlink, uint32_t size,
+                       const uint32_t *addr)
+{
+    uint32_t d = 2 + (ino - 1) / BSD211_INOPB;
+    uint32_t o = (ino - 1) % BSD211_INOPB;
+    uint8_t ib[BSD211_BSIZE];
+    int i;
+
+    if (pread(fd, ib, BSD211_BSIZE, (off_t)(base + (uint64_t)d * BSD211_BSIZE)) != BSD211_BSIZE)
+        die("read error at inode block %u\n", d);
+
+    uint8_t *ip = ib + o * BSD211_INODESZ;
+    memset(ip, 0, BSD211_INODESZ);
+    bsd211_put16le(ip + 0, mode);
+    bsd211_put16le(ip + 2, (uint16_t)nlink);
+    bsd211_put32me(ip + 8, size);
+    for (i = 0; i < BSD211_NIADDR; i++)
+        bsd211_put32me(ip + 12 + 4 * i, addr[i]);
+    /* di_flags (offset 50) stays zero */
+    bsd211_put32me(ip + 52, (uint32_t)time(NULL));
+    bsd211_put32me(ip + 56, (uint32_t)time(NULL));
+    bsd211_put32me(ip + 60, (uint32_t)time(NULL));
+
+    pblock(d, ib);
+    bsd211_tinode--;
+}
+
+/* DIRSIZ: round_up(6 + namlen, 4), the same (7+namlen+3)&~3 as bsd211fs.c. */
+static uint32_t bsd211_dirsiz(uint16_t namlen) { return (7u + namlen + 3u) & ~3u; }
+
+static void bsd211_mkroot(void)
+{
+    /* lost+found (inode 3): two 512-byte directory blocks.  The first holds
+     * "." and ".."; the second is empty (one free entry spanning it). */
+    uint32_t lfb = bsd211_alloc();
+    uint8_t lf[BSD211_BSIZE] = {0};
+    bsd211_put16le(lf + 0, BSD211_LOSTFOUNDINO);          /* . */
+    bsd211_put16le(lf + 2, (uint16_t)bsd211_dirsiz(1));
+    bsd211_put16le(lf + 4, 1);
+    lf[6] = '.';
+    bsd211_put16le(lf + 8, BSD211_ROOTINO);               /* .. (fills the block) */
+    bsd211_put16le(lf + 10, (uint16_t)(BSD211_DIRBLKSIZ - 8));
+    bsd211_put16le(lf + 12, 2);
+    lf[14] = '.'; lf[15] = '.';
+    bsd211_put16le(lf + BSD211_DIRBLKSIZ + 2, (uint16_t)BSD211_DIRBLKSIZ);  /* 2nd block empty */
+    pblock(lfb, lf);
+
+    uint32_t lfa[BSD211_NIADDR] = {0};
+    lfa[0] = lfb;
+    bsd211_iput(BSD211_LOSTFOUNDINO, BSD211_IFDIR | 0777, 2, BSD211_DIRBLKSIZ * 2, lfa);
+
+    /* root (inode 2): one 512-byte directory block with ".", "..", "lost+found". */
+    uint32_t rb = bsd211_alloc();
+    uint8_t rd[BSD211_BSIZE] = {0};
+    uint32_t off = 0;
+    bsd211_put16le(rd + off, BSD211_ROOTINO);             /* . */
+    bsd211_put16le(rd + off + 2, (uint16_t)bsd211_dirsiz(1));
+    bsd211_put16le(rd + off + 4, 1);
+    rd[off + 6] = '.';
+    off += bsd211_dirsiz(1);
+    bsd211_put16le(rd + off, BSD211_ROOTINO);             /* .. */
+    bsd211_put16le(rd + off + 2, (uint16_t)bsd211_dirsiz(2));
+    bsd211_put16le(rd + off + 4, 2);
+    rd[off + 6] = '.'; rd[off + 7] = '.';
+    off += bsd211_dirsiz(2);
+    bsd211_put16le(rd + off, BSD211_LOSTFOUNDINO);        /* lost+found (fills the block) */
+    bsd211_put16le(rd + off + 2, (uint16_t)(BSD211_DIRBLKSIZ - off));
+    bsd211_put16le(rd + off + 4, 10);
+    memcpy(rd + off + 6, "lost+found", 10);
+    pblock(rb, rd);
+
+    uint32_t ra[BSD211_NIADDR] = {0};
+    ra[0] = rb;
+    bsd211_iput(BSD211_ROOTINO, BSD211_IFDIR | 0777, 3, BSD211_DIRBLKSIZ, ra);
+}
+
+static void mkfs_bsd211(const char *path, uint32_t blocks, const char *bootfile)
+{
+    (void)bootfile;   /* no boot-block install for 2.11BSD (yet) */
+
+    uint32_t isz = blocks / 25;
+    if (isz == 0)
+        isz = 1;
+    if (isz > 65500 / BSD211_INOPB)
+        isz = 65500 / BSD211_INOPB;
+    isz += 2;
+    if (isz >= blocks)
+        die("%s: %u blocks too small for an i-list of %u blocks\n", path, blocks, isz);
+
+    bsd211_isize = isz;
+    bsd211_fsize = blocks;
+
+    memset(bsd211_sbuf, 0, BSD211_BSIZE);
+    bsd211_sb_put16(BSD211_SB_ISIZE, (uint16_t)bsd211_isize);
+    bsd211_sb_put32(BSD211_SB_FSIZE, bsd211_fsize);
+
+    printf("isize = %u, fsize = %u\n", (bsd211_isize - 2) * BSD211_INOPB, bsd211_fsize);
+
+    uint8_t zb[BSD211_BSIZE] = {0};
+    for (uint32_t b = 2; b < bsd211_isize; b++) {
+        pblock(b, zb);
+        bsd211_tinode += BSD211_INOPB;
+    }
+
+    /* inode 1: reserved (empty regular file), as BSD's mkfs writes */
+    {
+        uint32_t zaddr[BSD211_NIADDR] = {0};
+        bsd211_iput(1, BSD211_IFREG, 0, 0, zaddr);
+    }
+
+    for (uint32_t bn = bsd211_isize; bn < bsd211_fsize; bn++)
+        bsd211_bfree(bn);
+
+    bsd211_mkroot();
+
+    bsd211_sb_put16(BSD211_SB_NFREE, (uint16_t)bsd211_nfree);
+    bsd211_sb_put32(BSD211_SB_TIME, (uint32_t)time(NULL));
+    bsd211_sb_put32(BSD211_SB_TFREE, bsd211_tfree);
+    bsd211_sb_put16(BSD211_SB_TINODE, (uint16_t)bsd211_tinode);
+    bsd211_sbuf[BSD211_SB_FMOD] = 0;   /* clean */
+    pblock(1, bsd211_sbuf);
+
+    if (ftruncate(fd, (off_t)(base + (uint64_t)bsd211_fsize * BSD211_BSIZE)) < 0)
+        die("%s: ftruncate: %s\n", path, strerror(errno));
+
+    printf("%s: %u blocks, %u inodes written\n", path, bsd211_fsize, bsd211_tinode);
+}
+
 /* ---- main --------------------------------------------------------------- */
 
 int main(int argc, char **argv)
@@ -774,7 +972,7 @@ int main(int argc, char **argv)
     const char *bootfile = NULL;
     uint32_t blocks = 0;
     uint64_t offblock = 0;
-    int edition = FILSYS_V7;
+    int edition = -1;   /* no default: the version must be named explicitly */
     int c;
 
     while ((c = getopt(argc, argv, "v:o:b:m:n:")) != -1) {
@@ -782,7 +980,7 @@ int main(int argc, char **argv)
         case 'v':
             edition = parse_edition(optarg);
             if (edition < 0) {
-                fprintf(stderr, "mkfs.filsys: bad edition '%s' (want pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent)\n", optarg);
+                fprintf(stderr, "mkfs.filsys: bad edition '%s'\n", optarg);
                 return 1;
             }
             break;
@@ -791,12 +989,18 @@ int main(int argc, char **argv)
         case 'm': v7_m = (uint16_t)strtoul(optarg, NULL, 0); break;
         case 'n': v7_n = (uint16_t)strtoul(optarg, NULL, 0); break;
         default:
-            fprintf(stderr, "usage: mkfs.filsys [-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>] [-o block] [-b boot] [-m m] [-n n] image [blocks]\n");
+            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-b boot] [-m m] [-n n] image [blocks]\n"
+                            "  editions: pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211\n");
             return 1;
         }
     }
     if (optind >= argc) {
-        fprintf(stderr, "usage: mkfs.filsys [-v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>] [-o block] [-b boot] [-m m] [-n n] image [blocks]\n");
+        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-b boot] [-m m] [-n n] image [blocks]\n"
+                        "  editions: pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211\n");
+        return 1;
+    }
+    if (edition < 0) {
+        fprintf(stderr, "mkfs.filsys: no filesystem version given; use -v <edition>\n");
         return 1;
     }
     path = argv[optind];
@@ -810,17 +1014,25 @@ int main(int argc, char **argv)
         return 0;
     }
 
+    /* Set the edition's block size and layout flags before resolve_blocks
+     * computes the byte offset and block count in that block size. */
+    bsize = (edition == FILSYS_XENIX || edition == FILSYS_BSD29 || edition == FILSYS_BSD211) ? 1024 : 512;
+    v7_le  = (edition == FILSYS_32V || edition == FILSYS_XENIX);
+    v7_coh = (edition == FILSYS_COHERENT);
+    v7_xen = (edition == FILSYS_XENIX);
+    v7_ipb = bsize / V7_INODESZ;
+    v7_niaddr = (edition == FILSYS_BSD29) ? 7 : V7_NIADDR;
+
     blocks = resolve_blocks(path, offblock, blocks);
 
     if (edition == FILSYS_V6)
         mkfs_v6(path, blocks, bootfile);
     else if (edition == FILSYS_V1)
         mkfs_v1(path, blocks, bootfile);
-    else {
-        v7_le  = (edition == FILSYS_32V);
-        v7_coh = (edition == FILSYS_COHERENT);
-        mkfs_v7(path, blocks, bootfile);
-    }
+    else if (edition == FILSYS_BSD211)
+        mkfs_bsd211(path, blocks, bootfile);
+    else
+        mkfs_v7(path, blocks, bootfile);   /* v7, vax32/32v, coherent, xenix, bsd29 */
 
     close(fd);
     return 0;

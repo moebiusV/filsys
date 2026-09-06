@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* mount.filsys.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
  * filesystem, selecting the on-disk edition at run time.
@@ -225,14 +225,16 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
+            "usage: %s -v <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211> [-o offset=N[,version=N][,uid=N][,gid=N]]\n"
             "                [-r] [-f] [-d] <image> <mountpoint>\n"
-            "       %s -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [-o offset=N] -c <image>   # integrity check\n",
+            "       %s -v <edition> [-o offset=N] -c <image>   # integrity check\n",
             p, p);
 }
 
 /* Parse a -v / -o version= argument.  Returns FILSYS_V6/V7/32V, or -1. */
 static int parse_version(const char *s) {
+    if (!strcmp(s, "vax32") || !strcmp(s, "VAX32"))
+        return FILSYS_32V;
     if (s[0] == 'v' || s[0] == 'V') s++;   /* accept "v7" and "7" alike */
     if (!strcmp(s, "v0") || !strcmp(s, "0") || !strcmp(s, "pdp7") || !strcmp(s, "p7"))
         return FILSYS_PDP7;
@@ -242,15 +244,21 @@ static int parse_version(const char *s) {
         return FILSYS_V6;
     if (!strcmp(s, "7"))
         return FILSYS_V7;
-    if (!strcmp(s, "32") || !strcmp(s, "32v"))
+    if (!strcmp(s, "vax32") || !strcmp(s, "32v") || !strcmp(s, "32"))
         return FILSYS_32V;
     if (!strcmp(s, "coherent") || !strcmp(s, "coh") || !strcmp(s, "33"))
         return FILSYS_COHERENT;
+    if (!strcmp(s, "xenix") || !strcmp(s, "34"))
+        return FILSYS_XENIX;
+    if (!strcmp(s, "bsd29") || !strcmp(s, "35"))
+        return FILSYS_BSD29;
+    if (!strcmp(s, "bsd211") || !strcmp(s, "36"))
+        return FILSYS_BSD211;
     return -1;
 }
 
 int main(int argc, char *argv[]) {
-    int ver = FILSYS_V7, readonly = 0, foreground = 0, debug = 0, check = 0;
+    int ver = -1, readonly = 0, foreground = 0, debug = 0, check = 0;
     uint64_t offset = 0;
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
     char fuse_opts[512] = ""; /* -o options passed through to FUSE (allow_other, ...) */
@@ -264,8 +272,7 @@ int main(int argc, char *argv[]) {
         case 'v': {
             int v = parse_version(optarg);
             if (v < 0) {
-                fprintf(stderr, "%s: unknown Unix version \"%s\" (v0, v1, v2, v3, v4, v5, v6, v7, 32v)\n",
-                        argv[0], optarg);
+                fprintf(stderr, "%s: unknown Unix version \"%s\"\n", argv[0], optarg);
                 usage(argv[0]);
                 return 2;
             }
@@ -303,6 +310,11 @@ int main(int argc, char *argv[]) {
         case 'c': check = 1; break;
         default: usage(argv[0]); return 2;
         }
+    }
+    if (ver < 0) {
+        fprintf(stderr, "%s: no filesystem version given; use -v <edition>\n", argv[0]);
+        usage(argv[0]);
+        return 2;
     }
     if (check && (argc - optind != 1)) { fprintf(stderr, "usage: %s -c <image>\n", argv[0]); return 2; }
     if (!check && (argc - optind != 2)) { usage(argv[0]); return 2; }

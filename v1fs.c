@@ -1,4 +1,4 @@
-/* filsys 1.2.7 - 2026-09-04 - Copyright (C) 2026 David Walther */
+/* filsys 1.3.0 - 2026-09-05 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v1fs.c - First Edition (V1) Unix filesystem, on-disk access layer.
  *
@@ -6,7 +6,7 @@
  * in the superblock (a free-block map where 1 = free, and an inode map where
  * 0 = free, indexed from inode 41); there is no s_isize -- the i-list size is
  * derived from the inode-map size.  Directory entries are 10 bytes.  See
- * v1fs.h and docs/v1-format.md.
+ * v1fs.h.
  */
 #include <config.h>
 #include "v1fs.h"
@@ -1093,10 +1093,12 @@ int v1fs_clri(v1fs_t *fs, uint32_t ino)
  * v1fs_t*, so there is no cast anywhere. */
 
 static int v1fs_open_op(void *fs, const char *path, int readonly, int le,
-                        uint64_t offset) {
+                        uint64_t offset, uint32_t bsize) {
     (void)le;   /* V1 has no little-endian variant */
+    (void)bsize;
     return v1fs_open(fs, path, readonly, offset);
 }
+static uint32_t v1fs_blocksize_op(const void *fs) { (void)fs; return V1_BSIZE; }
 static void v1fs_close_op(void *fs) { v1fs_close(fs); }
 static int v1fs_sync_op(void *fs) { return v1fs_sync(fs); }
 static int v1fs_read_block_op(void *fs, uint32_t bno, uint8_t *buf)
@@ -1140,7 +1142,7 @@ static uint64_t v1fs_max_file_op(void *fs) {
 
 const struct filsys_ops v1fs_ops = {
     .name        = "v1",
-    .blocksize   = V1_BSIZE,
+    .blocksize   = v1fs_blocksize_op,
     .open        = v1fs_open_op,
     .close       = v1fs_close_op,
     .sync        = v1fs_sync_op,

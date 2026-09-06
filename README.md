@@ -16,8 +16,11 @@ mount.filsys -v pdp7 pdp7.dsk mnt        # PDP-7 format, word-addressed
 mount.filsys -v v1 v1root.dsk mnt        # V1 format (also V2 and V3, identical on disk)
 mount.filsys -v v6 v6root.dsk mnt        # V6 format (also V4 and V5, identical on disk)
 mount.filsys -v v7 rp06-0.disk mnt       # V7 format
-mount.filsys -v 32v 32vroot.dsk mnt      # 32V format (V7 for the VAX, little-endian)
+mount.filsys -v vax32 32vroot.dsk mnt    # 32V format (V7 for the VAX, little-endian)
 mount.filsys -v coherent coh.dsk mnt     # Coherent format (Mark Williams Co., V7 + interleave)
+mount.filsys -v xenix xenix.dsk mnt      # SCO Xenix format (little-endian, 1 KB blocks)
+mount.filsys -v bsd29 bsd29.dsk mnt      # 2.9BSD format (V7 inode, 1 KB blocks)
+mount.filsys -v bsd211 bsd211.dsk mnt    # 2.11BSD format (32-bit inode, variable dirs)
 ```
 
 Home: <https://github.com/moebiusV/filsys>
@@ -50,16 +53,18 @@ is compiled as C17 (not C23) to match Microsoft's toolchain ceiling.
 ## Usage
 
 ```sh
-mount.filsys -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> [options] <image> <mountpoint>
-mount.filsys -v <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> -c <image>   # integrity check (no mount)
+mount.filsys -v <edition> [options] <image> <mountpoint>
+mount.filsys -v <edition> -c <image>   # integrity check (no mount)
 ```
 
 `-v` takes the Unix edition: `pdp7` (the word-addressed PDP-7), `v1`/`v2`/`v3`,
-`v4`/`v5`/`v6`, `v7`, `32v`, or `coherent` (Mark Williams Co.; a bare number —
-`0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `32` — is also accepted, and `v0`/`p7`
-spell the PDP-7).  `v1`, `v2` and `v3` are one on-disk format, and `v4` and `v5`
-are byte-identical to `v6`, so the seven pre-V7 editions collapse onto two code
-paths.
+`v4`/`v5`/`v6`, `v7`, `vax32` (32V), `coherent` (Mark Williams Co.), `xenix`
+(SCO Xenix), `bsd29` (2.9BSD), or `bsd211` (2.11BSD).  A bare number — `0`,
+`1`, `2`, `3`, `4`, `5`, `6`, `7`, `32`, `33`, `34`, `35`, `36` — is also
+accepted, and `v0`/`p7` spell the PDP-7.  `v1`, `v2` and `v3` are one on-disk
+format, and `v4` and `v5` are byte-identical to `v6`, so the seven pre-V7
+editions collapse onto two code paths.  The edition is **required**: there is no
+default, and a wrong `-v` is an error, not a fallback.
 
 | option | meaning                          |
 |--------|----------------------------------|
@@ -71,8 +76,11 @@ paths.
 | `-v v5` | V5 format (byte-identical to V4/V6) |
 | `-v v6` | V6 format                          |
 | `-v v7` | V7 format                          |
-| `-v 32v`| 32V format (little-endian V7)      |
+| `-v vax32`| 32V format (little-endian V7)     |
 | `-v coherent`| Coherent format (middle-endian V7, 64-entry free cache, interleave) |
+| `-v xenix`| Xenix format (little-endian, 1 KB blocks, 100-entry free cache) |
+| `-v bsd29`| 2.9BSD format (V7 inode, 1 KB blocks, 4+3 addresses) |
+| `-v bsd211`| 2.11BSD format (32-bit inode, variable 63-char dirs) |
 | `-o offset=N` | mount a filesystem at byte offset N (a partition) |
 | `-o uid=N,gid=N` | override reported ownership (default: you) |
 | `-o allow_other,...` | pass a FUSE option through |
@@ -101,15 +109,15 @@ filesystem of any edition on a disk image (`fsck.filsys` runs the same
 free-list/inode-table check that the mount driver's `-c` does):
 
 ```sh
-mkfs.filsys image.dk             # size the fs to the whole image
-mkfs.filsys image.dk 5000        # ...or to an explicit block count
-mkfs.filsys -o 18392 image.dk    # start the fs at block 18392 (a partition)
-mkfs.filsys -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block first
+mkfs.filsys -v v7 image.dk             # size the fs to the whole image
+mkfs.filsys -v v7 image.dk 5000        # ...or to an explicit block count
+mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partition)
+mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block first
 
-fsck.filsys image.dk             # check the filesystem at block 0
-fsck.filsys -o 18392 image.dk    # check a filesystem at block 18392
-fsck.filsys -p image.dk          # preen: fix the safe subset without prompting
-fsck.filsys -i image.dk          # prompt before each repair
+fsck.filsys -v v7 image.dk             # check the filesystem at block 0
+fsck.filsys -v v7 -o 18392 image.dk    # check a filesystem at block 18392
+fsck.filsys -v v7 -p image.dk          # preen: fix the safe subset without prompting
+fsck.filsys -v v7 -i image.dk          # prompt before each repair
 ```
 
 `mkfs.filsys` writes a superblock, a zeroed i-list, an interleaved free-block
@@ -192,25 +200,26 @@ backends.
   `s_m`/`s_n` cylinder interleave applied when the free list is built.  Its
   byte order is the PDP-11's middle-endian — the format was fixed on the PDP-11
   and preserved verbatim on x86 — so it rides the V7 code path, not 32V's.
-  See `docs/coherent-format.md`.
 
 ### Format table
 
-| | PDP-7 | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V | Coherent |
-|---|---|---|---|---|---|---|
-| block size | 64 words (256 B) | 512 | 512 | 512 | 512 | 512 |
-| inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) | 64 B (8/block) |
-| block addresses | 7 words | 8 × 16-bit | 8 × 16-bit | 13 × 24-bit (3-byte packed) | 13 × 24-bit (LE) | 13 × 24-bit (ME) |
-| allocator | free list | bitmap (in superblock) | free list | free list | free list | free list (interleaved) |
-| file size | 56 KB | 64 KB (16-bit) | 24-bit | 32-bit | 32-bit | 32-bit |
-| root inode | 4 | 41 | 1 | 2 | 2 | 2 |
-| bad-block file | none | none | none | inode 1 | inode 1 | inode 1 |
-| directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B | 16 B |
+| | PDP-7 | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V | Coherent | Xenix | 2.9BSD | 2.11BSD |
+|---|---|---|---|---|---|---|---|---|---|
+| block size | 64 words (256 B) | 512 | 512 | 512 | 512 | 512 | 1024 | 1024 | 1024 |
+| inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) | 64 B (8/block) | 64 B (16/block) | 64 B (16/block) | 64 B (16/block) |
+| block addresses | 7 words | 8 × 16-bit | 8 × 16-bit | 13 × 24-bit (3-byte packed) | 13 × 24-bit (LE) | 13 × 24-bit (ME) | 13 × 24-bit (LE) | 7 × 24-bit (ME) | 7 × 32-bit (ME) |
+| allocator | free list | bitmap (in superblock) | free list | free list | free list | free list (interleaved) | free list (100-entry) | free list | free list |
+| file size | 56 KB | 64 KB (16-bit) | 24-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit |
+| root inode | 4 | 41 | 1 | 2 | 2 | 2 | 2 | 2 | 2 |
+| bad-block file | none | none | none | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 |
+| directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B | 16 B | 16 B | 16 B | variable (≤ 63-char) |
 
-Four code paths cover the whole range: `pdp7fs.c` (`-v pdp7`, word-addressed),
+Five code paths cover the whole range: `pdp7fs.c` (`-v pdp7`, word-addressed),
 `v1fs.c` (`-v v1`/`v2`/`v3`, one bitmap format), `v6fs.c` (`-v v4`/`v5`/`v6`,
-byte-identical on disk), and `v7fs.c` (`-v v7`/`32v`/`coherent`, the byte orders
-and free-cache widths of one format).
+byte-identical on disk), `v7fs.c` (`-v v7`/`vax32`/`coherent`/`xenix`/`bsd29`,
+one format with per-edition byte order, block size, free-cache width and address
+count), and `bsd211fs.c` (`-v bsd211`, the 32-bit-address inode and
+variable-length directories).
 
 ### Limits
 
@@ -225,6 +234,9 @@ disk image holds:
 | V7 | 8 GB (2²⁴ blocks × 512 B) | 65,536 | ~1.08 GB (triple indirect) |
 | 32V | 8 GB | 65,536 | ~1.08 GB |
 | Coherent | 8 GB | 65,536 | ~1.08 GB |
+| Xenix | 16 GB (2²⁴ blocks × 1024 B) | 65,536 | ~16.1 GB (triple indirect) |
+| 2.9BSD | 16 GB | 65,536 | ~16.1 GB (triple indirect) |
+| 2.11BSD | 4 TB (2³² blocks × 1024 B) | 65,536 | ~16.1 GB (triple indirect) |
 
 The PDP-7's real RB09 disk held only 8000 blocks (2 MB) per surface; 64 MB is
 the 18-bit block-number ceiling.  V1's 16-bit block numbers could address 32 MB,
@@ -308,7 +320,7 @@ large-file flag can address a megabyte of blocks.
   exactly where the zero pad byte goes (byte 1 on the PDP-11, byte 3 on the
   VAX).  Only the 16-bit fields (`di_mode`, `di_nlink`, `di_uid`, `di_gid`,
   `s_isize`, `s_nfree`, `s_ninode`, `s_inode[]`) are byte-order neutral.
-  filsys handles this with a `-v 32v` selector.
+  filsys handles this with a `-v vax32` selector.
 - **V3-and-earlier directories are 10 bytes** (V1–V3: a 2-byte i-number and an
   8-character name), and the PDP-7's are 8 words, so readers for those editions
   use a different directory walker than the 16-byte-entry V4-and-later
@@ -326,7 +338,7 @@ The PDP-11 is **middle-endian**:
 - V7 indirect blocks: 4-byte middle-endian `daddr_t`, 128 entries/block.
 - V6 indirect blocks: 2-byte little-endian block numbers, 256 entries/block.
 - **32V (VAX)** is little-endian throughout: 32-bit fields low word first, and
-  the 3-byte `di_addr` packed `[lo, mid, hi]`.  The `-v 32v` selector flips all
+  the 3-byte `di_addr` packed `[lo, mid, hi]`.  The `-v vax32` selector flips all
   of these in `v7fs.c` (the `le` byte-order flag).
 - **32V also shifts several *superblock* fields two bytes later**: the VAX
   aligns `daddr_t`/`time_t` to 4 bytes, so `s_fsize` moves +2->+4, `s_nfree`
@@ -393,11 +405,11 @@ Copy-paste commands per image (images distributed by the
     mount.filsys -v v7  -o offset=9416704 rp06-0.disk mnt/usr
 
     # 32V (32v-rp06.disk): same layout as V7
-    mount.filsys -v 32v 32v-rp06.disk mnt
-    mount.filsys -v 32v -o offset=9416704 32v-rp06.disk mnt/usr
+    mount.filsys -v vax32 32v-rp06.disk mnt
+    mount.filsys -v vax32 -o offset=9416704 32v-rp06.disk mnt/usr
 
     # single-filesystem images
-    mount.filsys -v 32v 32v-root.disk mnt       # 32V root only
+    mount.filsys -v vax32 32v-root.disk mnt       # 32V root only
     mount.filsys -v v6  rk0 mnt                 # V6 root only
 
 Mount the root first, then nest the `/usr` mount on top.

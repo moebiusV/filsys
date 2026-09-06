@@ -1,15 +1,15 @@
-.\" fsck.filsys.1 - part of filsys 1.2.7
+.\" fsck.filsys.1 - part of filsys 1.3.0
 .\" Derived from the Seventh Edition icheck(8) and dcheck(8) pages
 .\" (usr/man/man1/icheck.1m, usr/man/man1/dcheck.1m), distributed under the
 .\" Caldera International "Ancient UNIX License" (2002).  The LICENSE section
 .\" below retains that license's notice and terms.
-.TH FSCK.FILSYS 1 "September 4, 2026" "filsys 1.2.7" "File Format and Disk Utilities"
+.TH FSCK.FILSYS 1 "September 5, 2026" "filsys 1.3.0" "File Format and Disk Utilities"
 .SH NAME
 fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
 .B fsck.filsys
 .RB [ \-v
-.IR <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent> ]
+.IR <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-s ]
@@ -98,12 +98,17 @@ The edition is selected with
 pdp7 selects the word-addressed PDP-7 filesystem; v1, v2, or v3 select the First
 through Third Edition (one format); v4, v5, or v6 select the Sixth Edition
 format (V4 and V5 are byte-identical to
-V6 on disk); v7 selects Seventh Edition; 32v selects 32V; coherent selects the
+V6 on disk); v7 selects Seventh Edition; vax32 selects 32V; coherent selects the
 Mark Williams Coherent format (V7 with a 64-entry free cache and an
 .I s_m/s_n
 interleave, which
 .B \-s
-rebuilds).  The default is v7.  A Research Unix
+rebuilds); xenix selects SCO Xenix (little-endian, 1024-byte blocks, a
+100-entry free cache, and a magic validated at open); bsd29 and bsd211 select
+2.9BSD and 2.11BSD (1024-byte blocks; bsd211 widens the inode addresses to 32
+bits and uses variable-length directory entries).  There is no default edition;
+.B \-v
+is required.  A Research Unix
 disk image holds one or more filesystems
 .RI ( partitions ),
 selected by a partition table compiled into the kernel, not stored on the
@@ -117,11 +122,12 @@ The exit status is 0 if the filesystem is clean, 1 if errors were found, and 2
 on a usage error.
 .SH OPTIONS
 .TP
-.BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|32v|coherent>"
+.BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211>"
 Filesystem edition.  pdp7 is the word-addressed PDP-7; v1, v2 and v3 are one
 format (First through Third Edition); v4, v5 and v6 are byte-identical (the V6
-format); v7 is V7; 32v is 32V; coherent is the Coherent format.
-Default v7.  A bare number
+format); v7 is V7; vax32 is 32V; coherent is the Coherent format; xenix is SCO
+Xenix; bsd29 is 2.9BSD; bsd211 is 2.11BSD.
+Required (there is no default).  A bare number
 .RB ( 0 ,
 .BR 1 ,
 .BR 4 ,
@@ -203,13 +209,13 @@ Zero inode
 Every edition.
 .SH EXAMPLE
 .nf
-fsck.filsys image.dk                # check the filesystem at block 0 (V7)
-fsck.filsys -v v6 image.dk          # check a V6 (V4/V5) filesystem
-fsck.filsys -o 18392 image.dk       # check the filesystem at block 18392
-fsck.filsys -s image.dk             # rebuild the free list (icheck -s)
-fsck.filsys -r image.dk             # resolve duplicate blocks (salv -a)
-fsck.filsys -N 128 image.dk         # print the pathname of inode 128
-fsck.filsys -C 128 image.dk         # clear inode 128
+fsck.filsys -v v7 image.dk                # check the filesystem at block 0 (V7)
+fsck.filsys -v v6 image.dk                # check a V6 (V4/V5) filesystem
+fsck.filsys -v v7 -o 18392 image.dk       # check the filesystem at block 18392
+fsck.filsys -v v7 -s image.dk             # rebuild the free list (icheck -s)
+fsck.filsys -v v7 -r image.dk             # resolve duplicate blocks (salv -a)
+fsck.filsys -v v7 -N 128 image.dk         # print the pathname of inode 128
+fsck.filsys -v v7 -C 128 image.dk         # clear inode 128
 .fi
 .SH SEE ALSO
 .BR mkfs.filsys (1),
