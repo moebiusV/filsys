@@ -125,10 +125,8 @@ struct filsys_ops {
     int  (*ialloc)(filsys_edition_t *fs, uint32_t *ino);
     void (*ifree)(filsys_edition_t *fs, uint32_t ino);
 
-    /* block mapping + truncate */
+    /* block mapping */
     int  (*bmap)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
-    int  (*itrunc)(filsys_edition_t *fs, filsys_inode_t *ip);
-    int  (*itrunc_from)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_blk);
 
     /* file data */
     ssize_t (*file_read)(filsys_edition_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off);
@@ -153,14 +151,10 @@ struct filsys_ops {
     uint32_t (*data_start)(filsys_edition_t *fs);          /* first data block */
     uint32_t (*data_end)(filsys_edition_t *fs);            /* one past the last data block */
     uint8_t  (*inode_state)(filsys_edition_t *fs, uint32_t ino, uint32_t mode); /* -> FILSYS_IN_* */
-    void     (*mark_blocks)(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
-                            filsys_chkctx_t *cx);  /* mark an inode's blocks */
     void     (*walk_free)(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep);
                               /* walk the allocator, marking free blocks into cx->bmap
                                * (detecting used+free as dup), counting free_blocks */
     uint32_t (*makefree)(filsys_edition_t *fs, filsys_chkctx_t *cx); /* salvage: rebuild free space */
-    void     (*preen)(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
-                      uint32_t maxino, int mode);  /* auto-repair the safe subset */
     int      (*is_clean)(filsys_edition_t *fs);            /* 1 = superblock marked clean (fmod==0) */
 
     /* fill the edition-specific statvfs totals (blocks / free / files / free) */

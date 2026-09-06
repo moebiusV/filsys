@@ -237,6 +237,13 @@ typedef struct filsys_edition {
     uint8_t     addr_width;         /* bytes per on-disk di_addr entry (2/3/4) */
     uint8_t     daddr_wid;          /* bytes per block address in free list & indirect blocks (2/4) */
     uint8_t     isize_count;        /* s_isize counts i-list blocks (V6) vs first data block (V7) */
+    uint32_t    nindir;             /* block pointers per indirect block */
+    uint32_t    ilarg_mask;         /* mode bit marking a "large" file (0 = none) */
+    uint8_t     large_single;       /* single-indirect slots in the large layout */
+    uint8_t     large_double;       /* double-indirect slots in the large layout (0/1) */
+    uint8_t     badino;             /* bad-block inode (records bad i-list blocks; 0 = none) */
+    uint32_t (*ind_get)(const struct filsys_edition *, const uint8_t *buf, uint32_t i);
+    void     (*ind_put)(const struct filsys_edition *, uint8_t *buf, uint32_t i, uint32_t v);
     uint8_t     max_namlen;         /* longest entry name (8 / 14 / 63) */
     uint8_t     dirent_size;        /* bytes per fixed entry (0 = variable) */
     uint8_t     synth_dot;          /* dir_read synthesizes "." / ".." (PDP-7) */
@@ -297,9 +304,10 @@ int v7fs_read_block(filsys_edition_t *fs, uint32_t bno, uint8_t *buf);
 int v7fs_write_block(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf);
 
 /* Block-size-dependent quantities: the logical block size is fs->bsize, not the
- * compile-time V7_BSIZE.  Indirect blocks and free-list entries hold daddr_t,
- * which is 2 bytes in V6 and 4 bytes in V7/2.11BSD (fs->daddr_wid). */
-static inline uint32_t v7_nindir(const filsys_edition_t *fs) { return fs->bsize / fs->daddr_wid; }
+ * compile-time V7_BSIZE.  The per-indirect-block entry count lives in
+ * fs->nindir (it is not always bsize/daddr_wid: PDP-7's container block is 256
+ * bytes of 4-byte words against a 128-byte logical block). */
+static inline uint32_t v7_nindir(const filsys_edition_t *fs) { return fs->nindir; }
 static inline uint32_t v7_inopb(const filsys_edition_t *fs)  { return fs->bsize / fs->inode_size; }
 /* itod / itoo: inode number -> block and offset. */
 static inline uint32_t v7_itod(const filsys_edition_t *fs, uint32_t ino) { return 2 + (ino - 1) / v7_inopb(fs); }
@@ -327,6 +335,37 @@ static inline void v7_put_daddr(const filsys_edition_t *fs, uint8_t *p, uint32_t
         fs->bo->put32(p, v);
 }
 
+/* The default indirect-entry codec: 2-byte LE (V6/V1) or 4-byte in the
+ * descriptor's byte order (V7/2.11BSD), indexed by entry.  PDP-7 overrides the
+ * descriptor's ind_get/ind_put with its 18-bit-word codec. */
+static inline uint32_t v7_ind_get(const filsys_edition_t *fs, const uint8_t *buf, uint32_t i) {
+    return fs->daddr_wid == 2 ? (uint32_t)bo_get16le(buf + 2 * i) : fs->bo->get32(buf + 4 * i);
+}
+static inline void v7_ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t i, uint32_t v) {
+    if (fs->daddr_wid == 2)
+        bo_put16le(buf + 2 * i, v & 0xFFFFu);
+    else
+        fs->bo->put32(buf + 4 * i, v);
+}
+
+/* The level of address slot `slot` for an inode whose mode is `mode`:
+ * -1 = direct, 0 = single indirect, 1 = double, 2 = triple.  The V7-family
+ * layout is "ndaddr direct slots then levels 0,1,2 in order"; the V6/V1/PDP-7
+ * layouts reinterpret the slots under the ILARG mode bit (large_single + one
+ * optional large_double slot), all of which this describes as data. */
+static inline int filsys_slot_level(const filsys_edition_t *fs, uint32_t mode, int slot) {
+    if (fs->ilarg_mask && (mode & fs->ilarg_mask)) {
+        if (slot < (int)fs->large_single)
+            return 0;
+        if (slot < (int)(fs->large_single + fs->large_double))
+            return 1;
+        return -1;   /* no slot beyond the large layout */
+    }
+    if (slot < (int)fs->ndaddr)
+        return -1;
+    return slot - (int)fs->ndaddr;   /* 0, 1, 2, ... */
+}
+
 /* Directory test: V1/PDP-7 carry an is_dir callback (their type bits don't fit
  * the V6/V7 ifmt/ifdir pair); the V6/V7 family derives it from ifmt. */
 static inline int fs_is_dir(const filsys_edition_t *fs, const filsys_inode_t *ip) {
@@ -346,10 +385,6 @@ void v7fs_bfree(filsys_edition_t *fs, uint32_t bno);
 /* Allocate a free inode into *ino. */
 int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino);
 void v7fs_ifree(filsys_edition_t *fs, uint32_t ino);
-/* Free every data block referenced by an inode (truncate to 0). */
-int v7fs_itrunc(filsys_edition_t *fs, v7_inode_t *ip);
-/* Free blocks [first_blk, ...) only; first_blk == 0 == v7fs_itrunc. */
-int v7fs_itrunc_from(filsys_edition_t *fs, v7_inode_t *ip, uint32_t first_blk);
 
 /* ---- file / directory data --------------------------------------------- */
 
@@ -387,22 +422,33 @@ int v7fs_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
 /* 2.11BSD's check: icheck+dcheck without the V7 repair modes (mode is ignored).
  * The on-disk layout is the V7 engine's, so it shares filsys_edition_t. */
 int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
-/* V6's check/maintenance: its isize semantics (s_isize = i-list block count),
- * ILARG bmap and 32-byte inode make these V6-specific, but they operate on the
- * shared filsys_edition_t. */
+/* V6's check: its isize semantics (s_isize = i-list block count), ILARG bmap
+ * and 32-byte inode make the codec V6-specific, but it operates on the shared
+ * filsys_edition_t. */
 int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
-int v6_ncheck(filsys_edition_t *fs, uint32_t ino);
-int v6_clri(filsys_edition_t *fs, uint32_t ino);
-int v6_resolve_dups(filsys_edition_t *fs);
 
-/* ---- maintenance (V7's ncheck / clri / salv -a) ------------------------ */
+/* ---- shared block-map walk + truncate (blocktree.c) ---------------------- */
 
-/* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
-int v7fs_ncheck(filsys_edition_t *fs, uint32_t ino);
-/* Zero inode `ino` (clri).  Returns 0 or -errno. */
-int v7fs_clri(filsys_edition_t *fs, uint32_t ino);
-/* Resolve duplicate blocks (salv -a): give each second reference a private
- * copy of the block, then rebuild the free list.  Returns 0 or -errno. */
-int v7fs_resolve_dups(filsys_edition_t *fs);
+/* Mark one data block as accounted-for (0 = first, 1 = bad, 2 = duplicate). */
+int filsys_mark_block(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t bno);
+/* Mark an indirect block and everything beneath it (level 0 = single, 1 =
+ * double, 2 = triple); a duplicate indirect block is not chased. */
+void filsys_mark_tree(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t blk, int level);
+/* Mark every block referenced by an inode. */
+void filsys_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t ino,
+                        filsys_chkctx_t *cx);
+
+/* Free every block of an inode (truncate to length 0). */
+int filsys_itrunc(filsys_edition_t *fs, filsys_inode_t *ip);
+/* Free blocks [first_blk, ...) only; first_blk == 0 == filsys_itrunc. */
+int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_blk);
+
+/* ---- shared maintenance (check.c): ncheck / clri / preen / resolve-dups -- */
+
+int filsys_ncheck(filsys_edition_t *fs, uint32_t ino);
+int filsys_clri(filsys_edition_t *fs, uint32_t ino);
+void filsys_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
+                  uint32_t maxino, int mode);
+int filsys_resolve_dups(filsys_edition_t *fs);
 
 #endif /* V7FS_H */

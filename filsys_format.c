@@ -122,7 +122,8 @@ static const filsys_edition_t v7 = {
     .bsize = V7_BSIZE, .bo = &bo_me,
     .nicfree = V7_NICFREE, .nicinod = V7_NICINOD,
     .inode_size = V7_INODESZ, .ndaddr = V7_NDADDR, .niaddr = V7_NIADDR,
-    .addr_width = 3, .daddr_wid = 4, .fmod_back = 2, .rootino = V7_ROOTINO,
+    .addr_width = 3, .daddr_wid = 4, .nindir = V7_NINDIR, .fmod_back = 2,
+    .rootino = V7_ROOTINO, .badino = V7_BADFIN,
     .max_namlen = V7_DIRSIZ, .dirent_size = V7_DIRENTSZ,
     .ifmt = V7_IFMT, .ifdir = V7_IFDIR, .ifreg = V7_IFREG,
     .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .ifmpc = V7_IFMPC, .ifmpb = V7_IFMPB,
@@ -133,7 +134,8 @@ static const filsys_edition_t v6 = {
     .bsize = V6_BSIZE, .bo = &bo_me,
     .nicfree = V6_NICFREE, .nicinod = V6_NICINOD,
     .inode_size = V6_INODESZ, .ndaddr = V6_NDADDR, .niaddr = V6_NIADDR,
-    .daddr_wid = 2, .isize_count = 1, .rootino = V6_ROOTINO,
+    .daddr_wid = 2, .nindir = V6_NINDIR, .isize_count = 1, .rootino = V6_ROOTINO,
+    .ilarg_mask = V6_ILARG, .large_single = 7, .large_double = 1,
     .max_namlen = V6_DIRSIZ, .dirent_size = 2 + V6_DIRSIZ,
     .ifmt = V6_IFMT, .ifdir = V6_IFDIR, .ifchr = V6_IFCHR, .ifblk = V6_IFBLK,
 };
@@ -142,15 +144,20 @@ static const filsys_edition_t v1 = {
     .state_size = sizeof(filsys_edition_t), .name = "v1",
     .bsize = V1_BSIZE, .bo = &bo_me,
     .inode_size = V1_INODESZ, .ndaddr = V1_NDADDR, .niaddr = V1_NIADDR,
+    .daddr_wid = 2, .nindir = V1_NINDIR,
+    .ilarg_mask = V1_ILARG, .large_single = 8, .large_double = 0,
     .rootino = V1_ROOTINO, .max_namlen = V1_DIRSIZ, .dirent_size = V1_DIRENTSZ,
     .to_posix_mode = v1_to_posix_mode, .is_dir = v1_is_dir,
     .is_device = v1_is_device, .to_disk_mode = v1_to_disk_mode,
     .chmod_mode = v1_chmod_mode,
 };
 static const filsys_edition_t pdp7 = {
-    .ops = &p7fs_ops, .state_size = sizeof(filsys_edition_t), .name = "pdp7",
+    .ops = &p7fs_ops, .alloc = &pdp7_alloc_ops,
+    .state_size = sizeof(filsys_edition_t), .name = "pdp7",
     .bsize = P7_WSIZE * 2, .bo = &bo_me,
     .inode_size = P7_INODESZ, .ndaddr = P7_NIADDR, .niaddr = P7_NIADDR,
+    .nindir = P7_NINDIR, .ilarg_mask = P7_ILARG, .large_single = 7, .large_double = 0,
+    .ind_get = p7_ind_get, .ind_put = p7_ind_put,
     .max_namlen = P7_DIRSIZ, .dirent_size = P7_DIRENTSZ,
     .rootino = P7_ROOTINO, .synth_dot = 1,
     .to_posix_mode = p7_to_posix_mode, .is_dir = p7_is_dir,
@@ -163,7 +170,8 @@ static const filsys_edition_t bsd211 = {
     .bsize = BSD211_BSIZE, .bo = &bo_me,
     .nicfree = BSD211_NICFREE, .nicinod = BSD211_NICINOD,
     .inode_size = BSD211_INODESZ, .ndaddr = BSD211_NDADDR, .niaddr = BSD211_NIADDR,
-    .addr_width = 4, .daddr_wid = 4, .fmod_back = 3, .rootino = BSD211_ROOTINO,
+    .addr_width = 4, .daddr_wid = 4, .nindir = BSD211_NINDIR, .fmod_back = 3,
+    .rootino = BSD211_ROOTINO,
     .max_namlen = BSD211_MAXNAMLEN, .dirent_size = 0,
     .ifmt = BSD211_IFMT, .ifdir = BSD211_IFDIR, .ifreg = BSD211_IFREG,
     .ifchr = BSD211_IFCHR, .ifblk = BSD211_IFBLK,
@@ -190,12 +198,12 @@ filsys_edition_t filsys_getformat(int edition) {
     case FILSYS_XENIX: {
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
         f.name = "xenix"; f.bsize = 1024; f.bo = &bo_le; f.nicfree = V7_XEN_NICFREE;
-        f.magic = V7_XEN_MAGIC; f.magic_off = 0x3F8;
+        f.nindir = 1024 / 4; f.magic = V7_XEN_MAGIC; f.magic_off = 0x3F8;
         return f;
     }
     case FILSYS_BSD29: {
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
-        f.name = "bsd29"; f.bsize = 1024; f.ndaddr = 4; f.niaddr = 7;
+        f.name = "bsd29"; f.bsize = 1024; f.ndaddr = 4; f.niaddr = 7; f.nindir = 1024 / 4;
         return f;
     }
     default: {

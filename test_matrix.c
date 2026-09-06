@@ -238,6 +238,46 @@ static void mkfs_cleanliness(void) {
     }
 }
 
+/* V6 large files: a write past the seven single-indirect slots (7 * 256 = 1792
+ * blocks) forces slot 7, the double-indirect slot.  Before the shared
+ * block-tree walk, V6's checker walked slot 7 single-level, so the second-level
+ * data blocks went unmarked and fsck reported them missing.  This pins the fix:
+ * the walk must descend slot 7 as a double-indirect block. */
+static void v6_large_file(void) {
+    char img[64], cmd[256];
+    snprintf(img, sizeof img, "test_matrix_v6big.img");
+    unlink(img);
+    snprintf(cmd, sizeof cmd, "./mkfs.filsys -v v6 %s 4000 >/dev/null 2>&1", img);
+    if (system(cmd) != 0) { ok("v6 large mkfs", 0); unlink(img); return; }
+
+    filsys_t *fs;
+    if (filsys_open(&fs, FILSYS_V6, img, 0, 0, 0, 0)) {
+        ok("v6 large open", 0); unlink(img); return;
+    }
+
+    size_t bytes = 2000 * 512;   /* 2000 blocks: past the 1792-block boundary */
+    uint8_t *buf = malloc(bytes);
+    uint8_t *back = malloc(bytes);
+    int write_ok = 0, read_ok = 0;
+    if (buf && back) {
+        memset(buf, 'V', bytes);
+        filsys_create(fs, "/big", 0644, 0, 0);
+        write_ok = filsys_write(fs, "/big", buf, bytes, 0) == (int)bytes;
+        if (write_ok) {
+            memset(back, 0, bytes);
+            read_ok = filsys_read(fs, "/big", back, bytes, 0) == (int)bytes &&
+                      memcmp(buf, back, bytes) == 0;
+        }
+    }
+    ok("v6 large write", write_ok);
+    ok("v6 large read", read_ok);
+    free(buf);
+    free(back);
+    filsys_close(fs);
+    ok("v6 large fsck clean", fsck_is_clean("v6", img));
+    unlink(img);
+}
+
 /* Directory-entry name widths, asserted per edition at 14/30/63/64 characters.
  * This is the regression for the facade bug that hardcoded a 14-character
  * component buffer and rejected 2.11BSD's 63-character names before they
@@ -299,6 +339,7 @@ int main(void) {
     mkfs_validation();
     mkfs_cleanliness();
     namelength();
+    v6_large_file();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;

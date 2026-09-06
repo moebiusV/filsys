@@ -102,10 +102,10 @@ static void ifree(filsys_t *fs, uint32_t ino) {
     fs->ops->ifree(fs->fs, ino);
 }
 static int itrunc(filsys_t *fs, filsys_inode_t *ip) {
-    return fs->ops->itrunc(fs->fs, ip);
+    return filsys_itrunc(fs->fs, ip);
 }
 static int itrunc_from(filsys_t *fs, filsys_inode_t *ip, uint32_t first_blk) {
-    return fs->ops->itrunc_from(fs->fs, ip, first_blk);
+    return filsys_itrunc_from(fs->fs, ip, first_blk);
 }
 static ssize_t file_read(filsys_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t sz, off_t off) {
     return fs->ops->file_read(fs->fs, ip, buf, sz, off);

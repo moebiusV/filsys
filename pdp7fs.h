@@ -93,8 +93,15 @@ int p7fs_balloc(p7fs_t *fs, uint32_t *bno);
 void p7fs_bfree(p7fs_t *fs, uint32_t bno);
 int p7fs_ialloc(p7fs_t *fs, uint32_t *ino);
 void p7fs_ifree(p7fs_t *fs, uint32_t ino);
-int p7fs_itrunc(p7fs_t *fs, p7_inode_t *ip);
-int p7fs_itrunc_from(p7fs_t *fs, p7_inode_t *ip, uint32_t first_blk);
+
+/* The allocator vtable wrapping the four functions above (the shared block-map
+ * walk calls fs->alloc->bfree/balloc, so PDP-7 needs a row too). */
+extern const alloc_ops_t pdp7_alloc_ops;
+
+/* PDP-7's indirect-entry codec (the descriptor's ind_get/ind_put override): an
+ * 18-bit word packed in a 4-byte little-endian slot. */
+uint32_t p7_ind_get(const filsys_edition_t *fs, const uint8_t *buf, uint32_t i);
+void     p7_ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t i, uint32_t v);
 
 /* ---- block mapping / directories ---------------------------------------- */
 
@@ -113,13 +120,5 @@ int p7fs_dir_remove(p7fs_t *fs, p7_inode_t *ip, const char *name);
 typedef filsys_check_t p7_check_t;
 
 int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode);
-/* Resolve duplicate blocks (salv -a): copy each block referenced twice to a
- * fresh block and re-point the second reference, then rebuild the free list. */
-int p7fs_resolve_dups(p7fs_t *fs);
-
-/* Print the full pathname(s) of inode `ino` (ncheck).  Returns 0. */
-int p7fs_ncheck(p7fs_t *fs, uint32_t ino);
-/* Zero inode `ino` (clri).  Returns 0 or -errno. */
-int p7fs_clri(p7fs_t *fs, uint32_t ino);
 
 #endif /* PDP7FS_H */
