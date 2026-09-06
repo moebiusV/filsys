@@ -1,3 +1,22 @@
+filsys 1.5.2 (2026-09-06)
+=========================
+
+A refactor release; no on-disk or API change.
+
+- V6 folds into the V7 engine: the allocator (balloc/bfree/ialloc/ifree), the
+  superblock open/sync/write, and the check-driver seams (mark_block, walk_free,
+  maxino/data_start/data_end, is_clean, statfs) become one shared implementation
+  driven by two new descriptor fields -- daddr_wid (2-byte V6 vs 4-byte V7
+  block addresses) and isize_count (s_isize as i-list block count vs first data
+  block) -- plus the v7_data_first/v7_maxinode/v7_get_daddr/v7_put_daddr
+  helpers.  Only the ILARG bmap topology, the 32-byte inode codec, and the
+  mode-specific checker pieces remain V6-specific.
+- The edition name/alias table is single-sourced in filsys_format.c
+  (filsys_format_nth / filsys_edition_by_name / filsys_editions_usage); the
+  tools resolve -v and generate their usage lines through it instead of four
+  hand-maintained parse_edition chains, and test_matrix's namelength iterates
+  it so PDP-7 is covered.
+
 filsys 1.5.1 (2026-09-06)
 =========================
 
