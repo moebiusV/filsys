@@ -1,5 +1,12 @@
 2026-09-05  David Walther  <david@clearbrookdistillery.com>
 
+	* filsys.c: edition_bsize() per-edition block size (the open path had
+	a ternary that omitted 2.11BSD); truncate zero-fill buffer sized to
+	V7_MAXBSIZE instead of 512 bytes.
+	* test_matrix.c: name-length matrix at 14/30/63/64 for every edition.
+
+2026-09-05  David Walther  <david@clearbrookdistillery.com>
+
 	* filsys.c: max_namlen() per-edition name limit; the facade's
 	path-component buffer was 15 bytes for every edition, so 2.11BSD's
 	63-character names were rejected before reaching the backend.

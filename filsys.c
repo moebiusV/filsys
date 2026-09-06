@@ -215,6 +215,22 @@ static size_t max_namlen(int ver) {
     return V7_DIRSIZ;                                  /* 14 */
 }
 
+/* Static block size (bytes) of an edition.  This is the pre-open twin of the
+ * ops-table blocksize: the same value, needed before the volume is opened so
+ * the superblock can be read at the right offset.  Keep the two in agreement;
+ * a switch (not a ternary) so a future format can add a block size without
+ * touching a chain of conditionals. */
+static uint32_t edition_bsize(int edition) {
+    switch (edition) {
+    case FILSYS_XENIX:
+    case FILSYS_BSD29:
+    case FILSYS_BSD211:
+        return 1024;
+    default:
+        return 512;
+    }
+}
+
 /* ---- public API ---------------------------------------------------------- */
 
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
@@ -252,7 +268,7 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
      * word-addressed and ignores it). */
     int mode = (edition == FILSYS_32V) ? 1 : (edition == FILSYS_COHERENT) ? 2 :
                (edition == FILSYS_XENIX) ? 3 : (edition == FILSYS_BSD29) ? 4 : 0;
-    uint32_t bsize = (edition == FILSYS_XENIX || edition == FILSYS_BSD29) ? 1024 : 512;
+    uint32_t bsize = edition_bsize(edition);
     int rc = fs->ops->open(fs->fs, path, readonly, mode, offset, bsize);
     if (rc) {
         free(fs->fs);
@@ -707,7 +723,7 @@ int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
         if (newsize < tail) {
             uint32_t bno;
             if (bmap(fs, &ip, last, 0, &bno) == 0 && bno != 0) {
-                uint8_t zeros[512] = {0};
+                uint8_t zeros[V7_MAXBSIZE] = {0};  /* up to the largest block size */
                 ssize_t w = file_write(fs, &ip, zeros, tail - newsize, newsize);
                 if (w < 0) return (int)w;
             }
