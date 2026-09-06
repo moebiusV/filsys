@@ -1,5 +1,24 @@
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
+	* check.c, check.h, filsys_ops.h: fold the four per-edition *_check
+	bodies into one shared filsys_check_common() driver; each edition keeps
+	only its maxino/data-start/data-end, inode_state, mark_blocks,
+	walk_free, makefree and preen ops.
+	* filsys_ops.h, v7fs.c, v1fs.c, pdp7fs.c: blk_get/blk_put data-block
+	codec (logical bytes vs container bytes); alloc_ops allocator vtable
+	(freelist_alloc_ops / bitmap_alloc_ops).
+	* v7fs.h, v1fs.h, v1fs.c: v1fs_t is now filsys_edition_t; V1's
+	file/dir/lookup layer rides the shared engine, leaving the 32-byte
+	inode codec, the ILARG bmap and the bitmap allocator V1-specific.
+	* v7fs.h, pdp7fs.h, pdp7fs.c: p7fs_t is now filsys_edition_t; PDP-7's
+	file/write/lookup layer rides the shared engine, leaving the word
+	container codec, the 8-word dirent and the single-indirect bmap
+	PDP-7-specific.
+	* README.md: document the block-codec abstraction and the bsize
+	(logical) vs on-disk footprint invariant.
+
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
 	* v7fs.c, v7fs.h: fold the V6 and 2.11BSD backends into the V7 engine
 	(v6fs.c and bsd211fs.c deleted).  V6's s_isize-as-block-count, 32-byte
 	inode and ILARG bmap, and 2.11BSD's 4-byte block addresses and
