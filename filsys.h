@@ -17,6 +17,28 @@
 #include <sys/statvfs.h>
 #include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
+
+/* Size in bytes of the image backing fd.  A regular file reports its st_size;
+ * a block device reports 0 in st_size but its real size via lseek(SEEK_END),
+ * so the device path falls through to the seek.  Returns 0 with *sz set, or -1
+ * if the size can't be determined.  All library I/O is positional (pread/
+ * pwrite), so the seek's offset side effect is harmless. */
+static inline int filsys_dev_size(int fd, uint64_t *sz)
+{
+    struct stat st;
+    if (fstat(fd, &st) != 0)
+        return -1;
+    if (S_ISREG(st.st_mode)) {
+        *sz = (uint64_t)st.st_size;
+        return 0;
+    }
+    off_t end = lseek(fd, 0, SEEK_END);
+    if (end < 0)
+        return -1;
+    *sz = (uint64_t)end;
+    return 0;
+}
 
 #ifdef __cplusplus
 extern "C" {

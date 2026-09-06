@@ -58,6 +58,14 @@ static int      fd;
 static uint64_t base;   /* byte offset of the filesystem in the image */
 static uint32_t bsize = V7_BSIZE;   /* logical block size (512 or 1024) */
 
+/* A block device can't be resized (ftruncate returns EINVAL); its size is fixed
+ * by the device itself.  Only grow a regular-file image. */
+static int image_is_regular(void)
+{
+    struct stat st;
+    return fstat(fd, &st) == 0 && S_ISREG(st.st_mode);
+}
+
 static void pblock(uint32_t bno, const uint8_t *buf);
 static void write_boot(const char *path);
 static void die(const char *fmt, ...);
@@ -96,9 +104,9 @@ static uint32_t resolve_blocks(const char *path, uint64_t offblock, uint32_t blo
         die("%s: cannot open/create: %s\n", path, strerror(errno));
 
     if (blocks == 0) {
-        struct stat st;
-        if (fstat(fd, &st) == 0 && (uint64_t)st.st_size >= base + bsize)
-            blocks = (uint32_t)(((uint64_t)st.st_size - base) / bsize);
+        uint64_t sz = 0;
+        if (filsys_dev_size(fd, &sz) == 0 && sz >= base + bsize)
+            blocks = (uint32_t)((sz - base) / bsize);
         if (blocks < 16)
             blocks = 4000;      /* small usable volume */
     }
@@ -244,7 +252,8 @@ static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
 
     /* Grow the image first: the library reads blocks read-modify-write, so the
      * superblock and i-list blocks must already exist (as zeros). */
-    if (ftruncate(fd, (off_t)(base + (uint64_t)blocks * fs->bsize)) < 0)
+    if (image_is_regular() &&
+        ftruncate(fd, (off_t)(base + (uint64_t)blocks * fs->bsize)) < 0)
         die("%s: ftruncate: %s\n", path, strerror(errno));
 
     /* Xenix carries a magic word at a fixed superblock offset (always little-
@@ -413,7 +422,8 @@ static void mkfs_v1(const char *path, uint32_t blocks, const char *bootfile)
     pblock(0, v1_sb);
     pblock(1, v1_sb + V1_BSIZE);
 
-    if (ftruncate(fd, (off_t)(base + (uint64_t)v1_fsize * V1_BSIZE)) < 0)
+    if (image_is_regular() &&
+        ftruncate(fd, (off_t)(base + (uint64_t)v1_fsize * V1_BSIZE)) < 0)
         die("%s: ftruncate: %s\n", path, strerror(errno));
 
     printf("%s: %u blocks, %u inodes written\n", path, v1_fsize, v1_maxino);
@@ -480,7 +490,8 @@ static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile,
     fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);
     if (fd < 0)
         die("%s: cannot create: %s\n", path, strerror(errno));
-    if (ftruncate(fd, (off_t)((uint64_t)P7_NBLOCKS * word->block_bytes * 2)) < 0)
+    if (image_is_regular() &&
+        ftruncate(fd, (off_t)((uint64_t)P7_NBLOCKS * word->block_bytes * 2)) < 0)
         die("%s: ftruncate: %s\n", path, strerror(errno));
 
     /* free data blocks: 712 .. 6399 (the kernel area 6400..7999 is reserved) */

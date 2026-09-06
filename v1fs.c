@@ -61,9 +61,9 @@ int v1fs_open(v1fs_t *fs, const char *path, int readonly,
 
     /* Reject a filesystem that claims more disk than the image holds, or one
      * with no data area (i-list must leave at least one data block). */
-    struct stat st;
-    if (fstat(fs->fd, &st) != 0 ||
-        fs->base + (uint64_t)fs->fsize * V1_BSIZE > (uint64_t)st.st_size ||
+    uint64_t imgsize;
+    if (filsys_dev_size(fs->fd, &imgsize) != 0 ||
+        fs->base + (uint64_t)fs->fsize * V1_BSIZE > imgsize ||
         fs->fsize <= v1_data_start(fs->maxino)) {
         close(fs->fd);
         fs->fd = -1;
