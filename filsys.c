@@ -218,6 +218,12 @@ void filsys_close(filsys_t *fs) {
     free(fs);
 }
 
+/* Test hook: swap the byte-slice transport (fault injection).  Internal, used
+ * by the fault-injection regression test to drive block I/O failures. */
+void filsys_set_io(filsys_t *fs, const filsys_io_t *io) {
+    fs->fs->io = io;
+}
+
 int filsys_sync(filsys_t *fs) {
     return fs->ops->sync(fs->fs);
 }

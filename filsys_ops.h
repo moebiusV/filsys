@@ -93,6 +93,10 @@ static inline int filsys_in_allocated(uint8_t st) {
     return (st & FILSYS_IN_MODEMASK) != FILSYS_IN_UNALLOC;
 }
 
+/* Test hook: swap the byte-slice transport on an open filesystem (fault
+ * injection).  Internal, not part of the public filsys.h API. */
+void filsys_set_io(filsys_t *fs, const filsys_io_t *io);
+
 struct filsys_ops {
     const char *name;
     uint32_t (*blocksize)(const filsys_edition_t *fs);  /* logical block size in bytes */

@@ -45,6 +45,30 @@ static int fsck_is_clean(const char *name, const char *img) {
     return strstr(out, "errors=0") && strstr(out, "missing=0") && strstr(out, "dup=0");
 }
 
+/* Run fsck -f and return whether it reports no duplicate blocks (the aliasing
+ * invariant -- leaks are acceptable, but a block in two places is not). */
+static int fsck_dup_zero(const char *name, const char *img) {
+    char cmd[512], out[4096] = "";
+    snprintf(cmd, sizeof cmd, "./fsck.filsys -f -v %s %s 2>&1", name, img);
+    FILE *p = popen(cmd, "r");
+    if (p) {
+        (void)!fread(out, 1, sizeof out - 1, p);
+        pclose(p);
+    }
+    return strstr(out, "dup=0") != NULL;
+}
+
+/* Run fsck -s (salvage: rebuild the free list), then fsck -f; return whether the
+ * salvaged filesystem is clean.  Salvage recovers the leaks a failed mutation
+ * is allowed to leave, so this is the "recoverable" half of the invariant. */
+static int fsck_salvage_clean(const char *name, const char *img) {
+    char cmd[512];
+    snprintf(cmd, sizeof cmd, "./fsck.filsys -s -v %s %s >/dev/null 2>&1", name, img);
+    if (system(cmd) != 0)
+        return 0;
+    return fsck_is_clean(name, img);
+}
+
 /* One row per format.  Everything here is derived from the shared edition table
  * (filsys_format_nth) and the descriptor: the mkfs block count (0 = the fixed
  * PDP-7 size), the direct-block capacity (ndaddr * bsize -- the byte count at
@@ -370,6 +394,138 @@ static void crash_consistency(void) {
     }
 }
 
+/* ---- fault injection ----------------------------------------------------- */
+
+/* A byte-slice transport that fails exactly one read or write (the g_fail_at-th
+ * one) with -EIO, then delegates to the real file io.  The mutation's error
+ * handling must unwind the partial update to a state with dup==0; salvage must
+ * then recover the leaks it is allowed to leave. */
+typedef enum { FAIL_NONE, FAIL_WRITE, FAIL_READ } fail_mode_e;
+static fail_mode_e g_fmode = FAIL_NONE;
+static int g_fail_at;   /* 1-based index of the read/write to fail (0 = never) */
+static int g_fcount;    /* reads/writes seen since (re)arm */
+
+static int fault_read(filsys_edition_t *fs, void *buf, size_t n, off_t off) {
+    if (g_fmode == FAIL_READ && g_fail_at > 0) {
+        g_fcount++;
+        if (g_fcount == g_fail_at)
+            return -EIO;
+    }
+    return filsys_io_file.read(fs, buf, n, off);
+}
+static int fault_write(filsys_edition_t *fs, const void *buf, size_t n, off_t off) {
+    if (g_fmode == FAIL_WRITE && g_fail_at > 0) {
+        g_fcount++;
+        if (g_fcount == g_fail_at)
+            return -EIO;
+    }
+    return filsys_io_file.write(fs, buf, n, off);
+}
+static const filsys_io_t fault_io = { fault_read, fault_write };
+
+/* One mutator: setup builds the preconditions with the fault disabled, op is
+ * the single mutation driven at each failing boundary. */
+typedef struct {
+    const char *name;
+    void (*setup)(filsys_t *fs);
+    int  (*op)(filsys_t *fs);
+} mutator_t;
+
+static void setup_none(filsys_t *fs) { (void)fs; }
+static void setup_file(filsys_t *fs) {   /* a 4096-byte (8-block) file exists */
+    uint8_t buf[4096];
+    memset(buf, 'a', sizeof buf);
+    filsys_create(fs, "/f", 0644, 0, 0);
+    filsys_write(fs, "/f", buf, sizeof buf, 0);
+}
+static void setup_dir(filsys_t *fs) { filsys_mkdir(fs, "/d", 0755, 0, 0); }
+
+static int op_create(filsys_t *fs)   { return filsys_create(fs, "/f", 0644, 0, 0); }
+static int op_mkdir(filsys_t *fs)    { return filsys_mkdir(fs, "/d", 0755, 0, 0); }
+static int op_mknod(filsys_t *fs)    { return filsys_mknod(fs, "/c", S_IFCHR | 0644, (dev_t)0x0103, 0, 0); }
+static int op_write(filsys_t *fs) {
+    uint8_t buf[4096];
+    memset(buf, 'b', sizeof buf);
+    return filsys_write(fs, "/f", buf, sizeof buf, 0);
+}
+static int op_truncate(filsys_t *fs) { return filsys_truncate(fs, "/f", 0); }
+static int op_unlink(filsys_t *fs)   { return filsys_unlink(fs, "/f"); }
+static int op_rmdir(filsys_t *fs)    { return filsys_rmdir(fs, "/d"); }
+static int op_link(filsys_t *fs)     { return filsys_link(fs, "/f", "/g"); }
+static int op_rename(filsys_t *fs)   { return filsys_rename(fs, "/f", "/g", 0); }
+
+/* Fail the 1st, 2nd, ... read/write of a single mutator and require, after every
+ * injected failure: no aliasing (dup==0) and a salvage-recoverable filesystem
+ * (fsck -s then errors==0).  The loop stops once an injection point does fewer
+ * I/O ops than the fail index (i.e. the failure was never reached). */
+static void fault_mutator(const struct fmt *f, const mutator_t *mut,
+                          fail_mode_e mode, const char *label) {
+    for (int n = 1; ; n++) {
+        char img[64], cmd[512], what[128];
+        snprintf(img, sizeof img, "test_matrix_%s_fault.img", f->name);
+        unlink(img);
+        if (f->edition == FILSYS_PDP7)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
+                     f->name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                     f->name, img, f->blocks);
+        if (system(cmd) != 0) { ok("fault mkfs", 0); unlink(img); return; }
+
+        filsys_t *fs;
+        if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
+            ok("fault open", 0); unlink(img); return;
+        }
+        filsys_set_io(fs, &fault_io);
+        mut->setup(fs);                 /* fault disabled */
+
+        g_fmode = mode;
+        g_fail_at = n;
+        g_fcount = 0;
+        (void)mut->op(fs);              /* fault enabled */
+        int reached = g_fcount;         /* reads/writes the op performed */
+        g_fmode = FAIL_NONE;
+        filsys_close(fs);
+
+        int dup_ok = fsck_dup_zero(f->name, img);
+        int salv_ok = fsck_salvage_clean(f->name, img);
+        snprintf(what, sizeof what, "%s %s fail-%s-%d%s%s", f->name, mut->name, label, n,
+                 dup_ok ? "" : " [dup]", salv_ok ? "" : " [recover]");
+        ok(what, dup_ok && salv_ok);
+        unlink(img);
+
+        if (reached < n)                /* failure never reached: done */
+            return;
+    }
+}
+
+static void fault_test(void) {
+    static const mutator_t mut[] = {
+        { "create",   setup_none, op_create },
+        { "mkdir",    setup_none, op_mkdir },
+        { "mknod",    setup_none, op_mknod },
+        { "write",    setup_file, op_write },
+        { "truncate", setup_file, op_truncate },
+        { "unlink",   setup_file, op_unlink },
+        { "rmdir",    setup_dir,  op_rmdir },
+        { "link",     setup_file, op_link },
+        { "rename",   setup_file, op_rename },
+    };
+    static const struct { fail_mode_e mode; const char *label; } modes[] = {
+        { FAIL_WRITE, "write" },
+        { FAIL_READ,  "read"  },
+    };
+
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        if (!fmt_at(i, &f))
+            break;
+        for (size_t m = 0; m < sizeof mut / sizeof mut[0]; m++)
+            for (size_t mo = 0; mo < sizeof modes / sizeof modes[0]; mo++)
+                fault_mutator(&f, &mut[m], modes[mo].mode, modes[mo].label);
+    }
+}
+
 int main(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
@@ -382,6 +538,7 @@ int main(void) {
     namelength();
     v6_large_file();
     crash_consistency();
+    fault_test();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;
