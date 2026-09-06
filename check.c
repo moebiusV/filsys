@@ -290,6 +290,37 @@ int filsys_clri(filsys_edition_t *fs, uint32_t ino)
     return rc;
 }
 
+/* Count directory entries that name `target` -- a directory's link count is the
+ * number of entries pointing at it: its own "." and ".." plus each child
+ * directory's "..".  Preen's reconnects repoint orphan ".." entries, which the
+ * stale ecount from the dcheck pass can no longer predict, so root's and
+ * lost+found's counts are recomputed from the final structure this way. */
+static uint32_t count_links_to(filsys_edition_t *fs, uint32_t target, uint32_t maxino)
+{
+    uint32_t cnt = 0;
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        filsys_inode_t ip;
+        if (fs->ops->read_inode(fs, ino, &ip) != 0)
+            continue;
+        if (!fs_is_dir(fs, &ip))
+            continue;
+        filsys_dirent_t *ents = NULL;
+        size_t n = 0;
+        if (fs->ops->dir_read(fs, &ip, &ents, &n) != 0)
+            continue;
+        for (size_t e = 0; e < n; e++) {
+            if (fs->synth_dot && ents[e].name[0] == '.' &&
+                (ents[e].name[1] == 0 ||
+                 (ents[e].name[1] == '.' && ents[e].name[2] == 0)))
+                continue;   /* synthesized "." / ".." (PDP-7) */
+            if (ents[e].ino == target)
+                cnt++;
+        }
+        free(ents);
+    }
+    return cnt;
+}
+
 /* Preen: fix the safe subset without prompting.  Ensures lost+found exists
  * (named "lostfils" where 8-char names can't hold "lost+found"), clears
  * free-but-referenced inodes, reconnects orphaned regular files, and corrects
@@ -354,6 +385,27 @@ void filsys_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *st
                 fs->ops->write_inode(fs, lf_ino, &lf);
                 printf("reconnected inode %u to lost+found\n", ino);
             }
+        } else if (cnt == 1 && state[ino] == FILSYS_IN_IDIR && !fs->synth_dot &&
+                   lf_ino != 0) {
+            /* An orphaned directory: its only entry is its own "." (cnt == 1),
+             * and its ".." still points at a parent that no longer lists it.
+             * Reconnect it to lost+found and repoint ".." so the old parent's
+             * entry count drops back -- a dangling ".." would otherwise leave
+             * the parent (often root) one link low, which nothing else repairs. */
+            filsys_inode_t lf;
+            char name[16];
+            snprintf(name, sizeof(name), "%u", ino);
+            if (filsys_query(mode, "reconnect dir inode %u to lost+found", ino) &&
+                fs->ops->read_inode(fs, lf_ino, &lf) == 0 &&
+                fs->ops->dir_remove(fs, &ip, "..") == 0 &&
+                fs->ops->dir_add(fs, &ip, lf_ino, "..") == 0 &&
+                fs->ops->dir_add(fs, &lf, ino, name) == 0) {
+                ip.nlink = 2;
+                fs->ops->write_inode(fs, ino, &ip);
+                lf.nlink++;
+                fs->ops->write_inode(fs, lf_ino, &lf);
+                printf("reconnected dir inode %u to lost+found\n", ino);
+            }
         } else {
             if (fs->synth_dot && !is_regular(fs, &ip))
                 continue;   /* PDP-7: dir/device nlink is synthesized */
@@ -363,6 +415,26 @@ void filsys_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *st
                 ip.nlink = (int16_t)(cnt & 0377);
                 fs->ops->write_inode(fs, ino, &ip);
                 printf("inode %u link count %d -> %d\n", ino, old, ip.nlink);
+            }
+        }
+    }
+
+    /* Root and lost+found were skipped above because their link counts depend on
+     * the ".." entries reconnects just repointed; recompute them from the final
+     * directory structure (the dcheck's ecount is stale by now). */
+    if (!fs->synth_dot) {
+        uint32_t targets[2] = { fs->rootino, lf_ino };
+        for (size_t t = 0; t < 2; t++) {
+            if (targets[t] == 0)
+                continue;
+            filsys_inode_t ip;
+            if (fs->ops->read_inode(fs, targets[t], &ip) != 0)
+                continue;
+            uint32_t want = count_links_to(fs, targets[t], maxino);
+            if (want != (uint32_t)ip.nlink) {
+                printf("inode %u link count %d -> %u\n", targets[t], ip.nlink, want);
+                ip.nlink = (int16_t)want;
+                fs->ops->write_inode(fs, targets[t], &ip);
             }
         }
     }
