@@ -6,8 +6,9 @@
  * 64-word blocks.  This backend unpacks the SimH RB09 image (one word per
  * 4-byte little-endian slot, filesystem on surface 1) into 32-bit words and
  * presents the result through the byte-oriented filsys ops table -- file sizes
- * and offsets are doubled (two 9-bit characters per word) so text files read
- * back as plain ASCII.  See pdp7fs.h and pdp7-unix's tools/mkfs7.
+ * and offsets are doubled (two 7-bit ASCII characters per 18-bit word, packed
+ * in the low bits of each 9-bit half) so text files read back as plain ASCII.
+ * See pdp7fs.h and pdp7-unix's tools/mkfs7.
  */
 #include <config.h>
 #include "pdp7fs.h"
