@@ -206,6 +206,15 @@ static int split_path(const char *path, char *dir, size_t dirsz,
     return 0;
 }
 
+/* Longest single path component (directory-entry name) an edition stores: 8
+ * for V1/PDP-7, 14 for the fixed-width editions, 63 for 2.11BSD. */
+static size_t max_namlen(int ver) {
+    if (ver == FILSYS_BSD211) return BSD211_MAXNAMLEN;  /* 63 */
+    if (ver == FILSYS_V1)     return V1_DIRSIZ;        /* 8 */
+    if (ver == FILSYS_PDP7)   return P7_DIRSIZ;        /* 8 */
+    return V7_DIRSIZ;                                  /* 14 */
+}
+
 /* ---- public API ---------------------------------------------------------- */
 
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
@@ -373,8 +382,8 @@ int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, o
 }
 
 int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
-    char dir[PATH_MAX], name[15];
-    int rc = split_path(path, dir, sizeof(dir), name, sizeof(name));
+    char dir[PATH_MAX], name[64];
+    int rc = split_path(path, dir, sizeof(dir), name, max_namlen(fs->ver) + 1);
     if (rc) return rc;
     filsys_inode_t ddir;
     uint32_t dino;
@@ -410,8 +419,8 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
 }
 
 int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
-    char dir[PATH_MAX], name[15];
-    int rc = split_path(path, dir, sizeof(dir), name, sizeof(name));
+    char dir[PATH_MAX], name[64];
+    int rc = split_path(path, dir, sizeof(dir), name, max_namlen(fs->ver) + 1);
     if (rc) return rc;
     filsys_inode_t ddir;
     uint32_t dino;
@@ -472,8 +481,8 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     if (major(rdev) > 255 || minor(rdev) > 255)
         return -EINVAL;
 
-    char dir[PATH_MAX], name[15];
-    int rc = split_path(path, dir, sizeof(dir), name, sizeof(name));
+    char dir[PATH_MAX], name[64];
+    int rc = split_path(path, dir, sizeof(dir), name, max_namlen(fs->ver) + 1);
     if (rc) return rc;
     filsys_inode_t ddir;
     uint32_t dino;
@@ -530,8 +539,8 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
 }
 
 int filsys_unlink(filsys_t *fs, const char *path) {
-    char dir[PATH_MAX], name[15];
-    int rc = split_path(path, dir, sizeof(dir), name, sizeof(name));
+    char dir[PATH_MAX], name[64];
+    int rc = split_path(path, dir, sizeof(dir), name, max_namlen(fs->ver) + 1);
     if (rc) return rc;
     filsys_inode_t ip;
     uint32_t ino;
@@ -542,8 +551,8 @@ int filsys_unlink(filsys_t *fs, const char *path) {
 }
 
 int filsys_rmdir(filsys_t *fs, const char *path) {
-    char dir[PATH_MAX], name[15];
-    int rc = split_path(path, dir, sizeof(dir), name, sizeof(name));
+    char dir[PATH_MAX], name[64];
+    int rc = split_path(path, dir, sizeof(dir), name, max_namlen(fs->ver) + 1);
     if (rc) return rc;
     filsys_inode_t ddir;
     uint32_t dino;
@@ -573,8 +582,8 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
 }
 
 static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
-    char dir[PATH_MAX], name[15];
-    int rc = split_path(dst, dir, sizeof(dir), name, sizeof(name));
+    char dir[PATH_MAX], name[64];
+    int rc = split_path(dst, dir, sizeof(dir), name, max_namlen(fs->ver) + 1);
     if (rc) return rc;
     filsys_inode_t ddir;
     uint32_t dino;
@@ -612,10 +621,10 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
 
     int isdir = is_dir(fs->ver, sip.mode);
 
-    char fdir[PATH_MAX], fname[15];
-    split_path(from, fdir, sizeof(fdir), fname, sizeof(fname));
-    char tdir[PATH_MAX], tname[15];
-    rc = split_path(to, tdir, sizeof(tdir), tname, sizeof(tname));
+    char fdir[PATH_MAX], fname[64];
+    split_path(from, fdir, sizeof(fdir), fname, max_namlen(fs->ver) + 1);
+    char tdir[PATH_MAX], tname[64];
+    rc = split_path(to, tdir, sizeof(tdir), tname, max_namlen(fs->ver) + 1);
     if (rc) return rc;
 
     filsys_inode_t tdirip;
@@ -803,7 +812,6 @@ int filsys_statfs(filsys_t *fs, struct statvfs *st) {
         st->f_files = (v7->isize - 2) * v7_inopb(v7);
         st->f_ffree = v7->tinode;
     }
-    st->f_namemax = fs->ver == FILSYS_V1 ? V1_DIRSIZ :
-                    fs->ver == FILSYS_PDP7 ? P7_DIRSIZ : 14;
+    st->f_namemax = max_namlen(fs->ver);
     return 0;
 }
