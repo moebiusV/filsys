@@ -221,8 +221,8 @@ int main(int argc, char **argv)
 
     if (edition == FILSYS_PDP7) {
         int readonly = !(salvage || resolve || clri || preen || yes || ask);
-        p7fs_t fs;
-        int rc = p7fs_open(&fs, path, readonly, offblock * P7_BLOCKBYTES);
+        filsys_edition_t fs = filsys_getformat(edition);
+        int rc = p7fs_open(&fs, path, readonly, &fs, offblock * P7_BLOCKBYTES);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;

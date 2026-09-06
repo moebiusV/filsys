@@ -255,6 +255,7 @@ typedef struct filsys_edition {
     uint16_t   isize;
     uint32_t   fsize;
     uint32_t   maxino;         /* inode slots (V1 reads it; V7/V6 derive it) */
+    uint32_t   freelist;       /* PDP-7 on-disk free-list head (block 0 word 0) */
     union {                     /* allocator state: free-list cache or bitmap */
         freelist_state fl;
         bitmap_state   bm;

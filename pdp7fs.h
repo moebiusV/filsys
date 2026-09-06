@@ -20,6 +20,7 @@
 #include <sys/types.h>
 
 #include "filsys.h"
+#include "v7fs.h"       /* filsys_edition_t (p7fs_t aliases it) */
 #include "check.h"
 
 enum {
@@ -66,17 +67,15 @@ static inline uint32_t p7_itoo(uint32_t ino) { return P7_INODESZ * (ino % P7_INO
 typedef filsys_inode_t  p7_inode_t;
 typedef filsys_dirent_t p7_dirent_t;
 
-typedef struct {
-    int        fd;
-    int        readonly;
-    uint64_t   base;          /* byte offset of the image file; fs at base + P7_SURFACE1 */
-    uint32_t   freelist;      /* free-list head (block 0 word 0) */
-    uint32_t   tfree;         /* free blocks (walked at open, for statfs) */
-} p7fs_t;
+/* PDP-7's backend state is the shared filsys_edition_t: the free-list head
+ * lives in .freelist and the free-block count in .fl.tfree, so the file/dir
+ * layer above the word-addressed codecs is the shared V7 engine's. */
+typedef filsys_edition_t p7fs_t;
 
 /* ---- lifecycle --------------------------------------------------------- */
 
-int p7fs_open(p7fs_t *fs, const char *path, int readonly, uint64_t offset);
+int p7fs_open(p7fs_t *fs, const char *path, int readonly,
+              const filsys_edition_t *proto, uint64_t offset);
 void p7fs_close(p7fs_t *fs);
 int p7fs_sync(p7fs_t *fs);
 
@@ -97,19 +96,17 @@ void p7fs_ifree(p7fs_t *fs, uint32_t ino);
 int p7fs_itrunc(p7fs_t *fs, p7_inode_t *ip);
 int p7fs_itrunc_from(p7fs_t *fs, p7_inode_t *ip, uint32_t first_blk);
 
-/* ---- file / directory data --------------------------------------------- */
+/* ---- block mapping / directories ---------------------------------------- */
 
 int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
-ssize_t p7fs_file_read(p7fs_t *fs, p7_inode_t *ip, uint8_t *buf, size_t size, off_t off);
-ssize_t p7fs_file_write(p7fs_t *fs, p7_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
 
+/* File data and path lookup are shared with the V7 engine (v7fs_file_read/
+ * write, v7fs_lookup, v7fs_dir_lookup); only the word-addressed dirent codec
+ * (dir_read/add/remove) and the single-indirect bmap topology stay PDP-7. */
 int p7fs_dir_read(p7fs_t *fs, p7_inode_t *ip, p7_dirent_t **ents, size_t *count);
 void p7fs_dirents_free(p7_dirent_t *ents);
-int p7fs_dir_lookup(p7fs_t *fs, p7_inode_t *ip, const char *name, uint32_t *ino);
 int p7fs_dir_add(p7fs_t *fs, p7_inode_t *ip, uint32_t ino, const char *name);
 int p7fs_dir_remove(p7fs_t *fs, p7_inode_t *ip, const char *name);
-
-int p7fs_lookup(p7fs_t *fs, const char *path, uint32_t *ino, p7_inode_t *ip);
 
 /* ---- integrity check ---------------------------------------------------- */
 

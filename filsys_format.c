@@ -147,7 +147,7 @@ static const filsys_edition_t v1 = {
     .chmod_mode = v1_chmod_mode,
 };
 static const filsys_edition_t pdp7 = {
-    .ops = &p7fs_ops, .state_size = sizeof(p7fs_t), .name = "pdp7",
+    .ops = &p7fs_ops, .state_size = sizeof(filsys_edition_t), .name = "pdp7",
     .bsize = P7_WSIZE * 2, .bo = &bo_me,
     .inode_size = P7_INODESZ, .niaddr = P7_NIADDR,
     .max_namlen = P7_DIRSIZ, .dirent_size = P7_DIRENTSZ,
