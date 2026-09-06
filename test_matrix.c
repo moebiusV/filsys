@@ -66,10 +66,12 @@ static int fsck_dup_zero(const char *name, const char *img) {
  * is the signal -- preen/salvage exit non-zero when they *find* (and fix). */
 static int fsck_recover_clean(const char *name, const char *img) {
     char cmd[512];
+    int rc;
     snprintf(cmd, sizeof cmd, "./fsck.filsys -p -f -v %s %s >/dev/null 2>&1", name, img);
-    system(cmd);
+    rc = system(cmd);
     snprintf(cmd, sizeof cmd, "./fsck.filsys -s -v %s %s >/dev/null 2>&1", name, img);
-    system(cmd);
+    rc = system(cmd);
+    (void)rc;
     return fsck_is_clean(name, img);
 }
 
