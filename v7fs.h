@@ -254,7 +254,10 @@ typedef struct filsys_edition {
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
-    freelist_state fl;          /* free-list allocator state */
+    union {                     /* allocator state: free-list cache or bitmap */
+        freelist_state fl;
+        bitmap_state   bm;
+    };
     uint32_t   time;           /* last superblock update */
     uint16_t   m;              /* s_m interleave factor (coherent) */
     uint16_t   n;              /* s_n interleave factor (coherent) */
