@@ -31,6 +31,7 @@
 #include <sys/stat.h>
 
 #include "byteorder.h"
+#include "filsys.h"
 
 enum {
     BSIZE      = 512,
@@ -202,9 +203,9 @@ int main(int argc, char **argv) {
 
     int fd = open(image, O_RDONLY);
     if (fd < 0) { perror(image); return 1; }
-    struct stat st;
-    if (fstat(fd, &st) || st.st_size < BSIZE) { fprintf(stderr, "cannot size image\n"); return 1; }
-    uint32_t nblocks = (uint32_t)(st.st_size / BSIZE);
+    uint64_t sz = 0;
+    if (filsys_dev_size(fd, &sz) || sz < BSIZE) { fprintf(stderr, "cannot size image\n"); return 1; }
+    uint32_t nblocks = (uint32_t)(sz / BSIZE);
     uint8_t buf[BSIZE];
 
     int found = 0;
@@ -238,7 +239,7 @@ int main(int argc, char **argv) {
     /* 1024-byte-block scan: Xenix (magic at offset 1016) and 2.9BSD
      * (V7-shaped, no magic -- so only tried when Xenix's magic is absent). */
     uint8_t xb[1024];
-    uint32_t xnblocks = (uint32_t)(st.st_size / 1024);
+    uint32_t xnblocks = (uint32_t)(sz / 1024);
     for (uint32_t xbno = 1; xbno < xnblocks; xbno += (uint32_t)stride) {
         if (pread(fd, xb, 1024, (off_t)xbno * 1024) != 1024)
             continue;

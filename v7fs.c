@@ -95,10 +95,10 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
      * (`(isize - 2)` underflows when isize is 0 or 1, turning the inode walk
      * into a multi-gigabyte loop).  Without this, a corrupt image can make
      * the checker (and directory readers) allocate gigabytes. */
-    struct stat st;
-    if (fstat(fs->fd, &st) != 0 ||
+    uint64_t imgsize;
+    if (filsys_dev_size(fs->fd, &imgsize) != 0 ||
         fs->isize < (fs->isize_count ? 1 : 2) ||
-        fs->base + (uint64_t)fs->fsize * fs->bsize > (uint64_t)st.st_size ||
+        fs->base + (uint64_t)fs->fsize * fs->bsize > imgsize ||
         fs->fsize <= v7_data_first(fs)) {
         close(fs->fd);
         fs->fd = -1;

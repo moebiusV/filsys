@@ -164,11 +164,11 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly,
         return -errno;
     fs->io = &filsys_io_file;
 
-    struct stat st;
     uint32_t bb = fs->word->block_bytes;
     uint64_t surf1 = (uint64_t)P7_NBLOCKS * bb;
-    if (fstat(fs->fd, &st) != 0 ||
-        fs->base + surf1 + bb > (uint64_t)st.st_size) {
+    uint64_t imgsize;
+    if (filsys_dev_size(fs->fd, &imgsize) != 0 ||
+        fs->base + surf1 + bb > imgsize) {
         close(fs->fd);
         fs->fd = -1;
         return -EINVAL;   /* image too small to hold surface 1 */
