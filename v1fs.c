@@ -34,6 +34,7 @@ int v1fs_open(v1fs_t *fs, const char *path, int readonly,
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
         return -errno;
+    fs->io = &filsys_io_file;
 
     uint8_t sb[V1_BSIZE * 2];
     if (v1fs_read_block(fs, 0, sb) || v1fs_read_block(fs, 1, sb + V1_BSIZE)) {
@@ -115,19 +116,13 @@ int v1fs_sync(v1fs_t *fs) {
 /* ---- block io ---------------------------------------------------------- */
 
 int v1fs_read_block(v1fs_t *fs, uint32_t bno, uint8_t *buf) {
-    ssize_t n = pread(fs->fd, buf, V1_BSIZE, (off_t)bno * V1_BSIZE + (off_t)fs->base);
-    if (n != V1_BSIZE)
-        return -EIO;
-    return 0;
+    return fs->io->read(fs, buf, V1_BSIZE, (off_t)bno * V1_BSIZE + (off_t)fs->base);
 }
 
 int v1fs_write_block(v1fs_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
-    ssize_t n = pwrite(fs->fd, buf, V1_BSIZE, (off_t)bno * V1_BSIZE + (off_t)fs->base);
-    if (n != V1_BSIZE)
-        return -EIO;
-    return 0;
+    return fs->io->write(fs, buf, V1_BSIZE, (off_t)bno * V1_BSIZE + (off_t)fs->base);
 }
 
 /* ---- superblock persistence --------------------------------------------- */

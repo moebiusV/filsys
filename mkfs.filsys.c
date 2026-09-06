@@ -228,6 +228,7 @@ static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
     fs->readonly = 0;
     fs->base = base;
     fs->fd = fd;
+    fs->io = &filsys_io_file;
     fs->isize = fmt->isize(blocks, ipb) & 0xFFFFu;   /* s_isize is a 16-bit field */
     fs->fsize = blocks;
     fs->m = v7_m;         /* coherent -m/-n (ignored unless fs->interleave) */

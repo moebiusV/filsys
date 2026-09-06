@@ -296,8 +296,13 @@ int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, o
          * blocks it allocated past the original size, then reset the inode. */
         uint32_t bsize = fs->ops->blocksize(fs->fs);
         uint32_t first_blk = oldsize ? (oldsize - 1) / bsize + 1 : 0;
-        itrunc_from(fs, &ip, first_blk);
-        write_inode(fs, ino, &ip);
+        rc = itrunc_from(fs, &ip, first_blk);
+        if (rc == 0)
+            rc = write_inode(fs, ino, &ip);
+        /* A rollback failure is more severe than the write error it was
+         * cleaning up: the inode would now hold dangling block pointers. */
+        if (rc)
+            return rc;
     }
     return (int)n;
 }
@@ -321,7 +326,11 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
     nip.uid = (int16_t)uid;
     nip.gid = (int16_t)gid;
     nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
-    write_inode(fs, nino, &nip);
+    rc = write_inode(fs, nino, &nip);
+    if (rc) {
+        ifree(fs, nino);
+        return rc;
+    }
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
         /* The directory entry never landed: put the inode back. */
@@ -351,22 +360,30 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     nip.uid = (int16_t)uid;
     nip.gid = (int16_t)gid;
     nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
-    write_inode(fs, nino, &nip);
-    dir_add(fs, &nip, nino, ".");
-    dir_add(fs, &nip, dino, "..");
+    rc = write_inode(fs, nino, &nip);
+    if (rc) { ifree(fs, nino); return rc; }
+    rc = dir_add(fs, &nip, nino, ".");
+    if (rc) goto fail;
+    rc = dir_add(fs, &nip, dino, "..");
+    if (rc) goto fail;
     rc = dir_add(fs, &ddir, nino, name);
-    if (rc) {
-        /* The parent entry never landed: free the new directory's "." and ".."
-         * blocks, then its inode, so it isn't left orphaned. */
-        itrunc(fs, &nip);
-        nip.mode = 0;
-        write_inode(fs, nino, &nip);
-        ifree(fs, nino);
-        return rc;
-    }
+    if (rc) goto fail;
     ddir.nlink++;
-    write_inode(fs, dino, &ddir);
+    rc = write_inode(fs, dino, &ddir);
+    if (rc) {
+        /* the parent's link-count bump didn't persist: withdraw the entry */
+        dir_remove(fs, &ddir, name);
+        goto fail;
+    }
     return 0;
+fail:
+    /* The parent entry never landed (or its update failed): free the new
+     * directory's "." and ".." blocks, then its inode, so it isn't orphaned. */
+    itrunc(fs, &nip);
+    nip.mode = 0;
+    write_inode(fs, nino, &nip);
+    ifree(fs, nino);
+    return rc;
 }
 
 int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
@@ -413,7 +430,8 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
     /* Device number: (major<<8)|minor, stored in di_addr[0]. */
     nip.addr[0] = (uint32_t)((major(rdev) << 8) | minor(rdev));
-    write_inode(fs, nino, &nip);
+    rc = write_inode(fs, nino, &nip);
+    if (rc) { ifree(fs, nino); return rc; }
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
         /* The directory entry never landed: return the inode to the free list
@@ -439,12 +457,12 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
     if (rc) return rc;
     ip.nlink--;
     if (ip.nlink <= 0) {
-        itrunc(fs, &ip);
+        rc = itrunc(fs, &ip);
+        if (rc) return rc;
         ip.mode = 0;
         ifree(fs, ino);
     }
-    write_inode(fs, ino, &ip);
-    return 0;
+    return write_inode(fs, ino, &ip);
 }
 
 int filsys_unlink(filsys_t *fs, const char *path) {
@@ -482,12 +500,13 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     rc = dir_remove(fs, &ddir, name);
     if (rc) return rc;
     ddir.nlink--;
-    write_inode(fs, dino, &ddir);
-    itrunc(fs, &tip);
+    rc = write_inode(fs, dino, &ddir);
+    if (rc) return rc;
+    rc = itrunc(fs, &tip);
+    if (rc) return rc;
     tip.mode = 0;
     ifree(fs, ino);
-    write_inode(fs, ino, &tip);
-    return 0;
+    return write_inode(fs, ino, &tip);
 }
 
 static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
@@ -501,10 +520,15 @@ static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
     rc = dir_add(fs, &ddir, src_ino, name);
     if (rc) return rc;
     filsys_inode_t ip;
-    if (read_inode(fs, src_ino, &ip)) return -EIO;
+    if (read_inode(fs, src_ino, &ip)) {
+        dir_remove(fs, &ddir, name);   /* withdraw the entry we just added */
+        return -EIO;
+    }
     ip.nlink++;
-    write_inode(fs, src_ino, &ip);
-    return 0;
+    rc = write_inode(fs, src_ino, &ip);
+    if (rc)
+        dir_remove(fs, &ddir, name);   /* the link count didn't persist */
+    return rc;
 }
 
 int filsys_link(filsys_t *fs, const char *from, const char *to) {
@@ -543,7 +567,9 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
 
     /* Overwrite an existing target: refuse to replace a non-empty directory,
      * and do not let a directory be renamed over one. */
-    uint32_t tino;
+    uint32_t tino = 0;
+    filsys_inode_t tip_saved;          /* snapshot of the removed target */
+    int had_target = 0;
     if (dir_lookup(fs, &tdirip, tname, &tino) == 0) {
         if (tino == sino) return 0;   /* already there */
         filsys_inode_t tip;
@@ -555,12 +581,35 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
                 if (strcmp(ents[i].name, ".") && strcmp(ents[i].name, "..")) { free(ents); return -ENOTEMPTY; }
             free(ents);
         }
-        do_unlink(fs, tdir, tname);
+        tip_saved = tip;
+        had_target = 1;
+        rc = do_unlink(fs, tdir, tname);
+        if (rc) return rc;
     }
 
-    do_link(fs, to, sino);
+    /* The three mutations that follow are not transactional (a non-journaled
+     * filesystem has no atomic rename), so each is checked and the preceding
+     * ones unwound best-effort on failure.  A target whose link count dropped
+     * to zero had its blocks freed and cannot be fully restored; its name and
+     * metadata are, and the damage is left for fsck to report. */
+    rc = do_link(fs, to, sino);
+    if (rc) {
+        if (had_target) {
+            dir_add(fs, &tdirip, tino, tname);
+            write_inode(fs, tino, &tip_saved);
+        }
+        return rc;
+    }
+
     rc = do_unlink(fs, fdir, fname);
-    if (rc) return rc;
+    if (rc) {
+        do_unlink(fs, tdir, tname);   /* withdraw the link just added */
+        if (had_target) {
+            dir_add(fs, &tdirip, tino, tname);
+            write_inode(fs, tino, &tip_saved);
+        }
+        return rc;
+    }
 
     if (isdir) {
         /* Moving a directory: fix the two parents' link counts and rewrite the
@@ -570,20 +619,24 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
             uint32_t fdino;
             if (lookup(fs, fdir, &fdino, &fddir) == 0) {
                 if (fddir.nlink > 1) fddir.nlink--;
-                write_inode(fs, fdino, &fddir);
+                rc = write_inode(fs, fdino, &fddir);
+                if (rc) return rc;
             }
             /* tdirip was read before do_link, which rewrote the target
              * directory's inode (its size grew to hold the new entry).  Re-read
              * it fresh so we bump nlink without clobbering that update. */
             if (read_inode(fs, tdino, &tdirip) == 0) {
                 tdirip.nlink++;
-                write_inode(fs, tdino, &tdirip);
+                rc = write_inode(fs, tdino, &tdirip);
+                if (rc) return rc;
             }
         }
         filsys_inode_t cip;
         if (read_inode(fs, sino, &cip) == 0) {
-            dir_remove(fs, &cip, "..");
-            dir_add(fs, &cip, tdino, "..");
+            rc = dir_remove(fs, &cip, "..");
+            if (rc) return rc;
+            rc = dir_add(fs, &cip, tdino, "..");
+            if (rc) return rc;
         }
     }
     return 0;
@@ -636,8 +689,7 @@ int filsys_chmod(filsys_t *fs, const char *path, mode_t mode) {
     if (rc) return rc;
     ip.mode = mode_chmod(&fs->fmt, ip.mode, mode);
     ip.ctime = (uint32_t)time(NULL);
-    write_inode(fs, ino, &ip);
-    return 0;
+    return write_inode(fs, ino, &ip);
 }
 
 int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid) {
@@ -648,8 +700,7 @@ int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid) {
     if (uid != (uid_t)-1) ip.uid = (int16_t)uid;
     if (gid != (gid_t)-1) ip.gid = (int16_t)gid;
     ip.ctime = (uint32_t)time(NULL);
-    write_inode(fs, ino, &ip);
-    return 0;
+    return write_inode(fs, ino, &ip);
 }
 
 int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]) {
@@ -667,8 +718,7 @@ int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]) 
             ip.mtime = (tv[1].tv_nsec == UTIME_NOW) ? now : (uint32_t)tv[1].tv_sec;
     }
     ip.ctime = now;
-    write_inode(fs, ino, &ip);
-    return 0;
+    return write_inode(fs, ino, &ip);
 }
 
 int filsys_statfs(filsys_t *fs, struct statvfs *st) {

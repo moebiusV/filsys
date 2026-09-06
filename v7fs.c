@@ -35,6 +35,7 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
         return -errno;
+    fs->io = &filsys_io_file;
 
     uint8_t sb[V7_MAXBSIZE];
     if (v7fs_read_block(fs, V7_SUPERB, sb)) {
@@ -136,20 +137,27 @@ int v7fs_mark_dirty(filsys_edition_t *fs) {
 
 /* ---- block io ---------------------------------------------------------- */
 
+/* Default transport: positional read/write on the open image.  Every block
+ * access routes through fs->io so a test can swap in a fault-injecting
+ * implementation without touching the format code. */
+static int io_file_read(filsys_edition_t *fs, void *buf, size_t n, off_t off) {
+    ssize_t r = pread(fs->fd, buf, n, off);
+    return r == (ssize_t)n ? 0 : -EIO;
+}
+static int io_file_write(filsys_edition_t *fs, const void *buf, size_t n, off_t off) {
+    ssize_t r = pwrite(fs->fd, buf, n, off);
+    return r == (ssize_t)n ? 0 : -EIO;
+}
+const filsys_io_t filsys_io_file = { io_file_read, io_file_write };
+
 int v7fs_read_block(filsys_edition_t *fs, uint32_t bno, uint8_t *buf) {
-    ssize_t n = pread(fs->fd, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
-    if (n != fs->bsize)
-        return -EIO;
-    return 0;
+    return fs->io->read(fs, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
 }
 
 int v7fs_write_block(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
-    ssize_t n = pwrite(fs->fd, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
-    if (n != fs->bsize)
-        return -EIO;
-    return 0;
+    return fs->io->write(fs, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
 }
 
 /* ---- superblock persistence --------------------------------------------- */
