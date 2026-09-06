@@ -157,7 +157,7 @@ static const filsys_edition_t pdp7 = {
     .bsize = P7_WSIZE * 2, .bo = &bo_me,
     .inode_size = P7_INODESZ, .ndaddr = P7_NIADDR, .niaddr = P7_NIADDR,
     .nindir = P7_NINDIR, .ilarg_mask = P7_ILARG, .large_single = 7, .large_double = 0,
-    .ind_get = p7_ind_get, .ind_put = p7_ind_put,
+    .ind_get = p7_ind_get, .ind_put = p7_ind_put, .word = &word_rb09,
     .max_namlen = P7_DIRSIZ, .dirent_size = P7_DIRENTSZ,
     .rootino = P7_ROOTINO, .synth_dot = 1,
     .to_posix_mode = p7_to_posix_mode, .is_dir = p7_is_dir,

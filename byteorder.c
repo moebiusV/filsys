@@ -84,6 +84,28 @@ void bo_put32me(uint8_t *p, uint32_t v) {
     bo_put16le(p + 2, (uint16_t)(v & 0xffff));
 }
 
+/* ---- packed 18-bit ------------------------------------------------------- */
+
+uint32_t bo_get18packed(const uint8_t *p, uint32_t i) {
+    uint32_t bit = i * 18;
+    uint32_t v = 0;
+    for (uint32_t b = 0; b < 18; b++)
+        v = (v << 1) | ((p[(bit + b) >> 3] >> (7 - ((bit + b) & 7))) & 1u);
+    return v;
+}
+
+void bo_put18packed(uint8_t *p, uint32_t i, uint32_t v) {
+    uint32_t bit = i * 18;
+    for (uint32_t b = 0; b < 18; b++) {
+        uint32_t pos = bit + b;
+        uint8_t mask = (uint8_t)(1u << (7 - (pos & 7)));
+        if ((v >> (17 - b)) & 1u)
+            p[pos >> 3] |= mask;
+        else
+            p[pos >> 3] &= (uint8_t)~mask;
+    }
+}
+
 /* ---- one ops table per byte order --------------------------------------- */
 
 const byte_order_ops_t bo_le = {

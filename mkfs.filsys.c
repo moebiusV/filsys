@@ -423,14 +423,16 @@ static void mkfs_v1(const char *path, uint32_t blocks, const char *bootfile)
 static uint32_t p7_pool[P7_NBLOCKS];   /* free data-block pool */
 static uint32_t p7_nfree;
 static uint32_t p7_free_count;         /* free blocks listed in the free list */
+static const word_codec_t *p7_wc;      /* the container codec being written */
 
 static void p7_pblock(uint32_t bno, const uint32_t *words)
 {
-    uint8_t raw[P7_BLOCKBYTES];
-    for (int i = 0; i < P7_WSIZE; i++)
-        bo_put32le(raw + i * P7_WORDBYTES, words[i]);
-    off_t pos = (off_t)P7_SURFACE1 + (off_t)bno * P7_BLOCKBYTES;
-    if (pwrite(fd, raw, P7_BLOCKBYTES, pos) != P7_BLOCKBYTES)
+    uint8_t raw[P7_MAXBLOCKBYTES];
+    for (uint32_t i = 0; i < P7_WSIZE; i++)
+        p7_wc->put(raw, i, words[i]);
+    off_t pos = (off_t)((uint64_t)P7_NBLOCKS * p7_wc->block_bytes)
+              + (off_t)bno * (off_t)p7_wc->block_bytes;
+    if (pwrite(fd, raw, p7_wc->block_bytes, pos) != (ssize_t)p7_wc->block_bytes)
         die("write error at block %u\n", bno);
 }
 
@@ -463,7 +465,8 @@ static uint32_t p7_build_freelist(void)
     return head;
 }
 
-static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile)
+static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile,
+                      const word_codec_t *word)
 {
     /* The RB09 fixed-head disk has one valid geometry (8000 blocks/surface);
      * there is no size to choose. */
@@ -471,11 +474,12 @@ static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile)
         die("%s: pdp7: size is fixed by the RB09 geometry (8000 blocks/surface)\n",
             path);
     (void)bootfile;
+    p7_wc = word;
 
     fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);
     if (fd < 0)
         die("%s: cannot create: %s\n", path, strerror(errno));
-    if (ftruncate(fd, (off_t)(P7_SURFACE1 * 2)) < 0)
+    if (ftruncate(fd, (off_t)((uint64_t)P7_NBLOCKS * word->block_bytes * 2)) < 0)
         die("%s: ftruncate: %s\n", path, strerror(errno));
 
     /* free data blocks: 712 .. 6399 (the kernel area 6400..7999 is reserved) */
@@ -633,7 +637,8 @@ int main(int argc, char **argv)
 
     if (edition == FILSYS_PDP7) {
         /* PDP-7 opens its own 2-surface image (fixed RB09 geometry). */
-        mkfs_pdp7(path, blocks, bootfile);
+        filsys_edition_t desc = filsys_getformat(FILSYS_PDP7);
+        mkfs_pdp7(path, blocks, bootfile, desc.word);
         close(fd);
         return 0;
     }

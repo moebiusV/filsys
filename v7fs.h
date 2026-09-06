@@ -29,6 +29,7 @@
 #include "check.h"
 
 struct filsys_ops;   /* forward: the per-backend vtable (see filsys_ops.h) */
+struct word_codec;   /* forward: PDP-7's 18-bit-word container codec (pdp7fs.h) */
 
 /* The type a to_disk_mode caller is encoding (create / mkdir / mknod). */
 enum {
@@ -244,6 +245,7 @@ typedef struct filsys_edition {
     uint8_t     badino;             /* bad-block inode (records bad i-list blocks; 0 = none) */
     uint32_t (*ind_get)(const struct filsys_edition *, const uint8_t *buf, uint32_t i);
     void     (*ind_put)(const struct filsys_edition *, uint8_t *buf, uint32_t i, uint32_t v);
+    const struct word_codec *word;  /* PDP-7 word container codec (NULL = byte-addressed) */
     uint8_t     max_namlen;         /* longest entry name (8 / 14 / 63) */
     uint8_t     dirent_size;        /* bytes per fixed entry (0 = variable) */
     uint8_t     synth_dot;          /* dir_read synthesizes "." / ".." (PDP-7) */
