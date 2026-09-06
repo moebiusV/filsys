@@ -28,8 +28,21 @@
 #include "byteorder.h"
 #include "check.h"
 
-struct filsys_ops;   /* forward: the per-backend vtable (see filsys_ops.h) */
-struct word_codec;   /* forward: PDP-7's 18-bit-word container codec (pdp7fs.h) */
+struct filsys_ops;       /* forward: the per-backend vtable (see filsys_ops.h) */
+struct word_codec;       /* forward: PDP-7's 18-bit-word container codec (pdp7fs.h) */
+struct filsys_edition;   /* forward: the unified descriptor+state struct (defined below) */
+
+/* Raw byte-slice transport: read/write exactly `n` bytes at absolute image
+ * offset `off`.  filsys_io_file is the default (pread/pwrite on fs->fd); a test
+ * backend can swap fs->io for a fault-injecting implementation, which is how the
+ * mutator/fsck regression suite drives block I/O failures without touching the
+ * format code.  read/write return 0 on a full transfer, -EIO on a short one. */
+typedef struct filsys_io {
+    int (*read)(struct filsys_edition *fs, void *buf, size_t n, off_t off);
+    int (*write)(struct filsys_edition *fs, const void *buf, size_t n, off_t off);
+} filsys_io_t;
+
+extern const filsys_io_t filsys_io_file;
 
 /* The type a to_disk_mode caller is encoding (create / mkdir / mknod). */
 enum {
@@ -261,6 +274,7 @@ typedef struct filsys_edition {
     /* ---- runtime (filled by v7fs_open) ---- */
     int        fd;             /* open disk image */
     int        readonly;
+    const filsys_io_t *io;     /* raw byte-slice transport (default: filsys_io_file) */
     uint64_t   base;           /* byte offset of this filesystem within the file */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;

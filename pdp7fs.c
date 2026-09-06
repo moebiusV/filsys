@@ -29,8 +29,7 @@ static int read_words(p7fs_t *fs, uint32_t bno, uint32_t *words) {
     uint8_t raw[P7_MAXBLOCKBYTES];
     uint32_t bb = fs->word->block_bytes;
     off_t pos = (off_t)fs->base + (off_t)((uint64_t)P7_NBLOCKS * bb) + (off_t)bno * (off_t)bb;
-    ssize_t n = pread(fs->fd, raw, bb, pos);
-    if (n != (ssize_t)bb)
+    if (fs->io->read(fs, raw, bb, pos))
         return -EIO;
     for (uint32_t i = 0; i < P7_WSIZE; i++)
         words[i] = fs->word->get(raw, i);
@@ -43,8 +42,7 @@ static int write_words(p7fs_t *fs, uint32_t bno, const uint32_t *words) {
         fs->word->put(raw, i, words[i]);
     uint32_t bb = fs->word->block_bytes;
     off_t pos = (off_t)fs->base + (off_t)((uint64_t)P7_NBLOCKS * bb) + (off_t)bno * (off_t)bb;
-    ssize_t n = pwrite(fs->fd, raw, bb, pos);
-    if (n != (ssize_t)bb)
+    if (fs->io->write(fs, raw, bb, pos))
         return -EIO;
     return 0;
 }
@@ -161,6 +159,7 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly,
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
     if (fs->fd < 0)
         return -errno;
+    fs->io = &filsys_io_file;
 
     struct stat st;
     uint32_t bb = fs->word->block_bytes;

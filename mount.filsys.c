@@ -325,6 +325,11 @@ int main(int argc, char *argv[]) {
         if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
         strncat(fuse_opts, "ro", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
     }
+    /* Let the kernel enforce the mode bits returned by getattr, so -o allow_other
+     * honours them instead of granting blanket access.  A mount option, not a
+     * fuse_config field, so it works on both FUSE2 and FUSE3. */
+    if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
+    strncat(fuse_opts, "default_permissions", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
     if (fuse_opts[0]) { fuse_opt_add_arg(&args, "-o"); fuse_opt_add_arg(&args, fuse_opts); }
 
     rc = fuse_main(args.argc, args.argv, &filsys_ops, k);
