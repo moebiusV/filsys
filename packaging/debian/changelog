@@ -1,3 +1,10 @@
+filsys (1.4.0-1) unstable; urgency=medium
+
+  * Fold the V6 and 2.11BSD backends into the V7 engine; add the byte-order
+    ops table and the per-edition format descriptor.
+
+ -- David Walther <david@clearbrookdistillery.com>  Sun, 06 Sep 2026 00:00:00 +0000
+
 filsys (1.3.2-1) unstable; urgency=medium
 
   * Per-edition block size and zero-fill in the facade; name-length matrix test.

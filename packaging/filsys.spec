@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        1.3.2
+Version:        1.4.0
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (V0-V7, 32V) filesystem images
 
@@ -48,6 +48,11 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Sun Sep 06 2026 David Walther <david@clearbrookdistillery.com> - 1.4.0-1
+- Fold the V6 and 2.11BSD backends into the V7 engine; add the byte-order
+  ops table (byteorder.c) and the per-edition format descriptor
+  (filsys_format.c).
+
 * Sat Sep 05 2026 David Walther <david@clearbrookdistillery.com> - 1.3.2-1
 - Per-edition block size and zero-fill in the facade; name-length matrix test.
 
