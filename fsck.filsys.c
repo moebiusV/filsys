@@ -1,4 +1,4 @@
-/* filsys 2.0.5 - 2026-09-06 - Copyright (C) 2026 David Walther */
+/* filsys 2.1.0 - 2026-09-06 - Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* fsck.filsys.c - check and repair a Research Unix (PDP-7 through 32V)
  * filesystem on a disk image.
