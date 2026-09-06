@@ -202,9 +202,19 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
         return rc;
     }
     /* A read-write open is dirty until a clean close clears s_fmod (see the
-     * backends' close); stamp it now so a crash before close is flagged. */
-    if (!readonly && fs->ops->mark_dirty)
-        fs->ops->mark_dirty(fs->fs);
+     * backends' close); stamp it now so a crash before close is flagged.  If the
+     * dirty stamp itself can't be persisted, refuse the open -- otherwise a crash
+     * before the first flush would leave s_fmod clear and fsck -p would skip the
+     * damaged filesystem. */
+    if (!readonly && fs->ops->mark_dirty) {
+        rc = fs->ops->mark_dirty(fs->fs);
+        if (rc) {
+            fs->ops->close(fs->fs);
+            free(fs->fs);
+            free(fs);
+            return rc;
+        }
+    }
     *out = fs;
     return 0;
 }

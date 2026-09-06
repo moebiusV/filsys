@@ -302,6 +302,13 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
         fs->fl.nfree = bo_get16le(buf + 0);
         for (int i = 0; i < fs->nicfree; i++)
             fs->fl.free[i] = v7_get_daddr(fs, buf + fb_free_off(fs->pack4) + fs->daddr_wid * i);
+        /* blk was the on-disk chain head; its contents (the next segment) are
+         * now in the cache, and blk is about to become file data.  Commit the
+         * allocator state *before* the caller overwrites blk, else a crash would
+         * leave the on-disk chain naming a block full of file data -- the seed
+         * of aliasing, not a leak.  One flush per NICFREE blocks, not per block. */
+        if (super_write(fs))
+            return -EIO;
     }
     /* Zero the freshly-allocated block: V7's alloc() clrbuf()s it, and without
      * this the previous file's data leaks into a new file. */
@@ -344,25 +351,27 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
     for (;;) {
         if (fs->fl.ninode > 0) {
             uint32_t cand = fs->fl.inode[--fs->fl.ninode];
+            if (cand < 2 || cand > maxino)
+                continue;   /* bad cache entry: skip */
             v7_inode_t ip;
-            if (cand >= 2 && cand <= maxino &&
-                fs->ops->read_inode(fs, cand, &ip) == 0 && ip.mode == 0) {
-                memset(&ip, 0, sizeof(ip));
-                ip.ino = cand;
-                fs->ops->write_inode(fs, cand, &ip);
-                if (fs->fl.tinode) fs->fl.tinode--;
-                fs->fl_dirty = 1;   /* inode cache changed: flush before reference */
-                *ino = cand;
-                return 0;
-            }
-            continue;   /* was already allocated; look again */
+            if (fs->ops->read_inode(fs, cand, &ip))
+                return -EIO;   /* read error, not "in use": don't reclassify */
+            if (ip.mode != 0)
+                continue;   /* was already allocated; look again */
+            memset(&ip, 0, sizeof(ip));
+            ip.ino = cand;
+            fs->ops->write_inode(fs, cand, &ip);
+            if (fs->fl.tinode) fs->fl.tinode--;
+            fs->fl_dirty = 1;   /* inode cache changed: flush before reference */
+            *ino = cand;
+            return 0;
         }
         /* Refill the cache with a linear scan of the i-list. */
         fs->fl.ninode = 0;
         for (uint32_t in = 2; in <= maxino && fs->fl.ninode < fs->nicinod; in++) {
             v7_inode_t ip;
             if (fs->ops->read_inode(fs, in, &ip))
-                break;
+                return -EIO;   /* a mid-scan read error must propagate, not truncate */
             if (ip.mode == 0)
                 fs->fl.inode[fs->fl.ninode++] = (uint16_t)in;
         }
@@ -517,7 +526,9 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
     }
     if ((uint64_t)off + size > ip->size)
         ip->size = (uint32_t)((uint64_t)off + size);
-    fs->ops->write_inode(fs, ip->ino, ip);
+    int rc = fs->ops->write_inode(fs, ip->ino, ip);
+    if (rc)
+        return rc;   /* the inode write failed: don't report a partial write */
     return (ssize_t)done;
 }
 
