@@ -26,6 +26,7 @@
 
 #include "filsys.h"
 #include "byteorder.h"
+#include "check.h"
 
 struct filsys_ops;   /* forward: the per-backend vtable (see filsys_ops.h) */
 
@@ -220,6 +221,7 @@ typedef struct filsys_edition {
     uint8_t     addr_width;         /* bytes per on-disk di_addr entry (2/3/4) */
     uint8_t     max_namlen;         /* longest entry name (8 / 14 / 63) */
     uint8_t     dirent_size;        /* bytes per fixed entry (0 = variable) */
+    uint8_t     synth_dot;          /* dir_read synthesizes "." / ".." (PDP-7) */
     /* on-disk type field (V6/V7/BSD211 family); 0 for V1/PDP-7 */
     uint16_t    ifmt, ifdir, ifreg, ifchr, ifblk, iflnk, ifsock, ifmpc, ifmpb;
     /* mode conversion (NULL = derive from the constants above) */
@@ -324,15 +326,7 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
 
 /* ---- integrity check ---------------------------------------------------- */
 
-typedef struct {
-    uint32_t free_blocks;    /* free blocks found by walking the free list */
-    uint32_t used_blocks;    /* data blocks referenced by inodes */
-    uint32_t missing_blocks; /* blocks in the data area referenced by neither */
-    uint32_t dup_blocks;     /* blocks referenced twice, or used + free */
-    uint32_t inodes;         /* total inode slots */
-    uint32_t used_inodes;    /* inodes with a non-zero mode */
-    uint32_t errors;         /* number of integrity problems found */
-} v7_check_t;
+typedef filsys_check_t v7_check_t;
 
 /* Run the V7 equivalent of icheck(8) + dcheck(8): walk the inode table marking
  * every referenced block, walk the free list, detect duplicates and missing

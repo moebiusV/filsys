@@ -752,39 +752,23 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
 
 /* ---- integrity check ---------------------------------------------------- */
 
-/* Context for the icheck(8) block-usage pass.  One bit per data block records
- * whether the block is accounted for (referenced by an inode, or in the free
- * list); a block reached twice is a duplicate, a block never reached is
- * "missing". */
-typedef struct {
-    filsys_edition_t  *fs;
-    uint8_t *bmap;        /* bit i = data block (isize + i) */
-    uint32_t *owner;      /* owner[block - isize] = first inode to claim it (or NULL) */
-    uint32_t nblk;        /* number of data blocks (fsize - isize) */
-    uint32_t used_blocks;
-    uint32_t dup_blocks;
-    uint32_t bad_blocks;  /* out-of-range block references */
-    uint32_t errors;
-    uint32_t ino;         /* current inode, for messages */
-} v7_chkctx_t;
-
 /* Mark one data block as accounted-for.  Returns 0 on a first claim, 1 for an
  * out-of-range (bad) block, 2 for a duplicate (already claimed).  Inode 1 is
  * the bad-block inode (V7_BADFIN): its addresses record bad blocks, so a
  * reference into the i-list region [2, isize) is a record, not an error. */
-static int v7_mark_block(v7_chkctx_t *cx, uint32_t bno)
+static int v7_mark_block(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t bno)
 {
     if (bno == 0)
         return 0;
-    if (bno < cx->fs->isize || bno >= cx->fs->fsize) {
-        if (cx->ino == V7_BADFIN && bno >= 2 && bno < cx->fs->isize)
+    if (bno < fs->isize || bno >= fs->fsize) {
+        if (cx->ino == V7_BADFIN && bno >= 2 && bno < fs->isize)
             return 0;   /* bad-block record: a gone-bad i-list block */
         printf("block %u bad; inode=%u\n", bno, cx->ino);
         cx->bad_blocks++;
         cx->errors++;
         return 1;
     }
-    uint32_t d = bno - cx->fs->isize;
+    uint32_t d = bno - fs->isize;
     uint8_t  m = (uint8_t)(1u << (d & 7));
     if (cx->bmap[d >> 3] & m) {
         if (cx->owner)
@@ -807,26 +791,44 @@ static int v7_mark_block(v7_chkctx_t *cx, uint32_t bno)
  * indirect, 1 = double, 2 = triple.  A duplicate indirect block is not chased:
  * its children were already claimed by the first reference, so re-walking them
  * would only cascade spurious "dup" reports (BSD fsck's phase 1). */
-static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
+static void v7_mark_tree(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t blk, int level)
 {
     if (blk == 0)
         return;
-    if (v7_mark_block(cx, blk) != 0)
+    if (v7_mark_block(fs, cx, blk) != 0)
         return;                       /* bad or duplicate: don't chase it */
     uint8_t buf[V7_MAXBSIZE];
-    if (v7fs_read_block(cx->fs, blk, buf)) {
+    if (v7fs_read_block(fs, blk, buf)) {
         printf("cannot read indirect block %u\n", blk);
         cx->errors++;
         return;
     }
-    for (int i = 0; i < (int)v7_nindir(cx->fs); i++) {
-        uint32_t nb = cx->fs->bo->get32(buf + 4 * i);
+    for (int i = 0; i < (int)v7_nindir(fs); i++) {
+        uint32_t nb = fs->bo->get32(buf + 4 * i);
         if (nb == 0)
             continue;
         if (level > 0)
-            v7_mark_tree(cx, nb, level - 1);
+            v7_mark_tree(fs, cx, nb, level - 1);
         else
-            v7_mark_block(cx, nb);
+            v7_mark_block(fs, cx, nb);
+    }
+}
+
+/* The vtable mark_blocks seam: mark every block referenced by an inode. */
+static void v7_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
+                           filsys_chkctx_t *cx)
+{
+    filsys_edition_t *f = fs;
+    (void)ino;   /* the driver set cx->ino */
+    for (int i = 0; i < f->ndaddr; i++) {
+        uint32_t a = ip->addr[i];
+        if (a)
+            v7_mark_block(f, cx, a);
+    }
+    for (int i = f->ndaddr; i < f->niaddr; i++) {
+        uint32_t a = ip->addr[i];
+        if (a)
+            v7_mark_tree(f, cx, a, i - f->ndaddr);
     }
 }
 
@@ -840,12 +842,13 @@ static void v7_mark_tree(v7_chkctx_t *cx, uint32_t blk, int level)
  * resulting physical (interleaved) numbers, so the read/write path uses them
  * directly -- no runtime mapping.  V7/32V have no interleave: s_m = s_n = 1,
  * the identity map. */
-static int v7fs_makefree(filsys_edition_t *fs, v7_chkctx_t *cx)
+static int v7fs_makefree(void *fs, filsys_chkctx_t *cx)
 {
+    filsys_edition_t *f = fs;
     int m, n;
-    if (fs->interleave) {
-        m = fs->m;
-        n = fs->n;
+    if (f->interleave) {
+        m = f->m;
+        n = f->n;
         if (n < 1 || n > V7_COH_MAXINTN || m < 1 || m > n || n % m != 0) {
             printf("invalid interleave factors in superblock (m=%d n=%d); defaulting\n", m, n);
             m = 1;
@@ -863,34 +866,37 @@ static int v7fs_makefree(filsys_edition_t *fs, v7_chkctx_t *cx)
 
     /* Interleave only within the data band, aligned to n blocks (phase6's
      * mapbot/maptop). */
-    uint32_t mapbot = ((fs->isize + n - 1) / n) * n;
-    uint32_t maptop = (fs->fsize / n) * n;
+    uint32_t mapbot = ((f->isize + n - 1) / n) * n;
+    uint32_t maptop = (f->fsize / n) * n;
 
-    /* v7fs_bfree increments fs->tfree as it goes, so reset the running totals
+    /* v7fs_bfree increments f->tfree as it goes, so reset the running totals
      * first -- otherwise the rebuilt count is added on top of the old one. */
-    fs->nfree = 0;
-    fs->ninode = 0;
-    fs->tfree = 0;
-    fs->tinode = 0;
+    f->nfree = 0;
+    f->ninode = 0;
+    f->tfree = 0;
+    f->tinode = 0;
     int nfree = 0;
-    for (uint32_t bn = fs->isize; bn < fs->fsize; bn++) {
+    for (uint32_t bn = f->isize; bn < f->fsize; bn++) {
         uint32_t blk = bn;
         if (bn >= mapbot && bn < maptop)
             blk = (bn / n) * n + (uint32_t)maptab[bn % n];
-        uint32_t off = blk - fs->isize;
+        uint32_t off = blk - f->isize;
         if (off >= cx->nblk)
             continue;   /* interleave stays within [isize, fsize), but be safe */
         if (!(cx->bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
-            v7fs_bfree(fs, blk);
+            v7fs_bfree(f, blk);
             nfree++;
         }
     }
-    super_write(fs);   /* writes fs->tfree (= nfree) and fs->tinode (= 0) */
+    super_write(f);   /* writes f->tfree (= nfree) and f->tinode (= 0) */
     return nfree;
 }
 
 /* Classify an inode's mode into a checker state (the low three type bits). */
-static uint8_t v7_inode_state(uint16_t mode) {
+static uint8_t v7_inode_state(void *fs, uint32_t ino, uint32_t mode) {
+    (void)fs; (void)ino;
+    if (mode == 0)
+        return FILSYS_IN_UNALLOC;
     switch (mode & V7_IFMT) {
     case V7_IFDIR: return FILSYS_IN_IDIR;
     case V7_IFREG: return FILSYS_IN_IREG;
@@ -901,7 +907,77 @@ static uint8_t v7_inode_state(uint16_t mode) {
     }
 }
 
-static void v7fs_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
+static uint32_t v7_maxino(void *fs) {
+    filsys_edition_t *f = fs;
+    return (uint32_t)(f->isize - 2) * v7_inopb(f);
+}
+static uint32_t v7_data_start(void *fs) { return ((filsys_edition_t *)fs)->isize; }
+static uint32_t v7_data_end(void *fs)   { return ((filsys_edition_t *)fs)->fsize; }
+static int v7_is_clean(void *fs)        { return ((filsys_edition_t *)fs)->fmod == 0; }
+
+/* Walk the free list exactly as alloc() would, marking free blocks into cx->bmap
+ * (a free block already used is a duplicate) and counting free_blocks. */
+static void v7_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
+{
+    filsys_edition_t *f = fs;
+    uint8_t *seen = calloc(f->fsize ? f->fsize : 1, 1);
+    if (!seen)
+        return;
+    uint16_t n = f->nfree;
+    uint32_t cur[V7_XEN_NICFREE];
+    memcpy(cur, f->free, sizeof(cur));
+    uint32_t guard = 0;
+    while (n > 0) {
+        uint32_t bno = cur[--n];
+        if (bno == 0)
+            break;                       /* sentinel: end of chain */
+        if (bno < f->isize || bno >= f->fsize) {
+            printf("free block %u out of range [%u,%u)\n", bno, f->isize, f->fsize);
+            rep->errors++;
+            break;
+        }
+        if (seen[bno]) {
+            printf("free block %u listed twice (cycle?)\n", bno);
+            rep->errors++;
+            break;
+        }
+        seen[bno] = 1;
+        rep->free_blocks++;
+        uint32_t off = bno - f->isize;
+        uint8_t m = (uint8_t)(1u << (off & 7));
+        if (cx->bmap[off >> 3] & m) {
+            printf("block %u dup; free-list\n", bno);
+            cx->dup_blocks++;
+            rep->errors++;
+        } else {
+            cx->bmap[off >> 3] |= m;
+        }
+        if (++guard > f->fsize + f->nicfree) {
+            printf("free list does not terminate\n");
+            rep->errors++;
+            break;
+        }
+        if (n == 0) {
+            uint8_t blk[V7_MAXBSIZE];
+            if (v7fs_read_block(f, bno, blk)) {
+                printf("cannot read free-list block %u\n", bno);
+                rep->errors++;
+                break;
+            }
+            n = bo_get16le(blk);
+            if (n > f->nicfree) {
+                printf("free-list block %u has bad count %u\n", bno, n);
+                rep->errors++;
+                break;
+            }
+            for (int i = 0; i < f->nicfree; i++)
+                cur[i] = f->bo->get32(blk + fb_free_off(f->pack4) + 4 * i);
+        }
+    }
+    free(seen);
+}
+
+static void v7fs_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
                        uint32_t maxino, int mode)
 {
     v7_inode_t root;
@@ -972,246 +1048,7 @@ static void v7fs_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_
 }
 
 int v7fs_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
-    memset(rep, 0, sizeof(*rep));
-
-    if (fs->fmod == 0 && !(mode & (FILSYS_CK_SALVAGE | FILSYS_CK_FORCE))) {
-        printf("filesystem clean; skipped (use -f to force)\n");
-        return 0;
-    }
-
-    /* 1. superblock sanity.  A bad superblock makes everything downstream
-     * meaningless, so it sets the Coherent-style errflag and bails before the
-     * i-list and block walks (nblk = fsize - isize would underflow). */
-    int errflag = 0;
-    if (fs->isize >= fs->fsize || fs->fsize == 0) {
-        printf("bad superblock: isize=%u fsize=%u\n", fs->isize, fs->fsize);
-        rep->errors++;
-        errflag = 1;
-    }
-    if (fs->nfree > fs->nicfree) {
-        printf("bad nfree=%u (>%d)\n", fs->nfree, fs->nicfree);
-        rep->errors++;
-    }
-    if (fs->ninode > V7_NICINOD) {
-        printf("bad ninode=%u (>%d)\n", fs->ninode, V7_NICINOD);
-        rep->errors++;
-    }
-    if (errflag) {
-        printf("superblock unusable; skipping check\n");
-        return -1;
-    }
-
-    uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
-    rep->inodes = maxino;
-
-    uint32_t nblk = fs->fsize - fs->isize;
-    v7_chkctx_t cx;
-    memset(&cx, 0, sizeof(cx));
-    cx.fs = fs;
-    cx.nblk = nblk;
-    cx.bmap = calloc((nblk + 7) / 8, 1);
-    if (!cx.bmap)
-        return -ENOMEM;
-
-    /* owner table: name the inode that first claimed each block, so a duplicate
-     * report can say who already owns it (BSD fsck's phase-1b rescan). */
-    cx.owner = calloc(nblk + 1, sizeof(uint32_t));
-    if (!cx.owner) {
-        free(cx.bmap);
-        return -ENOMEM;
-    }
-
-    uint8_t *state = calloc(maxino + 1, 1);
-    if (!state) {
-        free(cx.owner);
-        free(cx.bmap);
-        return -ENOMEM;
-    }
-
-    /* 2. icheck pass 1: mark every block referenced by an inode. */
-    for (uint32_t ino = 1; ino <= maxino; ino++) {
-        v7_inode_t ip;
-        if (v7fs_read_inode(fs, ino, &ip)) {
-            printf("inode %u unreadable\n", ino);
-            rep->errors++;
-            continue;
-        }
-        if (ip.mode == 0)
-            continue;   /* state[ino] stays UNALLOC */
-        rep->used_inodes++;
-        state[ino] = v7_inode_state(ip.mode);
-        if (state[ino] == FILSYS_IN_UNKNOWN) {
-            printf("inode %u unknown type 0%o\n", ino, ip.mode & V7_IFMT);
-            rep->errors++;
-            continue;   /* unknown type: block addresses are untrusted */
-        }
-        if (state[ino] == FILSYS_IN_ICHR || state[ino] == FILSYS_IN_IBLK)
-            continue;   /* device inode: addr[0] is a device number, not a block */
-        cx.ino = ino;
-        for (int i = 0; i < fs->niaddr; i++) {
-            uint32_t a = ip.addr[i];
-            if (a == 0)
-                continue;
-            if (i < fs->ndaddr)
-                v7_mark_block(&cx, a);
-            else
-                v7_mark_tree(&cx, a, i - fs->ndaddr);
-        }
-    }
-
-    /* fold the mark-phase findings (dup/bad blocks) into the report */
-    rep->errors += cx.errors;
-
-    /* Too many bad blocks leave the block accounting untrustworthy, so skip the
-     * free-list and directory phases rather than report phantom "missing"
-     * blocks (BSD fsck's errflag on excessive bad blocks). */
-    if (cx.bad_blocks > FILSYS_MAXBADOK) {
-        printf("too many bad blocks (%u); skipping free-list and directory checks\n",
-               cx.bad_blocks);
-        free(state);
-        free(cx.owner);
-        free(cx.bmap);
-        return -1;
-    }
-
-    if (mode & FILSYS_CK_SALVAGE) {
-        int nf = v7fs_makefree(fs, &cx);
-        printf("salvaged: free list rebuilt (%d free blocks)\n", nf);
-        free(state);
-        free(cx.owner);
-        free(cx.bmap);
-        return rep->errors ? -1 : 0;
-    }
-
-    /* 3. walk the free list exactly as alloc() would, marking free blocks. */
-    uint8_t *seen = calloc(fs->fsize ? fs->fsize : 1, 1);
-    if (!seen) {
-        free(state);
-        free(cx.owner);
-        free(cx.bmap);
-        return -ENOMEM;
-    }
-    uint16_t n = fs->nfree;
-    uint32_t cur[V7_XEN_NICFREE];
-    memcpy(cur, fs->free, sizeof(cur));
-    uint32_t guard = 0;
-    while (n > 0) {
-        uint32_t bno = cur[--n];
-        if (bno == 0)
-            break;                       /* sentinel: end of chain */
-        if (bno < fs->isize || bno >= fs->fsize) {
-            printf("free block %u out of range [%u,%u)\n",
-                   bno, fs->isize, fs->fsize);
-            rep->errors++;
-            break;
-        }
-        if (seen[bno]) {
-            printf("free block %u listed twice (cycle?)\n", bno);
-            rep->errors++;
-            break;
-        }
-        seen[bno] = 1;
-        rep->free_blocks++;
-        /* a free block that is also referenced by an inode is a duplicate */
-        uint32_t off = bno - fs->isize;
-        uint8_t m = (uint8_t)(1u << (off & 7));
-        if (cx.bmap[off >> 3] & m) {
-            printf("block %u dup; free-list\n", bno);
-            cx.dup_blocks++;
-            rep->errors++;
-        } else {
-            cx.bmap[off >> 3] |= m;
-        }
-        if (++guard > fs->fsize + fs->nicfree) {
-            printf("free list does not terminate\n");
-            rep->errors++;
-            break;
-        }
-        if (n == 0) {
-            uint8_t blk[V7_MAXBSIZE];
-            if (v7fs_read_block(fs, bno, blk)) {
-                printf("cannot read free-list block %u\n", bno);
-                rep->errors++;
-                break;
-            }
-            n = bo_get16le(blk);
-            if (n > fs->nicfree) {
-                printf("free-list block %u has bad count %u\n", bno, n);
-                rep->errors++;
-                break;
-            }
-            for (int i = 0; i < fs->nicfree; i++)
-                cur[i] = fs->bo->get32(blk + fb_free_off(fs->pack4) + 4 * i);
-        }
-    }
-    free(seen);
-
-    /* 4. missing blocks: in the data area but neither used nor free. */
-    for (uint32_t off = 0; off < nblk; off++)
-        if (!(cx.bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
-            rep->missing_blocks++;
-            rep->errors++;
-        }
-
-    rep->used_blocks = cx.used_blocks;
-    rep->dup_blocks = cx.dup_blocks;
-
-    /* 5. dcheck: directory link counts. */
-    uint8_t *ecount = calloc(maxino + 1, 1);
-    if (ecount) {
-        for (uint32_t ino = 1; ino <= maxino; ino++) {
-            v7_inode_t ip;
-            if (v7fs_read_inode(fs, ino, &ip))
-                continue;
-            if ((ip.mode & V7_IFMT) != V7_IFDIR)
-                continue;
-            v7_dirent_t *ents = NULL;
-            size_t cnt = 0;
-            if (v7fs_dir_read(fs, &ip, &ents, &cnt) == 0) {
-                for (size_t e = 0; e < cnt; e++) {
-                    uint32_t dno = ents[e].ino;
-                    if (dno == 0)
-                        continue;
-                    if (dno > maxino || dno <= 1) {
-                        printf("%u bad; %u/%.*s\n", dno, ino, V7_DIRSIZ, ents[e].name);
-                        rep->errors++;
-                        continue;
-                    }
-                    if (!filsys_in_allocated(state[dno])) {
-                        printf("dir %u references free inode %u\n", ino, dno);
-                        rep->errors++;
-                    }
-                    ecount[dno]++;
-                    if (ecount[dno] == 0)
-                        ecount[dno] = 0377;
-                }
-                v7fs_dirents_free(ents);
-            }
-        }
-        for (uint32_t ino = 1; ino <= maxino; ino++) {
-            v7_inode_t ip;
-            if (v7fs_read_inode(fs, ino, &ip))
-                continue;
-            int cnt = ecount[ino] & 0377;
-            if (cnt == ip.nlink)
-                continue;
-            if ((ip.mode & V7_IFMT) == 0 && cnt == 0)
-                continue;
-            printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
-            rep->errors++;
-        }
-        if (mode & (FILSYS_CK_PREEN | FILSYS_CK_YES | FILSYS_CK_ASK))
-            v7fs_preen(fs, ecount, state, maxino, mode);
-        free(ecount);
-    }
-
-    free(state);
-    free(cx.bmap);
-
-    printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
-           rep->used_blocks, rep->free_blocks, rep->missing_blocks,
-           rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
-    return rep->errors ? -1 : 0;
+    return filsys_check_common(fs, fs, rep, mode);
 }
 
 /* ---- maintenance: ncheck / clri / salv -a ------------------------------ */
@@ -1285,9 +1122,8 @@ int v7fs_resolve_dups(filsys_edition_t *fs)
     uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
     uint32_t nblk = fs->fsize - fs->isize;
 
-    v7_chkctx_t cx;
+    filsys_chkctx_t cx;
     memset(&cx, 0, sizeof(cx));
-    cx.fs = fs;
     cx.nblk = nblk;
     cx.bmap = calloc((nblk + 7) / 8, 1);
     if (!cx.bmap)
@@ -1333,7 +1169,7 @@ int v7fs_resolve_dups(filsys_edition_t *fs)
                 }
             } else {
                 cx.ino = ino;
-                v7_mark_tree(&cx, a, i - fs->ndaddr);
+                v7_mark_tree(fs, &cx, a, i - fs->ndaddr);
             }
         }
     }
@@ -1464,6 +1300,15 @@ const struct filsys_ops v7fs_ops = {
     .dir_remove  = v7fs_dir_remove_op,
     .lookup      = v7fs_lookup_op,
     .check       = v7fs_check_op,
+    .maxino      = v7_maxino,
+    .data_start  = v7_data_start,
+    .data_end    = v7_data_end,
+    .inode_state = v7_inode_state,
+    .mark_blocks = v7_mark_blocks,
+    .walk_free   = v7_walk_free,
+    .makefree    = v7fs_makefree,
+    .preen       = v7fs_preen,
+    .is_clean    = v7_is_clean,
     .statfs      = v7fs_statfs_op,
     .max_file    = v7fs_max_file_op,
 };
@@ -1627,85 +1472,41 @@ static void bsd211_mark_tree(filsys_edition_t *fs, uint8_t *bmap,
     }
 }
 
+static uint8_t bsd211_inode_state(void *fs, uint32_t ino, uint32_t mode) {
+    (void)fs; (void)ino;
+    if (mode == 0)
+        return FILSYS_IN_UNALLOC;
+    switch (mode & BSD211_IFMT) {
+    case BSD211_IFDIR: return FILSYS_IN_IDIR;
+    case BSD211_IFREG: case BSD211_IFLNK: return FILSYS_IN_IREG;
+    case BSD211_IFCHR: case BSD211_IFSOCK: return FILSYS_IN_ICHR;
+    case BSD211_IFBLK: return FILSYS_IN_IBLK;
+    default: return FILSYS_IN_UNKNOWN;
+    }
+}
+
+static void bsd211_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
+                               filsys_chkctx_t *cx)
+{
+    filsys_edition_t *f = fs;
+    (void)ino;
+    for (int i = 0; i < f->ndaddr; i++) {
+        uint32_t a = ip->addr[i];
+        if (a)
+            bsd211_mark_block(f, cx->bmap, a, &cx->used_blocks, &cx->dup_blocks, &cx->errors);
+    }
+    for (int i = f->ndaddr; i < f->niaddr; i++) {
+        uint32_t a = ip->addr[i];
+        if (a)
+            bsd211_mark_tree(f, cx->bmap, a, i - f->ndaddr, &cx->used_blocks, &cx->dup_blocks, &cx->errors);
+    }
+}
+
+static int bsd211_is_clean(void *fs) { (void)fs; return 0; }
+
 int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
-    (void)mode;
-    memset(rep, 0, sizeof(*rep));
-    uint32_t nblk = fs->fsize - fs->isize;   /* data blocks */
-    uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
-    uint8_t *bmap = calloc((nblk + 7) / 8, 1);
-    if (!bmap)
-        return -ENOMEM;
-
-    uint32_t used = 0, dups = 0, errors = 0, inodes_used = 0;
-    for (uint32_t ino = 1; ino <= maxino; ino++) {
-        v7_inode_t ip;
-        if (v7fs_read_inode(fs, ino, &ip))
-            continue;
-        if (ip.mode == 0)
-            continue;
-        inodes_used++;
-        uint16_t t = ip.mode & fs->ifmt;
-        if (t == fs->ifchr || t == fs->ifblk || t == fs->ifsock)
-            continue;   /* device/socket inode: addr[0] is a device number */
-        if (t != fs->ifreg && t != fs->ifdir && t != fs->iflnk) {
-            printf("inode %u unknown type 0%o\n", ino, t);
-            errors++;
-            continue;
-        }
-        for (int i = 0; i < fs->niaddr; i++) {
-            uint32_t bn = ip.addr[i];
-            if (bn == 0)
-                continue;
-            if (i < fs->ndaddr)
-                bsd211_mark_block(fs, bmap, bn, &used, &dups, &errors);
-            else
-                bsd211_mark_tree(fs, bmap, bn, i - fs->ndaddr, &used, &dups, &errors);
-        }
-    }
-
-    /* walk the free list */
-    uint32_t n = fs->nfree;
-    uint32_t cur[V7_XEN_NICFREE];
-    memcpy(cur, fs->free, sizeof(cur));
-    uint32_t free_blocks = 0, guard = 0;
-    while (n > 0) {
-        uint32_t bno = cur[--n];
-        if (bno == 0)
-            break;
-        if (bno < fs->isize || bno >= fs->fsize)
-            break;
-        uint32_t off = bno - fs->isize;
-        if (bmap[off >> 3] & (1u << (off & 7))) { dups++; errors++; }
-        else { bmap[off >> 3] |= (uint8_t)(1u << (off & 7)); free_blocks++; }
-        if (++guard > fs->fsize + fs->nicfree)
-            break;
-        if (n == 0) {
-            uint8_t blk[V7_MAXBSIZE];
-            if (v7fs_read_block(fs, bno, blk))
-                break;
-            n = bo_get16le(blk);
-            for (uint32_t i = 0; i < fs->nicfree; i++)
-                cur[i] = fs->bo->get32(blk + 2 + 4 * i);
-        }
-    }
-
-    uint32_t missing = 0;
-    for (uint32_t off = 0; off < nblk; off++)
-        if (!(bmap[off >> 3] & (1u << (off & 7))))
-            missing++;
-    free(bmap);
-
-    rep->free_blocks = free_blocks;
-    rep->used_blocks = used;
-    rep->missing_blocks = missing;
-    rep->dup_blocks = dups;
-    rep->inodes = maxino;
-    rep->used_inodes = inodes_used;
-    rep->errors = missing + dups + errors;
-    printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
-           rep->used_blocks, rep->free_blocks, rep->missing_blocks,
-           rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
-    return rep->errors ? -1 : 0;
+    (void)mode;   /* 2.11BSD: check only, no salvage/preen */
+    return filsys_check_common(fs, fs, rep, 0);
 }
 
 /* ---- 2.11BSD ops table: the shared V7 engine + variable-length dirents ---- */
@@ -1742,6 +1543,13 @@ const struct filsys_ops bsd211fs_ops = {
     .dir_remove  = bsd211_dir_remove_op,
     .lookup      = v7fs_lookup_op,
     .check       = bsd211_check_op,
+    .maxino      = v7_maxino,
+    .data_start  = v7_data_start,
+    .data_end    = v7_data_end,
+    .inode_state = bsd211_inode_state,
+    .mark_blocks = bsd211_mark_blocks,
+    .walk_free   = v7_walk_free,
+    .is_clean    = bsd211_is_clean,
     .statfs      = v7fs_statfs_op,
     .max_file    = v7fs_max_file_op,
 };
@@ -2191,22 +1999,11 @@ static int v6_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int creat
 
 /* ---- V6 integrity check -------------------------------------------------- */
 
-typedef struct {
-    filsys_edition_t *fs;
-    uint8_t *bmap;        /* bit i = data block (dstart + i) */
-    uint32_t nblk;
-    uint32_t used_blocks;
-    uint32_t dup_blocks;
-    uint32_t bad_blocks;
-    uint32_t errors;
-    uint32_t ino;
-} v6_chkctx_t;
-
-static int v6_mark_block(v6_chkctx_t *cx, uint32_t bno) {
+static int v6_mark_block(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t bno) {
     if (bno == 0)
         return 0;
-    uint32_t dstart = v6_data_start(cx->fs->isize);
-    if (bno < dstart || bno >= cx->fs->fsize) {
+    uint32_t dstart = v6_data_start(fs->isize);
+    if (bno < dstart || bno >= fs->fsize) {
         printf("block %u bad; inode=%u\n", bno, cx->ino);
         cx->bad_blocks++;
         cx->errors++;
@@ -2225,13 +2022,13 @@ static int v6_mark_block(v6_chkctx_t *cx, uint32_t bno) {
     return 0;
 }
 
-static void v6_mark_tree(v6_chkctx_t *cx, uint32_t blk) {
+static void v6_mark_tree(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t blk) {
     if (blk == 0)
         return;
-    if (v6_mark_block(cx, blk) != 0)
+    if (v6_mark_block(fs, cx, blk) != 0)
         return;
     uint8_t buf[V6_BSIZE];
-    if (v7fs_read_block(cx->fs, blk, buf)) {
+    if (v7fs_read_block(fs, blk, buf)) {
         printf("cannot read indirect block %u\n", blk);
         cx->errors++;
         return;
@@ -2239,11 +2036,29 @@ static void v6_mark_tree(v6_chkctx_t *cx, uint32_t blk) {
     for (int i = 0; i < V6_NINDIR; i++) {
         uint32_t nb = bo_get16le(buf + 2 * i);
         if (nb != 0)
-            v6_mark_block(cx, nb);
+            v6_mark_block(fs, cx, nb);
     }
 }
 
-static int v6_makefree(filsys_edition_t *fs, v6_chkctx_t *cx) {
+/* The vtable mark_blocks seam: V6's ILARG layout (all slots single-indirect). */
+static void v6_mark_blocks(void *fs, const filsys_inode_t *ip, uint32_t ino,
+                           filsys_chkctx_t *cx)
+{
+    filsys_edition_t *f = fs;
+    (void)ino;
+    for (int i = 0; i < f->niaddr; i++) {
+        uint32_t a = ip->addr[i];
+        if (a == 0)
+            continue;
+        if (ip->mode & V6_ILARG)
+            v6_mark_tree(f, cx, a);
+        else
+            v6_mark_block(f, cx, a);
+    }
+}
+
+static int v6_makefree(void *fs, filsys_chkctx_t *cx) {
+    filsys_edition_t *f = fs;
     int m = 3, n = 100;
     int adr[100];
     uint8_t flg[100] = {0};
@@ -2257,30 +2072,33 @@ static int v6_makefree(filsys_edition_t *fs, v6_chkctx_t *cx) {
         i = (i + m) % n;
     }
 
-    fs->nfree = 0;
-    fs->ninode = 0;
-    uint32_t dstart = v6_data_start(fs->isize);
+    f->nfree = 0;
+    f->ninode = 0;
+    uint32_t dstart = v6_data_start(f->isize);
     int nfree = 0;
-    uint32_t d = fs->fsize - 1;
+    uint32_t d = f->fsize - 1;
     while (d % n)
         d++;
     for (; d > 0; d -= n) {
         for (i = 0; i < n; i++) {
-            int64_t f = (int64_t)d - adr[i];
-            if (f < (int64_t)dstart || f >= (int64_t)fs->fsize)
+            int64_t b = (int64_t)d - adr[i];
+            if (b < (int64_t)dstart || b >= (int64_t)f->fsize)
                 continue;
-            uint32_t off = (uint32_t)f - dstart;
+            uint32_t off = (uint32_t)b - dstart;
             if (!(cx->bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
-                v6_bfree(fs, (uint32_t)f);
+                v6_bfree(f, (uint32_t)b);
                 nfree++;
             }
         }
     }
-    v6_super_write(fs);
+    v6_super_write(f);
     return nfree;
 }
 
-static uint8_t v6_inode_state(uint16_t mode) {
+static uint8_t v6_inode_state(void *fs, uint32_t ino, uint32_t mode) {
+    (void)fs; (void)ino;
+    if (mode == 0)
+        return FILSYS_IN_UNALLOC;
     switch (mode & V6_IFMT) {
     case V6_IFDIR: return FILSYS_IN_IDIR;
     case V6_IFCHR: return FILSYS_IN_ICHR;
@@ -2290,11 +2108,12 @@ static uint8_t v6_inode_state(uint16_t mode) {
     }
 }
 
-static void v6_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *state,
+static void v6_preen(void *fs, const uint8_t *ecount, const uint8_t *state,
                      uint32_t maxino, int mode) {
+    filsys_edition_t *f = fs;
     v7_inode_t root;
     uint32_t lf_ino = 0;
-    if (v6_read_inode(fs, fs->rootino, &root) == 0 &&
+    if (v6_read_inode(fs, f->rootino, &root) == 0 &&
         v7fs_dir_lookup(fs, &root, "lost+found", &lf_ino) != 0) {
         v7_inode_t lf;
         if (v6_ialloc(fs, &lf_ino) == 0) {
@@ -2304,10 +2123,10 @@ static void v6_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t 
             lf.nlink = 2;
             v6_write_inode(fs, lf_ino, &lf);
             v7fs_dir_add(fs, &lf, lf_ino, ".");
-            v7fs_dir_add(fs, &lf, fs->rootino, "..");
+            v7fs_dir_add(fs, &lf, f->rootino, "..");
             v7fs_dir_add(fs, &root, lf_ino, "lost+found");
             root.nlink++;
-            v6_write_inode(fs, fs->rootino, &root);
+            v6_write_inode(fs, f->rootino, &root);
             printf("created lost+found (inode %u)\n", lf_ino);
         }
     }
@@ -2329,7 +2148,7 @@ static void v6_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t 
         }
         if (cnt == ip.nlink)
             continue;
-        if (ino == fs->rootino || ino == lf_ino)
+        if (ino == f->rootino || ino == lf_ino)
             continue;
         if (cnt == 0) {
             if (lf_ino == 0)
@@ -2359,115 +2178,35 @@ static void v6_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t 
     }
 }
 
-int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
-    memset(rep, 0, sizeof(*rep));
+static uint32_t v6_chk_maxino(void *fs) {
+    filsys_edition_t *f = fs;
+    return v6_maxino(f->isize);
+}
+static uint32_t v6_chk_data_start(void *fs) {
+    filsys_edition_t *f = fs;
+    return v6_data_start(f->isize);
+}
+static uint32_t v6_chk_data_end(void *fs)   { return ((filsys_edition_t *)fs)->fsize; }
+static int v6_chk_is_clean(void *fs)        { return ((filsys_edition_t *)fs)->fmod == 0; }
 
-    if (fs->fmod == 0 && !(mode & (FILSYS_CK_SALVAGE | FILSYS_CK_FORCE))) {
-        printf("filesystem clean; skipped (use -f to force)\n");
-        return 0;
-    }
-
-    int errflag = 0;
-    if (v6_data_start(fs->isize) >= fs->fsize || fs->fsize == 0) {
-        printf("bad superblock: isize=%u fsize=%u\n", fs->isize, fs->fsize);
-        rep->errors++;
-        errflag = 1;
-    }
-    if (fs->nfree > fs->nicfree) {
-        printf("bad nfree=%u (>%u)\n", fs->nfree, fs->nicfree);
-        rep->errors++;
-    }
-    if (fs->ninode > fs->nicinod) {
-        printf("bad ninode=%u (>%u)\n", fs->ninode, fs->nicinod);
-        rep->errors++;
-    }
-    if (errflag) {
-        printf("superblock unusable; skipping check\n");
-        return -1;
-    }
-
-    uint32_t maxino = v6_maxino(fs->isize);
-    rep->inodes = maxino;
-    uint32_t dstart = v6_data_start(fs->isize);
-    uint32_t nblk = fs->fsize - dstart;
-
-    v6_chkctx_t cx;
-    memset(&cx, 0, sizeof(cx));
-    cx.fs = fs;
-    cx.nblk = nblk;
-    cx.bmap = calloc((nblk + 7) / 8, 1);
-    if (!cx.bmap)
-        return -ENOMEM;
-
-    uint8_t *state = calloc(maxino + 1, 1);
-    if (!state) {
-        free(cx.bmap);
-        return -ENOMEM;
-    }
-
-    for (uint32_t ino = 1; ino <= maxino; ino++) {
-        v7_inode_t ip;
-        if (v6_read_inode(fs, ino, &ip)) {
-            printf("inode %u unreadable\n", ino);
-            rep->errors++;
-            continue;
-        }
-        if (ip.mode == 0)
-            continue;
-        rep->used_inodes++;
-        state[ino] = v6_inode_state(ip.mode);
-        if (state[ino] == FILSYS_IN_UNKNOWN) {
-            printf("inode %u unknown type 0%o\n", ino, ip.mode & V6_IFMT);
-            rep->errors++;
-            continue;
-        }
-        if (state[ino] == FILSYS_IN_ICHR || state[ino] == FILSYS_IN_IBLK)
-            continue;
-        cx.ino = ino;
-        for (int i = 0; i < fs->niaddr; i++) {
-            uint32_t a = ip.addr[i];
-            if (a == 0)
-                continue;
-            if (ip.mode & V6_ILARG)
-                v6_mark_tree(&cx, a);
-            else
-                v6_mark_block(&cx, a);
-        }
-    }
-    rep->errors += cx.errors;
-
-    if (cx.bad_blocks > FILSYS_MAXBADOK) {
-        printf("too many bad blocks (%u); skipping free-list and directory checks\n",
-               cx.bad_blocks);
-        free(state);
-        free(cx.bmap);
-        return -1;
-    }
-
-    if (mode & FILSYS_CK_SALVAGE) {
-        int nf = v6_makefree(fs, &cx);
-        printf("salvaged: free list rebuilt (%d free blocks)\n", nf);
-        free(state);
-        free(cx.bmap);
-        return rep->errors ? -1 : 0;
-    }
-
-    uint8_t *seen = calloc(fs->fsize ? fs->fsize : 1, 1);
-    if (!seen) {
-        free(state);
-        free(cx.bmap);
-        return -ENOMEM;
-    }
-    uint16_t n = fs->nfree;
+/* Walk the V6 free list (2-byte entries) marking free blocks into cx->bmap. */
+static void v6_chk_walk_free(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
+{
+    filsys_edition_t *f = fs;
+    uint32_t dstart = v6_data_start(f->isize);
+    uint8_t *seen = calloc(f->fsize ? f->fsize : 1, 1);
+    if (!seen)
+        return;
+    uint16_t n = f->nfree;
     uint32_t cur[V6_NICFREE];
-    memcpy(cur, fs->free, sizeof(cur));
+    memcpy(cur, f->free, sizeof(cur));
     uint32_t guard = 0;
     while (n > 0) {
         uint32_t bno = cur[--n];
         if (bno == 0)
             break;
-        if (bno < dstart || bno >= fs->fsize) {
-            printf("free block %u out of range [%u,%u)\n", bno, dstart, fs->fsize);
+        if (bno < dstart || bno >= f->fsize) {
+            printf("free block %u out of range [%u,%u)\n", bno, dstart, f->fsize);
             rep->errors++;
             break;
         }
@@ -2480,94 +2219,40 @@ int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
         rep->free_blocks++;
         uint32_t off = bno - dstart;
         uint8_t m = (uint8_t)(1u << (off & 7));
-        if (cx.bmap[off >> 3] & m) {
+        if (cx->bmap[off >> 3] & m) {
             printf("block %u dup; free-list\n", bno);
-            cx.dup_blocks++;
+            cx->dup_blocks++;
             rep->errors++;
         } else {
-            cx.bmap[off >> 3] |= m;
+            cx->bmap[off >> 3] |= m;
         }
-        if (++guard > fs->fsize + fs->nicfree) {
+        if (++guard > f->fsize + f->nicfree) {
             printf("free list does not terminate\n");
             rep->errors++;
             break;
         }
         if (n == 0) {
             uint8_t blk[V6_BSIZE];
-            if (v7fs_read_block(fs, bno, blk)) {
+            if (v7fs_read_block(f, bno, blk)) {
                 printf("cannot read free-list block %u\n", bno);
                 rep->errors++;
                 break;
             }
             n = bo_get16le(blk);
-            if (n > fs->nicfree) {
+            if (n > f->nicfree) {
                 printf("free-list block %u has bad count %u\n", bno, n);
                 rep->errors++;
                 break;
             }
-            for (int i = 0; i < fs->nicfree; i++)
+            for (int i = 0; i < f->nicfree; i++)
                 cur[i] = bo_get16le(blk + 2 + 2 * i);
         }
     }
     free(seen);
+}
 
-    for (uint32_t off = 0; off < nblk; off++)
-        if (!(cx.bmap[off >> 3] & (uint8_t)(1u << (off & 7)))) {
-            rep->missing_blocks++;
-            rep->errors++;
-        }
-
-    rep->used_blocks = cx.used_blocks;
-    rep->dup_blocks = cx.dup_blocks;
-
-    uint8_t *ecount = calloc(maxino + 1, 1);
-    if (ecount) {
-        for (uint32_t ino = 1; ino <= maxino; ino++) {
-            v7_inode_t ip;
-            if (v6_read_inode(fs, ino, &ip))
-                continue;
-            if ((ip.mode & V6_IFMT) != V6_IFDIR)
-                continue;
-            v7_dirent_t *ents = NULL;
-            size_t cnt = 0;
-            if (v7fs_dir_read(fs, &ip, &ents, &cnt) == 0) {
-                for (size_t e = 0; e < cnt; e++) {
-                    uint32_t dno = ents[e].ino;
-                    if (dno == 0 || dno > maxino)
-                        continue;
-                    if (!filsys_in_allocated(state[dno])) {
-                        printf("dir %u references free inode %u\n", ino, dno);
-                        rep->errors++;
-                    }
-                    ecount[dno]++;
-                }
-                v7fs_dirents_free(ents);
-            }
-        }
-        for (uint32_t ino = 1; ino <= maxino; ino++) {
-            v7_inode_t ip;
-            if (v6_read_inode(fs, ino, &ip))
-                continue;
-            int cnt = ecount[ino] & 0377;
-            if (cnt == ip.nlink)
-                continue;
-            if ((ip.mode & V6_IFMT) == 0 && cnt == 0)
-                continue;
-            printf("%u entries=%d link=%d\n", ino, cnt, ip.nlink);
-            rep->errors++;
-        }
-        if (mode & (FILSYS_CK_PREEN | FILSYS_CK_YES | FILSYS_CK_ASK))
-            v6_preen(fs, ecount, state, maxino, mode);
-        free(ecount);
-    }
-
-    free(state);
-    free(cx.bmap);
-
-    printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
-           rep->used_blocks, rep->free_blocks, rep->missing_blocks,
-           rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
-    return rep->errors ? -1 : 0;
+int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
+    return filsys_check_common(fs, fs, rep, mode);
 }
 
 /* ---- V6 maintenance: ncheck / clri / salv -a ---------------------------- */
@@ -2636,9 +2321,8 @@ int v6_resolve_dups(filsys_edition_t *fs) {
     uint32_t dstart = v6_data_start(fs->isize);
     uint32_t nblk = fs->fsize - dstart;
 
-    v6_chkctx_t cx;
+    filsys_chkctx_t cx;
     memset(&cx, 0, sizeof(cx));
-    cx.fs = fs;
     cx.nblk = nblk;
     cx.bmap = calloc((nblk + 7) / 8, 1);
     if (!cx.bmap)
@@ -2663,7 +2347,7 @@ int v6_resolve_dups(filsys_edition_t *fs) {
             if (a == 0)
                 continue;
             if (ip.mode & V6_ILARG) {
-                v6_mark_tree(&cx, a);
+                v6_mark_tree(fs, &cx, a);
                 continue;
             }
             if (a < dstart || a >= fs->fsize) {
@@ -2789,6 +2473,15 @@ const struct filsys_ops v6fs_ops = {
     .dir_remove  = v7fs_dir_remove_op,
     .lookup      = v7fs_lookup_op,
     .check       = v6_check_op,
+    .maxino      = v6_chk_maxino,
+    .data_start  = v6_chk_data_start,
+    .data_end    = v6_chk_data_end,
+    .inode_state = v6_inode_state,
+    .mark_blocks = v6_mark_blocks,
+    .walk_free   = v6_chk_walk_free,
+    .makefree    = v6_makefree,
+    .preen       = v6_preen,
+    .is_clean    = v6_chk_is_clean,
     .statfs      = v6_statfs_op,
     .max_file    = v6_max_file_op,
 };

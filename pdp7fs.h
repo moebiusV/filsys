@@ -20,6 +20,7 @@
 #include <sys/types.h>
 
 #include "filsys.h"
+#include "check.h"
 
 enum {
     P7_WSIZE      = 64,    /* 18-bit words per block */
@@ -112,14 +113,7 @@ int p7fs_lookup(p7fs_t *fs, const char *path, uint32_t *ino, p7_inode_t *ip);
 
 /* ---- integrity check ---------------------------------------------------- */
 
-typedef struct {
-    uint32_t free_blocks;
-    uint32_t inodes;
-    uint32_t used_inodes;
-    uint32_t missing_blocks;
-    uint32_t dup_blocks;
-    uint32_t errors;
-} p7_check_t;
+typedef filsys_check_t p7_check_t;
 
 int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode);
 /* Resolve duplicate blocks (salv -a): copy each block referenced twice to a
