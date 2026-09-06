@@ -1,5 +1,20 @@
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
+	* v7fs.c, v1fs.c, pdp7fs.c, filsys.c, filsys.h, mkfs.filsys.c,
+	fsck.filsys.c, check.c, filsys_ops.h: fix every -Wsign-conversion
+	warning by type rather than cast -- uint32_t down-count loops, unsigned
+	interleave factors, uint32_t makefree return, uid_t/gid_t ownership,
+	and int slot indices; the remaining conversions are explicit POSIX
+	boundary casts (nlink/off_t).
+	* mkfs.filsys.c: route byte order through the byte_order_ops table
+	(v7_fmt.bo->put16/get16, bo_me.*) instead of the hardcoded
+	bo_put16le/bo_put32me primitives; drop the sb_put wrappers.
+	* test_matrix.c: per-format regression suite -- odd sizes, the
+	direct->indirect promotion boundary, the size-field ceiling, truncate
+	cycles, and fsck cleanliness; add write_verify() and fsck_is_clean().
+
+2026-09-06  David Walther  <david@clearbrookdistillery.com>
+
 	* check.c, check.h, filsys_ops.h: fold the four per-edition *_check
 	bodies into one shared filsys_check_common() driver; each edition keeps
 	only its maxino/data-start/data-end, inode_state, mark_blocks,
