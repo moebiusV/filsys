@@ -150,7 +150,7 @@ static const filsys_edition_t v1 = {
 static const filsys_edition_t pdp7 = {
     .ops = &p7fs_ops, .state_size = sizeof(filsys_edition_t), .name = "pdp7",
     .bsize = P7_WSIZE * 2, .bo = &bo_me,
-    .inode_size = P7_INODESZ, .niaddr = P7_NIADDR,
+    .inode_size = P7_INODESZ, .ndaddr = P7_NIADDR, .niaddr = P7_NIADDR,
     .max_namlen = P7_DIRSIZ, .dirent_size = P7_DIRENTSZ,
     .rootino = P7_ROOTINO, .synth_dot = 1,
     .to_posix_mode = p7_to_posix_mode, .is_dir = p7_is_dir,

@@ -17,6 +17,7 @@
 #include <config.h>
 #include "filsys.h"
 #include "v7fs.h"
+#include "filsys_ops.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,27 +45,34 @@ static int fsck_is_clean(const char *name, const char *img) {
     return strstr(out, "errors=0") && strstr(out, "missing=0") && strstr(out, "dup=0");
 }
 
-/* One row per format: edition, -v name, mkfs block count (0 = fixed size),
- * the per-format max file size (the size-field ceiling), and the direct-block
- * capacity -- the byte count at which a write forces large-file (indirect)
- * mode. */
-static const struct fmt {
+/* One row per format.  Everything here is derived from the shared edition table
+ * (filsys_format_nth) and the descriptor: the mkfs block count (0 = the fixed
+ * PDP-7 size), the direct-block capacity (ndaddr * bsize -- the byte count at
+ * which a write forces large-file/indirect mode), and the size-field ceiling
+ * (ops->max_file). */
+struct fmt {
     int         edition;
     const char *name;
     int         blocks;
     uint64_t    maxfile;
     uint64_t    direct;
-} FMTS[] = {
-    { FILSYS_PDP7, "0",   0,    57344ULL,     896ULL },   /* 7 x 128 B */
-    { FILSYS_V1,   "1",   4000, 65535ULL,     4096ULL },   /* 8 x 512 B */
-    { FILSYS_V6,   "6",   4000, 16777215ULL,  4096ULL },
-    { FILSYS_V7,   "7",   4000, 1082201088ULL, 5120ULL },  /* 10 x 512 B */
-    { FILSYS_32V,  "32v", 4000, 1082201088ULL, 5120ULL },
-    { FILSYS_COHERENT, "coherent", 4000, 1082201088ULL, 5120ULL },
-    { FILSYS_XENIX, "xenix", 4000, 17247250432ULL, 10240ULL }, /* 10 x 1 K */
-    { FILSYS_BSD29, "bsd29", 4000, 17247244288ULL, 4096ULL },  /* 4 x 1 K */
-    { FILSYS_BSD211, "bsd211", 4000, 17247244288ULL, 4096ULL },
 };
+
+/* Fill one row from the shared table; returns 0 past the end. */
+static int fmt_at(size_t i, struct fmt *out) {
+    const filsys_format_t *f = filsys_format_nth(i);
+    if (!f)
+        return 0;
+    filsys_edition_t desc = filsys_getformat(f->edition);
+    if (!desc.ops)
+        return 0;
+    out->edition = f->edition;
+    out->name    = f->name;
+    out->blocks  = (f->edition == FILSYS_PDP7) ? 0 : 4000;
+    out->direct  = (uint64_t)desc.ndaddr * desc.bsize;
+    out->maxfile = desc.ops->max_file(&desc);
+    return 1;
+}
 
 /* Create `path`, write `size` bytes of a deterministic 7-bit pattern (the
  * PDP-7 packs two 7-bit chars per word), read them back, and require the
@@ -194,35 +202,37 @@ static void mkfs_cleanliness(void) {
     /* sizes in blocks; all under V1's 6528-block superblock-bitmap ceiling */
     static const int sizes[] = { 100, 1000, 4000, 6500 };
 
-    for (size_t i = 0; i < sizeof FMTS / sizeof FMTS[0]; i++) {
-        const struct fmt *f = &FMTS[i];
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        if (!fmt_at(i, &f))
+            break;
 
-        if (f->edition == FILSYS_PDP7) {
+        if (f.edition == FILSYS_PDP7) {
             char img[64], cmd[512];
-            snprintf(img, sizeof img, "test_matrix_%s_fixed.img", f->name);
+            snprintf(img, sizeof img, "test_matrix_%s_fixed.img", f.name);
             unlink(img);
             snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
-                     f->name, img);
+                     f.name, img);
             if (system(cmd) != 0) { ok("v0 mkfs", 0); unlink(img); continue; }
-            ok("v0 fsck-clean (fixed size)", fsck_is_clean(f->name, img));
+            ok("v0 fsck-clean (fixed size)", fsck_is_clean(f.name, img));
             unlink(img);
             continue;
         }
 
         for (size_t s = 0; s < sizeof sizes / sizeof sizes[0]; s++) {
             char img[64], cmd[512], what[96];
-            snprintf(img, sizeof img, "test_matrix_%s_%d.img", f->name, sizes[s]);
+            snprintf(img, sizeof img, "test_matrix_%s_%d.img", f.name, sizes[s]);
             unlink(img);
             snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f->name, img, sizes[s]);
+                     f.name, img, sizes[s]);
             if (system(cmd) != 0) {
-                snprintf(what, sizeof what, "%s mkfs @ %d blocks", f->name, sizes[s]);
+                snprintf(what, sizeof what, "%s mkfs @ %d blocks", f.name, sizes[s]);
                 ok(what, 0);
                 unlink(img);
                 continue;
             }
-            snprintf(what, sizeof what, "%s fsck-clean @ %d blocks", f->name, sizes[s]);
-            ok(what, fsck_is_clean(f->name, img));
+            snprintf(what, sizeof what, "%s fsck-clean @ %d blocks", f.name, sizes[s]);
+            ok(what, fsck_is_clean(f.name, img));
             unlink(img);
         }
     }
@@ -280,8 +290,12 @@ static void namelength(void) {
 }
 
 int main(void) {
-    for (size_t i = 0; i < sizeof FMTS / sizeof FMTS[0]; i++)
-        run(&FMTS[i]);
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        if (!fmt_at(i, &f))
+            break;
+        run(&f);
+    }
     mkfs_validation();
     mkfs_cleanliness();
     namelength();
