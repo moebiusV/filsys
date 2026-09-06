@@ -16,6 +16,7 @@
 
 #include "filsys.h"
 #include "v7fs.h"
+#include "check.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -138,6 +139,23 @@ struct filsys_ops {
     /* integrity check; returns -1 if problems were found */
     int  (*check)(void *fs);
 
+    /* Check-driver seams.  The shared filsys_check_common() driver (filsys.c)
+     * calls these per-edition ops so the block-accounting / dup-rescan /
+     * directory-walk / link-count logic lives once instead of per backend. */
+    uint32_t (*maxino)(void *fs);              /* last inode number */
+    uint32_t (*data_start)(void *fs);          /* first data block */
+    uint32_t (*data_end)(void *fs);            /* one past the last data block */
+    uint8_t  (*inode_state)(void *fs, uint32_t ino, uint32_t mode); /* -> FILSYS_IN_* */
+    void     (*mark_blocks)(void *fs, const filsys_inode_t *ip, uint32_t ino,
+                            filsys_chkctx_t *cx);  /* mark an inode's blocks */
+    void     (*walk_free)(void *fs, filsys_chkctx_t *cx, filsys_check_t *rep);
+                              /* walk the allocator, marking free blocks into cx->bmap
+                               * (detecting used+free as dup), counting free_blocks */
+    int      (*makefree)(void *fs, filsys_chkctx_t *cx); /* salvage: rebuild free space */
+    void     (*preen)(void *fs, const uint8_t *ecount, const uint8_t *state,
+                      uint32_t maxino, int mode);  /* auto-repair the safe subset */
+    int      (*is_clean)(void *fs);            /* 1 = superblock marked clean (fmod==0) */
+
     /* fill the edition-specific statvfs totals (blocks / free / files / free) */
     void (*statfs)(void *fs, struct statvfs *st);
 
@@ -150,5 +168,10 @@ extern const struct filsys_ops v7fs_ops;
 extern const struct filsys_ops v1fs_ops;
 extern const struct filsys_ops p7fs_ops;
 extern const struct filsys_ops bsd211fs_ops;
+
+/* The shared integrity-check driver (filsys.c).  fmt is the format descriptor
+ * (for rootino / cache depths / generic fields); fs is the backend state. */
+int filsys_check_common(filsys_edition_t *fmt, void *fs,
+                        filsys_check_t *rep, int mode);
 
 #endif /* FILSYS_OPS_H */

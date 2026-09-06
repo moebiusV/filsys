@@ -148,6 +148,7 @@ static const filsys_edition_t pdp7 = {
     .bsize = P7_WSIZE * 2, .bo = &bo_me,
     .inode_size = P7_INODESZ, .niaddr = P7_NIADDR,
     .max_namlen = P7_DIRSIZ, .dirent_size = P7_DIRENTSZ,
+    .rootino = P7_ROOTINO, .synth_dot = 1,
     .to_posix_mode = p7_to_posix_mode, .is_dir = p7_is_dir,
     .is_device = p7_is_device, .to_disk_mode = p7_to_disk_mode,
     .chmod_mode = p7_chmod_mode,

@@ -155,8 +155,9 @@ libfilsys_a_RANLIB = $(RANLIB)
 libfilsys_a_LIBADD =
 am_libfilsys_a_OBJECTS = libfilsys_a-filsys.$(OBJEXT) \
 	libfilsys_a-filsys_format.$(OBJEXT) \
-	libfilsys_a-byteorder.$(OBJEXT) libfilsys_a-v1fs.$(OBJEXT) \
-	libfilsys_a-v7fs.$(OBJEXT) libfilsys_a-pdp7fs.$(OBJEXT)
+	libfilsys_a-byteorder.$(OBJEXT) libfilsys_a-check.$(OBJEXT) \
+	libfilsys_a-v1fs.$(OBJEXT) libfilsys_a-v7fs.$(OBJEXT) \
+	libfilsys_a-pdp7fs.$(OBJEXT)
 libfilsys_a_OBJECTS = $(am_libfilsys_a_OBJECTS)
 am_findfs_filsys_OBJECTS = findfs_filsys-findfs.filsys.$(OBJEXT) \
 	findfs_filsys-byteorder.$(OBJEXT)
@@ -166,16 +167,18 @@ findfs_filsys_LINK = $(CCLD) $(findfs_filsys_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_fsck_filsys_OBJECTS = fsck_filsys-fsck.filsys.$(OBJEXT) \
 	fsck_filsys-filsys_format.$(OBJEXT) \
-	fsck_filsys-byteorder.$(OBJEXT) fsck_filsys-v1fs.$(OBJEXT) \
-	fsck_filsys-v7fs.$(OBJEXT) fsck_filsys-pdp7fs.$(OBJEXT)
+	fsck_filsys-byteorder.$(OBJEXT) fsck_filsys-check.$(OBJEXT) \
+	fsck_filsys-v1fs.$(OBJEXT) fsck_filsys-v7fs.$(OBJEXT) \
+	fsck_filsys-pdp7fs.$(OBJEXT)
 fsck_filsys_OBJECTS = $(am_fsck_filsys_OBJECTS)
 fsck_filsys_LDADD = $(LDADD)
 fsck_filsys_LINK = $(CCLD) $(fsck_filsys_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_mkfs_filsys_OBJECTS = mkfs_filsys-mkfs.filsys.$(OBJEXT) \
 	mkfs_filsys-filsys_format.$(OBJEXT) \
-	mkfs_filsys-byteorder.$(OBJEXT) mkfs_filsys-v1fs.$(OBJEXT) \
-	mkfs_filsys-v7fs.$(OBJEXT) mkfs_filsys-pdp7fs.$(OBJEXT)
+	mkfs_filsys-byteorder.$(OBJEXT) mkfs_filsys-check.$(OBJEXT) \
+	mkfs_filsys-v1fs.$(OBJEXT) mkfs_filsys-v7fs.$(OBJEXT) \
+	mkfs_filsys-pdp7fs.$(OBJEXT)
 mkfs_filsys_OBJECTS = $(am_mkfs_filsys_OBJECTS)
 mkfs_filsys_LDADD = $(LDADD)
 mkfs_filsys_LINK = $(CCLD) $(mkfs_filsys_CFLAGS) $(CFLAGS) \
@@ -209,18 +212,21 @@ am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-byteorder.Po \
 	./$(DEPDIR)/findfs_filsys-findfs.filsys.Po \
 	./$(DEPDIR)/fsck_filsys-byteorder.Po \
+	./$(DEPDIR)/fsck_filsys-check.Po \
 	./$(DEPDIR)/fsck_filsys-filsys_format.Po \
 	./$(DEPDIR)/fsck_filsys-fsck.filsys.Po \
 	./$(DEPDIR)/fsck_filsys-pdp7fs.Po \
 	./$(DEPDIR)/fsck_filsys-v1fs.Po \
 	./$(DEPDIR)/fsck_filsys-v7fs.Po \
 	./$(DEPDIR)/libfilsys_a-byteorder.Po \
+	./$(DEPDIR)/libfilsys_a-check.Po \
 	./$(DEPDIR)/libfilsys_a-filsys.Po \
 	./$(DEPDIR)/libfilsys_a-filsys_format.Po \
 	./$(DEPDIR)/libfilsys_a-pdp7fs.Po \
 	./$(DEPDIR)/libfilsys_a-v1fs.Po \
 	./$(DEPDIR)/libfilsys_a-v7fs.Po \
 	./$(DEPDIR)/mkfs_filsys-byteorder.Po \
+	./$(DEPDIR)/mkfs_filsys-check.Po \
 	./$(DEPDIR)/mkfs_filsys-filsys_format.Po \
 	./$(DEPDIR)/mkfs_filsys-mkfs.filsys.Po \
 	./$(DEPDIR)/mkfs_filsys-pdp7fs.Po \
@@ -607,7 +613,7 @@ GZIP_ENV = --best -n
 # internal per-format layer and stays uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c byteorder.c byteorder.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
@@ -625,9 +631,9 @@ mount_filsys_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
 mount_filsys_LDADD = $(FUSE3_LIBS) libfilsys.a
 findfs_filsys_SOURCES = findfs.filsys.c byteorder.c byteorder.h
 findfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
-mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h filsys_format.c byteorder.c byteorder.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h filsys_format.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 mkfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
-fsck_filsys_SOURCES = fsck.filsys.c filsys_ops.h filsys_format.c byteorder.c byteorder.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+fsck_filsys_SOURCES = fsck.filsys.c filsys_ops.h filsys_format.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
 EXTRA_DIST = test.sh fetch.sh boot/hpuboot.s boot/rpuboot.s
@@ -854,18 +860,21 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/findfs_filsys-byteorder.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/findfs_filsys-findfs.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-byteorder.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-check.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-filsys_format.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-fsck.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-pdp7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-v1fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-v7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-byteorder.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-check.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys_format.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-pdp7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-v1fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-v7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-byteorder.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-check.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-filsys_format.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-mkfs.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-pdp7fs.Po@am__quote@ # am--include-marker
@@ -935,6 +944,20 @@ libfilsys_a-byteorder.obj: byteorder.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='byteorder.c' object='libfilsys_a-byteorder.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-byteorder.obj `if test -f 'byteorder.c'; then $(CYGPATH_W) 'byteorder.c'; else $(CYGPATH_W) '$(srcdir)/byteorder.c'; fi`
+
+libfilsys_a-check.o: check.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-check.o -MD -MP -MF $(DEPDIR)/libfilsys_a-check.Tpo -c -o libfilsys_a-check.o `test -f 'check.c' || echo '$(srcdir)/'`check.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-check.Tpo $(DEPDIR)/libfilsys_a-check.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='check.c' object='libfilsys_a-check.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-check.o `test -f 'check.c' || echo '$(srcdir)/'`check.c
+
+libfilsys_a-check.obj: check.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-check.obj -MD -MP -MF $(DEPDIR)/libfilsys_a-check.Tpo -c -o libfilsys_a-check.obj `if test -f 'check.c'; then $(CYGPATH_W) 'check.c'; else $(CYGPATH_W) '$(srcdir)/check.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-check.Tpo $(DEPDIR)/libfilsys_a-check.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='check.c' object='libfilsys_a-check.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-check.obj `if test -f 'check.c'; then $(CYGPATH_W) 'check.c'; else $(CYGPATH_W) '$(srcdir)/check.c'; fi`
 
 libfilsys_a-v1fs.o: v1fs.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-v1fs.o -MD -MP -MF $(DEPDIR)/libfilsys_a-v1fs.Tpo -c -o libfilsys_a-v1fs.o `test -f 'v1fs.c' || echo '$(srcdir)/'`v1fs.c
@@ -1048,6 +1071,20 @@ fsck_filsys-byteorder.obj: byteorder.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -c -o fsck_filsys-byteorder.obj `if test -f 'byteorder.c'; then $(CYGPATH_W) 'byteorder.c'; else $(CYGPATH_W) '$(srcdir)/byteorder.c'; fi`
 
+fsck_filsys-check.o: check.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -MT fsck_filsys-check.o -MD -MP -MF $(DEPDIR)/fsck_filsys-check.Tpo -c -o fsck_filsys-check.o `test -f 'check.c' || echo '$(srcdir)/'`check.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/fsck_filsys-check.Tpo $(DEPDIR)/fsck_filsys-check.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='check.c' object='fsck_filsys-check.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -c -o fsck_filsys-check.o `test -f 'check.c' || echo '$(srcdir)/'`check.c
+
+fsck_filsys-check.obj: check.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -MT fsck_filsys-check.obj -MD -MP -MF $(DEPDIR)/fsck_filsys-check.Tpo -c -o fsck_filsys-check.obj `if test -f 'check.c'; then $(CYGPATH_W) 'check.c'; else $(CYGPATH_W) '$(srcdir)/check.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/fsck_filsys-check.Tpo $(DEPDIR)/fsck_filsys-check.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='check.c' object='fsck_filsys-check.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -c -o fsck_filsys-check.obj `if test -f 'check.c'; then $(CYGPATH_W) 'check.c'; else $(CYGPATH_W) '$(srcdir)/check.c'; fi`
+
 fsck_filsys-v1fs.o: v1fs.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(fsck_filsys_CFLAGS) $(CFLAGS) -MT fsck_filsys-v1fs.o -MD -MP -MF $(DEPDIR)/fsck_filsys-v1fs.Tpo -c -o fsck_filsys-v1fs.o `test -f 'v1fs.c' || echo '$(srcdir)/'`v1fs.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/fsck_filsys-v1fs.Tpo $(DEPDIR)/fsck_filsys-v1fs.Po
@@ -1131,6 +1168,20 @@ mkfs_filsys-byteorder.obj: byteorder.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='byteorder.c' object='mkfs_filsys-byteorder.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -c -o mkfs_filsys-byteorder.obj `if test -f 'byteorder.c'; then $(CYGPATH_W) 'byteorder.c'; else $(CYGPATH_W) '$(srcdir)/byteorder.c'; fi`
+
+mkfs_filsys-check.o: check.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -MT mkfs_filsys-check.o -MD -MP -MF $(DEPDIR)/mkfs_filsys-check.Tpo -c -o mkfs_filsys-check.o `test -f 'check.c' || echo '$(srcdir)/'`check.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mkfs_filsys-check.Tpo $(DEPDIR)/mkfs_filsys-check.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='check.c' object='mkfs_filsys-check.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -c -o mkfs_filsys-check.o `test -f 'check.c' || echo '$(srcdir)/'`check.c
+
+mkfs_filsys-check.obj: check.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -MT mkfs_filsys-check.obj -MD -MP -MF $(DEPDIR)/mkfs_filsys-check.Tpo -c -o mkfs_filsys-check.obj `if test -f 'check.c'; then $(CYGPATH_W) 'check.c'; else $(CYGPATH_W) '$(srcdir)/check.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mkfs_filsys-check.Tpo $(DEPDIR)/mkfs_filsys-check.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='check.c' object='mkfs_filsys-check.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -c -o mkfs_filsys-check.obj `if test -f 'check.c'; then $(CYGPATH_W) 'check.c'; else $(CYGPATH_W) '$(srcdir)/check.c'; fi`
 
 mkfs_filsys-v1fs.o: v1fs.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(mkfs_filsys_CFLAGS) $(CFLAGS) -MT mkfs_filsys-v1fs.o -MD -MP -MF $(DEPDIR)/mkfs_filsys-v1fs.Tpo -c -o mkfs_filsys-v1fs.o `test -f 'v1fs.c' || echo '$(srcdir)/'`v1fs.c
@@ -1839,18 +1890,21 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/findfs_filsys-byteorder.Po
 	-rm -f ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-byteorder.Po
+	-rm -f ./$(DEPDIR)/fsck_filsys-check.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-filsys_format.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-fsck.filsys.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-v1fs.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-byteorder.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-check.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_format.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v1fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v7fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-byteorder.Po
+	-rm -f ./$(DEPDIR)/mkfs_filsys-check.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-filsys_format.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-mkfs.filsys.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-pdp7fs.Po
@@ -1910,18 +1964,21 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/findfs_filsys-byteorder.Po
 	-rm -f ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-byteorder.Po
+	-rm -f ./$(DEPDIR)/fsck_filsys-check.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-filsys_format.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-fsck.filsys.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-v1fs.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-byteorder.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-check.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_format.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v1fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v7fs.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-byteorder.Po
+	-rm -f ./$(DEPDIR)/mkfs_filsys-check.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-filsys_format.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-mkfs.filsys.Po
 	-rm -f ./$(DEPDIR)/mkfs_filsys-pdp7fs.Po

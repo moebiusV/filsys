@@ -17,6 +17,7 @@
 #include <sys/types.h>
 
 #include "filsys.h"
+#include "check.h"
 
 enum {
     V1_BSIZE    = 512,
@@ -114,14 +115,7 @@ int v1fs_lookup(v1fs_t *fs, const char *path, uint32_t *ino, v1_inode_t *ip);
 
 /* ---- integrity check ---------------------------------------------------- */
 
-typedef struct {
-    uint32_t free_blocks;
-    uint32_t inodes;
-    uint32_t used_inodes;
-    uint32_t missing_blocks;
-    uint32_t dup_blocks;
-    uint32_t errors;
-} v1_check_t;
+typedef filsys_check_t v1_check_t;
 
 int v1fs_check(v1fs_t *fs, v1_check_t *rep, int mode);
 /* Resolve duplicate blocks (salv -a): copy each block referenced twice to a
