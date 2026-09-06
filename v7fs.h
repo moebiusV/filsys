@@ -110,9 +110,11 @@ typedef struct filsys_edition {
     uint8_t     interleave;         /* Coherent s_m/s_n interleave */
     uint32_t    magic;              /* superblock magic word (0 = none) */
     int         magic_off;          /* byte offset of magic in the superblock */
+    uint8_t     fmod_back;          /* s_fmod sits N bytes before s_time (V7 2, 2.11BSD 3) */
     uint8_t     inode_size;         /* bytes per on-disk inode */
     uint8_t     ndaddr;             /* direct block addresses per inode */
     uint8_t     niaddr;             /* total block addresses per inode */
+    uint8_t     addr_width;         /* bytes per on-disk di_addr entry (2/3/4) */
     uint8_t     max_namlen;         /* longest entry name (8 / 14 / 63) */
     uint8_t     dirent_size;        /* bytes per fixed entry (0 = variable) */
     /* on-disk type field (V6/V7/BSD211 family); 0 for V1/PDP-7 */
@@ -236,6 +238,9 @@ typedef struct {
  * filesystem must have been opened read-write.  Reports to stdout; returns 0
  * if no errors were found, -1 otherwise. */
 int v7fs_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
+/* 2.11BSD's check: icheck+dcheck without the V7 repair modes (mode is ignored).
+ * The on-disk layout is the V7 engine's, so it shares filsys_edition_t. */
+int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
 
 /* ---- maintenance (V7's ncheck / clri / salv -a) ------------------------ */
 

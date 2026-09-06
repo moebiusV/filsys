@@ -16,7 +16,6 @@
 #include "v6fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
-#include "bsd211fs.h"
 
 #include <errno.h>
 #include <limits.h>

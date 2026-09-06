@@ -48,7 +48,7 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
     for (int i = 0; i < V7_NICINOD; i++)
         fs->inode[i] = bo_get16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
     fs->time   = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree));
-    fs->fmod   = sb[sb_time_off(fs->pack4, fs->nicfree) - 2];  /* s_fmod */
+    fs->fmod   = sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back];  /* s_fmod */
     /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
      * them); the 50/100-entry caches are only the in-core spill.  Read them so
      * statfs can report real free space rather than the cache depth.  They sit
@@ -153,7 +153,7 @@ static int super_write(filsys_edition_t *fs) {
     for (int i = 0; i < V7_NICINOD; i++)
         bo_put16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i, fs->inode[i]);
     fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree), (uint32_t)time(NULL));  /* s_time */
-    sb[sb_time_off(fs->pack4, fs->nicfree) - 2] = (uint8_t)(fs->fmod != 0);            /* s_fmod */
+    sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back] = (uint8_t)(fs->fmod != 0); /* s_fmod */
     if (!fs->pack4 || fs->magic) {
         int toff = sb_time_off(fs->pack4, fs->nicfree);
         fs->bo->put32(sb + toff + 4, fs->tfree);        /* s_tfree */
@@ -188,7 +188,9 @@ int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
     ip->gid   = (int16_t)bo_get16le(d + 6);
     ip->size  = fs->bo->get32(d + 8);
     for (int i = 0; i < fs->niaddr; i++)
-        ip->addr[i] = fs->bo->get24(d + 12 + 3 * i);
+        ip->addr[i] = fs->addr_width == 4
+                    ? fs->bo->get32(d + 12 + 4 * i)
+                    : fs->bo->get24(d + 12 + 3 * i);
     ip->atime = fs->bo->get32(d + 52);
     ip->mtime = fs->bo->get32(d + 56);
     ip->ctime = fs->bo->get32(d + 60);
@@ -211,8 +213,12 @@ int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
     bo_put16le(d + 4, (uint16_t)ip->uid);
     bo_put16le(d + 6, (uint16_t)ip->gid);
     fs->bo->put32(d + 8, ip->size);
-    for (int i = 0; i < fs->niaddr; i++)
-        fs->bo->put24(d + 12 + 3 * i, ip->addr[i]);
+    for (int i = 0; i < fs->niaddr; i++) {
+        if (fs->addr_width == 4)
+            fs->bo->put32(d + 12 + 4 * i, ip->addr[i]);
+        else
+            fs->bo->put24(d + 12 + 3 * i, ip->addr[i]);
+    }
     fs->bo->put32(d + 52, ip->atime);
     fs->bo->put32(d + 56, ip->mtime);
     fs->bo->put32(d + 60, ip->ctime);
@@ -333,8 +339,8 @@ static void tloop(filsys_edition_t *fs, uint32_t blk, int level) {
 }
 
 int v7fs_itrunc(filsys_edition_t *fs, v7_inode_t *ip) {
-    int t = ip->mode & V7_IFMT;
-    if (t != V7_IFREG && t != V7_IFDIR)
+    int t = ip->mode & fs->ifmt;
+    if (t != fs->ifreg && t != fs->ifdir && !(fs->iflnk && t == fs->iflnk))
         return 0;
     for (int i = fs->niaddr - 1; i >= 0; i--) {
         uint32_t bn = ip->addr[i];
@@ -620,7 +626,7 @@ void v7fs_dirents_free(v7_dirent_t *ents) {
 int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
     v7_dirent_t *ents = NULL;
     size_t count = 0;
-    int rc = v7fs_dir_read(fs, ip, &ents, &count);
+    int rc = fs->ops->dir_read(fs, ip, &ents, &count);
     if (rc)
         return rc;
     rc = -ENOENT;
@@ -721,13 +727,13 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
             p++;
             continue;
         }
-        if (len > V7_DIRSIZ)
+        if (len > fs->max_namlen)
             return -ENAMETOOLONG;
-        char name[V7_DIRSIZ + 1];
+        char name[64];
         memcpy(name, p, len);
         name[len] = 0;
 
-        if ((dip.mode & V7_IFMT) != V7_IFDIR)
+        if ((dip.mode & fs->ifmt) != fs->ifdir)
             return -ENOTDIR;
         uint32_t next;
         int rc = v7fs_dir_lookup(fs, &dip, name, &next);
@@ -1457,6 +1463,284 @@ const struct filsys_ops v7fs_ops = {
     .dir_remove  = v7fs_dir_remove_op,
     .lookup      = v7fs_lookup_op,
     .check       = v7fs_check_op,
+    .statfs      = v7fs_statfs_op,
+    .max_file    = v7fs_max_file_op,
+};
+
+/* ---- 2.11BSD directories (variable-length entries) ------------------------ */
+
+static inline uint32_t bsd211_dirsiz(uint16_t namlen) {
+    return (7u + namlen + 3u) & ~3u;   /* round_up(7 + namlen, 4) */
+}
+
+static int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count) {
+    if ((ip->mode & fs->ifmt) != fs->ifdir)
+        return -ENOTDIR;
+    if (ip->size > (uint64_t)(fs->fsize - fs->isize) * fs->bsize)
+        return -EFBIG;
+    size_t cap = ip->size / 12 + 1;
+    v7_dirent_t *out = calloc(cap, sizeof(*out));
+    if (!out)
+        return -ENOMEM;
+    uint8_t *buf = malloc(ip->size ? ip->size : 1);
+    if (!buf) { free(out); return -ENOMEM; }
+    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
+    if (n < 0) { free(buf); free(out); return (int)n; }
+
+    size_t cnt = 0;
+    for (size_t off = 0; off + 6 <= (size_t)n; ) {
+        uint16_t ino    = bo_get16le(buf + off);
+        uint16_t reclen = bo_get16le(buf + off + 2);
+        uint16_t namlen = bo_get16le(buf + off + 4);
+        if (reclen < 6 || off + reclen > (size_t)n)
+            break;
+        if (ino != 0 && namlen <= fs->max_namlen) {
+            out[cnt].ino = ino;
+            memcpy(out[cnt].name, buf + off + 6, namlen);
+            out[cnt].name[namlen] = 0;
+            cnt++;
+        }
+        off += reclen;
+    }
+    free(buf);
+    *ents = out;
+    *count = cnt;
+    return 0;
+}
+
+static int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
+    size_t namlen = strlen(name);
+    if (namlen > fs->max_namlen)
+        return -ENAMETOOLONG;
+    uint32_t need = bsd211_dirsiz((uint16_t)namlen);
+
+    uint8_t *buf = malloc(ip->size ? ip->size : 1);
+    if (!buf)
+        return -ENOMEM;
+    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
+    if (n < 0) { free(buf); return (int)n; }
+
+    /* Reuse a free entry (d_ino == 0) that is big enough. */
+    for (size_t off = 0; off + 6 <= (size_t)n; ) {
+        uint16_t d_ino    = bo_get16le(buf + off);
+        uint16_t reclen   = bo_get16le(buf + off + 2);
+        if (reclen < 6 || off + reclen > (size_t)n)
+            break;
+        if (d_ino == 0 && reclen >= need) {
+            memset(buf + off, 0, reclen);
+            bo_put16le(buf + off, (uint16_t)ino);
+            bo_put16le(buf + off + 2, reclen);
+            bo_put16le(buf + off + 4, (uint16_t)namlen);
+            memcpy(buf + off + 6, name, namlen);
+            ssize_t w = v7fs_file_write(fs, ip, buf, n, 0);
+            free(buf);
+            return w < 0 ? (int)w : 0;
+        }
+        off += reclen;
+    }
+
+    /* Append a new entry at the end (the directory grows). */
+    uint8_t ent[80];
+    memset(ent, 0, sizeof(ent));
+    bo_put16le(ent, (uint16_t)ino);
+    bo_put16le(ent + 2, (uint16_t)need);
+    bo_put16le(ent + 4, (uint16_t)namlen);
+    memcpy(ent + 6, name, namlen);
+    ssize_t w = v7fs_file_write(fs, ip, ent, need, n);
+    free(buf);
+    return w < 0 ? (int)w : 0;
+}
+
+static int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
+    uint8_t *buf = malloc(ip->size ? ip->size : 1);
+    if (!buf)
+        return -ENOMEM;
+    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
+    if (n < 0) { free(buf); return (int)n; }
+
+    for (size_t off = 0; off + 6 <= (size_t)n; ) {
+        uint16_t d_ino    = bo_get16le(buf + off);
+        uint16_t reclen   = bo_get16le(buf + off + 2);
+        uint16_t namlen   = bo_get16le(buf + off + 4);
+        if (reclen < 6 || off + reclen > (size_t)n)
+            break;
+        if (d_ino != 0 && namlen == strlen(name) &&
+            memcmp(buf + off + 6, name, namlen) == 0) {
+            bo_put16le(buf + off, 0);   /* mark free */
+            ssize_t w = v7fs_file_write(fs, ip, buf, n, 0);
+            free(buf);
+            return w < 0 ? (int)w : 0;
+        }
+        off += reclen;
+    }
+    free(buf);
+    return -ENOENT;
+}
+
+/* ---- 2.11BSD integrity check ---------------------------------------------- */
+
+static int bsd211_mark_block(filsys_edition_t *fs, uint8_t *bmap,
+                             uint32_t bno, uint32_t *used, uint32_t *dups, uint32_t *errors)
+{
+    if (bno == 0)
+        return 0;
+    if (bno < fs->isize || bno >= fs->fsize) {
+        printf("block %u bad\n", bno);
+        (*errors)++;
+        return 1;
+    }
+    uint32_t d = bno - fs->isize;
+    uint8_t  m = (uint8_t)(1u << (d & 7));
+    if (bmap[d >> 3] & m) {
+        (*dups)++;
+        (*errors)++;
+        return 2;
+    }
+    bmap[d >> 3] |= m;
+    (*used)++;
+    return 0;
+}
+
+static void bsd211_mark_tree(filsys_edition_t *fs, uint8_t *bmap,
+                             uint32_t blk, int level,
+                             uint32_t *used, uint32_t *dups, uint32_t *errors)
+{
+    if (blk == 0)
+        return;
+    if (bsd211_mark_block(fs, bmap, blk, used, dups, errors) != 0)
+        return;
+    uint8_t buf[V7_MAXBSIZE];
+    if (v7fs_read_block(fs, blk, buf)) {
+        printf("cannot read indirect block %u\n", blk);
+        (*errors)++;
+        return;
+    }
+    for (int i = 0; i < (int)v7_nindir(fs); i++) {
+        uint32_t nb = fs->bo->get32(buf + 4 * i);
+        if (nb == 0)
+            continue;
+        if (level > 0)
+            bsd211_mark_tree(fs, bmap, nb, level - 1, used, dups, errors);
+        else
+            bsd211_mark_block(fs, bmap, nb, used, dups, errors);
+    }
+}
+
+int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
+    (void)mode;
+    memset(rep, 0, sizeof(*rep));
+    uint32_t nblk = fs->fsize - fs->isize;   /* data blocks */
+    uint32_t maxino = (uint32_t)(fs->isize - 2) * v7_inopb(fs);
+    uint8_t *bmap = calloc((nblk + 7) / 8, 1);
+    if (!bmap)
+        return -ENOMEM;
+
+    uint32_t used = 0, dups = 0, errors = 0, inodes_used = 0;
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        v7_inode_t ip;
+        if (v7fs_read_inode(fs, ino, &ip))
+            continue;
+        if (ip.mode == 0)
+            continue;
+        inodes_used++;
+        uint16_t t = ip.mode & fs->ifmt;
+        if (t == fs->ifchr || t == fs->ifblk || t == fs->ifsock)
+            continue;   /* device/socket inode: addr[0] is a device number */
+        if (t != fs->ifreg && t != fs->ifdir && t != fs->iflnk) {
+            printf("inode %u unknown type 0%o\n", ino, t);
+            errors++;
+            continue;
+        }
+        for (int i = 0; i < fs->niaddr; i++) {
+            uint32_t bn = ip.addr[i];
+            if (bn == 0)
+                continue;
+            if (i < fs->ndaddr)
+                bsd211_mark_block(fs, bmap, bn, &used, &dups, &errors);
+            else
+                bsd211_mark_tree(fs, bmap, bn, i - fs->ndaddr, &used, &dups, &errors);
+        }
+    }
+
+    /* walk the free list */
+    uint32_t n = fs->nfree;
+    uint32_t cur[V7_XEN_NICFREE];
+    memcpy(cur, fs->free, sizeof(cur));
+    uint32_t free_blocks = 0, guard = 0;
+    while (n > 0) {
+        uint32_t bno = cur[--n];
+        if (bno == 0)
+            break;
+        if (bno < fs->isize || bno >= fs->fsize)
+            break;
+        uint32_t off = bno - fs->isize;
+        if (bmap[off >> 3] & (1u << (off & 7))) { dups++; errors++; }
+        else { bmap[off >> 3] |= (uint8_t)(1u << (off & 7)); free_blocks++; }
+        if (++guard > fs->fsize + fs->nicfree)
+            break;
+        if (n == 0) {
+            uint8_t blk[V7_MAXBSIZE];
+            if (v7fs_read_block(fs, bno, blk))
+                break;
+            n = bo_get16le(blk);
+            for (uint32_t i = 0; i < fs->nicfree; i++)
+                cur[i] = fs->bo->get32(blk + 2 + 4 * i);
+        }
+    }
+
+    uint32_t missing = 0;
+    for (uint32_t off = 0; off < nblk; off++)
+        if (!(bmap[off >> 3] & (1u << (off & 7))))
+            missing++;
+    free(bmap);
+
+    rep->free_blocks = free_blocks;
+    rep->used_blocks = used;
+    rep->missing_blocks = missing;
+    rep->dup_blocks = dups;
+    rep->inodes = maxino;
+    rep->used_inodes = inodes_used;
+    rep->errors = missing + dups + errors;
+    printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
+           rep->used_blocks, rep->free_blocks, rep->missing_blocks,
+           rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
+    return rep->errors ? -1 : 0;
+}
+
+/* ---- 2.11BSD ops table: the shared V7 engine + variable-length dirents ---- */
+
+static int bsd211_dir_read_op(void *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count)
+{ return bsd211_dir_read(fs, ip, ents, count); }
+static int bsd211_dir_add_op(void *fs, filsys_inode_t *ip, uint32_t ino, const char *name)
+{ return bsd211_dir_add(fs, ip, ino, name); }
+static int bsd211_dir_remove_op(void *fs, filsys_inode_t *ip, const char *name)
+{ return bsd211_dir_remove(fs, ip, name); }
+static int bsd211_check_op(void *fs) { v7_check_t rep; return bsd211_check(fs, &rep, 0); }
+
+const struct filsys_ops bsd211fs_ops = {
+    .name        = "bsd211",
+    .blocksize   = v7fs_blocksize_op,
+    .open        = v7fs_open_op,
+    .close       = v7fs_close_op,
+    .sync        = v7fs_sync_op,
+    .mark_dirty  = v7fs_mark_dirty_op,
+    .read_block  = v7fs_read_block_op,
+    .write_block = v7fs_write_block_op,
+    .read_inode  = v7fs_read_inode_op,
+    .write_inode = v7fs_write_inode_op,
+    .ialloc      = v7fs_ialloc_op,
+    .ifree       = v7fs_ifree_op,
+    .bmap        = v7fs_bmap_op,
+    .itrunc      = v7fs_itrunc_op,
+    .itrunc_from = v7fs_itrunc_from_op,
+    .file_read   = v7fs_file_read_op,
+    .file_write  = v7fs_file_write_op,
+    .dir_read    = bsd211_dir_read_op,
+    .dir_lookup  = v7fs_dir_lookup_op,
+    .dir_add     = bsd211_dir_add_op,
+    .dir_remove  = bsd211_dir_remove_op,
+    .lookup      = v7fs_lookup_op,
+    .check       = bsd211_check_op,
     .statfs      = v7fs_statfs_op,
     .max_file    = v7fs_max_file_op,
 };
