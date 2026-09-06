@@ -1,5 +1,5 @@
 COMMENT =	FUSE driver for Research Unix (V0-V7, 32V) filesystem images
-V =		1.2.7
+V =		1.3.0
 DISTNAME =	filsys-${V}
 CATEGORIES =	sysutils
 MASTER_SITES =	https://github.com/moebiusV/filsys/releases/download/v${V}/

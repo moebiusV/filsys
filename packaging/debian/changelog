@@ -1,3 +1,10 @@
+filsys (1.3.0-1) unstable; urgency=medium
+
+  * Xenix, 2.9BSD and 2.11BSD filesystem support (mount, fsck, mkfs, findfs).
+  * 32V renamed vax32; mount/fsck/mkfs require an explicit -v.
+
+ -- David Walther <david@clearbrookdistillery.com>  Sat, 05 Sep 2026 00:00:00 +0000
+
 filsys (1.2.7-1) unstable; urgency=medium
 
   * Coherent (Mark Williams Co.) filesystem support: mount, fsck, mkfs, findfs.
