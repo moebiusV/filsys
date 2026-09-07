@@ -217,19 +217,13 @@ filsys_edition_t filsys_getformat(int edition) {
         f.name = "sysiii";
         return f;
     }
-    case FILSYS_SYSV: {
-        /* System V R2/R3 (the "sysv2" layout: 2-byte-aligned, i.e. V7's field
-         * packing), plus s_magic/s_type.  Little-endian (VAX/x86).  The SVR4
-         * "sysv4" layout (4-byte-aligned) is a separate future edition. */
+    case FILSYS_SVR2: {
+        /* System V Release 2 (the 2-byte-aligned "sysv2" layout, i.e. V7's
+         * field packing), plus s_magic/s_type.  The byte order is the arch's,
+         * not the edition's: default little-endian (VAX/x86), overridden by
+         * -o arch=3b2 / -o arch=68k for the big-endian ports. */
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
-        f.name = "sysv"; f.bo = &bo_le;
-        f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
-        return f;
-    }
-    case FILSYS_SYSV_BE: {
-        /* System V R2/R3 (sysv2 layout), big-endian (68k / 3B / SPARC). */
-        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
-        f.name = "sysv-be"; f.bo = &bo_be;
+        f.name = "sysvr2"; f.bo = &bo_le;
         f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
         return f;
     }

@@ -44,6 +44,11 @@ typedef struct filsys_io {
 
 extern const filsys_io_t filsys_io_file;
 
+/* Map a CPU architecture name ("vax", "3b2", "68k", "pdp11", ...) to the byte
+ * order it stored multi-byte fields in, or NULL for an unknown arch.  The arch
+ * (not the edition) selects the byte order: System V ran on both endiannesses. */
+const byte_order_ops_t *filsys_arch_bo(const char *arch);
+
 /* The type a to_disk_mode caller is encoding (create / mkdir / mknod). */
 enum {
     FILSYS_FT_REG = 0,

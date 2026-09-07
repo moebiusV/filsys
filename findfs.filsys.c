@@ -43,6 +43,10 @@ enum {
     XENIX_MAGIC = 0x2b5544,/* Xenix superblock magic (offset 1016) */
     V7_NICINOD = 100
 };
+/* System V s_magic (offset 504) lives in its own enum: the 32-bit value does
+ * not fit int, so it would widen the small constants above (C shares one
+ * underlying enum type). */
+enum { SYSV_MAGIC = 0xfd187e20 };
 
 /* Map one of findfs's reported edition names back to a FILSYS_* selector so
  * `-v` can restrict the scan to a single edition. */
@@ -53,6 +57,7 @@ static int edition_selector(const char *name) {
     if (!strcmp(name, "V6"))       return FILSYS_V6;
     if (!strcmp(name, "Xenix"))    return FILSYS_XENIX;
     if (!strcmp(name, "2.9BSD"))   return FILSYS_BSD29;
+    if (!strcmp(name, "sysvr2"))   return FILSYS_SVR2;
     return -1;
 }
 /* True if the `-v` filter (or "no filter") admits this reported edition. */
@@ -126,6 +131,37 @@ static int super_v6(const uint8_t *b, uint32_t bno, uint32_t nblocks,
         if (fb != 0 && (fb < isz || fb >= fsz))
             return 0;
     }
+    *isize = isz; *fsize = fsz;
+    return 1;
+}
+
+/* System V s5fs superblock: s_magic 0xfd187e20 at offset 504 (LE or BE), s_type
+ * at 508 names the block size.  The superblock sits at a fixed byte offset
+ * (512), which the 512-byte scan reaches at bno == 1.  AFS signals itself with
+ * s_nfree == 0xffff -- an impossible free-list count ("bitmap, not free list"). */
+static int super_sysv(const uint8_t *b, uint32_t bno, uint32_t nblocks,
+                      const char **edition, const char **note,
+                      uint16_t *isize, uint32_t *fsize) {
+    int le;
+    if (bo_get32le(b + 504) == SYSV_MAGIC)      le = 1;
+    else if (bo_get32be(b + 504) == SYSV_MAGIC) le = 0;
+    else return 0;
+
+    if (bo_get16le(b + 6) == 0xffff || bo_get16le(b + 8) == 0xffff) {
+        *edition = "AFS";
+        *note = "bitmap free list, unsupported";
+        return 1;
+    }
+    uint32_t t = le ? bo_get32le(b + 508) : bo_get32be(b + 508);
+    uint32_t bs = t == 1 ? 512 : t == 2 ? 1024 : t == 3 ? 2048 : 0;
+    if (bs == 0)
+        return 0;
+    uint16_t isz = bo_get16le(b + 0);
+    uint32_t fsz = le ? bo_get32le(b + 2) : bo_get32be(b + 2);
+    if (fsz <= isz || (uint64_t)bno - 1 + fsz > nblocks)
+        return 0;
+    *edition = "sysvr2";
+    *note = le ? "LE" : "BE";
     *isize = isz; *fsize = fsz;
     return 1;
 }
@@ -236,14 +272,26 @@ int main(int argc, char **argv) {
         if (pread(fd, buf, BSIZE, (off_t)bno * BSIZE) != BSIZE)
             continue;
 
-        /* direct superblock detection */
-        const char *ed = NULL; uint16_t isz = 0; uint32_t fsz = 0;
-        if (super_v7(buf, bno, nblocks, &ed, &isz, &fsz) || super_v6(buf, bno, nblocks, &isz, &fsz)) {
-            if (!ed) ed = "V6";
-            if (matches(edition_filter, ed)) {
-                printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u\n",
-                       bno - 1, (unsigned long long)(bno - 1) * BSIZE, ed, isz, fsz);
+        /* direct superblock detection.  System V is checked first: its superblock
+         * is V7-shaped, but the s_magic at offset 504 is the stronger signal, so
+         * a sysvr2 volume reports as sysvr2 rather than a false "V7". */
+        uint16_t isz = 0; uint32_t fsz = 0;
+        const char *ed_sv = NULL, *note_sv = NULL;
+        if (super_sysv(buf, bno, nblocks, &ed_sv, &note_sv, &isz, &fsz)) {
+            if (matches(edition_filter, ed_sv)) {
+                printf("fs @ block %u  (byte %llu)  %s (%s)  isize=%u fsize=%u\n",
+                       bno - 1, (unsigned long long)(bno - 1) * BSIZE, ed_sv, note_sv, isz, fsz);
                 found++;
+            }
+        } else {
+            const char *ed = NULL;
+            if (super_v7(buf, bno, nblocks, &ed, &isz, &fsz) || super_v6(buf, bno, nblocks, &isz, &fsz)) {
+                if (!ed) ed = "V6";
+                if (matches(edition_filter, ed)) {
+                    printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u\n",
+                           bno - 1, (unsigned long long)(bno - 1) * BSIZE, ed, isz, fsz);
+                    found++;
+                }
             }
         }
 

@@ -60,9 +60,10 @@ int main(int argc, char **argv)
     int preen = 0, force = 0, yes = 0, ask = 0;
     uint32_t ino = 0;
     const char *packing = NULL;   /* PDP-7 word container codec */
+    const char *arch = NULL;      /* CPU arch: overrides the edition's byte order */
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:srpfinN:C:yP:")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:srpfinN:C:yP:a:")) != -1) {
         switch (c) {
         case 'v':
             edition = filsys_parse_edition("fsck.filsys", optarg);
@@ -101,9 +102,12 @@ int main(int argc, char **argv)
         case 'P':
             packing = optarg;
             break;
+        case 'a':
+            arch = optarg;
+            break;
         default:
             fprintf(stderr,
-                "usage: fsck.filsys -v <edition> [-o block] [-P packing] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
+                "usage: fsck.filsys -v <edition> [-o block] [-P packing] [-a arch] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
                 "       fsck.filsys -v <edition> [-o block] -N ino image\n"
                 "       fsck.filsys -v <edition> [-o block] -C ino image\n"
                 "  editions: %s\n", filsys_editions_usage());
@@ -112,7 +116,7 @@ int main(int argc, char **argv)
     }
     if (optind >= argc) {
         fprintf(stderr,
-            "usage: fsck.filsys -v <edition> [-o block] [-P packing] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
+            "usage: fsck.filsys -v <edition> [-o block] [-P packing] [-a arch] [-s] [-r] [-p] [-i] [-y] [-f] [-n] image\n"
             "       fsck.filsys -v <edition> [-o block] -N ino image\n"
             "       fsck.filsys -v <edition> [-o block] -C ino image\n"
             "  editions: %s\n", filsys_editions_usage());
@@ -220,6 +224,14 @@ int main(int argc, char **argv)
 
     int readonly = !(salvage || resolve || clri || preen || yes || ask);
     filsys_edition_t fs = filsys_getformat(edition);
+    if (arch) {
+        const byte_order_ops_t *bo = filsys_arch_bo(arch);
+        if (!bo) {
+            fprintf(stderr, "fsck.filsys: bad arch '%s'\n", arch);
+            return 2;
+        }
+        fs.bo = bo;
+    }
     int rc = v7fs_open(&fs, path, readonly, &fs, offblock * fs.bsize);
     if (rc < 0) {
         fprintf(stderr, "%s: %s\n", path, strerror(-rc));

@@ -227,7 +227,7 @@ static struct fuse_operations filsys_ops = {
 
 static void usage(const char *p) {
     fprintf(stderr,
-            "usage: %s -v <%s> [-o offset=N[,version=N][,packing=NAME][,uid=N][,gid=N]]\n"
+            "usage: %s -v <%s> [-o offset=N[,version=N][,packing=NAME][,arch=NAME][,uid=N][,gid=N]]\n"
             "                [-r] [-f] [-d] <image> <mountpoint>\n"
             "       %s -v <edition> [-o offset=N] -c <image>   # integrity check\n",
             p, filsys_editions_usage(), p);
@@ -238,6 +238,7 @@ int main(int argc, char *argv[]) {
     uint64_t offset = 0;
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
     const char *packing = NULL; /* PDP-7 word container codec (rb09|packed18|rim) */
+    const char *arch = NULL;    /* CPU arch: overrides the edition's byte order (3b2/68k = BE) */
     char fuse_opts[512] = ""; /* -o options passed through to FUSE (allow_other, ...) */
     int c;
 
@@ -272,6 +273,8 @@ int main(int argc, char *argv[]) {
                     gid = atoi(tok + 4);
                 } else if (!strncmp(tok, "packing=", 8)) {
                     packing = tok + 8;
+                } else if (!strncmp(tok, "arch=", 5)) {
+                    arch = tok + 5;
                 } else {
                     /* pass anything else through to FUSE (allow_other, ...) */
                     if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
@@ -300,9 +303,9 @@ int main(int argc, char *argv[]) {
     const char *mountpoint = check ? NULL : argv[optind + 1];
 
     filsys_t *k = NULL;
-    int rc = filsys_open(&k, ver, image, readonly || check, offset,
-                         uid >= 0 ? (uid_t)uid : getuid(),
-                         gid >= 0 ? (gid_t)gid : getgid(), packing);
+    int rc = filsys_open_arch(&k, ver, image, readonly || check, offset,
+                              uid >= 0 ? (uid_t)uid : getuid(),
+                              gid >= 0 ? (gid_t)gid : getgid(), packing, arch);
     if (rc) {
         fprintf(stderr, "filsys: cannot open %s: %s\n", image, strerror(-rc));
         return 1;
