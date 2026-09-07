@@ -50,17 +50,26 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         }
         uint32_t t = fs->bo->get32(probe + V7_SYSV_TYPE_OFF);
         uint32_t bsize = t == V7_SYSV_Fs1b ? 512 : t == V7_SYSV_Fs2b ? 1024 : t == V7_SYSV_Fs4b ? 2048 : 0;
-        if (bsize != 512) {
-            /* 1K/2K blocks place the i-list at byte 1024 in logical blocks -- a
-             * different addressing model, not wired up yet. */
+        if (bsize == 0) {
             close(fs->fd);
             fs->fd = -1;
             return -EINVAL;
         }
+        /* The logical block size and the indirect-block entry count both follow
+         * from s_type; the 4-byte daddr_t is fixed. */
+        fs->bsize = bsize;
+        fs->nindir = bsize / fs->daddr_wid;
     }
 
     uint8_t sb[V7_MAXBSIZE];
-    if (v7fs_read_block(fs, V7_SUPERB, sb)) {
+    if (fs->dyn_bsize) {
+        /* The System V superblock is a 512-byte struct at byte 512, whatever the
+         * logical block size (for 1K/2K blocks it lives inside logical block 0). */
+        if (fs->io->read(fs, sb, 512, 512 + (off_t)fs->base)) {
+            close(fs->fd);
+            return -EIO;
+        }
+    } else if (v7fs_read_block(fs, V7_SUPERB, sb)) {
         close(fs->fd);
         return -EIO;
     }
@@ -87,6 +96,15 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
             fs->fl.inode[i] = fs->bo->get16(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
         fs->time   = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree));
         fs->fmod   = sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back];  /* s_fmod */
+    }
+    /* The free/inode cache counts are bounded by the cache depth.  A value past
+     * it means this superblock was mis-decoded (the wrong edition, e.g. a V7
+     * volume opened as V6) -- reject before the free-list walk reads cur[nfree]
+     * out of bounds. */
+    if (fs->fl.nfree > fs->nicfree || fs->fl.ninode > fs->nicinod) {
+        close(fs->fd);
+        fs->fd = -1;
+        return -EINVAL;
     }
     /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
      * them); the 50/100-entry caches are only the in-core spill.  Read them so
@@ -190,8 +208,11 @@ static int super_write(filsys_edition_t *fs) {
         return 0;
     uint8_t sb[V7_MAXBSIZE];
     /* Read the current block to preserve the fields we don't maintain
-     * (s_tfree, s_tinode, s_m, s_n, s_fname, s_fpack, ...). */
-    if (v7fs_read_block(fs, V7_SUPERB, sb))
+     * (s_tfree, s_tinode, s_m, s_n, s_fname, s_fpack, ...).  System V keeps the
+     * superblock at a fixed byte offset (512), not block 1. */
+    if (fs->dyn_bsize
+            ? fs->io->read(fs, sb, 512, 512 + (off_t)fs->base)
+            : v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
     if (fs->isize_count) {
         /* V6: a 16-bit superblock (s_fsize and the free cache are 2 bytes), and
@@ -232,7 +253,9 @@ static int super_write(filsys_edition_t *fs) {
             fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26, fs->unique);
         }
     }
-    if (v7fs_write_block(fs, V7_SUPERB, sb))
+    if (fs->dyn_bsize
+            ? fs->io->write(fs, sb, 512, 512 + (off_t)fs->base)
+            : v7fs_write_block(fs, V7_SUPERB, sb))
         return -EIO;
     fs->fl_dirty = 0;   /* the on-disk free list now matches the in-core one */
     return 0;
