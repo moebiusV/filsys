@@ -139,6 +139,7 @@ static int edition_selector(const char *name) {
     if (!strcmp(name, "PDP-7"))    return FILSYS_PDP7;
     if (!strcmp(name, "Xenix"))    return FILSYS_XENIX;
     if (!strcmp(name, "2.9BSD"))   return FILSYS_BSD29;
+    if (!strcmp(name, "2.11BSD"))  return FILSYS_BSD211;
     if (!strcmp(name, "sysvr2"))   return FILSYS_SVR2;
     if (!strcmp(name, "sysvr4"))   return FILSYS_SVR4;
     return -1;
@@ -433,6 +434,47 @@ static int super_bsd29(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
     return 1;
 }
 
+/* 2.11BSD and 2.9BSD share a superblock (1K blocks, V7-shaped, NICFREE=50) and
+ * differ only in directory format: 2.11BSD has variable-length entries
+ * (d_ino/d_reclen/d_namlen), 2.9BSD fixed 16-byte entries.  Walk the root
+ * directory's entry chain as 2.11BSD and check it is self-consistent: each
+ * d_reclen is a multiple of 4, d_namlen is in range, and the "." / ".." entries
+ * land.  A 2.9BSD root's byte 2 is '.' (0x2e), so its "reclen" reads 46 -- not
+ * a multiple of 4 -- and the walk fails on the first entry.  Returns 1 for
+ * 2.11BSD, 0 for 2.9BSD (or indeterminate). */
+static int bsd211_root_dir(int fd, uint64_t base, int bsize) {
+    uint8_t ib[128];
+    if (pread(fd, ib, sizeof ib, (off_t)(base + 2 * (uint64_t)bsize)) != (ssize_t)sizeof ib)
+        return 0;
+    const uint8_t *d = ib + 64;              /* inode 2 (root) */
+    /* di_addr[0] is 32-bit for 2.11BSD (24-bit for 2.9BSD); read it as 32-bit.
+     * A 2.9BSD inode's 24-bit [hi,lo,mid] then leaks its next slot's byte into
+     * the high 16 bits, giving a huge block number whose read fails -- so only
+     * a 2.11BSD inode lands on its actual root directory here. */
+    uint32_t rootblk = bo_get32me(d + 12);
+    uint8_t rb[1024];
+    if (pread(fd, rb, sizeof rb, (off_t)(base + (uint64_t)rootblk * bsize)) != (ssize_t)sizeof rb)
+        return 0;
+
+    uint32_t off = 0;
+    int dot = 0, dotdot = 0;
+    while (off + 6 <= sizeof rb) {
+        uint16_t reclen = bo_get16me(rb + off + 2);
+        uint16_t namlen = bo_get16me(rb + off + 4);
+        if (reclen < 6 || reclen % 4 != 0 || off + reclen > sizeof rb ||
+            namlen < 1 || namlen > 63)
+            return 0;
+        if (namlen == 1 && rb[off + 6] == '.')
+            dot = 1;
+        else if (namlen == 2 && rb[off + 6] == '.' && rb[off + 7] == '.')
+            dotdot = 1;
+        off += reclen;
+        if (dot && dotdot)
+            return 1;                        /* 2.11BSD chain passes */
+    }
+    return 0;
+}
+
 /* PDP-7 (V0) word container: the three codecs and their -o packing= names come
  * from the backend (pdp7fs.c word_rb09/word_packed18/word_rim). */
 static const struct { const word_codec_t *codec; const char *name; } p7_containers[] = {
@@ -522,6 +564,7 @@ static const char *mount_name(const char *ed) {
     if (!strcmp(ed, "PDP-7"))    return "pdp7";
     if (!strcmp(ed, "Xenix"))    return "xenix";
     if (!strcmp(ed, "2.9BSD"))   return "bsd29";
+    if (!strcmp(ed, "2.11BSD"))  return "bsd211";
     if (!strcmp(ed, "sysvr2"))   return "sysvr2";
     if (!strcmp(ed, "sysvr4"))   return "sysvr4";
     return ed;
@@ -764,6 +807,8 @@ int main(int argc, char **argv) {
         if (rc == 0) {
             ed = "2.9BSD";
             rc = super_bsd29(fd, xb, xbno, xnblocks, &isz, &fsz, &why, &segs);
+            if (rc == 1 && bsd211_root_dir(fd, (uint64_t)(xbno - 1) * BSIZE, 1024))
+                ed = "2.11BSD";
         }
         if (rc >= 1 && matches(edition_filter, ed)) {
             if (rc == 1) {
