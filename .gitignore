@@ -46,6 +46,7 @@ test_matrix_*.img
 
 # --- automake test harness artifacts (make check) ---
 test_matrix
+test_oracle
 test-suite.log
 *.log
 *.trs
