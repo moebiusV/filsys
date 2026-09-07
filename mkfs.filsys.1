@@ -19,6 +19,8 @@ mkfs.filsys \- construct a Research Unix filesystem in a disk image
 .IR n ]
 .RB [ \-a
 .IR arch ]
+.RB [ \-B
+.IR bsize ]
 .I image
 .RI [ blocks ]
 .SH DESCRIPTION
@@ -140,6 +142,15 @@ and
 and PDP-11 middle-endian
 .BR pdp11 .
 .TP
+.BI \-B " bsize"
+Logical block size for a System V filesystem: 512, 1024, or 2048 bytes
+(stored in the superblock
+.I s_type
+field).  Only applies to
+.BR sysvr2 " and " sysvr4 ,
+which read their block size from the superblock; every other edition has a
+fixed block size.  Defaults to 512.
+.TP
 .BI \-b " boot"
 Write
 .I boot
@@ -203,6 +214,7 @@ mkfs.filsys -v v6 image.dk             # ...as a V6 (V4/V5) filesystem
 mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partition)
 mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block
 mkfs.filsys -v v7 image.dk 5000        # an explicit 5000-block filesystem
+mkfs.filsys -v sysvr2 -B 1024 image.dk # a 1K-block System V filesystem
 .fi
 .SH SEE ALSO
 .BR fsck.filsys (1),

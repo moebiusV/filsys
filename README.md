@@ -130,6 +130,8 @@ mkfs.filsys -v v7 image.dk             # size the fs to the whole image
 mkfs.filsys -v v7 image.dk 5000        # ...or to an explicit block count
 mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partition)
 mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block first
+mkfs.filsys -v sysvr2 -B 1024 image.dk  # a 1K-block System V filesystem
+mkfs.filsys -v sysvr4 -B 2048 image.dk  # a 2K-block System V filesystem
 
 fsck.filsys -v v7 image.dk             # check the filesystem at block 0
 fsck.filsys -v v7 -o 18392 image.dk    # check a filesystem at block 18392
@@ -143,7 +145,10 @@ the empty bad-block file) exactly as that edition expects — root is inode 1 in
 V6, inode 2 in V7/32V, inode 41 in V1–V3, and inode 4 on the PDP-7.  `-o`
 places the filesystem at a block offset for multi-partition images; `-b`
 installs a boot block (a PDP-11 `a.out`, V7 magic `0407`) into block 0 before
-the superblock.
+the superblock.  `-B` sets the logical block size of a System V filesystem
+(`sysvr2`/`sysvr4`) to 512, 1024, or 2048 bytes — the `s_type` superblock field
+— since System V is the one edition whose block size is read from the
+superblock rather than fixed by the format; every other edition ignores `-B`.
 
 `fsck.filsys` is more than the mount driver's `-c`: it folds V7's
 `icheck`+`dcheck` pair into one pass (block-bitmap and duplicate detection,
