@@ -65,11 +65,9 @@ int main(int argc, char **argv)
     while ((c = getopt(argc, argv, "v:o:srpfinN:C:yP:")) != -1) {
         switch (c) {
         case 'v':
-            edition = filsys_edition_by_name(optarg);
-            if (edition < 0) {
-                fprintf(stderr, "fsck.filsys: bad edition '%s'\n", optarg);
+            edition = filsys_parse_edition("fsck.filsys", optarg);
+            if (edition < 0)
                 return 2;
-            }
             break;
         case 'o':
             offblock = strtoull(optarg, NULL, 0);

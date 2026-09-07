@@ -37,6 +37,28 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         return -errno;
     fs->io = &filsys_io_file;
 
+    if (fs->dyn_bsize) {
+        /* System V: the 512-byte superblock sits at a fixed byte offset (512),
+         * not "block 1" -- that only coincides with byte 512 when the block size
+         * is 512.  s_type (offset 508) names the block size. */
+        uint8_t probe[512];
+        if (fs->io->read(fs, probe, sizeof probe, 512 + (off_t)fs->base) ||
+            fs->bo->get32(probe + V7_SYSV_MAGIC_OFF) != V7_SYSV_MAGIC) {
+            close(fs->fd);
+            fs->fd = -1;
+            return -EINVAL;
+        }
+        uint32_t t = fs->bo->get32(probe + V7_SYSV_TYPE_OFF);
+        uint32_t bsize = t == V7_SYSV_Fs1b ? 512 : t == V7_SYSV_Fs2b ? 1024 : t == V7_SYSV_Fs4b ? 2048 : 0;
+        if (bsize != 512) {
+            /* 1K/2K blocks place the i-list at byte 1024 in logical blocks -- a
+             * different addressing model, not wired up yet. */
+            close(fs->fd);
+            fs->fd = -1;
+            return -EINVAL;
+        }
+    }
+
     uint8_t sb[V7_MAXBSIZE];
     if (v7fs_read_block(fs, V7_SUPERB, sb)) {
         close(fs->fd);
@@ -82,9 +104,10 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         fs->n      = bo_get16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 12);
         fs->unique = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26);
     }
-    if (fs->magic && bo_get32le(sb + 0x3F8) != V7_XEN_MAGIC) {
-        /* Xenix carries a magic at superblock offset 1016; validate it rather
-         * than mis-decoding a non-Xenix volume named -v xenix. */
+    if (fs->magic && fs->bo->get32(sb + fs->magic_off) != fs->magic) {
+        /* Xenix carries a magic at superblock offset 1016; System V carries one
+         * at 504.  Validate it rather than mis-decoding a foreign volume named
+         * with this edition. */
         close(fs->fd);
         fs->fd = -1;
         return -EINVAL;

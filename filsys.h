@@ -54,7 +54,10 @@ enum {
     FILSYS_COHERENT = 33, /* Coherent (Mark Williams): V7-family, middle-endian, NICFREE=64 */
     FILSYS_XENIX = 34,   /* Xenix (SCO): V7-family, little-endian 2-byte, NICFREE=100 */
     FILSYS_BSD29 = 35,   /* 2.9BSD: V7 inode, 1024-byte blocks, 4 direct + 3 indirect */
-    FILSYS_BSD211 = 36    /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
+    FILSYS_BSD211 = 36,   /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
+    FILSYS_SYSIII = 37,   /* System III: V7 superblock (no magic), middle-endian */
+    FILSYS_SYSV   = 38,   /* System V s5fs: s_magic/s_type, little-endian */
+    FILSYS_SYSV_BE = 39   /* System V s5fs: s_magic/s_type, big-endian (68k/3B) */
 };
 
 /* One row of the edition name table (defined in filsys_format.c): the canonical
@@ -72,6 +75,10 @@ const filsys_format_t *filsys_format_nth(size_t i);
 /* Resolve a canonical name or alias to a FILSYS_* selector, or -1.  Accepts a
  * leading "v"/"V" (so "v7" == "7") as the tools always have. */
 int filsys_edition_by_name(const char *name);
+/* Resolve the -v argument and, on failure, print "<tool>: bad edition '<arg>'".
+ * Returns the FILSYS_* selector or -1.  One shared entry point so the four
+ * tools report the same error. */
+int filsys_parse_edition(const char *tool, const char *name);
 /* The canonical edition names joined by "|", for usage strings. */
 const char *filsys_editions_usage(void);
 

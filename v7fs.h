@@ -94,6 +94,19 @@ enum {
 /* Byte order lives in bo.h (bo_get16le/bo_get32me/...); v7fs reads and writes
  * through fs->bo (a byte_order_ops_t chosen by the format descriptor). */
 
+/* System V s5fs: s_magic / s_type sit in the last 8 bytes of the 512-byte
+ * superblock (offsets 504 and 508).  s_type names the block size.  The magic
+ * lives in its own enum so a 32-bit value that overflows int does not widen the
+ * type of the small V7 constants above (a C enum shares one underlying type). */
+enum {
+    V7_SYSV_MAGIC    = 0xfd187e20,
+    V7_SYSV_MAGIC_OFF = 504,
+    V7_SYSV_TYPE_OFF  = 508,
+    V7_SYSV_Fs1b      = 1,   /* 512-byte blocks */
+    V7_SYSV_Fs2b      = 2,   /* 1024-byte blocks */
+    V7_SYSV_Fs4b      = 3    /* 2048-byte blocks */
+};
+
 /* Superblock field offsets.  32V (VAX) aligns daddr_t/time_t to 4 bytes, so
  * the fields after such a type sit 2 bytes later than in V7; Coherent and
  * Xenix keep the 2-byte packing.  pack4 and nicfree come from the descriptor. */
@@ -243,6 +256,7 @@ typedef struct filsys_edition {
     uint8_t     interleave;         /* Coherent s_m/s_n interleave */
     uint32_t    magic;              /* superblock magic word (0 = none) */
     int         magic_off;          /* byte offset of magic in the superblock */
+    uint8_t     dyn_bsize;          /* block size comes from s_type (System V) */
     uint8_t     fmod_back;          /* s_fmod sits N bytes before s_time (V7 2, 2.11BSD 3) */
     uint16_t    rootino;            /* root directory inode (1 / 2 / 41) */
     uint8_t     inode_size;         /* bytes per on-disk inode */

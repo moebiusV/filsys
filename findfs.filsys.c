@@ -44,6 +44,22 @@ enum {
     V7_NICINOD = 100
 };
 
+/* Map one of findfs's reported edition names back to a FILSYS_* selector so
+ * `-v` can restrict the scan to a single edition. */
+static int edition_selector(const char *name) {
+    if (!strcmp(name, "V7"))       return FILSYS_V7;
+    if (!strcmp(name, "32V"))      return FILSYS_32V;
+    if (!strcmp(name, "Coherent")) return FILSYS_COHERENT;
+    if (!strcmp(name, "V6"))       return FILSYS_V6;
+    if (!strcmp(name, "Xenix"))    return FILSYS_XENIX;
+    if (!strcmp(name, "2.9BSD"))   return FILSYS_BSD29;
+    return -1;
+}
+/* True if the `-v` filter (or "no filter") admits this reported edition. */
+static int matches(int filter, const char *name) {
+    return filter < 0 || edition_selector(name) == filter;
+}
+
 /* Does block b (a candidate superblock) describe a V7 filesystem whose
  * superblock sits at absolute block `bno` (so the fs starts at bno-1)?
  * The free-list entries are checked to be in-range, which rejects the vast
@@ -183,20 +199,27 @@ static int inode_block(const uint8_t *b) {
 }
 
 int main(int argc, char **argv) {
-    int stride = 1, backtrace = 0;
+    int stride = 1, backtrace = 0, edition_filter = -1;
     const char *image = NULL;
     int c;
-    while ((c = getopt(argc, argv, "s:i")) != -1) {
+    while ((c = getopt(argc, argv, "v:s:i")) != -1) {
         switch (c) {
+        case 'v':
+            edition_filter = filsys_parse_edition("findfs.filsys", optarg);
+            if (edition_filter < 0)
+                return 2;
+            break;
         case 's': stride = atoi(optarg); break;
         case 'i': backtrace = 1; break;
         default:
-            fprintf(stderr, "usage: findfs.filsys [-s N] [-i] <image>\n");
+            fprintf(stderr, "usage: findfs.filsys [-v <edition>] [-s N] [-i] <image>\n"
+                            "  editions: %s\n", filsys_editions_usage());
             return 2;
         }
     }
     if (optind >= argc || stride < 1) {
-        fprintf(stderr, "usage: findfs.filsys [-s N] [-i] <image>\n");
+        fprintf(stderr, "usage: findfs.filsys [-v <edition>] [-s N] [-i] <image>\n"
+                        "  editions: %s\n", filsys_editions_usage());
         return 2;
     }
     image = argv[optind];
@@ -217,9 +240,11 @@ int main(int argc, char **argv) {
         const char *ed = NULL; uint16_t isz = 0; uint32_t fsz = 0;
         if (super_v7(buf, bno, nblocks, &ed, &isz, &fsz) || super_v6(buf, bno, nblocks, &isz, &fsz)) {
             if (!ed) ed = "V6";
-            printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u\n",
-                   bno - 1, (unsigned long long)(bno - 1) * BSIZE, ed, isz, fsz);
-            found++;
+            if (matches(edition_filter, ed)) {
+                printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u\n",
+                       bno - 1, (unsigned long long)(bno - 1) * BSIZE, ed, isz, fsz);
+                found++;
+            }
         }
 
         /* inode-table backtrace: is bno the first inode block of a filesystem
@@ -230,9 +255,11 @@ int main(int argc, char **argv) {
                 (super_v7(buf, bno - 1, nblocks, &ed_bt, &isz_bt, &fsz_bt) ||
                  super_v6(buf, bno - 1, nblocks, &isz_bt, &fsz_bt))) {
                 if (!ed_bt) ed_bt = "V6";
-                printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u   [via inode backtrace]\n",
-                       bno - 2, (unsigned long long)(bno - 2) * BSIZE, ed_bt, isz_bt, fsz_bt);
-                found++;
+                if (matches(edition_filter, ed_bt)) {
+                    printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u   [via inode backtrace]\n",
+                           bno - 2, (unsigned long long)(bno - 2) * BSIZE, ed_bt, isz_bt, fsz_bt);
+                    found++;
+                }
             }
         }
     }
@@ -245,13 +272,17 @@ int main(int argc, char **argv) {
             continue;
         uint16_t isz = 0; uint32_t fsz = 0;
         if (super_xenix(xb, xbno, xnblocks, &isz, &fsz)) {
-            printf("fs @ block %u  (byte %llu)  Xenix  isize=%u fsize=%u\n",
-                   (xbno - 1) * 2, (unsigned long long)(xbno - 1) * 1024, isz, fsz);
-            found++;
+            if (matches(edition_filter, "Xenix")) {
+                printf("fs @ block %u  (byte %llu)  Xenix  isize=%u fsize=%u\n",
+                       (xbno - 1) * 2, (unsigned long long)(xbno - 1) * 1024, isz, fsz);
+                found++;
+            }
         } else if (super_bsd29(xb, xbno, xnblocks, &isz, &fsz)) {
-            printf("fs @ block %u  (byte %llu)  2.9BSD  isize=%u fsize=%u\n",
-                   (xbno - 1) * 2, (unsigned long long)(xbno - 1) * 1024, isz, fsz);
-            found++;
+            if (matches(edition_filter, "2.9BSD")) {
+                printf("fs @ block %u  (byte %llu)  2.9BSD  isize=%u fsize=%u\n",
+                       (xbno - 1) * 2, (unsigned long long)(xbno - 1) * 1024, isz, fsz);
+                found++;
+            }
         }
     }
 
