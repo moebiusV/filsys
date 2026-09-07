@@ -744,8 +744,10 @@ static void durability_test(void) {
 
 /* What findfs names each edition in its first-line report.  A few editions share
  * their on-disk superblock with another, so findfs reports the family rather than
- * the specific edition: 2.11BSD's is 2.9BSD-shaped, System III's is V7-shaped
- * (no s_magic), and SVR4 adds only s_state to the SVR2 superblock. */
+ * the specific edition: System III's is V7-shaped (no s_magic), and SVR4 adds
+ * only s_state to the SVR2 superblock.  (2.9BSD and 2.11BSD share a superblock
+ * too, but findfs tells them apart by reading the root directory's entry
+ * format -- see bsd211_root_dir.) */
 static const char *findfs_name(int edition) {
     switch (edition) {
     case FILSYS_PDP7:     return "PDP-7";
@@ -756,7 +758,7 @@ static const char *findfs_name(int edition) {
     case FILSYS_COHERENT: return "Coherent";
     case FILSYS_XENIX:    return "Xenix";
     case FILSYS_BSD29:    return "2.9BSD";
-    case FILSYS_BSD211:   return "2.9BSD";
+    case FILSYS_BSD211:   return "2.11BSD";
     case FILSYS_SYSIII:   return "V7";
     case FILSYS_SVR2:     return "sysvr2";
     case FILSYS_SVR4:     return "sysvr2";
