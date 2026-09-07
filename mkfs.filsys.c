@@ -256,12 +256,15 @@ static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
         ftruncate(fd, (off_t)(base + (uint64_t)blocks * fs->bsize)) < 0)
         die("%s: ftruncate: %s\n", path, strerror(errno));
 
-    /* Xenix carries a magic word at a fixed superblock offset (always little-
-     * endian); write it once, since super_write preserves the bytes it does not
+    /* Xenix and System V carry a magic word at a fixed superblock offset (in the
+     * edition's byte order); System V also carries s_type naming the block size.
+     * Write both once, since super_write preserves the bytes it does not
      * maintain. */
     if (fs->magic) {
         uint8_t sb[V7_MAXBSIZE] = {0};
-        bo_put32le(sb + fs->magic_off, fs->magic);
+        fs->bo->put32(sb + fs->magic_off, fs->magic);
+        if (fs->dyn_bsize)
+            fs->bo->put32(sb + V7_SYSV_TYPE_OFF, V7_SYSV_Fs1b);  /* 512-byte blocks */
         fs->ops->write_block(fs, V7_SUPERB, sb);
     }
 
