@@ -254,9 +254,10 @@ static int super_v6(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
  * s_nfree == 0xffff -- an impossible free-list count ("bitmap, not free list"). */
 static int super_sysv(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
                       const char **edition, const char **note,
-                      uint16_t *isize, uint32_t *fsize,
+                      uint16_t *isize, uint32_t *fsize, int *bs,
                       const char **why, uint32_t *segs) {
     int le;
+    *bs = 0;
     if (bo_get32le(b + 504) == SYSV_MAGIC)      le = 1;
     else if (bo_get32be(b + 504) == SYSV_MAGIC) le = 0;
     else return 0;
@@ -272,9 +273,10 @@ static int super_sysv(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
         return 1;
     }
     uint32_t t = g32(b + 508);
-    int bs = t == 1 ? 512 : t == 2 ? 1024 : t == 3 ? 2048 : 0;
-    if (bs == 0)
+    int bsz = t == 1 ? 512 : t == 2 ? 1024 : t == 3 ? 2048 : 0;
+    if (bsz == 0)
         return 0;
+    *bs = bsz;
     uint16_t isz = g16(b + 0);
 
     /* One s5fs layout: daddr_t/time_t are 4-byte aligned (nfree@8, free@12,
@@ -296,13 +298,13 @@ static int super_sysv(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
     /* candidate: walk the chain and check the root inode */
     uint64_t base = (uint64_t)(bno - 1) * BSIZE;
     uint32_t s = 0;
-    if (walk_chain(fd, g32(b + 12), isz, fsz, base, bs, V7_NICFREE, 4,
+    if (walk_chain(fd, g32(b + 12), isz, fsz, base, bsz, V7_NICFREE, 4,
                    g16, g32, 4, &s, why) < 0) {
         *edition = "sysvr2"; *note = le ? "LE" : "BE";
         *isize = isz; *fsize = fsz; *segs = s;
         return 2;
     }
-    if (root_ok(fd, base, bs, g16, g32, why) < 0) {
+    if (root_ok(fd, base, bsz, g16, g32, why) < 0) {
         *edition = "sysvr2"; *note = le ? "LE" : "BE";
         *isize = isz; *fsize = fsz; *segs = s;
         return 2;
@@ -457,7 +459,12 @@ int main(int argc, char **argv) {
     uint8_t buf[BSIZE];
 
     int found = 0;
+    /* Blocks below `skip_end` (bytes) belong to an already-validated fs's data
+     * area, so their free-list dump blocks are not independent candidates. */
+    uint64_t skip_end = 0;
     for (uint32_t bno = 1; bno < nblocks; bno += (uint32_t)stride) {
+        if ((uint64_t)bno * BSIZE < skip_end)
+            continue;
         if (pread(fd, buf, BSIZE, (off_t)bno * BSIZE) != BSIZE)
             continue;
 
@@ -468,9 +475,11 @@ int main(int argc, char **argv) {
         const char *ed = NULL, *note = NULL, *why = NULL;
         uint32_t segs = 0;
         uint64_t byte = (uint64_t)(bno - 1) * BSIZE;
+        int bs = BSIZE;   /* V7/V6 block size; super_sysv overrides */
 
-        int rc = super_sysv(fd, buf, bno, nblocks, &ed, &note, &isz, &fsz, &why, &segs);
+        int rc = super_sysv(fd, buf, bno, nblocks, &ed, &note, &isz, &fsz, &bs, &why, &segs);
         if (rc == 0) {
+            bs = BSIZE;
             rc = super_v7(fd, buf, bno, nblocks, &ed, &isz, &fsz, &why, &segs);
             if (rc == 0) {
                 ed = "V6";
@@ -481,9 +490,12 @@ int main(int argc, char **argv) {
             if (!strcmp(ed, "AFS"))
                 printf("fs @ block %u  (byte %llu)  AFS (bitmap free list, unsupported)\n",
                        bno - 1, (unsigned long long)byte);
-            else if (rc == 1)
+            else if (rc == 1) {
                 report(bno - 1, byte, ed, note, isz, fsz, segs, strcmp(ed, "V6") != 0);
-            else
+                uint64_t de = (uint64_t)(bno - 1) * BSIZE + (uint64_t)fsz * (uint64_t)bs;
+                if (de > skip_end)
+                    skip_end = de;
+            } else
                 report_miss(bno - 1, byte, ed, note, isz, fsz, why);
             found++;
         }
@@ -513,6 +525,8 @@ int main(int argc, char **argv) {
     uint8_t xb[1024];
     uint32_t xnblocks = (uint32_t)(sz / 1024);
     for (uint32_t xbno = 1; xbno < xnblocks; xbno += (uint32_t)stride) {
+        if ((uint64_t)xbno * 1024 < skip_end)
+            continue;
         if (pread(fd, xb, 1024, (off_t)xbno * 1024) != 1024)
             continue;
         uint16_t isz = 0; uint32_t fsz = 0;
@@ -527,9 +541,12 @@ int main(int argc, char **argv) {
             rc = super_bsd29(fd, xb, xbno, xnblocks, &isz, &fsz, &why, &segs);
         }
         if (rc >= 1 && matches(edition_filter, ed)) {
-            if (rc == 1)
+            if (rc == 1) {
                 report(blk, byte, ed, NULL, isz, fsz, segs, 1);
-            else
+                uint64_t de = (uint64_t)(xbno - 1) * 1024 + (uint64_t)fsz * 1024;
+                if (de > skip_end)
+                    skip_end = de;
+            } else
                 report_miss(blk, byte, ed, NULL, isz, fsz, why);
             found++;
         }
