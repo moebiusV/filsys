@@ -371,10 +371,13 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
     }
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
-        /* The directory entry never landed: put the inode back. */
+        /* The directory entry never landed: clear the inode, then return it to
+         * the free list -- and only if the clear persisted.  If the clear write
+         * fails, leave the inode allocated: a recoverable leak beats freeing
+         * live on-disk state into the allocator. */
         nip.mode = 0;
-        write_inode(fs, nino, &nip);
-        ifree(fs, nino);
+        if (write_inode(fs, nino, &nip) == 0)
+            ifree(fs, nino);
     }
     return rc;
 }
@@ -419,16 +422,20 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     return 0;
 fail:
     /* The parent entry never landed (or its update failed): free the new
-     * directory's "." and ".." blocks, then its inode, so it isn't orphaned. */
+     * directory's "." and ".." blocks, then its inode, so it isn't orphaned.
+     * Only free the inode once the cleared state has persisted; otherwise leave
+     * it allocated -- a recoverable leak, not live state returned to the free
+     * list. */
     {
         filsys_blklist_t *bl = NULL;
         itrunc(fs, &nip, &bl);          /* best-effort; the dir is freshly made */
         nip.mode = 0;
-        if (write_inode(fs, nino, &nip) == 0)
+        if (write_inode(fs, nino, &nip) == 0) {
             filsys_blklist_drain(fs->fs, bl);
-        else
+            ifree(fs, nino);
+        } else {
             filsys_blklist_discard(bl);
-        ifree(fs, nino);
+        }
     }
     return rc;
 }
@@ -481,11 +488,11 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     if (rc) { ifree(fs, nino); return rc; }
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
-        /* The directory entry never landed: return the inode to the free list
-         * so it isn't left orphaned with nlink=1 for fsck to find. */
+        /* The directory entry never landed: clear the inode, then return it to
+         * the free list -- and only if the clear persisted (see filsys_create). */
         nip.mode = 0;
-        write_inode(fs, nino, &nip);
-        ifree(fs, nino);
+        if (write_inode(fs, nino, &nip) == 0)
+            ifree(fs, nino);
     }
     return rc;
 }
@@ -504,21 +511,24 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
     if (rc) return rc;
     ip.nlink--;
     filsys_blklist_t *bl = NULL;
-    if (ip.nlink <= 0) {
+    int unlinked = ip.nlink <= 0;
+    if (unlinked) {
         rc = itrunc(fs, &ip, &bl);
         if (rc) {
             filsys_blklist_discard(bl);
             return rc;
         }
         ip.mode = 0;
-        ifree(fs, ino);
     }
     rc = write_inode(fs, ino, &ip);
-    if (rc)
+    if (rc) {
         filsys_blklist_discard(bl);     /* inode not persisted: blocks stay referenced */
-    else
-        filsys_blklist_drain(fs->fs, bl);
-    return rc;
+        return rc;
+    }
+    filsys_blklist_drain(fs->fs, bl);
+    if (unlinked)
+        ifree(fs, ino);                 /* only after the cleared inode is durable */
+    return 0;
 }
 
 int filsys_unlink(filsys_t *fs, const char *path) {
@@ -566,13 +576,14 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
         return rc;
     }
     tip.mode = 0;
-    ifree(fs, ino);
     rc = write_inode(fs, ino, &tip);
-    if (rc)
-        filsys_blklist_discard(bl);
-    else
-        filsys_blklist_drain(fs->fs, bl);
-    return rc;
+    if (rc) {
+        filsys_blklist_discard(bl);     /* inode not persisted: blocks stay referenced */
+        return rc;
+    }
+    filsys_blklist_drain(fs->fs, bl);
+    ifree(fs, ino);                     /* only after the cleared inode is durable */
+    return 0;
 }
 
 static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
@@ -631,8 +642,9 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     rc = lookup(fs, tdir, &tdino, &tdirip);
     if (rc) return rc;
 
-    /* Overwrite an existing target: refuse to replace a non-empty directory,
-     * and do not let a directory be renamed over one. */
+    /* Overwrite an existing target.  Enforce the POSIX type rules: a directory
+     * may only replace another directory (and then only an empty one), and a
+     * non-directory may only replace a non-directory. */
     uint32_t tino = 0;
     filsys_inode_t tip_saved;          /* snapshot of the removed target */
     int had_target = 0;
@@ -640,7 +652,10 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         if (tino == sino) return 0;   /* already there */
         filsys_inode_t tip;
         if (read_inode(fs, tino, &tip)) return -EIO;
-        if (mode_is_dir(&fs->fmt, &tip)) {
+        int tisdir = mode_is_dir(&fs->fmt, &tip);
+        if (isdir && !tisdir) return -ENOTDIR;   /* directory over a file */
+        if (!isdir && tisdir) return -EISDIR;    /* file over a directory */
+        if (tisdir) {
             filsys_dirent_t *ents = NULL; size_t count = 0;
             if (dir_read(fs, &tip, &ents, &count)) return -EIO;
             for (size_t i = 0; i < count; i++)
@@ -651,6 +666,21 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         had_target = 1;
         rc = do_unlink(fs, tdir, tname);
         if (rc) return rc;
+    }
+
+    /* A directory must not be renamed into its own subtree (that would form a
+     * cycle).  Walk up from the target's parent via ".." to the root: if any
+     * ancestor is the source directory, `to` sits inside `from`. */
+    if (isdir) {
+        uint32_t anc = tdino, guard = 0;
+        while (anc != (uint32_t)fs->fmt.rootino && anc != 0 && guard++ < 65536) {
+            if (anc == sino) return -EINVAL;
+            filsys_inode_t aip;
+            uint32_t next;
+            if (read_inode(fs, anc, &aip)) break;
+            if (dir_lookup(fs, &aip, "..", &next)) break;
+            anc = next;
+        }
     }
 
     /* The three mutations that follow are not transactional (a non-journaled
