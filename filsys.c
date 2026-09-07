@@ -648,6 +648,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     uint32_t tino = 0;
     filsys_inode_t tip_saved;          /* snapshot of the removed target */
     int had_target = 0;
+    int free_target = 0;               /* orphaned target to free at commit */
     if (dir_lookup(fs, &tdirip, tname, &tino) == 0) {
         if (tino == sino) return 0;   /* already there */
         filsys_inode_t tip;
@@ -664,8 +665,24 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         }
         tip_saved = tip;
         had_target = 1;
-        rc = do_unlink(fs, tdir, tname);
+        /* Drop the target's name now, but defer freeing its blocks and inode
+         * until the rename is committed below.  A replaced file loses its link
+         * count and is freed only if it reaches zero; a replaced directory is
+         * orphaned by the removal and freed outright.  Nothing is freed yet, so
+         * a rollback that re-adds the name and rewrites tip_saved stays clean. */
+        rc = dir_remove(fs, &tdirip, tname);
         if (rc) return rc;
+        if (tisdir) {
+            free_target = 1;
+        } else {
+            tip.nlink--;
+            rc = write_inode(fs, tino, &tip);
+            if (rc) {
+                dir_add(fs, &tdirip, tino, tname);   /* withdraw the removal */
+                return rc;
+            }
+            free_target = tip.nlink == 0;
+        }
     }
 
     /* A directory must not be renamed into its own subtree (that would form a
@@ -683,11 +700,11 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         }
     }
 
-    /* The three mutations that follow are not transactional (a non-journaled
+    /* The mutations that follow are not transactional (a non-journaled
      * filesystem has no atomic rename), so each is checked and the preceding
-     * ones unwound best-effort on failure.  A target whose link count dropped
-     * to zero had its blocks freed and cannot be fully restored; its name and
-     * metadata are, and the damage is left for fsck to report. */
+     * ones unwound best-effort on failure.  The replaced target is only freed at
+     * the end (its blocks are still referenced until then), so a rollback that
+     * re-adds its name and inode leaves no aliasing. */
     rc = do_link(fs, to, sino);
     if (rc) {
         if (had_target) {
@@ -733,6 +750,24 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
             if (rc) return rc;
             rc = dir_add(fs, &cip, tdino, "..");
             if (rc) return rc;
+        }
+    }
+
+    /* Commit: the new name is in place and the old one is gone.  Only now free
+     * the replaced target we orphaned above (tip_saved still holds its blocks).
+     * On a failure here it stays an orphan -- a recoverable leak, not aliasing. */
+    if (free_target) {
+        filsys_blklist_t *bl = NULL;
+        if (itrunc(fs, &tip_saved, &bl) == 0) {
+            tip_saved.mode = 0;
+            if (write_inode(fs, tino, &tip_saved) == 0) {
+                filsys_blklist_drain(fs->fs, bl);
+                ifree(fs, tino);
+            } else {
+                filsys_blklist_discard(bl);
+            }
+        } else {
+            filsys_blklist_discard(bl);
         }
     }
     return 0;

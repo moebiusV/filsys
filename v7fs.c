@@ -394,8 +394,14 @@ void v7fs_bfree(filsys_edition_t *fs, uint32_t bno) {
         fs->bo->put16(buf + 0, fs->fl.nfree);
         for (int i = 0; i < fs->nicfree; i++)
             v7_put_daddr(fs, buf + fb_free_off(fs->pack4) + fs->daddr_wid * i, fs->fl.free[i]);
-        if (v7fs_write_block(fs, bno, buf) == 0)
-            fs->fl.nfree = 0;
+        /* The dump block must reach disk before the cache is reset, else the
+         * freed blocks are lost; and a failed dump must not fall through to
+         * free[nfree++] with nfree == nicfree -- that overflows free[].  On a
+         * failed dump, leak bno (salvage recovers it) rather than corrupt the
+         * cache. */
+        if (v7fs_write_block(fs, bno, buf) != 0)
+            return;
+        fs->fl.nfree = 0;
     }
     fs->fl.free[fs->fl.nfree++] = bno;
     fs->fl.tfree++;
