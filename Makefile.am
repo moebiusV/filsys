@@ -41,7 +41,8 @@ mount_filsys_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
 # No -lpthread is needed.
 mount_filsys_LDADD = $(FUSE3_LIBS) libfilsys.a
 
-findfs_filsys_SOURCES = findfs.filsys.c filsys_names.c byteorder.c byteorder.h
+findfs_filsys_SOURCES = findfs.filsys.c
+findfs_filsys_LDADD = libfilsys.a
 findfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
 mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h filsys_format.c filsys_names.c blocktree.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h

@@ -5,9 +5,8 @@
  * table rather than their own strcmp chains, so the spellings live in one place
  * and cannot drift.
  *
- * This lives apart from filsys_format.c (the descriptor table) so findfs.filsys
- * -- a standalone superblock scanner -- can link the name lookup without pulling
- * in the on-disk backends and their ops tables.
+ * This lives apart from filsys_format.c (the descriptor table) to keep the
+ * edition *names* separate from the per-format on-disk descriptors.
  *
  * SPDX-License-Identifier: ISC
  */
