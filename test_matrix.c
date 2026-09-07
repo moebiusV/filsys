@@ -592,10 +592,73 @@ static void rename_semantics(void) {
             filsys_mkdir(fs, "/a/b", 0755, 0, 0);
             snprintf(what, sizeof what, "%s rename dir->descendant EINVAL", f.name);
             ok(what, filsys_rename(fs, "/a", "/a/b/c", 0) == -EINVAL);
+            /* The cycle check must run before any target removal: an existing
+             * target inside the source subtree is left untouched. */
+            filsys_create(fs, "/a/b/t", 0644, 0, 0);
+            uint32_t tino; filsys_inode_t tip;
+            snprintf(what, sizeof what, "%s rename dir->descendant keeps target", f.name);
+            ok(what, filsys_rename(fs, "/a", "/a/b/t", 0) == -EINVAL &&
+                      filsys_lookup(fs, "/a/b/t", &tino, &tip) == 0);
         }
 
         filsys_close(fs);
         snprintf(what, sizeof what, "%s rename rejected clean", f.name);
+        ok(what, fsck_is_clean(f.name, img));
+        unlink(img);
+    }
+}
+
+/* Historical Unix lets the superuser hard-link a directory, so a directory can
+ * have several names.  The library must honor that: rmdir of one name only drops
+ * a link, it frees the directory when the last name goes away; and a directory
+ * must never be linked into its own subtree (a cycle).  PDP-7 is skipped -- its
+ * directories store no parent link and its nlink is synthesized. */
+static void dir_link_semantics(void) {
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        if (!fmt_at(i, &f))
+            break;
+        if (f.edition == FILSYS_PDP7)
+            continue;
+        char img[64], cmd[512], what[128];
+        snprintf(img, sizeof img, "test_matrix_%s_dirlink.img", f.name);
+        unlink(img);
+        if (f.edition == FILSYS_PDP7)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                     f.name, img, f.blocks);
+        if (system(cmd) != 0) { ok("dirlink mkfs", 0); unlink(img); continue; }
+
+        filsys_t *fs;
+        if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
+            ok("dirlink open", 0); unlink(img); continue;
+        }
+
+        /* hard-link a directory, then remove one name at a time */
+        filsys_mkdir(fs, "/d", 0755, 0, 0);
+        snprintf(what, sizeof what, "%s link dir", f.name);
+        ok(what, filsys_link(fs, "/d", "/e") == 0);
+        uint32_t dino = 0, eino = 0;
+        filsys_inode_t dip, eip;
+        snprintf(what, sizeof what, "%s dir link same inode", f.name);
+        ok(what, filsys_lookup(fs, "/d", &dino, &dip) == 0 &&
+                  filsys_lookup(fs, "/e", &eino, &eip) == 0 && dino == eino);
+
+        snprintf(what, sizeof what, "%s rmdir one link keeps the other", f.name);
+        ok(what, filsys_rmdir(fs, "/d") == 0 && filsys_lookup(fs, "/e", &eino, &eip) == 0);
+
+        snprintf(what, sizeof what, "%s rmdir last link frees it", f.name);
+        ok(what, filsys_rmdir(fs, "/e") == 0 && filsys_lookup(fs, "/e", &eino, &eip) != 0);
+
+        /* a directory may not be linked into its own subtree */
+        filsys_mkdir(fs, "/a", 0755, 0, 0);
+        filsys_mkdir(fs, "/a/b", 0755, 0, 0);
+        snprintf(what, sizeof what, "%s link dir into descendant EINVAL", f.name);
+        ok(what, filsys_link(fs, "/a", "/a/b/c") == -EINVAL);
+
+        filsys_close(fs);
+        snprintf(what, sizeof what, "%s dir-link clean", f.name);
         ok(what, fsck_is_clean(f.name, img));
         unlink(img);
     }
@@ -693,6 +756,7 @@ int main(void) {
     crash_consistency();
     durability_test();
     rename_semantics();
+    dir_link_semantics();
     fault_test();
     if (failures) {
         printf("%d failure(s)\n", failures);
