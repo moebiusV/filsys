@@ -742,6 +742,66 @@ static void durability_test(void) {
     }
 }
 
+/* What findfs names each edition in its first-line report.  A few editions share
+ * their on-disk superblock with another, so findfs reports the family rather than
+ * the specific edition: 2.11BSD's is 2.9BSD-shaped, System III's is V7-shaped
+ * (no s_magic), and SVR4 adds only s_state to the SVR2 superblock. */
+static const char *findfs_name(int edition) {
+    switch (edition) {
+    case FILSYS_PDP7:     return "PDP-7";
+    case FILSYS_V1:       return "V1";
+    case FILSYS_V6:       return "V6";
+    case FILSYS_V7:       return "V7";
+    case FILSYS_32V:      return "32V";
+    case FILSYS_COHERENT: return "Coherent";
+    case FILSYS_XENIX:    return "Xenix";
+    case FILSYS_BSD29:    return "2.9BSD";
+    case FILSYS_BSD211:   return "2.9BSD";
+    case FILSYS_SYSIII:   return "V7";
+    case FILSYS_SVR2:     return "sysvr2";
+    case FILSYS_SVR4:     return "sysvr2";
+    default:              return NULL;
+    }
+}
+
+/* findfs self-detection: for each edition, mkfs an image and require findfs's
+ * *first* line to be that edition's validated hit at offset 0 -- not a rejected
+ * near-miss (a 1K-block fs's own bytes also parse as a 512-byte near-miss at
+ * byte 512, which must not print first). */
+static void findfs_self_detect(void) {
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        if (!fmt_at(i, &f))
+            break;
+        const char *want = findfs_name(f.edition);
+        char img[64], cmd[512], line[256], what[128];
+        snprintf(img, sizeof img, "test_matrix_%s_find.img", f.name);
+        unlink(img);
+        if (f.edition == FILSYS_PDP7)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                     f.name, img, f.blocks);
+        if (system(cmd) != 0) { ok("findfs mkfs", 0); unlink(img); continue; }
+
+        snprintf(cmd, sizeof cmd, "./findfs.filsys %s 2>&1", img);
+        FILE *p = popen(cmd, "r");
+        line[0] = '\0';
+        if (p) {
+            (void)!fgets(line, sizeof line, p);
+            pclose(p);
+        }
+
+        int at_zero = strstr(line, "block 0") || strstr(line, "byte 0");
+        int validated = (strstr(line, "chain ok") || strstr(line, "bitmap free list")) &&
+                        !strstr(line, "REJECTED");
+        int named = want && strstr(line, want);
+        snprintf(what, sizeof what, "%s findfs self-detect", f.name);
+        ok(what, at_zero && validated && named);
+        unlink(img);
+    }
+}
+
 int main(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
@@ -757,6 +817,7 @@ int main(void) {
     durability_test();
     rename_semantics();
     dir_link_semantics();
+    findfs_self_detect();
     fault_test();
     if (failures) {
         printf("%d failure(s)\n", failures);
