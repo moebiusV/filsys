@@ -527,29 +527,101 @@ static const char *mount_name(const char *ed) {
     return ed;
 }
 
-/* Print one validated or near-miss candidate.  `root` is 1 when the root-inode
- * cross-check ran and passed, 0 when it was skipped (V6 has a different layout).
- * A validated fs also gets a cut-and-pasteable mount.filsys command line. */
-static void report(const char *image, uint32_t blk, uint64_t byte, const char *ed,
-                   const char *note, uint16_t isz, uint32_t fsz, uint32_t segs, int root) {
+/* ---- candidate collection + reporting -------------------------------------- */
+
+/* A candidate superblock found by the scan: either validated (chain ok, root ok)
+ * or a rejected near-miss.  Collected during the scan and emitted afterward, so
+ * validated hits print above rejected near-misses regardless of the offset order
+ * the scan reached them -- a 1K-block filesystem's own bytes can also parse as a
+ * 512-byte near-miss at byte 512, which must not print above the real hit. */
+struct cand {
+    uint32_t blk;                 /* fs-start block (512-byte units) */
+    uint64_t byte;                /* fs-start byte offset */
+    char     ed[16];              /* edition label */
+    char     note[32];            /* extra note, or "" */
+    uint16_t isz;
+    uint32_t fsz;
+    uint32_t segs;
+    int      root;                /* root-inode cross-check passed */
+    int      valid;               /* 1 = validated, 0 = rejected near-miss */
+    uint64_t end;                 /* one past the fs (validated only) */
+    const char *why;              /* rejection reason (rejected only) */
+    int      drop;                /* suppressed: inside a validated fs */
+};
+
+#define MAXCAND 256
+static struct cand cands[MAXCAND];
+static int ncand;
+
+static void add_cand(uint32_t blk, uint64_t byte, const char *ed, const char *note,
+                     uint16_t isz, uint32_t fsz, uint32_t segs, int root,
+                     int valid, uint64_t end, const char *why) {
+    if (ncand >= MAXCAND)
+        return;
+    struct cand *c = &cands[ncand++];
+    c->blk = blk; c->byte = byte; c->isz = isz; c->fsz = fsz;
+    c->segs = segs; c->root = root; c->valid = valid; c->end = end; c->why = why;
+    c->drop = 0;
+    snprintf(c->ed, sizeof c->ed, "%s", ed);
+    snprintf(c->note, sizeof c->note, "%s", note ? note : "");
+}
+
+static void print_cand(const char *image, const struct cand *c) {
     printf("fs @ block %u  (byte %llu)  %s%s%s%s  isize=%u fsize=%u",
-           blk, (unsigned long long)byte, ed,
-           note ? " (" : "", note ? note : "", note ? ")" : "", isz, fsz);
-    if (!strcmp(ed, "V1"))
+           c->blk, (unsigned long long)c->byte, c->ed,
+           c->note[0] ? " (" : "", c->note[0] ? c->note : "",
+           c->note[0] ? ")" : "", c->isz, c->fsz);
+    if (!strcmp(c->ed, "V1"))
         printf("  bitmap free list");   /* V1 has bitmaps, not a free-list chain */
     else
-        printf("  chain ok (%u segs)", segs);
-    if (root)
+        printf("  chain ok (%u segs)", c->segs);
+    if (c->root)
         printf(", root inode ok");
     printf("\n");
     printf("  mount.filsys -v %s -o offset=%llu %s /mnt\n",
-           mount_name(ed), (unsigned long long)byte, image);
+           mount_name(c->ed), (unsigned long long)c->byte, image);
 }
-static void report_miss(uint32_t blk, uint64_t byte, const char *ed, const char *note,
-                        uint16_t isz, uint32_t fsz, const char *why) {
+
+static void print_miss(const struct cand *c) {
     printf("fs @ block %u  (byte %llu)  %s%s%s%s  isize=%u fsize=%u  REJECTED: %s\n",
-           blk, (unsigned long long)byte, ed,
-           note ? " (" : "", note ? note : "", note ? ")" : "", isz, fsz, why);
+           c->blk, (unsigned long long)c->byte, c->ed,
+           c->note[0] ? " (" : "", c->note[0] ? c->note : "",
+           c->note[0] ? ")" : "", c->isz, c->fsz, c->why);
+}
+
+static int cand_cmp(const void *a, const void *b) {
+    const struct cand *ca = a, *cb = b;
+    if (ca->valid != cb->valid)
+        return ca->valid ? -1 : 1;      /* validated before rejected */
+    if (ca->byte != cb->byte)
+        return ca->byte < cb->byte ? -1 : 1;
+    return 0;
+}
+
+/* Emit the collected candidates: drop any whose offset falls inside an
+ * already-validated filesystem's extent (those bytes are that filesystem's own,
+ * not a peer), then print validated hits before rejected near-misses, each group
+ * in ascending offset order. */
+static void emit(const char *image) {
+    for (int i = 0; i < ncand; i++) {
+        if (!cands[i].valid || cands[i].drop)
+            continue;
+        for (int j = 0; j < ncand; j++) {
+            if (j == i)
+                continue;
+            if (cands[j].byte >= cands[i].byte && cands[j].byte < cands[i].end)
+                cands[j].drop = 1;
+        }
+    }
+    qsort(cands, (size_t)ncand, sizeof *cands, cand_cmp);
+    for (int i = 0; i < ncand; i++) {
+        if (cands[i].drop)
+            continue;
+        if (cands[i].valid)
+            print_cand(image, &cands[i]);
+        else
+            print_miss(&cands[i]);
+    }
 }
 
 int main(int argc, char **argv) {
@@ -608,8 +680,8 @@ int main(int argc, char **argv) {
             const char *why = NULL;
             if (super_v1(fd, fb, nblocks, &isz, &fsz, &why) == 1 &&
                 matches(edition_filter, "V1")) {
-                report(image, fb, byte, "V1", NULL, isz, fsz, 0, 1);
                 uint64_t de = (uint64_t)(fb + fsz) * BSIZE;
+                add_cand(fb, byte, "V1", NULL, isz, fsz, 0, 1, 1, de, NULL);
                 if (de > skip_end)
                     skip_end = de;
                 found++;
@@ -640,12 +712,13 @@ int main(int argc, char **argv) {
                 printf("fs @ block %u  (byte %llu)  AFS (bitmap free list, unsupported)\n",
                        fb, (unsigned long long)byte);
             else if (rc == 1) {
-                report(image, fb, byte, ed, note, isz, fsz, segs, strcmp(ed, "V6") != 0);
                 uint64_t de = byte + (uint64_t)fsz * (uint64_t)bs;
+                add_cand(fb, byte, ed, note, isz, fsz, segs, strcmp(ed, "V6") != 0,
+                         1, de, NULL);
                 if (de > skip_end)
                     skip_end = de;
             } else
-                report_miss(fb, byte, ed, note, isz, fsz, why);
+                add_cand(fb, byte, ed, note, isz, fsz, 0, 0, 0, 0, why);
             found++;
         }
 
@@ -694,15 +767,19 @@ int main(int argc, char **argv) {
         }
         if (rc >= 1 && matches(edition_filter, ed)) {
             if (rc == 1) {
-                report(image, blk, byte, ed, NULL, isz, fsz, segs, 1);
                 uint64_t de = (uint64_t)(xbno - 1) * 1024 + (uint64_t)fsz * 1024;
+                add_cand(blk, byte, ed, NULL, isz, fsz, segs, 1, 1, de, NULL);
                 if (de > skip_end)
                     skip_end = de;
             } else
-                report_miss(blk, byte, ed, NULL, isz, fsz, why);
+                add_cand(blk, byte, ed, NULL, isz, fsz, 0, 0, 0, 0, why);
             found++;
         }
     }
+
+    /* emit the collected candidates: validated before rejected, with in-fs
+     * candidates suppressed */
+    emit(image);
 
     /* PDP-7 (V0): word-addressed, at a fixed offset -- byte 0 of a bare
      * filesystem surface, or surface 1 (P7_NBLOCKS blocks in) of a full
