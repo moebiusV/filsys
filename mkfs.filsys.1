@@ -31,6 +31,9 @@ It builds a fresh superblock, a zeroed i-list, an interleaved free-block
 list, and an empty root directory, and grows the file to the filesystem
 size if needed.  The image is opened read-write and created if it does not
 already exist.
+.I image
+may be a regular file or a block (or character) device; a device is used at
+its own size and is never resized.
 .PP
 The edition of the filesystem is selected with
 .BR \-v :
