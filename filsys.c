@@ -563,6 +563,19 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     for (size_t i = 0; i < count; i++)
         if (strcmp(ents[i].name, ".") && strcmp(ents[i].name, "..")) { free(ents); return -ENOTEMPTY; }
     free(ents);
+    /* One fewer name points at the directory now.  Its nlink counts its own "."
+     * plus each parent entry (a historical directory may be hard-linked); it is
+     * orphaned -- and freed -- only when "." alone remains (nlink <= 1). */
+    tip.nlink--;
+    if (tip.nlink > 1) {
+        /* Still linked elsewhere: drop just this name and persist the child's
+         * decremented link count.  The parent's nlink is unchanged -- the
+         * child's ".." entry survives. */
+        rc = dir_remove(fs, &ddir, name);
+        if (rc) return rc;
+        return write_inode(fs, ino, &tip);
+    }
+    /* Orphaned: removing it also drops the child's ".." from the parent. */
     ddir.nlink--;
     rc = dir_remove(fs, &ddir, name);
     if (rc) {
@@ -586,6 +599,34 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     return 0;
 }
 
+/* Is `anc_ino` an ancestor of directory `dir_ino` (does dir_ino sit in
+ * anc_ino's subtree)?  Walk ".." from dir_ino up to the root.  A directory
+ * linked or renamed into its own subtree would make a cycle that lookup and
+ * fsck would then chase forever, so both operations refuse it.
+ *
+ * Returns 1 if anc_ino is an ancestor, 0 if dir_ino provably reaches the root
+ * without meeting it, or a negative errno when the walk cannot be completed.
+ * Callers must fail closed: a negative result is not "safe", it is "unknown". */
+static int dir_ancestor(filsys_t *fs, uint32_t anc_ino, uint32_t dir_ino) {
+    uint32_t cur = dir_ino, guard = 0;
+    while (cur != (uint32_t)fs->fmt.rootino && cur != 0 && guard++ < 65536) {
+        if (cur == anc_ino)
+            return 1;
+        filsys_inode_t ip;
+        uint32_t next;
+        int rc = read_inode(fs, cur, &ip);
+        if (rc)
+            return rc;
+        rc = dir_lookup(fs, &ip, "..", &next);
+        if (rc)
+            return rc;
+        cur = next;
+    }
+    if (guard >= 65536)
+        return -ELOOP;   /* parent chain loops: cannot establish safety */
+    return 0;
+}
+
 static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
     char dir[PATH_MAX], name[64];
     int rc = split_path(dst, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
@@ -594,13 +635,17 @@ static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
     uint32_t dino;
     rc = lookup(fs, dir, &dino, &ddir);
     if (rc) return rc;
+    filsys_inode_t ip;
+    if (read_inode(fs, src_ino, &ip)) return -EIO;
+    /* A directory may be hard-linked (V7 lets the superuser do it), but never
+     * into its own subtree -- that would form a cycle. */
+    if (mode_is_dir(&fs->fmt, &ip)) {
+        int a = dir_ancestor(fs, src_ino, dino);
+        if (a == 1) return -EINVAL;   /* would form a cycle */
+        if (a < 0) return a;          /* cannot verify: fail closed */
+    }
     rc = dir_add(fs, &ddir, src_ino, name);
     if (rc) return rc;
-    filsys_inode_t ip;
-    if (read_inode(fs, src_ino, &ip)) {
-        dir_remove(fs, &ddir, name);   /* withdraw the entry we just added */
-        return -EIO;
-    }
     ip.nlink++;
     rc = write_inode(fs, src_ino, &ip);
     if (rc)
@@ -642,6 +687,15 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     rc = lookup(fs, tdir, &tdino, &tdirip);
     if (rc) return rc;
 
+    /* Every check that can fail without mutating goes here, before the first
+     * persistent change: a directory must not be renamed into its own subtree
+     * (that would form a cycle). */
+    if (isdir) {
+        int a = dir_ancestor(fs, sino, tdino);
+        if (a == 1) return -EINVAL;   /* would form a cycle */
+        if (a < 0) return a;          /* cannot verify: fail closed */
+    }
+
     /* Overwrite an existing target.  Enforce the POSIX type rules: a directory
      * may only replace another directory (and then only an empty one), and a
      * non-directory may only replace a non-directory. */
@@ -682,21 +736,6 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
                 return rc;
             }
             free_target = tip.nlink == 0;
-        }
-    }
-
-    /* A directory must not be renamed into its own subtree (that would form a
-     * cycle).  Walk up from the target's parent via ".." to the root: if any
-     * ancestor is the source directory, `to` sits inside `from`. */
-    if (isdir) {
-        uint32_t anc = tdino, guard = 0;
-        while (anc != (uint32_t)fs->fmt.rootino && anc != 0 && guard++ < 65536) {
-            if (anc == sino) return -EINVAL;
-            filsys_inode_t aip;
-            uint32_t next;
-            if (read_inode(fs, anc, &aip)) break;
-            if (dir_lookup(fs, &aip, "..", &next)) break;
-            anc = next;
         }
     }
 
