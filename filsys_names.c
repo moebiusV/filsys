@@ -19,13 +19,14 @@
 
 /* `name` is the canonical "-v" spelling; `aliases` are the alternates the tools
  * have always accepted: the numeric edition numbers, the pre-rename spellings,
- * and the family members that share a format (V2/V3 with V1, V4/V5 with V6).  A
- * leading "v"/"V" is stripped by filsys_edition_by_name, so "v7" and "7" resolve
- * alike. */
+ * and the family members that share a format (V2/V3 with V1, V4/V5 with V6), and
+ * the format-equivalent releases verified against real media (USG PG3 shares
+ * V6's layout; System V Release 1 shares V7's).  A leading "v"/"V" is stripped
+ * by filsys_edition_by_name, so "v7" and "7" resolve alike. */
 static const char *const pdp7_alias[]     = { "0", "p7", NULL };
 static const char *const v1_alias[]       = { "1", "2", "3", NULL };
-static const char *const v6_alias[]       = { "4", "5", "6", NULL };
-static const char *const v7_alias[]       = { "7", NULL };
+static const char *const v6_alias[]       = { "4", "5", "6", "usgpg3", NULL };
+static const char *const v7_alias[]       = { "7", "sysvr1", NULL };
 static const char *const vax32_alias[]    = { "32v", "32", NULL };
 static const char *const coherent_alias[] = { "coh", "33", NULL };
 static const char *const xenix_alias[]    = { "34", NULL };

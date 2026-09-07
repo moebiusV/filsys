@@ -64,7 +64,9 @@ mount.filsys -v <edition> -c <image>   # integrity check (no mount)
 `1`, `2`, `3`, `4`, `5`, `6`, `7`, `32`, `33`, `34`, `35`, `36` — is also
 accepted, and `v0`/`p7` spell the PDP-7.  `v1`, `v2` and `v3` are one on-disk
 format, and `v4` and `v5` are byte-identical to `v6`, so the seven pre-V7
-editions collapse onto two code paths.  The edition is **required**: there is no
+editions collapse onto two code paths.  `usgpg3` (USG Program Generic Issue 3)
+resolves to `v6`, and `sysvr1` (System V Release 1) to `v7`, both verified
+against real media.  The edition is **required**: there is no
 default, and a wrong `-v` is an error, not a fallback.
 
 | option | meaning                          |
