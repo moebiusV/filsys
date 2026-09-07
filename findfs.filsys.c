@@ -441,11 +441,11 @@ static const struct { const word_codec_t *codec; const char *name; } p7_containe
     { &word_rim,      "rim" },
 };
 
-/* Read PDP-7 block `bno` (64 words) from surface 1 (at P7_NBLOCKS blocks past
- * the image start) into `words`, decoded through the container codec. */
-static int p7_read(int fd, const word_codec_t *wc, uint32_t bno, uint32_t *words) {
+/* Read PDP-7 block `bno` (64 words) at byte offset `base` (the filesystem
+ * surface) into `words`, decoded through the container codec. */
+static int p7_read(int fd, const word_codec_t *wc, uint64_t base, uint32_t bno, uint32_t *words) {
     uint8_t raw[P7_MAXBLOCKBYTES];
-    off_t pos = (off_t)((uint64_t)P7_NBLOCKS * wc->block_bytes) + (off_t)bno * wc->block_bytes;
+    off_t pos = (off_t)base + (off_t)bno * wc->block_bytes;
     if (pread(fd, raw, wc->block_bytes, pos) != (ssize_t)wc->block_bytes)
         return -1;
     for (uint32_t i = 0; i < P7_WSIZE; i++)
@@ -457,9 +457,9 @@ static int p7_read(int fd, const word_codec_t *wc, uint32_t bno, uint32_t *words
  * Validate the free-list chain (nodes in the data range, each chaining via word
  * 0 and carrying nine free block numbers in words 1..9) and the root "dd"
  * directory (inode 4 at block 2).  Returns 1 (valid) or 0 (not a candidate). */
-static int super_pdp7(int fd, const word_codec_t *wc, uint32_t *segs, const char **why) {
+static int super_pdp7(int fd, const word_codec_t *wc, uint64_t base, uint32_t *segs, const char **why) {
     uint32_t words[P7_WSIZE];
-    if (p7_read(fd, wc, 0, words) != 0)
+    if (p7_read(fd, wc, base, 0, words) != 0)
         return 0;
     uint32_t head = words[0];
     if (head == 0)
@@ -471,7 +471,7 @@ static int super_pdp7(int fd, const word_codec_t *wc, uint32_t *segs, const char
         if (++hops > P7_NBLOCKS) { *why = "chain too long"; return 0; }
         if (seen[head >> 3] & (1u << (head & 7))) { *why = "chain cycles"; return 0; }
         seen[head >> 3] |= (uint8_t)(1u << (head & 7));
-        if (p7_read(fd, wc, head, words) != 0) { *why = "chain read error"; return 0; }
+        if (p7_read(fd, wc, base, head, words) != 0) { *why = "chain read error"; return 0; }
         for (int i = 1; i <= 9; i++) {
             uint32_t fb = words[i];
             if (fb != 0 && (fb < P7_DATASTART || fb >= P7_KDATA)) { *why = "chain entry out of range"; return 0; }
@@ -481,7 +481,7 @@ static int super_pdp7(int fd, const word_codec_t *wc, uint32_t *segs, const char
     }
     /* root "dd" directory: inode 4 at block 2, flags word must be an allocated
      * directory. */
-    if (p7_read(fd, wc, P7_FIRSTINOBLK, words) != 0)
+    if (p7_read(fd, wc, base, P7_FIRSTINOBLK, words) != 0)
         return 0;
     uint32_t flags = words[P7_INODESZ * (P7_ROOTINO % P7_INOPB)];
     if ((flags & (P7_IUSED | P7_IDIR)) != (P7_IUSED | P7_IDIR)) { *why = "root inode is not a directory"; return 0; }
@@ -704,23 +704,30 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* PDP-7 (V0): word-addressed, at a fixed offset (surface 1 of an RB09
-     * fixed-head disk) -- not found by the byte-aligned block scans above.  Try
-     * each word container; the image must be a full RB09 disk (two surfaces). */
+    /* PDP-7 (V0): word-addressed, at a fixed offset -- byte 0 of a bare
+     * filesystem surface, or surface 1 (P7_NBLOCKS blocks in) of a full
+     * two-surface RB09 disk image -- not found by the byte-aligned block scans
+     * above.  Probe both offsets, once per word container. */
     for (size_t i = 0; i < sizeof p7_containers / sizeof p7_containers[0]; i++) {
         const word_codec_t *wc = p7_containers[i].codec;
-        if (sz < (uint64_t)P7_NBLOCKS * wc->block_bytes + (uint64_t)P7_KDATA * wc->block_bytes)
-            continue;
-        uint32_t segs = 0;
-        const char *why = NULL;
-        if (super_pdp7(fd, wc, &segs, &why) != 1)
-            continue;
-        if (!matches(edition_filter, "PDP-7"))
-            continue;
-        printf("fs @ surface 1  (byte %llu)  PDP-7 (%s)  chain ok (%u segs), root inode ok\n",
-               (unsigned long long)((uint64_t)P7_NBLOCKS * wc->block_bytes), p7_containers[i].name, segs);
-        printf("  mount.filsys -v pdp7 -o offset=0 -o packing=%s %s /mnt\n", p7_containers[i].name, image);
-        found++;
+        uint64_t surf = (uint64_t)P7_NBLOCKS * wc->block_bytes;
+        uint64_t bases[2] = { 0, surf };
+        for (int b = 0; b < 2; b++) {
+            uint64_t base = bases[b];
+            if (sz < base + (uint64_t)P7_KDATA * wc->block_bytes)
+                continue;
+            uint32_t segs = 0;
+            const char *why = NULL;
+            if (super_pdp7(fd, wc, base, &segs, &why) != 1)
+                continue;
+            if (!matches(edition_filter, "PDP-7"))
+                continue;
+            printf("fs @ byte %llu  PDP-7 (%s)  chain ok (%u segs), root inode ok\n",
+                   (unsigned long long)base, p7_containers[i].name, segs);
+            printf("  mount.filsys -v pdp7 -o offset=%llu -o packing=%s %s /mnt\n",
+                   (unsigned long long)base, p7_containers[i].name, image);
+            found++;
+        }
     }
 
     close(fd);

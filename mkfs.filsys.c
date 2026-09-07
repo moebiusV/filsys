@@ -463,8 +463,10 @@ static void p7_pblock(uint32_t bno, const uint32_t *words)
     uint8_t raw[P7_MAXBLOCKBYTES];
     for (uint32_t i = 0; i < P7_WSIZE; i++)
         p7_wc->put(raw, i, words[i]);
-    off_t pos = (off_t)((uint64_t)P7_NBLOCKS * p7_wc->block_bytes)
-              + (off_t)bno * (off_t)p7_wc->block_bytes;
+    /* The image is the bare filesystem surface (surface 1), so block 0 of the
+     * filesystem is byte 0 of the file -- the same "-o offset=" convention as
+     * every other edition. */
+    off_t pos = (off_t)bno * (off_t)p7_wc->block_bytes;
     if (pwrite(fd, raw, p7_wc->block_bytes, pos) != (ssize_t)p7_wc->block_bytes)
         die("write error at block %u\n", bno);
 }
@@ -502,7 +504,8 @@ static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile,
                       const word_codec_t *word)
 {
     /* The RB09 fixed-head disk has one valid geometry (8000 blocks/surface);
-     * there is no size to choose. */
+     * there is no size to choose.  We write the bare filesystem surface (one
+     * surface, not the full two-surface disk), so block 0 is byte 0. */
     if (blocks != 0)
         die("%s: pdp7: size is fixed by the RB09 geometry (8000 blocks/surface)\n",
             path);
@@ -513,7 +516,7 @@ static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile,
     if (fd < 0)
         die("%s: cannot open/create: %s\n", path, strerror(errno));
     if (image_is_regular() &&
-        ftruncate(fd, (off_t)((uint64_t)P7_NBLOCKS * word->block_bytes * 2)) < 0)
+        ftruncate(fd, (off_t)((uint64_t)P7_NBLOCKS * word->block_bytes)) < 0)
         die("%s: ftruncate: %s\n", path, strerror(errno));
 
     /* free data blocks: 712 .. 6399 (the kernel area 6400..7999 is reserved) */

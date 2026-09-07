@@ -4,11 +4,13 @@
  *
  * The first Unix filesystem (Bell Labs, 1969) is word-addressed: 18-bit words,
  * 64-word blocks.  This backend unpacks the SimH RB09 image (one word per
- * 4-byte little-endian slot, filesystem on surface 1) into 32-bit words and
- * presents the result through the byte-oriented filsys ops table -- file sizes
- * and offsets are doubled (two 7-bit ASCII characters per 18-bit word, packed
- * in the low bits of each 9-bit half) so text files read back as plain ASCII.
- * See pdp7fs.h and pdp7-unix's tools/mkfs7.
+ * 4-byte little-endian slot) into 32-bit words and presents the result through
+ * the byte-oriented filsys ops table -- file sizes and offsets are doubled (two
+ * 7-bit ASCII characters per 18-bit word, packed in the low bits of each 9-bit
+ * half) so text files read back as plain ASCII.  The mount offset points at the
+ * filesystem surface: byte 0 of a bare surface image, or P7_NBLOCKS*block_bytes
+ * into a full two-surface RB09 disk image.  See pdp7fs.h and pdp7-unix's
+ * tools/mkfs7.
  */
 #include <config.h>
 #include "pdp7fs.h"
@@ -24,11 +26,13 @@
 
 /* ---- word-level block io ------------------------------------------------ */
 
-/* Read block `bno` (64 words) out of the image's filesystem surface. */
+/* Read block `bno` (64 words) out of the image's filesystem surface.  `fs->base`
+ * is the byte offset of the surface itself, so this matches every other
+ * backend's "-o offset=" convention. */
 static int read_words(p7fs_t *fs, uint32_t bno, uint32_t *words) {
     uint8_t raw[P7_MAXBLOCKBYTES];
     uint32_t bb = fs->word->block_bytes;
-    off_t pos = (off_t)fs->base + (off_t)((uint64_t)P7_NBLOCKS * bb) + (off_t)bno * (off_t)bb;
+    off_t pos = (off_t)fs->base + (off_t)bno * (off_t)bb;
     if (fs->io->read(fs, raw, bb, pos))
         return -EIO;
     for (uint32_t i = 0; i < P7_WSIZE; i++)
@@ -41,7 +45,7 @@ static int write_words(p7fs_t *fs, uint32_t bno, const uint32_t *words) {
     for (uint32_t i = 0; i < P7_WSIZE; i++)
         fs->word->put(raw, i, words[i]);
     uint32_t bb = fs->word->block_bytes;
-    off_t pos = (off_t)fs->base + (off_t)((uint64_t)P7_NBLOCKS * bb) + (off_t)bno * (off_t)bb;
+    off_t pos = (off_t)fs->base + (off_t)bno * (off_t)bb;
     if (fs->io->write(fs, raw, bb, pos))
         return -EIO;
     return 0;
@@ -165,13 +169,12 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly,
     fs->io = &filsys_io_file;
 
     uint32_t bb = fs->word->block_bytes;
-    uint64_t surf1 = (uint64_t)P7_NBLOCKS * bb;
     uint64_t imgsize;
     if (filsys_dev_size(fs->fd, &imgsize) != 0 ||
-        fs->base + surf1 + bb > imgsize) {
+        fs->base + bb > imgsize) {
         close(fs->fd);
         fs->fd = -1;
-        return -EINVAL;   /* image too small to hold surface 1 */
+        return -EINVAL;   /* image too small to hold the filesystem surface */
     }
 
     uint32_t sb[P7_WSIZE];
