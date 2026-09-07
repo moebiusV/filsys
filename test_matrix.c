@@ -460,6 +460,25 @@ static int op_rmdir(filsys_t *fs)    { return filsys_rmdir(fs, "/d"); }
 static int op_link(filsys_t *fs)     { return filsys_link(fs, "/f", "/g"); }
 static int op_rename(filsys_t *fs)   { return filsys_rename(fs, "/f", "/g", 0); }
 
+/* rename with a replaced target, and a directory rename -- these exercise the
+ * deferred-target-free and the parent-link/".." fixups that the plain
+ * file->new-name rename does not reach. */
+static void setup_file2(filsys_t *fs) {   /* /f and /g both exist */
+    uint8_t buf[4096];
+    memset(buf, 'a', sizeof buf);
+    filsys_create(fs, "/f", 0644, 0, 0);
+    filsys_write(fs, "/f", buf, sizeof buf, 0);
+    filsys_create(fs, "/g", 0644, 0, 0);
+    filsys_write(fs, "/g", buf, sizeof buf, 0);
+}
+static void setup_dir2(filsys_t *fs) {    /* /d1 and /d2 both exist (empty) */
+    filsys_mkdir(fs, "/d1", 0755, 0, 0);
+    filsys_mkdir(fs, "/d2", 0755, 0, 0);
+}
+static int op_rename_over(filsys_t *fs)     { return filsys_rename(fs, "/f", "/g", 0); }
+static int op_rename_dir(filsys_t *fs)      { return filsys_rename(fs, "/d", "/e", 0); }
+static int op_rename_dir_over(filsys_t *fs) { return filsys_rename(fs, "/d1", "/d2", 0); }
+
 /* Fail the 1st, 2nd, ... read/write of a single mutator and require, after every
  * injected failure: no aliasing (dup==0) and a salvage-recoverable filesystem
  * (fsck -s then errors==0).  The loop stops once an injection point does fewer
@@ -516,6 +535,9 @@ static void fault_test(void) {
         { "rmdir",    setup_dir,  op_rmdir },
         { "link",     setup_file, op_link },
         { "rename",   setup_file, op_rename },
+        { "rename_over",     setup_file2, op_rename_over },
+        { "rename_dir",      setup_dir,   op_rename_dir },
+        { "rename_dir_over", setup_dir2,  op_rename_dir_over },
     };
     static const struct { fail_mode_e mode; const char *label; } modes[] = {
         { FAIL_WRITE, "write" },
@@ -529,6 +551,53 @@ static void fault_test(void) {
         for (size_t m = 0; m < sizeof mut / sizeof mut[0]; m++)
             for (size_t mo = 0; mo < sizeof modes / sizeof modes[0]; mo++)
                 fault_mutator(&f, &mut[m], modes[mo].mode, modes[mo].label);
+    }
+}
+
+/* Rename semantics: the POSIX type rules and the no-cycle rule.  Deterministic
+ * (no fault injection): each rejected operation must return the right errno and
+ * leave the filesystem clean.  The cycle rule walks ".." entries, which the
+ * PDP-7 backend synthesizes (always pointing at the root, since a real PDP-7
+ * directory stores no parent link), so that one check is skipped there. */
+static void rename_semantics(void) {
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        if (!fmt_at(i, &f))
+            break;
+        char img[64], cmd[512], what[128];
+        snprintf(img, sizeof img, "test_matrix_%s_ren.img", f.name);
+        unlink(img);
+        if (f.edition == FILSYS_PDP7)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                     f.name, img, f.blocks);
+        if (system(cmd) != 0) { ok("rename mkfs", 0); unlink(img); continue; }
+
+        filsys_t *fs;
+        if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
+            ok("rename open", 0); unlink(img); continue;
+        }
+
+        filsys_create(fs, "/f", 0644, 0, 0);
+        filsys_mkdir(fs, "/d", 0755, 0, 0);
+
+        snprintf(what, sizeof what, "%s rename file->dir EISDIR", f.name);
+        ok(what, filsys_rename(fs, "/f", "/d", 0) == -EISDIR);
+        snprintf(what, sizeof what, "%s rename dir->file ENOTDIR", f.name);
+        ok(what, filsys_rename(fs, "/d", "/f", 0) == -ENOTDIR);
+
+        if (f.edition != FILSYS_PDP7) {
+            filsys_mkdir(fs, "/a", 0755, 0, 0);
+            filsys_mkdir(fs, "/a/b", 0755, 0, 0);
+            snprintf(what, sizeof what, "%s rename dir->descendant EINVAL", f.name);
+            ok(what, filsys_rename(fs, "/a", "/a/b/c", 0) == -EINVAL);
+        }
+
+        filsys_close(fs);
+        snprintf(what, sizeof what, "%s rename rejected clean", f.name);
+        ok(what, fsck_is_clean(f.name, img));
+        unlink(img);
     }
 }
 
@@ -623,6 +692,7 @@ int main(void) {
     v6_large_file();
     crash_consistency();
     durability_test();
+    rename_semantics();
     fault_test();
     if (failures) {
         printf("%d failure(s)\n", failures);
