@@ -95,6 +95,20 @@ if ENABLE_IMAGE_TESTS
 TESTS += test.sh
 endif
 
+# The external-oracle test (test_oracle) writes a hard-linked directory into a
+# V7 image and validates it with the *historical* icheck/dcheck under simh, via
+# the `prebsd` driver (sibling repo; $PREBSD overrides its path).  It needs
+# rp06-0.disk, prebsd, and the `pdp11` simh binary, so it is a separate opt-in
+# (--enable-oracle-tests); when enabled it *fails* rather than skips on a
+# missing prerequisite, so an explicitly-enabled run cannot pass silently.
+if ENABLE_ORACLE_TESTS
+TESTS += test_oracle
+check_PROGRAMS += test_oracle
+test_oracle_SOURCES = test_oracle.c
+test_oracle_LDADD = libfilsys.a
+test_oracle_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
+endif
+
 # Rebuild the dist tarball and check every checksum the packaging pins (sha256,
 # sha512, blake2s, size) against it.  This is the mechanical guard against the
 # tag/checksum drift that bit us twice: `make dist` is reproducible (see

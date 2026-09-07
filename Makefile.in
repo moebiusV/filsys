@@ -97,9 +97,18 @@ POST_UNINSTALL = :
 bin_PROGRAMS = findfs.filsys$(EXEEXT) mkfs.filsys$(EXEEXT) \
 	fsck.filsys$(EXEEXT)
 sbin_PROGRAMS = mount.filsys$(EXEEXT)
-TESTS = test_matrix$(EXEEXT) $(am__append_1)
-check_PROGRAMS = test_matrix$(EXEEXT)
+TESTS = test_matrix$(EXEEXT) $(am__append_1) $(am__EXEEXT_1)
+check_PROGRAMS = test_matrix$(EXEEXT) $(am__EXEEXT_1)
 @ENABLE_IMAGE_TESTS_TRUE@am__append_1 = test.sh
+
+# The external-oracle test (test_oracle) writes a hard-linked directory into a
+# V7 image and validates it with the *historical* icheck/dcheck under simh, via
+# the `prebsd` driver (sibling repo; $PREBSD overrides its path).  It needs
+# rp06-0.disk, prebsd, and the `pdp11` simh binary, so it is a separate opt-in
+# (--enable-oracle-tests); when enabled it *fails* rather than skips on a
+# missing prerequisite, so an explicitly-enabled run cannot pass silently.
+@ENABLE_ORACLE_TESTS_TRUE@am__append_2 = test_oracle
+@ENABLE_ORACLE_TESTS_TRUE@am__append_3 = test_oracle
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -118,6 +127,7 @@ am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" \
 	"$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" \
 	"$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)" \
 	"$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(filsysincludedir)"
+@ENABLE_ORACLE_TESTS_TRUE@am__EXEEXT_1 = test_oracle$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS) $(sbin_PROGRAMS)
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
@@ -200,6 +210,13 @@ test_matrix_OBJECTS = $(am_test_matrix_OBJECTS)
 test_matrix_DEPENDENCIES = libfilsys.a
 test_matrix_LINK = $(CCLD) $(test_matrix_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+am__test_oracle_SOURCES_DIST = test_oracle.c
+@ENABLE_ORACLE_TESTS_TRUE@am_test_oracle_OBJECTS =  \
+@ENABLE_ORACLE_TESTS_TRUE@	test_oracle-test_oracle.$(OBJEXT)
+test_oracle_OBJECTS = $(am_test_oracle_OBJECTS)
+@ENABLE_ORACLE_TESTS_TRUE@test_oracle_DEPENDENCIES = libfilsys.a
+test_oracle_LINK = $(CCLD) $(test_oracle_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -244,7 +261,8 @@ am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po \
 	./$(DEPDIR)/mkfs_filsys-v1fs.Po \
 	./$(DEPDIR)/mkfs_filsys-v7fs.Po \
 	./$(DEPDIR)/mount_filsys-mount.filsys.Po \
-	./$(DEPDIR)/test_matrix-test_matrix.Po
+	./$(DEPDIR)/test_matrix-test_matrix.Po \
+	./$(DEPDIR)/test_oracle-test_oracle.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -264,10 +282,12 @@ am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libfilsys_a_SOURCES) $(findfs_filsys_SOURCES) \
 	$(fsck_filsys_SOURCES) $(mkfs_filsys_SOURCES) \
-	$(mount_filsys_SOURCES) $(test_matrix_SOURCES)
+	$(mount_filsys_SOURCES) $(test_matrix_SOURCES) \
+	$(test_oracle_SOURCES)
 DIST_SOURCES = $(libfilsys_a_SOURCES) $(findfs_filsys_SOURCES) \
 	$(fsck_filsys_SOURCES) $(mkfs_filsys_SOURCES) \
-	$(mount_filsys_SOURCES) $(test_matrix_SOURCES)
+	$(mount_filsys_SOURCES) $(test_matrix_SOURCES) \
+	$(am__test_oracle_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -664,6 +684,9 @@ dist_boot_DATA = boot/hpuboot boot/rpuboot
 test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
+@ENABLE_ORACLE_TESTS_TRUE@test_oracle_SOURCES = test_oracle.c
+@ENABLE_ORACLE_TESTS_TRUE@test_oracle_LDADD = libfilsys.a
+@ENABLE_ORACLE_TESTS_TRUE@test_oracle_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -863,6 +886,10 @@ test_matrix$(EXEEXT): $(test_matrix_OBJECTS) $(test_matrix_DEPENDENCIES) $(EXTRA
 	@rm -f test_matrix$(EXEEXT)
 	$(AM_V_CCLD)$(test_matrix_LINK) $(test_matrix_OBJECTS) $(test_matrix_LDADD) $(LIBS)
 
+test_oracle$(EXEEXT): $(test_oracle_OBJECTS) $(test_oracle_DEPENDENCIES) $(EXTRA_test_oracle_DEPENDENCIES) 
+	@rm -f test_oracle$(EXEEXT)
+	$(AM_V_CCLD)$(test_oracle_LINK) $(test_oracle_OBJECTS) $(test_oracle_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -899,6 +926,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-v7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-mount.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_matrix-test_matrix.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_oracle-test_oracle.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -1339,6 +1367,20 @@ test_matrix-test_matrix.obj: test_matrix.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_matrix.c' object='test_matrix-test_matrix.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -c -o test_matrix-test_matrix.obj `if test -f 'test_matrix.c'; then $(CYGPATH_W) 'test_matrix.c'; else $(CYGPATH_W) '$(srcdir)/test_matrix.c'; fi`
+
+test_oracle-test_oracle.o: test_oracle.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_oracle_CFLAGS) $(CFLAGS) -MT test_oracle-test_oracle.o -MD -MP -MF $(DEPDIR)/test_oracle-test_oracle.Tpo -c -o test_oracle-test_oracle.o `test -f 'test_oracle.c' || echo '$(srcdir)/'`test_oracle.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/test_oracle-test_oracle.Tpo $(DEPDIR)/test_oracle-test_oracle.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_oracle.c' object='test_oracle-test_oracle.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_oracle_CFLAGS) $(CFLAGS) -c -o test_oracle-test_oracle.o `test -f 'test_oracle.c' || echo '$(srcdir)/'`test_oracle.c
+
+test_oracle-test_oracle.obj: test_oracle.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_oracle_CFLAGS) $(CFLAGS) -MT test_oracle-test_oracle.obj -MD -MP -MF $(DEPDIR)/test_oracle-test_oracle.Tpo -c -o test_oracle-test_oracle.obj `if test -f 'test_oracle.c'; then $(CYGPATH_W) 'test_oracle.c'; else $(CYGPATH_W) '$(srcdir)/test_oracle.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/test_oracle-test_oracle.Tpo $(DEPDIR)/test_oracle-test_oracle.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_oracle.c' object='test_oracle-test_oracle.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_oracle_CFLAGS) $(CFLAGS) -c -o test_oracle-test_oracle.obj `if test -f 'test_oracle.c'; then $(CYGPATH_W) 'test_oracle.c'; else $(CYGPATH_W) '$(srcdir)/test_oracle.c'; fi`
 install-man1: $(dist_man_MANS)
 	@$(NORMAL_INSTALL)
 	@list1=''; \
@@ -1728,6 +1770,13 @@ test.sh.log: test.sh
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
+test_oracle.log: test_oracle$(EXEEXT)
+	@p='test_oracle$(EXEEXT)'; \
+	b='test_oracle'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
 .test.log:
 	@p='$<'; \
 	$(am__set_b); \
@@ -2004,6 +2053,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
+	-rm -f ./$(DEPDIR)/test_oracle-test_oracle.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-hdr distclean-tags
@@ -2083,6 +2133,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
+	-rm -f ./$(DEPDIR)/test_oracle-test_oracle.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 

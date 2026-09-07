@@ -55,6 +55,19 @@ AC_ARG_ENABLE([image-tests],
     [enable_image_tests=$enableval], [enable_image_tests=no])
 AM_CONDITIONAL([ENABLE_IMAGE_TESTS], [test "x$enable_image_tests" = xyes])
 
+# ---------------------------------------------------------------------------
+# Optional external-oracle test (test_oracle): write a hard-linked directory
+# into a V7 image and check it with the historical icheck/dcheck under simh via
+# the prebsd driver (sibling repo).  Needs rp06-0.disk, prebsd, and pdp11; off
+# by default.  When enabled the test *fails* (not skips) on a missing
+# prerequisite.
+# ---------------------------------------------------------------------------
+AC_ARG_ENABLE([oracle-tests],
+    [AS_HELP_STRING([--enable-oracle-tests],
+                    [run the simh V7 oracle test (icheck/dcheck) in `make check'])],
+    [enable_oracle_tests=$enableval], [enable_oracle_tests=no])
+AM_CONDITIONAL([ENABLE_ORACLE_TESTS], [test "x$enable_oracle_tests" = xyes])
+
 AC_CONFIG_FILES([Makefile
                  filsys.pc])
 AC_OUTPUT

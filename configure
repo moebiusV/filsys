@@ -646,6 +646,8 @@ ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
+ENABLE_ORACLE_TESTS_FALSE
+ENABLE_ORACLE_TESTS_TRUE
 ENABLE_IMAGE_TESTS_FALSE
 ENABLE_IMAGE_TESTS_TRUE
 FUSE3_LIBS
@@ -755,6 +757,7 @@ enable_maintainer_mode
 enable_dependency_tracking
 enable_largefile
 enable_image_tests
+enable_oracle_tests
 enable_year2038
 '
       ac_precious_vars='build_alias
@@ -1404,6 +1407,8 @@ Optional Features:
                           speeds up one-time build
   --disable-largefile     omit support for large files
   --enable-image-tests    run the FUSE image smoke test in `make check'
+  --enable-oracle-tests   run the simh V7 oracle test (icheck/dcheck) in `make
+                          check'
   --enable-year2038       support timestamps after 2038
 
 Some influential environment variables:
@@ -5489,6 +5494,31 @@ else
 fi
 
 
+# ---------------------------------------------------------------------------
+# Optional external-oracle test (test_oracle): write a hard-linked directory
+# into a V7 image and check it with the historical icheck/dcheck under simh via
+# the prebsd driver (sibling repo).  Needs rp06-0.disk, prebsd, and pdp11; off
+# by default.  When enabled the test *fails* (not skips) on a missing
+# prerequisite.
+# ---------------------------------------------------------------------------
+# Check whether --enable-oracle-tests was given.
+if test ${enable_oracle_tests+y}
+then :
+  enableval=$enable_oracle_tests; enable_oracle_tests=$enableval
+else case e in #(
+  e) enable_oracle_tests=no ;;
+esac
+fi
+
+ if test "x$enable_oracle_tests" = xyes; then
+  ENABLE_ORACLE_TESTS_TRUE=
+  ENABLE_ORACLE_TESTS_FALSE='#'
+else
+  ENABLE_ORACLE_TESTS_TRUE='#'
+  ENABLE_ORACLE_TESTS_FALSE=
+fi
+
+
 ac_config_files="$ac_config_files Makefile filsys.pc"
 
 cat >confcache <<\_ACEOF
@@ -5648,6 +5678,10 @@ fi
 
 if test -z "${ENABLE_IMAGE_TESTS_TRUE}" && test -z "${ENABLE_IMAGE_TESTS_FALSE}"; then
   as_fn_error $? "conditional \"ENABLE_IMAGE_TESTS\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${ENABLE_ORACLE_TESTS_TRUE}" && test -z "${ENABLE_ORACLE_TESTS_FALSE}"; then
+  as_fn_error $? "conditional \"ENABLE_ORACLE_TESTS\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 
