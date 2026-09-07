@@ -56,8 +56,7 @@ enum {
     FILSYS_BSD29 = 35,   /* 2.9BSD: V7 inode, 1024-byte blocks, 4 direct + 3 indirect */
     FILSYS_BSD211 = 36,   /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
     FILSYS_SYSIII = 37,   /* System III: V7 superblock (no magic), middle-endian */
-    FILSYS_SYSV   = 38,   /* System V s5fs: s_magic/s_type, little-endian */
-    FILSYS_SYSV_BE = 39   /* System V s5fs: s_magic/s_type, big-endian (68k/3B) */
+    FILSYS_SVR2   = 38    /* System V Release 2 s5fs: s_magic/s_type; byte order from -o arch */
 };
 
 /* One row of the edition name table (defined in filsys_format.c): the canonical
@@ -111,6 +110,12 @@ typedef struct filsys filsys_t;  /* opaque */
  * default, and it is ignored for byte-addressed editions. */
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
                 uint64_t offset, uid_t uid, gid_t gid, const char *packing);
+/* Like filsys_open, but `arch` overrides the edition's byte order (a CPU name
+ * such as "vax" for little-endian or "3b2"/"68k" for big-endian).  NULL keeps
+ * the edition's default. */
+int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly,
+                     uint64_t offset, uid_t uid, gid_t gid, const char *packing,
+                     const char *arch);
 /* Flush the superblock (and pending metadata) and close. */
 void filsys_close(filsys_t *fs);
 /* Flush the superblock (and pending metadata) without closing. */

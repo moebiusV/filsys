@@ -617,9 +617,10 @@ int main(int argc, char **argv)
     uint64_t offblock = 0;
     int edition = -1;   /* no default: the version must be named explicitly */
     const char *packing = NULL;   /* PDP-7 word container codec */
+    const char *arch = NULL;      /* CPU arch: overrides the edition's byte order */
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:b:m:n:P:")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:b:m:n:P:a:")) != -1) {
         switch (c) {
         case 'v':
             edition = filsys_parse_edition("mkfs.filsys", optarg);
@@ -631,14 +632,15 @@ int main(int argc, char **argv)
         case 'm': v7_m = (uint16_t)strtoul(optarg, NULL, 0); break;
         case 'n': v7_n = (uint16_t)strtoul(optarg, NULL, 0); break;
         case 'P': packing = optarg; break;
+        case 'a': arch = optarg; break;
         default:
-            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-b boot] [-m m] [-n n] image [blocks]\n"
+            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-b boot] [-m m] [-n n] image [blocks]\n"
                             "  editions: %s\n", filsys_editions_usage());
             return 1;
         }
     }
     if (optind >= argc) {
-        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-b boot] [-m m] [-n n] image [blocks]\n"
+        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-b boot] [-m m] [-n n] image [blocks]\n"
                         "  editions: %s\n", filsys_editions_usage());
         return 1;
     }
@@ -665,6 +667,14 @@ int main(int argc, char **argv)
     /* Set the edition's block size before resolve_blocks computes the byte
      * offset and block count in that block size. */
     filsys_edition_t fs = filsys_getformat(edition);
+    if (arch) {
+        const byte_order_ops_t *bo = filsys_arch_bo(arch);
+        if (!bo) {
+            fprintf(stderr, "mkfs.filsys: bad arch '%s'\n", arch);
+            return 1;
+        }
+        fs.bo = bo;
+    }
     bsize = fs.bsize;
     blocks = resolve_blocks(path, offblock, blocks);
 
