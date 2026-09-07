@@ -66,6 +66,18 @@ static int image_is_regular(void)
     return fstat(fd, &st) == 0 && S_ISREG(st.st_mode);
 }
 
+/* Open the image read-write.  A block (or character) device -- and an existing
+ * regular file -- opens directly; only a missing path is created as a regular
+ * file.  The device is never truncated: its size is fixed by the device, and
+ * O_TRUNC on one is at best ignored and at worst rejected. */
+static int open_image(const char *path)
+{
+    int f = open(path, O_RDWR);
+    if (f < 0 && errno == ENOENT)
+        f = open(path, O_RDWR | O_CREAT, 0666);
+    return f;
+}
+
 static void pblock(uint32_t bno, const uint8_t *buf);
 static void write_boot(const char *path);
 static void die(const char *fmt, ...);
@@ -99,7 +111,7 @@ static uint32_t resolve_blocks(const char *path, uint64_t offblock, uint32_t blo
 {
     base = offblock * bsize;
 
-    fd = open(path, O_RDWR | O_CREAT, 0666);
+    fd = open_image(path);
     if (fd < 0)
         die("%s: cannot open/create: %s\n", path, strerror(errno));
 
@@ -497,9 +509,9 @@ static void mkfs_pdp7(const char *path, uint32_t blocks, const char *bootfile,
     (void)bootfile;
     p7_wc = word;
 
-    fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);
+    fd = open_image(path);
     if (fd < 0)
-        die("%s: cannot create: %s\n", path, strerror(errno));
+        die("%s: cannot open/create: %s\n", path, strerror(errno));
     if (image_is_regular() &&
         ftruncate(fd, (off_t)((uint64_t)P7_NBLOCKS * word->block_bytes * 2)) < 0)
         die("%s: ftruncate: %s\n", path, strerror(errno));
