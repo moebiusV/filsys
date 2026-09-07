@@ -247,9 +247,8 @@ int main(int argc, char *argv[]) {
     while ((c = getopt(argc, argv, "v:o:rfdc")) != -1) {
         switch (c) {
         case 'v': {
-            int v = filsys_edition_by_name(optarg);
+            int v = filsys_parse_edition(argv[0], optarg);
             if (v < 0) {
-                fprintf(stderr, "%s: unknown Unix version \"%s\"\n", argv[0], optarg);
                 usage(argv[0]);
                 return 2;
             }

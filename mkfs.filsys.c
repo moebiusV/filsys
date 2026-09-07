@@ -619,11 +619,9 @@ int main(int argc, char **argv)
     while ((c = getopt(argc, argv, "v:o:b:m:n:P:")) != -1) {
         switch (c) {
         case 'v':
-            edition = filsys_edition_by_name(optarg);
-            if (edition < 0) {
-                fprintf(stderr, "mkfs.filsys: bad edition '%s'\n", optarg);
+            edition = filsys_parse_edition("mkfs.filsys", optarg);
+            if (edition < 0)
                 return 1;
-            }
             break;
         case 'o': offblock = strtoull(optarg, NULL, 0); break;
         case 'b': bootfile = optarg; break;
