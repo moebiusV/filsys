@@ -228,13 +228,13 @@ static struct fuse_operations filsys_ops = {
 static void usage(const char *p) {
     fprintf(stderr,
             "usage: %s -v <%s> [-o offset=N[,version=N][,packing=NAME][,arch=NAME][,uid=N][,gid=N]]\n"
-            "                [-r] [-f] [-d] <image> <mountpoint>\n"
+            "                [-r] [-f] [-d] [-F] <image> <mountpoint>\n"
             "       %s -v <edition> [-o offset=N] -c <image>   # integrity check\n",
             p, filsys_editions_usage(), p);
 }
 
 int main(int argc, char *argv[]) {
-    int ver = -1, readonly = 0, foreground = 0, debug = 0, check = 0;
+    int ver = -1, readonly = 0, foreground = 0, debug = 0, check = 0, force = 0;
     uint64_t offset = 0;
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
     const char *packing = NULL; /* PDP-7 word container codec (rb09|packed18|rim) */
@@ -245,7 +245,7 @@ int main(int argc, char *argv[]) {
     /* getopt, not a hand-rolled loop, so the mount(8) argument order
      * `mount.filsys image dir -o opts` parses (GNU getopt permutes operands to
      * the front, so trailing options are fine). */
-    while ((c = getopt(argc, argv, "v:o:rfdc")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:rfdcF")) != -1) {
         switch (c) {
         case 'v': {
             int v = filsys_parse_edition(argv[0], optarg);
@@ -272,9 +272,9 @@ int main(int argc, char *argv[]) {
                 } else if (!strncmp(tok, "gid=", 4)) {
                     gid = atoi(tok + 4);
                 } else if (!strncmp(tok, "packing=", 8)) {
-                    packing = tok + 8;
+                    packing = strdup(tok + 8);   /* copy: opts is freed below */
                 } else if (!strncmp(tok, "arch=", 5)) {
-                    arch = tok + 5;
+                    arch = strdup(tok + 5);      /* copy: opts is freed below */
                 } else {
                     /* pass anything else through to FUSE (allow_other, ...) */
                     if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
@@ -289,6 +289,7 @@ int main(int argc, char *argv[]) {
         case 'f': foreground = 1; break;
         case 'd': debug = 1; break;
         case 'c': check = 1; break;
+        case 'F': force = 1; break;   /* open despite a bad superblock magic */
         default: usage(argv[0]); return 2;
         }
     }
@@ -303,11 +304,16 @@ int main(int argc, char *argv[]) {
     const char *mountpoint = check ? NULL : argv[optind + 1];
 
     filsys_t *k = NULL;
+    const char *errmsg = NULL;
     int rc = filsys_open_arch(&k, ver, image, readonly || check, offset,
                               uid >= 0 ? (uid_t)uid : getuid(),
-                              gid >= 0 ? (gid_t)gid : getgid(), packing, arch);
+                              gid >= 0 ? (gid_t)gid : getgid(), packing, arch,
+                              force, &errmsg);
+    free((void *)packing);
+    free((void *)arch);
     if (rc) {
-        fprintf(stderr, "filsys: cannot open %s: %s\n", image, strerror(-rc));
+        fprintf(stderr, "filsys: cannot open %s: %s\n", image,
+                errmsg ? errmsg : strerror(-rc));
         return 1;
     }
 

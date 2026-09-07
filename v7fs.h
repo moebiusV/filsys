@@ -270,6 +270,7 @@ typedef struct filsys_edition {
     uint32_t    magic;              /* superblock magic word (0 = none) */
     int         magic_off;          /* byte offset of magic in the superblock */
     uint8_t     dyn_bsize;          /* block size comes from s_type (System V) */
+    uint8_t     ignore_magic;       /* -F: open despite a magic that matches neither order */
     uint8_t     fmod_back;          /* s_fmod sits N bytes before s_time (V7 2, 2.11BSD 3) */
     uint16_t    rootino;            /* root directory inode (1 / 2 / 41) */
     uint8_t     inode_size;         /* bytes per on-disk inode */
@@ -327,6 +328,14 @@ typedef struct filsys_edition {
  * overrides.  Returns a zeroed descriptor (ops == NULL) for an unknown
  * edition. */
 filsys_edition_t filsys_getformat(int edition);
+
+/* Resolve a magic-bearing edition's byte order from its on-disk magic word
+ * (and, if given, check it against `arch`).  Sets fmt->bo; returns 0 or a
+ * negative errno with *errmsg (if non-NULL) set to a static description.
+ * `force` proceeds despite a magic that matches neither byte order. */
+int filsys_resolve_byteorder(filsys_edition_t *fmt, const char *path,
+                             uint64_t offset, const char *arch, int force,
+                             const char **errmsg);
 
 /* ---- lifecycle --------------------------------------------------------- */
 

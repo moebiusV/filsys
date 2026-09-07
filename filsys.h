@@ -111,12 +111,15 @@ typedef struct filsys filsys_t;  /* opaque */
  * default, and it is ignored for byte-addressed editions. */
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
                 uint64_t offset, uid_t uid, gid_t gid, const char *packing);
-/* Like filsys_open, but `arch` overrides the edition's byte order (a CPU name
- * such as "vax" for little-endian or "3b2"/"68k" for big-endian).  NULL keeps
- * the edition's default. */
+/* Like filsys_open, but `arch` names the CPU ("vax"/"x86" little-endian,
+ * "3b2"/"68k" big-endian).  For magic-bearing editions the byte order is
+ * detected from the superblock magic, so a big-endian volume opens without an
+ * arch; `arch` is then checked against it.  `force` opens despite a magic word
+ * that matches neither byte order (using `arch`).  On failure *errmsg (if
+ * non-NULL) receives a static description of a byte-order problem, else NULL. */
 int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly,
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
-                     const char *arch);
+                     const char *arch, int force, const char **errmsg);
 /* Flush the superblock (and pending metadata) and close. */
 void filsys_close(filsys_t *fs);
 /* Flush the superblock (and pending metadata) without closing. */

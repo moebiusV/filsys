@@ -13,6 +13,7 @@ mount.filsys, umount.filsys \- mount and dismount a Research Unix filesystem
 .RB [ \-r ]
 .RB [ \-f ]
 .RB [ \-d ]
+.RB [ \-F ]
 .I image mountpoint
 .br
 .B mount.filsys
@@ -166,12 +167,28 @@ and
 .BR ppc ;
 and PDP-11 middle-endian
 .BR pdp11 .
+For the editions that carry a superblock magic word
+.RB ( xenix ,
+.BR sysvr2 ,
+.BR sysvr4 ),
+the byte order is detected from that magic, so a big-endian System V volume
+mounts correctly even when
+.B arch=
+is omitted; an explicit
+.B arch=
+that contradicts the magic is refused.
 .TP
 .B \-r
 Mount read-only.
 .TP
 .B \-f
 Stay in the foreground (do not daemonize).
+.TP
+.B \-F
+Open the filesystem even when its superblock magic word matches neither byte
+order (a foreign or damaged image).  Only meaningful with
+.BR \-o " arch=" ,
+which then fixes the byte order to use.
 .TP
 .B \-d
 Enable FUSE debug output (implies

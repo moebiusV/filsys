@@ -172,16 +172,13 @@ static int split_path(const char *path, char *dir, size_t dirsz,
 
 int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly,
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
-                     const char *arch) {
+                     const char *arch, int force, const char **errmsg) {
     filsys_edition_t fmt = filsys_getformat(edition);
     if (!fmt.ops)
         return -EINVAL;
-    if (arch) {   /* the arch overrides the edition's default byte order */
-        const byte_order_ops_t *bo = filsys_arch_bo(arch);
-        if (!bo)
-            return -EINVAL;
-        fmt.bo = bo;
-    }
+    int rc = filsys_resolve_byteorder(&fmt, path, offset, arch, force, errmsg);
+    if (rc)
+        return rc;
     if (packing && fmt.word) {   /* packing applies only to word-addressed editions */
         const word_codec_t *wc = filsys_word_codec_by_name(packing);
         if (!wc)
@@ -202,7 +199,7 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
         free(fs);
         return -ENOMEM;
     }
-    int rc = fs->ops->open(fs->fs, path, readonly, &fmt, offset);
+    rc = fs->ops->open(fs->fs, path, readonly, &fmt, offset);
     if (rc) {
         free(fs->fs);
         free(fs);
@@ -228,7 +225,7 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
 
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
                 uint64_t offset, uid_t uid, gid_t gid, const char *packing) {
-    return filsys_open_arch(out, edition, path, readonly, offset, uid, gid, packing, NULL);
+    return filsys_open_arch(out, edition, path, readonly, offset, uid, gid, packing, NULL, 0, NULL);
 }
 
 void filsys_close(filsys_t *fs) {
