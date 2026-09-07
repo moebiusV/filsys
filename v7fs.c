@@ -66,25 +66,25 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
     }
     if (fs->isize_count) {
         /* V6: 16-bit superblock (s_fsize and the free cache are 2 bytes). */
-        fs->isize  = bo_get16le(sb + 0);
-        fs->fsize  = bo_get16le(sb + 2);
-        fs->fl.nfree  = bo_get16le(sb + 4);
+        fs->isize  = fs->bo->get16(sb + 0);
+        fs->fsize  = fs->bo->get16(sb + 2);
+        fs->fl.nfree  = fs->bo->get16(sb + 4);
         for (int i = 0; i < fs->nicfree; i++)
-            fs->fl.free[i] = bo_get16le(sb + 6 + 2 * i);
-        fs->fl.ninode = bo_get16le(sb + 206);
+            fs->fl.free[i] = fs->bo->get16(sb + 6 + 2 * i);
+        fs->fl.ninode = fs->bo->get16(sb + 206);
         for (int i = 0; i < fs->nicinod; i++)
-            fs->fl.inode[i] = bo_get16le(sb + 208 + 2 * i);
+            fs->fl.inode[i] = fs->bo->get16(sb + 208 + 2 * i);
         fs->time   = fs->bo->get32(sb + 412);
         fs->fmod   = sb[410];              /* s_fmod */
     } else {
-        fs->isize  = bo_get16le(sb + 0);
+        fs->isize  = fs->bo->get16(sb + 0);
         fs->fsize  = fs->bo->get32(sb + sb_fsize_off(fs->pack4));
-        fs->fl.nfree  = bo_get16le(sb + sb_nfree_off(fs->pack4));
+        fs->fl.nfree  = fs->bo->get16(sb + sb_nfree_off(fs->pack4));
         for (int i = 0; i < fs->nicfree; i++)
             fs->fl.free[i] = fs->bo->get32(sb + sb_free_off(fs->pack4) + 4 * i);
-        fs->fl.ninode = bo_get16le(sb + sb_ninode_off(fs->pack4, fs->nicfree));
+        fs->fl.ninode = fs->bo->get16(sb + sb_ninode_off(fs->pack4, fs->nicfree));
         for (int i = 0; i < V7_NICINOD; i++)
-            fs->fl.inode[i] = bo_get16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
+            fs->fl.inode[i] = fs->bo->get16(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
         fs->time   = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree));
         fs->fmod   = sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back];  /* s_fmod */
     }
@@ -95,13 +95,13 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
     if (fs->isize_count)
         v6_count_free(fs, &fs->fl.tfree, &fs->fl.tinode);
     else if (!fs->pack4 || fs->magic) {
-        int toff = sb_time_off(fs->pack4, fs->nicfree);
-        fs->fl.tfree  = fs->bo->get32(sb + toff + 4);
-        fs->fl.tinode = bo_get16le(sb + toff + 8);
+        int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->dyn_bsize);
+        fs->fl.tfree  = fs->bo->get32(sb + toff);
+        fs->fl.tinode = fs->bo->get16(sb + toff + 4);
     }
     if (fs->interleave) {
-        fs->m      = bo_get16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 10);
-        fs->n      = bo_get16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 12);
+        fs->m      = fs->bo->get16(sb + sb_time_off(fs->pack4, fs->nicfree) + 10);
+        fs->n      = fs->bo->get16(sb + sb_time_off(fs->pack4, fs->nicfree) + 12);
         fs->unique = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26);
     }
     if (fs->magic && fs->bo->get32(sb + fs->magic_off) != fs->magic) {
@@ -196,35 +196,39 @@ static int super_write(filsys_edition_t *fs) {
     if (fs->isize_count) {
         /* V6: a 16-bit superblock (s_fsize and the free cache are 2 bytes), and
          * no s_tfree/s_tinode -- those totals are recomputed on open. */
-        bo_put16le(sb + 0, fs->isize);
-        bo_put16le(sb + 2, (uint16_t)fs->fsize);
-        bo_put16le(sb + 4, fs->fl.nfree);
+        fs->bo->put16(sb + 0, fs->isize);
+        fs->bo->put16(sb + 2, (uint16_t)fs->fsize);
+        fs->bo->put16(sb + 4, fs->fl.nfree);
         for (int i = 0; i < fs->nicfree; i++)
-            bo_put16le(sb + 6 + 2 * i, (uint16_t)fs->fl.free[i]);
-        bo_put16le(sb + 206, fs->fl.ninode);
+            fs->bo->put16(sb + 6 + 2 * i, (uint16_t)fs->fl.free[i]);
+        fs->bo->put16(sb + 206, fs->fl.ninode);
         for (int i = 0; i < fs->nicinod; i++)
-            bo_put16le(sb + 208 + 2 * i, fs->fl.inode[i]);
+            fs->bo->put16(sb + 208 + 2 * i, fs->fl.inode[i]);
         fs->bo->put32(sb + 412, (uint32_t)time(NULL));   /* s_time[2] */
         sb[410] = (uint8_t)(fs->fmod != 0);              /* s_fmod */
     } else {
-        bo_put16le(sb + 0, fs->isize);
+        fs->bo->put16(sb + 0, fs->isize);
         fs->bo->put32(sb + sb_fsize_off(fs->pack4), fs->fsize);
-        bo_put16le(sb + sb_nfree_off(fs->pack4), fs->fl.nfree);
+        fs->bo->put16(sb + sb_nfree_off(fs->pack4), fs->fl.nfree);
         for (int i = 0; i < fs->nicfree; i++)
             fs->bo->put32(sb + sb_free_off(fs->pack4) + 4 * i, fs->fl.free[i]);
-        bo_put16le(sb + sb_ninode_off(fs->pack4, fs->nicfree), fs->fl.ninode);
+        fs->bo->put16(sb + sb_ninode_off(fs->pack4, fs->nicfree), fs->fl.ninode);
         for (int i = 0; i < V7_NICINOD; i++)
-            bo_put16le(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i, fs->fl.inode[i]);
-        fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree), (uint32_t)time(NULL));  /* s_time */
+            fs->bo->put16(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i, fs->fl.inode[i]);
+        uint32_t now = (uint32_t)time(NULL);
+        fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree), now);  /* s_time */
         sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back] = (uint8_t)(fs->fmod != 0); /* s_fmod */
+        if (fs->dyn_bsize)
+            fs->bo->put32(sb + V7_SYSV_STATE_OFF,
+                          fs->fmod ? V7_SYSV_STATE_ACTIVE : V7_SYSV_STATE_CLEAN); /* s_state */
         if (!fs->pack4 || fs->magic) {
-            int toff = sb_time_off(fs->pack4, fs->nicfree);
-            fs->bo->put32(sb + toff + 4, fs->fl.tfree);        /* s_tfree */
-            bo_put16le(sb + toff + 8, (uint16_t)fs->fl.tinode);   /* s_tinode */
+            int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->dyn_bsize);
+            fs->bo->put32(sb + toff, fs->fl.tfree);        /* s_tfree */
+            fs->bo->put16(sb + toff + 4, (uint16_t)fs->fl.tinode);   /* s_tinode */
         }
         if (fs->interleave) {
-            bo_put16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 10, fs->m);
-            bo_put16le(sb + sb_time_off(fs->pack4, fs->nicfree) + 12, fs->n);
+            fs->bo->put16(sb + sb_time_off(fs->pack4, fs->nicfree) + 10, fs->m);
+            fs->bo->put16(sb + sb_time_off(fs->pack4, fs->nicfree) + 12, fs->n);
             fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26, fs->unique);
         }
     }
@@ -249,10 +253,10 @@ int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
     const uint8_t *d = raw + off * fs->inode_size;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = bo_get16le(d + 0);
-    ip->nlink = (int16_t)bo_get16le(d + 2);
-    ip->uid   = (int16_t)bo_get16le(d + 4);
-    ip->gid   = (int16_t)bo_get16le(d + 6);
+    ip->mode  = fs->bo->get16(d + 0);
+    ip->nlink = (int16_t)fs->bo->get16(d + 2);
+    ip->uid   = (int16_t)fs->bo->get16(d + 4);
+    ip->gid   = (int16_t)fs->bo->get16(d + 6);
     ip->size  = fs->bo->get32(d + 8);
     for (int i = 0; i < fs->niaddr; i++)
         ip->addr[i] = fs->addr_width == 4
@@ -284,10 +288,10 @@ int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * fs->inode_size;
-    bo_put16le(d + 0, (uint16_t)ip->mode);
-    bo_put16le(d + 2, (uint16_t)ip->nlink);
-    bo_put16le(d + 4, (uint16_t)ip->uid);
-    bo_put16le(d + 6, (uint16_t)ip->gid);
+    fs->bo->put16(d + 0, (uint16_t)ip->mode);
+    fs->bo->put16(d + 2, (uint16_t)ip->nlink);
+    fs->bo->put16(d + 4, (uint16_t)ip->uid);
+    fs->bo->put16(d + 6, (uint16_t)ip->gid);
     fs->bo->put32(d + 8, ip->size);
     for (int i = 0; i < fs->niaddr; i++) {
         if (fs->addr_width == 4)
@@ -322,7 +326,7 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
         uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
-        fs->fl.nfree = bo_get16le(buf + 0);
+        fs->fl.nfree = fs->bo->get16(buf + 0);
         for (int i = 0; i < fs->nicfree; i++)
             fs->fl.free[i] = v7_get_daddr(fs, buf + fb_free_off(fs->pack4) + fs->daddr_wid * i);
         /* blk was the on-disk chain head; its contents (the next segment) are
@@ -358,7 +362,7 @@ void v7fs_bfree(filsys_edition_t *fs, uint32_t bno) {
     if (fs->fl.nfree >= fs->nicfree) {
         uint8_t buf[V7_MAXBSIZE];
         memset(buf, 0, fs->bsize);
-        bo_put16le(buf + 0, fs->fl.nfree);
+        fs->bo->put16(buf + 0, fs->fl.nfree);
         for (int i = 0; i < fs->nicfree; i++)
             v7_put_daddr(fs, buf + fb_free_off(fs->pack4) + fs->daddr_wid * i, fs->fl.free[i]);
         if (v7fs_write_block(fs, bno, buf) == 0)
@@ -593,7 +597,7 @@ int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size
 
     size_t cnt = 0;
     for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
-        uint16_t ino = bo_get16le(buf + off);
+        uint16_t ino = fs->bo->get16(buf + off);
         if (ino == 0)
             continue;
         out[cnt].ino = ino;
@@ -650,7 +654,7 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
     /* find an empty slot, else append */
     size_t slot = SIZE_MAX;
     for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
-        if (bo_get16le(buf + off) == 0) {
+        if (fs->bo->get16(buf + off) == 0) {
             slot = off;
             break;
         }
@@ -660,7 +664,7 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
         n += fs->dirent_size;
     }
 
-    bo_put16le(buf + slot, (uint16_t)ino);
+    fs->bo->put16(buf + slot, (uint16_t)ino);
     memset(buf + slot + 2, 0, fs->max_namlen);
     memcpy(buf + slot + 2, name, namelen);
 
@@ -680,13 +684,13 @@ int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
     }
     int rc = -ENOENT;
     for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
-        if (bo_get16le(buf + off) == 0)
+        if (fs->bo->get16(buf + off) == 0)
             continue;
         char ent[64];
         memcpy(ent, buf + off + 2, fs->max_namlen);
         ent[fs->max_namlen] = 0;
         if (strcmp(ent, name) == 0) {
-            bo_put16le(buf + off, 0);
+            fs->bo->put16(buf + off, 0);
             memset(buf + off + 2, 0, fs->max_namlen);
             ssize_t w = v7fs_file_write(fs, ip, buf, (size_t)n, 0);
             rc = w < 0 ? (int)w : 0;
@@ -866,7 +870,7 @@ static void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check
                 rep->errors++;
                 break;
             }
-            n = bo_get16le(blk);
+            n = fs->bo->get16(blk);
             if (n > f->nicfree) {
                 printf("free-list block %u has bad count %u\n", bno, n);
                 rep->errors++;
@@ -982,9 +986,9 @@ static int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **e
 
     size_t cnt = 0;
     for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t ino    = bo_get16le(buf + off);
-        uint16_t reclen = bo_get16le(buf + off + 2);
-        uint16_t namlen = bo_get16le(buf + off + 4);
+        uint16_t ino    = fs->bo->get16(buf + off);
+        uint16_t reclen = fs->bo->get16(buf + off + 2);
+        uint16_t namlen = fs->bo->get16(buf + off + 4);
         if (reclen < 6 || off + reclen > (size_t)n)
             break;
         if (ino != 0 && namlen <= fs->max_namlen) {
@@ -1015,15 +1019,15 @@ static int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, co
 
     /* Reuse a free entry (d_ino == 0) that is big enough. */
     for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t d_ino    = bo_get16le(buf + off);
-        uint16_t reclen   = bo_get16le(buf + off + 2);
+        uint16_t d_ino    = fs->bo->get16(buf + off);
+        uint16_t reclen   = fs->bo->get16(buf + off + 2);
         if (reclen < 6 || off + reclen > (size_t)n)
             break;
         if (d_ino == 0 && reclen >= need) {
             memset(buf + off, 0, reclen);
-            bo_put16le(buf + off, (uint16_t)ino);
-            bo_put16le(buf + off + 2, reclen);
-            bo_put16le(buf + off + 4, (uint16_t)namlen);
+            fs->bo->put16(buf + off, (uint16_t)ino);
+            fs->bo->put16(buf + off + 2, reclen);
+            fs->bo->put16(buf + off + 4, (uint16_t)namlen);
             memcpy(buf + off + 6, name, namlen);
             ssize_t w = v7fs_file_write(fs, ip, buf, ip->size, 0);
             free(buf);
@@ -1035,9 +1039,9 @@ static int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, co
     /* Append a new entry at the end (the directory grows). */
     uint8_t ent[80];
     memset(ent, 0, sizeof(ent));
-    bo_put16le(ent, (uint16_t)ino);
-    bo_put16le(ent + 2, (uint16_t)need);
-    bo_put16le(ent + 4, (uint16_t)namlen);
+    fs->bo->put16(ent, (uint16_t)ino);
+    fs->bo->put16(ent + 2, (uint16_t)need);
+    fs->bo->put16(ent + 4, (uint16_t)namlen);
     memcpy(ent + 6, name, namlen);
     ssize_t w = v7fs_file_write(fs, ip, ent, need, n);
     free(buf);
@@ -1052,14 +1056,14 @@ static int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *n
     if (n < 0) { free(buf); return (int)n; }
 
     for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t d_ino    = bo_get16le(buf + off);
-        uint16_t reclen   = bo_get16le(buf + off + 2);
-        uint16_t namlen   = bo_get16le(buf + off + 4);
+        uint16_t d_ino    = fs->bo->get16(buf + off);
+        uint16_t reclen   = fs->bo->get16(buf + off + 2);
+        uint16_t namlen   = fs->bo->get16(buf + off + 4);
         if (reclen < 6 || off + reclen > (size_t)n)
             break;
         if (d_ino != 0 && namlen == strlen(name) &&
             memcmp(buf + off + 6, name, namlen) == 0) {
-            bo_put16le(buf + off, 0);   /* mark free */
+            fs->bo->put16(buf + off, 0);   /* mark free */
             ssize_t w = v7fs_file_write(fs, ip, buf, ip->size, 0);
             free(buf);
             return w < 0 ? (int)w : 0;
@@ -1156,9 +1160,9 @@ static void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) 
             uint8_t blk[V6_BSIZE];
             if (v7fs_read_block(fs, bno, blk))
                 break;
-            n = bo_get16le(blk + 0);
+            n = fs->bo->get16(blk + 0);
             for (int i = 0; i < fs->nicfree; i++)
-                cur[i] = bo_get16le(blk + 2 + 2 * i);
+                cur[i] = fs->bo->get16(blk + 2 + 2 * i);
         }
         if (++guard > fs->fsize + fs->nicfree)
             break;
@@ -1187,13 +1191,13 @@ static int v6_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
     const uint8_t *d = raw + off * fs->inode_size;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = bo_get16le(d + 0);
+    ip->mode  = fs->bo->get16(d + 0);
     ip->nlink = (int16_t)d[2];        /* char */
     ip->uid   = (int16_t)d[3];        /* char */
     ip->gid   = (int16_t)d[4];        /* char */
-    ip->size  = ((uint32_t)d[5] << 16) | bo_get16le(d + 6);
+    ip->size  = ((uint32_t)d[5] << 16) | fs->bo->get16(d + 6);
     for (int i = 0; i < fs->niaddr; i++)
-        ip->addr[i] = bo_get16le(d + 8 + 2 * i);
+        ip->addr[i] = fs->bo->get16(d + 8 + 2 * i);
     ip->atime = fs->bo->get32(d + 24);
     ip->mtime = fs->bo->get32(d + 28);
     ip->ctime = ip->mtime;            /* V6 has no ctime */
@@ -1219,14 +1223,14 @@ static int v6_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * fs->inode_size;
-    bo_put16le(d + 0, (uint16_t)ip->mode);
+    fs->bo->put16(d + 0, (uint16_t)ip->mode);
     d[2] = (uint8_t)ip->nlink;
     d[3] = (uint8_t)ip->uid;
     d[4] = (uint8_t)ip->gid;
     d[5] = (uint8_t)((ip->size >> 16) & 0xff);
-    bo_put16le(d + 6, (uint16_t)(ip->size & 0xffff));
+    fs->bo->put16(d + 6, (uint16_t)(ip->size & 0xffff));
     for (int i = 0; i < fs->niaddr; i++)
-        bo_put16le(d + 8 + 2 * i, (uint16_t)ip->addr[i]);
+        fs->bo->put16(d + 8 + 2 * i, (uint16_t)ip->addr[i]);
     fs->bo->put32(d + 24, ip->atime);
     fs->bo->put32(d + 28, ip->mtime);
     return v7fs_write_block(fs, bno, raw);
@@ -1248,12 +1252,12 @@ static int v6_ind1(filsys_edition_t *fs, uint32_t *slot, uint32_t idx, int creat
     uint8_t buf[V6_BSIZE];
     if (v7fs_read_block(fs, blk, buf))
         return -EIO;
-    uint32_t nb = bo_get16le(buf + 2 * idx);
+    uint32_t nb = fs->bo->get16(buf + 2 * idx);
     if (nb == 0 && create) {
         int rc = v7fs_balloc(fs, &nb);
         if (rc)
             return rc;   /* -EIO (barrier commit) or -ENOSPC */
-        bo_put16le(buf + 2 * idx, (uint16_t)nb);
+        fs->bo->put16(buf + 2 * idx, (uint16_t)nb);
         if (v7fs_write_block(fs, blk, buf))
             return -EIO;
     }
@@ -1277,7 +1281,7 @@ static int v6_ind2(filsys_edition_t *fs, uint32_t *slot, uint32_t o, uint32_t i,
     uint8_t buf[V6_BSIZE];
     if (v7fs_read_block(fs, blk, buf))
         return -EIO;
-    uint32_t sub = bo_get16le(buf + 2 * o);
+    uint32_t sub = fs->bo->get16(buf + 2 * o);
     if (sub == 0 && create) {
         uint8_t z[V6_BSIZE];
         memset(z, 0, V6_BSIZE);
@@ -1286,7 +1290,7 @@ static int v6_ind2(filsys_edition_t *fs, uint32_t *slot, uint32_t o, uint32_t i,
             return rc;   /* -EIO (barrier commit) or -ENOSPC */
         if (v7fs_write_block(fs, sub, z))
             return -EIO;
-        bo_put16le(buf + 2 * o, (uint16_t)sub);
+        fs->bo->put16(buf + 2 * o, (uint16_t)sub);
         if (v7fs_write_block(fs, blk, buf))
             return -EIO;
     }
@@ -1302,7 +1306,7 @@ static int v6_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int creat
             return rc;   /* -EIO (barrier commit) or -ENOSPC */
         uint8_t buf[V6_BSIZE] = {0};
         for (int i = 0; i < V6_NDADDR; i++)
-            bo_put16le(buf + 2 * i, (uint16_t)ip->addr[i]);
+            fs->bo->put16(buf + 2 * i, (uint16_t)ip->addr[i]);
         if (v7fs_write_block(fs, iblk, buf))
             return -EIO;
         for (int i = 0; i < V6_NDADDR; i++)

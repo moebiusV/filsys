@@ -188,9 +188,9 @@ static uint32_t seed_v7(filsys_edition_t *fs)
     uint32_t bno;
     fs->alloc->balloc(fs, &bno);
     memset(db, 0, fs->bsize);
-    bo_put16le(db, fs->rootino);
+    fs->bo->put16(db, fs->rootino);
     memcpy(db + 2, ".", 1);
-    bo_put16le(db + fs->dirent_size, fs->rootino);
+    fs->bo->put16(db + fs->dirent_size, fs->rootino);
     memcpy(db + fs->dirent_size + 2, "..", 2);
     fs->ops->write_block(fs, bno, db);
 

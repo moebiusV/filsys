@@ -218,12 +218,24 @@ filsys_edition_t filsys_getformat(int edition) {
         return f;
     }
     case FILSYS_SVR2: {
-        /* System V Release 2 (the 2-byte-aligned "sysv2" layout, i.e. V7's
-         * field packing), plus s_magic/s_type.  The byte order is the arch's,
-         * not the edition's: default little-endian (VAX/x86), overridden by
-         * -o arch=3b2 / -o arch=68k for the big-endian ports. */
+        /* System V Release 2/3: the 4-byte-aligned s5fs layout (daddr_t/time_t
+         * are 4-byte aligned, so s_ninode is at 212 and s_inode at 214), plus
+         * s_dinfo[4] between s_time and s_tfree, and s_magic/s_type at the tail.
+         * The byte order is the arch's, not the edition's: default little-endian
+         * (VAX/x86), overridden by -o arch=3b2 / -o arch=68k for the big-endian
+         * ports. */
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
-        f.name = "sysvr2"; f.bo = &bo_le;
+        f.name = "sysvr2"; f.bo = &bo_le; f.pack4 = 1;
+        f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
+        return f;
+    }
+    case FILSYS_SVR4: {
+        /* System V Release 4: the same on-disk layout as sysvr2, plus an
+         * s_state field at offset 500 (R2/R3 leave that as s_fill[12]).  The
+         * clean/dirty values are FsOKAY/FsACTIVE, written by super_write. */
+        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
+        f.name = "sysvr4"; f.bo = &bo_le;
+        f.pack4 = 1;
         f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
         return f;
     }

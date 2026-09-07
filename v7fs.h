@@ -107,6 +107,9 @@ enum {
     V7_SYSV_MAGIC    = 0xfd187e20,
     V7_SYSV_MAGIC_OFF = 504,
     V7_SYSV_TYPE_OFF  = 508,
+    V7_SYSV_STATE_OFF = 500,          /* s_state (R4; s_fill[12] in R2/R3) */
+    V7_SYSV_STATE_CLEAN = 0x7c269d38, /* FsOKAY: cleanly unmounted */
+    V7_SYSV_STATE_ACTIVE = 0x5e72d81a,/* FsACTIVE: mounted (dirty) */
     V7_SYSV_Fs1b      = 1,   /* 512-byte blocks */
     V7_SYSV_Fs2b      = 2,   /* 1024-byte blocks */
     V7_SYSV_Fs4b      = 3    /* 2048-byte blocks */
@@ -121,6 +124,11 @@ static inline int sb_free_off(int pack4)   { return pack4 ? 12 : 8; }
 static inline int sb_ninode_off(int pack4, int nicfree) { return sb_free_off(pack4) + 4 * nicfree; }
 static inline int sb_inode_off(int pack4, int nicfree)  { return sb_ninode_off(pack4, nicfree) + 2; }
 static inline int sb_time_off(int pack4, int nicfree)   { return sb_inode_off(pack4, nicfree) + 2*V7_NICINOD + 4 + (pack4 ? 2 : 0); }
+/* s_tfree sits right after s_time in V7/32V/Xenix, but System V inserts
+ * s_dinfo[4] (8 bytes of device info) first, so its totals are 8 bytes later. */
+static inline int sb_tfree_off(int pack4, int nicfree, int dyn_bsize) {
+    return sb_time_off(pack4, nicfree) + 4 + (dyn_bsize ? 8 : 0);
+}
 static inline int fb_free_off(int pack4)   { return pack4 ? 4 : 2; }
 
 /* ---- V6 on-disk constants (the V6 backend runs on this engine) ---------- */

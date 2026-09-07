@@ -56,7 +56,8 @@ enum {
     FILSYS_BSD29 = 35,   /* 2.9BSD: V7 inode, 1024-byte blocks, 4 direct + 3 indirect */
     FILSYS_BSD211 = 36,   /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
     FILSYS_SYSIII = 37,   /* System III: V7 superblock (no magic), middle-endian */
-    FILSYS_SVR2   = 38    /* System V Release 2 s5fs: s_magic/s_type; byte order from -o arch */
+    FILSYS_SVR2   = 38,   /* System V Release 2 s5fs: 2-byte-aligned; byte order from -o arch */
+    FILSYS_SVR4   = 39    /* System V Release 4 s5fs: 4-byte-aligned + s_pad2; byte order from -o arch */
 };
 
 /* One row of the edition name table (defined in filsys_format.c): the canonical

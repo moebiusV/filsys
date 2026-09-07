@@ -33,6 +33,7 @@ static const char *const bsd29_alias[]    = { "35", NULL };
 static const char *const bsd211_alias[]   = { "36", NULL };
 static const char *const sysiii_alias[]   = { "sys3", "sysiii-pdp11", NULL };
 static const char *const sysvr2_alias[]   = { "sys5", "s5", "sysv2", "sysv", "sysvax", "sysv386", NULL };
+static const char *const sysvr4_alias[]   = { "svr4", "sysv4", "s5r4", NULL };
 
 static const filsys_format_t formats[] = {
     { FILSYS_PDP7,     "pdp7",     pdp7_alias },
@@ -46,6 +47,7 @@ static const filsys_format_t formats[] = {
     { FILSYS_BSD211,   "bsd211",   bsd211_alias },
     { FILSYS_SYSIII,   "sysiii",   sysiii_alias },
     { FILSYS_SVR2,     "sysvr2",   sysvr2_alias },
+    { FILSYS_SVR4,     "sysvr4",   sysvr4_alias },
 };
 #define NFMT (sizeof formats / sizeof formats[0])
 
@@ -95,11 +97,17 @@ const char *filsys_editions_usage(void) {
 const byte_order_ops_t *filsys_arch_bo(const char *arch) {
     if (arch == NULL)
         return NULL;
+    /* The on-disk format varies only on the endianness axis, which is fixed by
+     * the CPU.  PDP-11 stores 16-bit fields little-endian but 32-bit fields
+     * middle-endian (bo_me); every other System V port is plain LE or BE. */
     static const struct { const char *name; const byte_order_ops_t *bo; } A[] = {
-        { "pdp11",  &bo_me },
-        { "vax",    &bo_le }, { "386", &bo_le }, { "x86", &bo_le }, { "ns32k", &bo_le },
-        { "3b2",    &bo_be }, { "3b20", &bo_be }, { "68k", &bo_be },
-        { "sparc",  &bo_be }, { "mips", &bo_be },
+        { "pdp11",    &bo_me },
+        { "vax",      &bo_le }, { "x86", &bo_le }, { "386", &bo_le }, { "i386", &bo_le },
+        { "ns32k",    &bo_le }, { "ns32000", &bo_le }, { "i860", &bo_le }, { "clipper", &bo_le },
+        { "3b2",      &bo_be }, { "3b20", &bo_be }, { "we32000", &bo_be },
+        { "68k",      &bo_be }, { "m68k", &bo_be }, { "68000", &bo_be },
+        { "sparc",    &bo_be }, { "mips", &bo_be },
+        { "parisc",   &bo_be }, { "hppa", &bo_be }, { "powerpc", &bo_be }, { "ppc", &bo_be },
     };
     for (size_t i = 0; i < sizeof A / sizeof A[0]; i++)
         if (!strcmp(arch, A[i].name))
