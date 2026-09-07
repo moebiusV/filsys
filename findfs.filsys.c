@@ -10,6 +10,11 @@
  * block just before an inode-table run is the superblock).  The latter finds
  * filesystems even when a damaged superblock defeats the direct scan.
  *
+ * V1 (a dual-bitmap superblock in fs blocks 0+1, no boot block) is detected in
+ * the same 512-byte scan.  PDP-7 (V0) is word-addressed and sits at a fixed
+ * offset -- surface 1 of an RB09 fixed-head disk -- so it is probed separately,
+ * once per word container (rb09/packed18/rim).
+ *
  * Usage:
  *     findfs.filsys [-s N] [-i] <image>
  *
@@ -34,21 +39,14 @@
 
 #include "byteorder.h"
 #include "filsys.h"
+#include "v1fs.h"
+#include "v7fs.h"
+#include "pdp7fs.h"
 
-enum {
-    BSIZE      = 512,
-    V6_NICFREE = 100,
-    V6_NICINOD = 100,
-    V7_NICFREE = 50,
-    V7_COH_NICFREE = 64,   /* Coherent free-list cache depth */
-    V7_XEN_NICFREE = 100,  /* Xenix free-list cache depth */
-    XENIX_MAGIC = 0x2b5544,/* Xenix superblock magic (offset 1016) */
-    V7_NICINOD = 100
-};
-/* System V s_magic (offset 504) lives in its own enum: the 32-bit value does
- * not fit int, so it would widen the small constants above (C shares one
- * underlying enum type). */
-enum { SYSV_MAGIC = 0xfd187e20 };
+/* The scanner's own block size: every V1/V6/V7-family superblock sits in a
+ * 512-byte block.  Per-format constants come from the backend headers
+ * (v1fs.h / v7fs.h / pdp7fs.h), not a local copy. */
+enum { BSIZE = 512 };
 
 /* ---- free-list chain walk + i-list cross-check ---------------------------- */
 
@@ -137,6 +135,8 @@ static int edition_selector(const char *name) {
     if (!strcmp(name, "32V"))      return FILSYS_32V;
     if (!strcmp(name, "Coherent")) return FILSYS_COHERENT;
     if (!strcmp(name, "V6"))       return FILSYS_V6;
+    if (!strcmp(name, "V1"))       return FILSYS_V1;
+    if (!strcmp(name, "PDP-7"))    return FILSYS_PDP7;
     if (!strcmp(name, "Xenix"))    return FILSYS_XENIX;
     if (!strcmp(name, "2.9BSD"))   return FILSYS_BSD29;
     if (!strcmp(name, "sysvr2"))   return FILSYS_SVR2;
@@ -250,6 +250,53 @@ static int super_v6(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
     return 1;
 }
 
+/* V1 superblock (blocks 0+1, dual bitmaps): no boot block and no free-list
+ * chain, so the filesystem starts *at* the candidate block, not before it.  The
+ * free map (bit=1 free) begins at byte 2; the inode map (bit=0 free, indexed
+ * from inode 41) follows it.  There is no s_isize: the i-list size is derived
+ * from the inode-map byte count.  Root is inode 41, a 32-byte inode in block 4.
+ * Returns 1 (valid) or 0 (not a candidate). */
+static int super_v1(int fd, uint32_t bno, uint32_t nblocks,
+                    uint16_t *isize, uint32_t *fsize, const char **why) {
+    uint8_t sb[BSIZE * 2];
+    if (pread(fd, sb, sizeof sb, (off_t)bno * BSIZE) != (ssize_t)sizeof sb)
+        return 0;
+    uint16_t freemap_bytes = bo_get16le(sb + 0);
+    if (freemap_bytes == 0)
+        return 0;
+    uint32_t inodemap_bytes_off = 2 + freemap_bytes;
+    if (inodemap_bytes_off + 2 > sizeof sb)
+        return 0;
+    uint16_t inodemap_bytes = bo_get16le(sb + inodemap_bytes_off);
+    uint32_t inodemap_off = inodemap_bytes_off + 2;
+    if (inodemap_bytes == 0 || inodemap_off + inodemap_bytes > sizeof sb)
+        return 0;
+    uint32_t fsz = (uint32_t)freemap_bytes * 8;
+    uint32_t maxino = (uint32_t)inodemap_bytes * 8;
+    uint32_t dstart = (maxino + 31) / 16 + 1;   /* first data block */
+    if (fsz <= dstart || (uint64_t)bno + fsz > nblocks)
+        return 0;
+    /* root inode 41: block 4, slot 8 (32-byte inodes): an allocated directory
+     * whose first data block is in the data area. */
+    uint8_t blk[BSIZE];
+    if (pread(fd, blk, sizeof blk, (off_t)(bno + 4) * BSIZE) != (ssize_t)sizeof blk)
+        return 0;
+    const uint8_t *d = blk + 8 * 32;
+    uint16_t mode = bo_get16le(d + 0);
+    if ((mode & (0100000 | 0040000)) != (0100000 | 0040000)) {
+        *why = "root inode is not a directory";
+        return 0;
+    }
+    uint16_t a0 = bo_get16le(d + 6);
+    if (a0 < dstart || a0 >= fsz) {
+        *why = "root directory block out of range";
+        return 0;
+    }
+    *isize = (uint16_t)dstart;
+    *fsize = fsz;
+    return 1;
+}
+
 /* System V s5fs superblock: s_magic 0xfd187e20 at offset 504 (LE or BE), s_type
  * at 508 names the block size.  The superblock sits at a fixed byte offset
  * (512), which the 512-byte scan reaches at bno == 1.  AFS signals itself with
@@ -260,8 +307,8 @@ static int super_sysv(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
                       const char **why, uint32_t *segs) {
     int le;
     *bs = 0;
-    if (bo_get32le(b + 504) == SYSV_MAGIC)      le = 1;
-    else if (bo_get32be(b + 504) == SYSV_MAGIC) le = 0;
+    if (bo_get32le(b + 504) == V7_SYSV_MAGIC)      le = 1;
+    else if (bo_get32be(b + 504) == V7_SYSV_MAGIC) le = 0;
     else return 0;
 
     uint16_t (*g16)(const uint8_t *) = le ? bo_get16le : bo_get16be;
@@ -321,7 +368,7 @@ static int super_sysv(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
 static int super_xenix(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
                        uint16_t *isize, uint32_t *fsize,
                        const char **why, uint32_t *segs) {
-    if (bo_get32le(b + 0x3F8) != XENIX_MAGIC)
+    if (bo_get32le(b + 0x3F8) != V7_XEN_MAGIC)
         return 0;
     uint16_t isz = bo_get16le(b + 0);
     uint32_t fsz = bo_get32le(b + 2);
@@ -386,6 +433,62 @@ static int super_bsd29(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
     return 1;
 }
 
+/* PDP-7 (V0) word container: the three codecs and their -o packing= names come
+ * from the backend (pdp7fs.c word_rb09/word_packed18/word_rim). */
+static const struct { const word_codec_t *codec; const char *name; } p7_containers[] = {
+    { &word_rb09,     "rb09" },
+    { &word_packed18, "packed18" },
+    { &word_rim,      "rim" },
+};
+
+/* Read PDP-7 block `bno` (64 words) from surface 1 (at P7_NBLOCKS blocks past
+ * the image start) into `words`, decoded through the container codec. */
+static int p7_read(int fd, const word_codec_t *wc, uint32_t bno, uint32_t *words) {
+    uint8_t raw[P7_MAXBLOCKBYTES];
+    off_t pos = (off_t)((uint64_t)P7_NBLOCKS * wc->block_bytes) + (off_t)bno * wc->block_bytes;
+    if (pread(fd, raw, wc->block_bytes, pos) != (ssize_t)wc->block_bytes)
+        return -1;
+    for (uint32_t i = 0; i < P7_WSIZE; i++)
+        words[i] = wc->get(raw, i);
+    return 0;
+}
+
+/* PDP-7 probe: no magic; the superblock is block 0 word 0 (the free-list head).
+ * Validate the free-list chain (nodes in the data range, each chaining via word
+ * 0 and carrying nine free block numbers in words 1..9) and the root "dd"
+ * directory (inode 4 at block 2).  Returns 1 (valid) or 0 (not a candidate). */
+static int super_pdp7(int fd, const word_codec_t *wc, uint32_t *segs, const char **why) {
+    uint32_t words[P7_WSIZE];
+    if (p7_read(fd, wc, 0, words) != 0)
+        return 0;
+    uint32_t head = words[0];
+    if (head == 0)
+        return 0;                    /* empty fs: not a mounted volume */
+    uint8_t seen[P7_NBLOCKS / 8] = {0};
+    uint32_t hops = 0, s = 0;
+    while (head != 0) {
+        if (head < P7_DATASTART || head >= P7_KDATA) { *why = "chain leaves fs"; return 0; }
+        if (++hops > P7_NBLOCKS) { *why = "chain too long"; return 0; }
+        if (seen[head >> 3] & (1u << (head & 7))) { *why = "chain cycles"; return 0; }
+        seen[head >> 3] |= (uint8_t)(1u << (head & 7));
+        if (p7_read(fd, wc, head, words) != 0) { *why = "chain read error"; return 0; }
+        for (int i = 1; i <= 9; i++) {
+            uint32_t fb = words[i];
+            if (fb != 0 && (fb < P7_DATASTART || fb >= P7_KDATA)) { *why = "chain entry out of range"; return 0; }
+        }
+        head = words[0];
+        s++;
+    }
+    /* root "dd" directory: inode 4 at block 2, flags word must be an allocated
+     * directory. */
+    if (p7_read(fd, wc, P7_FIRSTINOBLK, words) != 0)
+        return 0;
+    uint32_t flags = words[P7_INODESZ * (P7_ROOTINO % P7_INOPB)];
+    if ((flags & (P7_IUSED | P7_IDIR)) != (P7_IUSED | P7_IDIR)) { *why = "root inode is not a directory"; return 0; }
+    *segs = s;
+    return 1;
+}
+
 /* Is one 64-byte on-disk inode plausible (free, or a valid type with small
  * counts)? */
 static int inode_ok(const uint8_t *d) {
@@ -415,6 +518,8 @@ static const char *mount_name(const char *ed) {
     if (!strcmp(ed, "32V"))      return "vax32";
     if (!strcmp(ed, "Coherent")) return "coherent";
     if (!strcmp(ed, "V6"))       return "v6";
+    if (!strcmp(ed, "V1"))       return "v1";
+    if (!strcmp(ed, "PDP-7"))    return "pdp7";
     if (!strcmp(ed, "Xenix"))    return "xenix";
     if (!strcmp(ed, "2.9BSD"))   return "bsd29";
     if (!strcmp(ed, "sysvr2"))   return "sysvr2";
@@ -427,9 +532,13 @@ static const char *mount_name(const char *ed) {
  * A validated fs also gets a cut-and-pasteable mount.filsys command line. */
 static void report(const char *image, uint32_t blk, uint64_t byte, const char *ed,
                    const char *note, uint16_t isz, uint32_t fsz, uint32_t segs, int root) {
-    printf("fs @ block %u  (byte %llu)  %s%s%s%s  isize=%u fsize=%u  chain ok (%u segs)",
+    printf("fs @ block %u  (byte %llu)  %s%s%s%s  isize=%u fsize=%u",
            blk, (unsigned long long)byte, ed,
-           note ? " (" : "", note ? note : "", note ? ")" : "", isz, fsz, segs);
+           note ? " (" : "", note ? note : "", note ? ")" : "", isz, fsz);
+    if (!strcmp(ed, "V1"))
+        printf("  bitmap free list");   /* V1 has bitmaps, not a free-list chain */
+    else
+        printf("  chain ok (%u segs)", segs);
     if (root)
         printf(", root inode ok");
     printf("\n");
@@ -480,66 +589,82 @@ int main(int argc, char **argv) {
     /* Blocks below `skip_end` (bytes) belong to an already-validated fs's data
      * area, so their free-list dump blocks are not independent candidates. */
     uint64_t skip_end = 0;
-    for (uint32_t bno = 1; bno < nblocks; bno += (uint32_t)stride) {
-        if ((uint64_t)bno * BSIZE < skip_end) {
-            /* Jump to the end of the validated fs.  The loop adds `stride` after
-             * a continue and every scanned block is ≡ 1 (mod stride), so land on
-             * the first such block at/after skip_end and let the increment move on. */
+
+    /* 512-byte scan.  `fb` is a candidate filesystem *start* block (≡ 0 mod
+     * stride).  V1 has no boot block, so its superblock is fs block 0 = fb; the
+     * V7 family stores a boot block at fb and its superblock at fs block 1 =
+     * fb+1.  One monotonic pass finds both, at any offset in the file. */
+    for (uint32_t fb = 0; fb + 1 < nblocks; fb += (uint32_t)stride) {
+        if ((uint64_t)fb * BSIZE < skip_end) {
             uint32_t sb = (uint32_t)(skip_end / BSIZE);
-            bno = (((sb - 1) / (uint32_t)stride + 1) * (uint32_t)stride + 1) - (uint32_t)stride;
+            fb = (sb - 1) / (uint32_t)stride * (uint32_t)stride;
             continue;
         }
-        if (pread(fd, buf, BSIZE, (off_t)bno * BSIZE) != BSIZE)
-            continue;
+        uint64_t byte = (uint64_t)fb * BSIZE;
 
-        /* direct superblock detection.  System V is checked first: its superblock
-         * is V7-shaped, but the s_magic at offset 504 is the stronger signal, so
-         * a sysvr2 volume reports as sysvr2 rather than a false "V7". */
+        /* V1: superblock at fb. */
+        {
+            uint16_t isz = 0; uint32_t fsz = 0;
+            const char *why = NULL;
+            if (super_v1(fd, fb, nblocks, &isz, &fsz, &why) == 1 &&
+                matches(edition_filter, "V1")) {
+                report(image, fb, byte, "V1", NULL, isz, fsz, 0, 1);
+                uint64_t de = (uint64_t)(fb + fsz) * BSIZE;
+                if (de > skip_end)
+                    skip_end = de;
+                found++;
+            }
+        }
+
+        /* V7 family: superblock at fb+1.  System V is checked first: its
+         * superblock is V7-shaped, but the s_magic at offset 504 is the stronger
+         * signal, so a sysvr2 volume reports as sysvr2 rather than a false "V7". */
+        if (pread(fd, buf, BSIZE, (off_t)(fb + 1) * BSIZE) != BSIZE)
+            continue;
         uint16_t isz = 0; uint32_t fsz = 0;
         const char *ed = NULL, *note = NULL, *why = NULL;
         uint32_t segs = 0;
-        uint64_t byte = (uint64_t)(bno - 1) * BSIZE;
         int bs = BSIZE;   /* V7/V6 block size; super_sysv overrides */
 
-        int rc = super_sysv(fd, buf, bno, nblocks, &ed, &note, &isz, &fsz, &bs, &why, &segs);
+        int rc = super_sysv(fd, buf, fb + 1, nblocks, &ed, &note, &isz, &fsz, &bs, &why, &segs);
         if (rc == 0) {
             bs = BSIZE;
-            rc = super_v7(fd, buf, bno, nblocks, &ed, &isz, &fsz, &why, &segs);
+            rc = super_v7(fd, buf, fb + 1, nblocks, &ed, &isz, &fsz, &why, &segs);
             if (rc == 0) {
                 ed = "V6";
-                rc = super_v6(fd, buf, bno, nblocks, &isz, &fsz, &why, &segs);
+                rc = super_v6(fd, buf, fb + 1, nblocks, &isz, &fsz, &why, &segs);
             }
         }
         if (rc >= 1 && matches(edition_filter, ed)) {
             if (!strcmp(ed, "AFS"))
                 printf("fs @ block %u  (byte %llu)  AFS (bitmap free list, unsupported)\n",
-                       bno - 1, (unsigned long long)byte);
+                       fb, (unsigned long long)byte);
             else if (rc == 1) {
-                report(image, bno - 1, byte, ed, note, isz, fsz, segs, strcmp(ed, "V6") != 0);
-                uint64_t de = (uint64_t)(bno - 1) * BSIZE + (uint64_t)fsz * (uint64_t)bs;
+                report(image, fb, byte, ed, note, isz, fsz, segs, strcmp(ed, "V6") != 0);
+                uint64_t de = byte + (uint64_t)fsz * (uint64_t)bs;
                 if (de > skip_end)
                     skip_end = de;
             } else
-                report_miss(bno - 1, byte, ed, note, isz, fsz, why);
+                report_miss(fb, byte, ed, note, isz, fsz, why);
             found++;
         }
 
-        /* inode-table backtrace: is bno the first inode block of a filesystem
-         * whose superblock is at bno-1?  A damaged superblock can fail its own
+        /* inode-table backtrace: is fb+1 the first inode block of a filesystem
+         * whose superblock is at fb?  A damaged superblock can fail its own
          * chain walk here -- that is the damage being recovered -- so a near-miss
          * still reports. */
-        if (backtrace && inode_block(buf) && bno >= 2 &&
-            pread(fd, buf, BSIZE, (off_t)(bno - 1) * BSIZE) == BSIZE) {
+        if (backtrace && inode_block(buf) && fb >= 1 &&
+            pread(fd, buf, BSIZE, (off_t)fb * BSIZE) == BSIZE) {
             const char *ed_bt = NULL, *why_bt = NULL;
             uint16_t isz_bt = 0; uint32_t fsz_bt = 0, segs_bt = 0;
-            int r = super_v7(fd, buf, bno - 1, nblocks, &ed_bt, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
+            int r = super_v7(fd, buf, fb, nblocks, &ed_bt, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
             if (r == 0) {
                 ed_bt = "V6";
-                r = super_v6(fd, buf, bno - 1, nblocks, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
+                r = super_v6(fd, buf, fb, nblocks, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
             }
             if (r >= 1 && matches(edition_filter, ed_bt)) {
                 printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u   [via inode backtrace]\n",
-                       bno - 2, (unsigned long long)(bno - 2) * BSIZE, ed_bt, isz_bt, fsz_bt);
+                       fb - 1, (unsigned long long)(fb - 1) * BSIZE, ed_bt, isz_bt, fsz_bt);
                 found++;
             }
         }
@@ -577,6 +702,25 @@ int main(int argc, char **argv) {
                 report_miss(blk, byte, ed, NULL, isz, fsz, why);
             found++;
         }
+    }
+
+    /* PDP-7 (V0): word-addressed, at a fixed offset (surface 1 of an RB09
+     * fixed-head disk) -- not found by the byte-aligned block scans above.  Try
+     * each word container; the image must be a full RB09 disk (two surfaces). */
+    for (size_t i = 0; i < sizeof p7_containers / sizeof p7_containers[0]; i++) {
+        const word_codec_t *wc = p7_containers[i].codec;
+        if (sz < (uint64_t)P7_NBLOCKS * wc->block_bytes + (uint64_t)P7_KDATA * wc->block_bytes)
+            continue;
+        uint32_t segs = 0;
+        const char *why = NULL;
+        if (super_pdp7(fd, wc, &segs, &why) != 1)
+            continue;
+        if (!matches(edition_filter, "PDP-7"))
+            continue;
+        printf("fs @ surface 1  (byte %llu)  PDP-7 (%s)  chain ok (%u segs), root inode ok\n",
+               (unsigned long long)((uint64_t)P7_NBLOCKS * wc->block_bytes), p7_containers[i].name, segs);
+        printf("  mount.filsys -v pdp7 -o offset=0 -o packing=%s %s /mnt\n", p7_containers[i].name, image);
+        found++;
     }
 
     close(fd);
