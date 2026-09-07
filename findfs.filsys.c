@@ -17,9 +17,11 @@
  *        for an RP06, to speed up a big image)
  * -i     also trace inode-table runs backwards to their superblocks
  *
- * Each hit is printed as:
- *     fs @ block START  (byte BYTES)  V7  isize=N fsize=M   (or 32V/Coherent/V6)
- * Mount the partition in place with mount.filsys -o offset=BYTES.
+ * Each hit is printed as a diagnostic line followed by a ready-to-paste
+ * mount command:
+ *     fs @ block START  (byte BYTES)  V7  isize=N fsize=M  chain ok (...)
+ *       mount.filsys -v v7 -o offset=BYTES <image> /mnt
+ * Mount the partition in place by cutting and pasting that second line.
  */
 #include <config.h>
 #include <stdio.h>
@@ -407,16 +409,32 @@ static int inode_block(const uint8_t *b) {
     return ok >= 6 && used > 0;
 }
 
+/* The mount.filsys -v spelling for a reported edition name. */
+static const char *mount_name(const char *ed) {
+    if (!strcmp(ed, "V7"))       return "v7";
+    if (!strcmp(ed, "32V"))      return "vax32";
+    if (!strcmp(ed, "Coherent")) return "coherent";
+    if (!strcmp(ed, "V6"))       return "v6";
+    if (!strcmp(ed, "Xenix"))    return "xenix";
+    if (!strcmp(ed, "2.9BSD"))   return "bsd29";
+    if (!strcmp(ed, "sysvr2"))   return "sysvr2";
+    if (!strcmp(ed, "sysvr4"))   return "sysvr4";
+    return ed;
+}
+
 /* Print one validated or near-miss candidate.  `root` is 1 when the root-inode
- * cross-check ran and passed, 0 when it was skipped (V6 has a different layout). */
-static void report(uint32_t blk, uint64_t byte, const char *ed, const char *note,
-                   uint16_t isz, uint32_t fsz, uint32_t segs, int root) {
+ * cross-check ran and passed, 0 when it was skipped (V6 has a different layout).
+ * A validated fs also gets a cut-and-pasteable mount.filsys command line. */
+static void report(const char *image, uint32_t blk, uint64_t byte, const char *ed,
+                   const char *note, uint16_t isz, uint32_t fsz, uint32_t segs, int root) {
     printf("fs @ block %u  (byte %llu)  %s%s%s%s  isize=%u fsize=%u  chain ok (%u segs)",
            blk, (unsigned long long)byte, ed,
            note ? " (" : "", note ? note : "", note ? ")" : "", isz, fsz, segs);
     if (root)
         printf(", root inode ok");
     printf("\n");
+    printf("  mount.filsys -v %s -o offset=%llu %s /mnt\n",
+           mount_name(ed), (unsigned long long)byte, image);
 }
 static void report_miss(uint32_t blk, uint64_t byte, const char *ed, const char *note,
                         uint16_t isz, uint32_t fsz, const char *why) {
@@ -463,8 +481,14 @@ int main(int argc, char **argv) {
      * area, so their free-list dump blocks are not independent candidates. */
     uint64_t skip_end = 0;
     for (uint32_t bno = 1; bno < nblocks; bno += (uint32_t)stride) {
-        if ((uint64_t)bno * BSIZE < skip_end)
+        if ((uint64_t)bno * BSIZE < skip_end) {
+            /* Jump to the end of the validated fs.  The loop adds `stride` after
+             * a continue and every scanned block is ≡ 1 (mod stride), so land on
+             * the first such block at/after skip_end and let the increment move on. */
+            uint32_t sb = (uint32_t)(skip_end / BSIZE);
+            bno = (((sb - 1) / (uint32_t)stride + 1) * (uint32_t)stride + 1) - (uint32_t)stride;
             continue;
+        }
         if (pread(fd, buf, BSIZE, (off_t)bno * BSIZE) != BSIZE)
             continue;
 
@@ -491,7 +515,7 @@ int main(int argc, char **argv) {
                 printf("fs @ block %u  (byte %llu)  AFS (bitmap free list, unsupported)\n",
                        bno - 1, (unsigned long long)byte);
             else if (rc == 1) {
-                report(bno - 1, byte, ed, note, isz, fsz, segs, strcmp(ed, "V6") != 0);
+                report(image, bno - 1, byte, ed, note, isz, fsz, segs, strcmp(ed, "V6") != 0);
                 uint64_t de = (uint64_t)(bno - 1) * BSIZE + (uint64_t)fsz * (uint64_t)bs;
                 if (de > skip_end)
                     skip_end = de;
@@ -525,8 +549,11 @@ int main(int argc, char **argv) {
     uint8_t xb[1024];
     uint32_t xnblocks = (uint32_t)(sz / 1024);
     for (uint32_t xbno = 1; xbno < xnblocks; xbno += (uint32_t)stride) {
-        if ((uint64_t)xbno * 1024 < skip_end)
+        if ((uint64_t)xbno * 1024 < skip_end) {
+            uint32_t sb = (uint32_t)(skip_end / 1024);
+            xbno = (((sb - 1) / (uint32_t)stride + 1) * (uint32_t)stride + 1) - (uint32_t)stride;
             continue;
+        }
         if (pread(fd, xb, 1024, (off_t)xbno * 1024) != 1024)
             continue;
         uint16_t isz = 0; uint32_t fsz = 0;
@@ -542,7 +569,7 @@ int main(int argc, char **argv) {
         }
         if (rc >= 1 && matches(edition_filter, ed)) {
             if (rc == 1) {
-                report(blk, byte, ed, NULL, isz, fsz, segs, 1);
+                report(image, blk, byte, ed, NULL, isz, fsz, segs, 1);
                 uint64_t de = (uint64_t)(xbno - 1) * 1024 + (uint64_t)fsz * 1024;
                 if (de > skip_end)
                     skip_end = de;
