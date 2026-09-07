@@ -59,7 +59,8 @@ mount.filsys -v <edition> -c <image>   # integrity check (no mount)
 
 `-v` takes the Unix edition: `pdp7` (the word-addressed PDP-7), `v1`/`v2`/`v3`,
 `v4`/`v5`/`v6`, `v7`, `vax32` (32V), `coherent` (Mark Williams Co.), `xenix`
-(SCO Xenix), `bsd29` (2.9BSD), or `bsd211` (2.11BSD).  A bare number — `0`,
+(SCO Xenix), `bsd29` (2.9BSD), `bsd211` (2.11BSD), `sysiii` (System III),
+`sysvr2` (System V Release 2), or `sysvr4` (System V Release 4).  A bare number — `0`,
 `1`, `2`, `3`, `4`, `5`, `6`, `7`, `32`, `33`, `34`, `35`, `36` — is also
 accepted, and `v0`/`p7` spell the PDP-7.  `v1`, `v2` and `v3` are one on-disk
 format, and `v4` and `v5` are byte-identical to `v6`, so the seven pre-V7
@@ -81,13 +82,27 @@ default, and a wrong `-v` is an error, not a fallback.
 | `-v xenix`| Xenix format (little-endian, 1 KB blocks, 100-entry free cache) |
 | `-v bsd29`| 2.9BSD format (V7 inode, 1 KB blocks, 4+3 addresses) |
 | `-v bsd211`| 2.11BSD format (32-bit inode, variable 63-char dirs) |
+| `-v sysiii`| System III format (V7's on-disk layout) |
+| `-v sysvr2`| System V Release 2/3 (s5fs: 4-byte-aligned fields + magic; byte order from `arch=`) |
+| `-v sysvr4`| System V Release 4 (same layout + an `s_state` clean/dirty word) |
 | `-o offset=N` | mount a filesystem at byte offset N (a partition) |
+| `-o arch=NAME` | override the byte order (System V on a non-default CPU) |
 | `-o uid=N,gid=N` | override reported ownership (default: you) |
 | `-o allow_other,...` | pass a FUSE option through |
 | `-r`   | mount read-only                  |
 | `-f`   | stay in foreground               |
 | `-d`   | FUSE debug output                |
 | `-c`   | free-list / inode-table check    |
+
+`-o arch=` (mount) and `-a arch` (mkfs/fsck) override the byte order the format
+stores its multi-byte fields in.  The V7-family editions fix their own byte
+order, so `arch` matters for the System V editions (`sysiii`, `sysvr2`,
+`sysvr4`), which
+ran on many CPUs and left byte order to the architecture.  Recognised names:
+
+- little-endian: `vax`, `x86`, `386`, `i386`, `ns32k`, `ns32000`, `i860`, `clipper`
+- big-endian: `3b2`, `3b20`, `we32000`, `68k`, `m68k`, `68000`, `sparc`, `mips`, `parisc`, `hppa`, `powerpc`, `ppc`
+- PDP-11 middle-endian: `pdp11`
 
 ```sh
 mkdir mnt
@@ -607,6 +622,38 @@ volumes").
 The detection story outlived the driver only partway.  libblkid still probes
 `sysv` and `xenix`, but there is no `v7` prober — same reason: nothing to match
 on.
+
+### System V: one s5fs layout, and three places the Linux header misleads
+
+The obvious reference for the System V on-disk format is the kernel's own
+`include/linux/sysv_fs.h`, and it is wrong in three places — all three caught
+only by checking against the AT&T sources (`filsys.h` in the 3B2/32000 System V
+R2 tree, `s5filsys.h` in the i386 R4 tree, both on archive.org) and by booting
+real media in SIMH.
+
+1. **There is no `s_pad2`.**  `struct sysv4_super_block` puts a 2-byte pad
+   between `s_ninode` and `s_inode`, pushing `s_inode` to offset 216.  The real
+   struct has none: `ino_t` is `ushort`, so `s_inode` is naturally aligned at
+   214.  System V R2 through R4 share one 4-byte-aligned layout — `daddr_t` and
+   `time_t` aligned to 4, `s_inode` at 214, `s_time` at 420, `s_dinfo[4]` at
+   424, `s_tfree` at 432, `s_magic` at 504, `s_type` at 508.
+
+2. **`s_state` clean is `0x7c269d38`, not `0xcb096f43`.**  `0xcb096f43` is
+   `FsBAD` (bad root).  Clean is `FsOKAY = 0x7c269d38`; mounted/dirty is
+   `FsACTIVE = 0x5e72d81a`.  They are constants.
+
+3. **`s_state` is not time-derived.**  The kernel compares `s_state` against
+   `0x7c269d38 - s_time` — a detection heuristic for telling a pre-1980 volume
+   from a later one, not a value any writer stores.  `s_state` is written as-is,
+   and it is an R4 field only (R2/R3 leave that word as `s_fill[12]`).
+
+A fourth finding, this one about System III rather than the header: **the System
+III precursor is V6**.  Booting the Cloutier USG PG3 tape (tuhs.org) in SIMH and
+running filsys's own `fsck` over its root filesystem reports V6 layout — 16-bit
+block numbers, 32-byte inodes — clean.  System III proper (1981) is still
+unconfirmed, but its direct predecessor is V6, not V7.  PDP-11 System V Release
+1 is V7 with no magic at all; the `0xfd187e20` s5fs magic only appears on the
+32-bit ports (VAX/3B2/68k) from Release 2 on.
 
 ### mkfs and fsck: never existed
 

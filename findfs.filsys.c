@@ -58,6 +58,7 @@ static int edition_selector(const char *name) {
     if (!strcmp(name, "Xenix"))    return FILSYS_XENIX;
     if (!strcmp(name, "2.9BSD"))   return FILSYS_BSD29;
     if (!strcmp(name, "sysvr2"))   return FILSYS_SVR2;
+    if (!strcmp(name, "sysvr4"))   return FILSYS_SVR4;
     return -1;
 }
 /* True if the `-v` filter (or "no filter") admits this reported edition. */
@@ -147,19 +148,38 @@ static int super_sysv(const uint8_t *b, uint32_t bno, uint32_t nblocks,
     else if (bo_get32be(b + 504) == SYSV_MAGIC) le = 0;
     else return 0;
 
-    if (bo_get16le(b + 6) == 0xffff || bo_get16le(b + 8) == 0xffff) {
+    uint16_t (*g16)(const uint8_t *) = le ? bo_get16le : bo_get16be;
+    uint32_t (*g32)(const uint8_t *) = le ? bo_get32le : bo_get32be;
+
+    /* AFS (Acer Fast File System) signals itself with s_nfree == 0xffff -- an
+     * impossible free-list count ("bitmap, not free list"). */
+    if (g16(b + 8) == 0xffff) {
         *edition = "AFS";
         *note = "bitmap free list, unsupported";
         return 1;
     }
-    uint32_t t = le ? bo_get32le(b + 508) : bo_get32be(b + 508);
+    uint32_t t = g32(b + 508);
     uint32_t bs = t == 1 ? 512 : t == 2 ? 1024 : t == 3 ? 2048 : 0;
     if (bs == 0)
         return 0;
-    uint16_t isz = bo_get16le(b + 0);
-    uint32_t fsz = le ? bo_get32le(b + 2) : bo_get32be(b + 2);
+    uint16_t isz = g16(b + 0);
+
+    /* One s5fs layout: daddr_t/time_t are 4-byte aligned (nfree@8, free@12,
+     * ninode@212, inode@214); R2, R3 and R4 all share it (R4 only adds s_state
+     * at 500, which this scanner does not need to tell them apart).  Validate
+     * the free-list cache and take it if self-consistent. */
+    uint16_t nfree = g16(b + 8), ninode = g16(b + 212);
+    if (nfree > V7_NICFREE || ninode > V7_NICINOD)
+        return 0;
+    uint32_t fsz = g32(b + 4);
     if (fsz <= isz || (uint64_t)bno - 1 + fsz > nblocks)
         return 0;
+    for (int i = 0; i < nfree; i++) {
+        uint32_t fb = g32(b + 12 + 4 * i);
+        if (fb != 0 && (fb < isz || fb >= fsz))
+            return 0;
+    }
+
     *edition = "sysvr2";
     *note = le ? "LE" : "BE";
     *isize = isz; *fsize = fsz;

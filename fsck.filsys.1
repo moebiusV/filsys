@@ -9,7 +9,7 @@ fsck.filsys \- filesystem storage and directory consistency check
 .SH SYNOPSIS
 .B fsck.filsys
 .RB [ \-v
-.IR <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211> ]
+.IR <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211|sysiii|sysvr2|sysvr4> ]
 .RB [ \-o
 .IR block ]
 .RB [ \-s ]
@@ -19,6 +19,8 @@ fsck.filsys \- filesystem storage and directory consistency check
 .RB [ \-y ]
 .RB [ \-f ]
 .RB [ \-n ]
+.RB [ \-a
+.IR arch ]
 .I image
 .br
 .B fsck.filsys
@@ -106,7 +108,13 @@ interleave, which
 rebuilds); xenix selects SCO Xenix (little-endian, 1024-byte blocks, a
 100-entry free cache, and a magic validated at open); bsd29 and bsd211 select
 2.9BSD and 2.11BSD (1024-byte blocks; bsd211 widens the inode addresses to 32
-bits and uses variable-length directory entries).  There is no default edition;
+bits and uses variable-length directory entries); sysiii selects System III
+(V7's on-disk layout under its own name); sysvr2 and sysvr4 select System V
+Release 2/3 and Release 4 (the one 4-byte-aligned s5fs layout, plus a magic and
+a block-size field; R4 additionally stores an s_state clean/dirty word, whose
+byte order is set with
+.BR \-a ).
+There is no default edition;
 .B \-v
 is required.  A Research Unix
 disk image holds one or more filesystems
@@ -122,11 +130,12 @@ The exit status is 0 if the filesystem is clean, 1 if errors were found, and 2
 on a usage error.
 .SH OPTIONS
 .TP
-.BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211>"
+.BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211|sysiii|sysvr2|sysvr4>"
 Filesystem edition.  pdp7 is the word-addressed PDP-7; v1, v2 and v3 are one
 format (First through Third Edition); v4, v5 and v6 are byte-identical (the V6
 format); v7 is V7; vax32 is 32V; coherent is the Coherent format; xenix is SCO
-Xenix; bsd29 is 2.9BSD; bsd211 is 2.11BSD.
+Xenix; bsd29 is 2.9BSD; bsd211 is 2.11BSD; sysiii is System III; sysvr2 is
+System V Release 2; sysvr4 is System V Release 4.
 Required (there is no default).  A bare number
 .RB ( 0 ,
 .BR 1 ,
@@ -143,6 +152,42 @@ Select the PDP-7 word container codec: rb09 (the default simh 4-byte-slot
 packing), packed18 (18 bits with no gap), or rim (three 6-bit frames).  Only
 applies to
 .BR pdp7 .
+.TP
+.BI \-a " arch"
+Override the byte order the format stores its multi-byte fields in.
+The V7-family editions fix their own byte order, so
+.B \-a
+matters for the System V editions
+.RB ( sysiii ,
+.BR sysvr2 ,
+.BR sysvr4 ),
+which ran on many CPUs and left byte order to the architecture.
+Recognised names, by byte order: little-endian
+.BR vax ,
+.BR x86 ,
+.BR 386 ,
+.BR i386 ,
+.BR ns32k ,
+.BR ns32000 ,
+.BR i860 ,
+and
+.BR clipper ;
+big-endian
+.BR 3b2 ,
+.BR 3b20 ,
+.BR we32000 ,
+.BR 68k ,
+.BR m68k ,
+.BR 68000 ,
+.BR sparc ,
+.BR mips ,
+.BR parisc ,
+.BR hppa ,
+.BR powerpc ,
+and
+.BR ppc ;
+and PDP-11 middle-endian
+.BR pdp11 .
 .TP
 .B \-s
 Rebuild the free list from the block bit map (V7

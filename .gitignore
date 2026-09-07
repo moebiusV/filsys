@@ -39,6 +39,11 @@ core
 core.*
 *~
 
+# --- SIMH validation artifacts (downloaded images, SIMH source, and System V
+#     proprietary source -- validate only, never vendor) ---
+simh/
+test_matrix_*.img
+
 # --- automake test harness artifacts (make check) ---
 test_matrix
 test-suite.log

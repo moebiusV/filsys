@@ -9,7 +9,7 @@ mount.filsys, umount.filsys \- mount and dismount a Research Unix filesystem
 .B mount.filsys
 .BI \-v " edition"
 .RB [ \-o
-.IR offset= N [, version= N ][, uid= N , gid= N ,...]]
+.IR offset= N [, version= N ][, arch= NAME ][, uid= N , gid= N ,...]]
 .RB [ \-r ]
 .RB [ \-f ]
 .RB [ \-d ]
@@ -53,7 +53,13 @@ cylinder interleave; byte order is PDP-11 middle-endian like V7); xenix selects
 the SCO Xenix format (little-endian, 1024-byte blocks, a 100-entry free cache,
 and a magic checked at open); bsd29 and bsd211 select 2.9BSD and 2.11BSD
 (1024-byte blocks; bsd29 keeps V7's 24-bit addresses, bsd211 widens them to
-32 bits and uses variable-length directory entries).  A bare number
+32 bits and uses variable-length directory entries); sysiii selects System III
+(V7's on-disk layout under its own name); sysvr2 and sysvr4 select System V
+Release 2/3 and Release 4 (the one 4-byte-aligned s5fs layout, plus a magic and
+a block-size field; R4 additionally stores an s_state clean/dirty word, whose
+byte order is set with
+.BR arch= ).
+A bare number
 .RB ( 0 ,
 .BR 1 ,
 .BR 2 ,
@@ -103,7 +109,7 @@ supersedes.
 .TP
 .BI \-v " edition"
 Filesystem edition: one of pdp7, v1, v2, v3, v4, v5, v6, v7, vax32, coherent,
-xenix, bsd29, or bsd211.  Required (there is no default).
+xenix, bsd29, bsd211, sysiii, sysvr2, or sysvr4.  Required (there is no default).
 .TP
 .BI \-o " offset= N [, version= N ][, uid= N , gid= N ,...]"
 Comma-separated options.  The filsys-specific
@@ -123,6 +129,43 @@ that is not in simh's 4-byte-slot convention.  Any other option (for example
 is passed through to FUSE.  Without
 .BR offset= ,
 the filesystem at block 0 is mounted.
+.TP
+.BI \-o " arch= NAME"
+Override the byte order the format stores its multi-byte fields in.
+The V7-family editions fix their own byte order (V7 is PDP-11 middle-endian,
+vax32 and xenix little-endian, coherent middle-endian), so
+.B arch=
+matters for the System V editions
+.RB ( sysiii ,
+.BR sysvr2 ,
+.BR sysvr4 ),
+which ran on many CPUs and left byte order to the architecture.
+Recognised names, by byte order: little-endian
+.BR vax ,
+.BR x86 ,
+.BR 386 ,
+.BR i386 ,
+.BR ns32k ,
+.BR ns32000 ,
+.BR i860 ,
+and
+.BR clipper ;
+big-endian
+.BR 3b2 ,
+.BR 3b20 ,
+.BR we32000 ,
+.BR 68k ,
+.BR m68k ,
+.BR 68000 ,
+.BR sparc ,
+.BR mips ,
+.BR parisc ,
+.BR hppa ,
+.BR powerpc ,
+and
+.BR ppc ;
+and PDP-11 middle-endian
+.BR pdp11 .
 .TP
 .B \-r
 Mount read-only.
