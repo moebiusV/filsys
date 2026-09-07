@@ -42,7 +42,12 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
          * not "block 1" -- that only coincides with byte 512 when the block size
          * is 512.  s_type (offset 508) names the block size. */
         uint8_t probe[512];
-        if (fs->io->read(fs, probe, sizeof probe, 512 + (off_t)fs->base) ||
+        if (fs->io->read(fs, probe, sizeof probe, 512 + (off_t)fs->base)) {
+            close(fs->fd);
+            fs->fd = -1;
+            return -EIO;
+        }
+        if (!fs->ignore_magic &&
             fs->bo->get32(probe + V7_SYSV_MAGIC_OFF) != V7_SYSV_MAGIC) {
             close(fs->fd);
             fs->fd = -1;
@@ -122,7 +127,8 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         fs->n      = fs->bo->get16(sb + sb_time_off(fs->pack4, fs->nicfree) + 12);
         fs->unique = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26);
     }
-    if (fs->magic && fs->bo->get32(sb + fs->magic_off) != fs->magic) {
+    if (!fs->ignore_magic && fs->magic &&
+        fs->bo->get32(sb + fs->magic_off) != fs->magic) {
         /* Xenix carries a magic at superblock offset 1016; System V carries one
          * at 504.  Validate it rather than mis-decoding a foreign volume named
          * with this edition. */

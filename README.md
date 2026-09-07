@@ -106,6 +106,20 @@ ran on many CPUs and left byte order to the architecture.  Recognised names:
 - big-endian: `3b2`, `3b20`, `we32000`, `68k`, `m68k`, `68000`, `sparc`, `mips`, `parisc`, `hppa`, `powerpc`, `ppc`
 - PDP-11 middle-endian: `pdp11`
 
+For the editions that carry a superblock magic word (`xenix`, `sysvr2`,
+`sysvr4`), the byte order is **detected from that magic**, so a big-endian
+System V volume opens (mounts or fsck's) correctly even with no `arch` at all —
+the kernel does the same, reading `s_magic` in both orders before it reads
+anything else.  An explicit `arch` that contradicts the magic is a hard error:
+
+```sh
+$ fsck.filsys -v sysvr2 -a vax big-endian.dk
+fsck.filsys: big-endian.dk: superblock magic is big-endian, but arch 'vax' is little-endian
+```
+
+`-F` (mount) / `-F` (fsck) overrides a magic word that matches *neither* byte
+order, forcing the `arch` you name (for a foreign or damaged image).
+
 ```sh
 mkdir mnt
 mount.filsys -v v7 rp06-0.disk mnt        # read-write (make a copy first!)

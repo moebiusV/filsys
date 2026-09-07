@@ -18,6 +18,7 @@ fsck.filsys \- filesystem storage and directory consistency check
 .RB [ \-i ]
 .RB [ \-y ]
 .RB [ \-f ]
+.RB [ \-F ]
 .RB [ \-n ]
 .RB [ \-a
 .IR arch ]
@@ -188,6 +189,16 @@ and
 .BR ppc ;
 and PDP-11 middle-endian
 .BR pdp11 .
+For the editions that carry a superblock magic word
+.RB ( xenix ,
+.BR sysvr2 ,
+.BR sysvr4 ),
+the byte order is detected from that magic, so a big-endian System V volume
+opens correctly even when
+.B \-a
+is omitted; an explicit
+.B \-a
+that contradicts the magic is refused.
 .TP
 .B \-s
 Rebuild the free list from the block bit map (V7
@@ -235,6 +246,18 @@ flag: a read-write mount stamps it dirty and a clean unmount clears it, so a
 bare fsck skips a clean filesystem unless
 .B \-f
 is given.  V1 and PDP-7 have no such flag and are always checked.
+.TP
+.B \-F
+Open the filesystem even when its superblock magic word matches neither byte
+order (a foreign or damaged image).  Only meaningful with
+.BR \-a ,
+which then fixes the byte order to use.  Without
+.BR \-F ,
+a magic word that reads in the
+.I other
+byte order than
+.B \-a
+is a conflict and fsck exits; a magic word that reads in neither is an error.
 .TP
 .B \-n
 Report only; change nothing.  This is the default, but makes read-only intent

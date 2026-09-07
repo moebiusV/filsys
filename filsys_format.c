@@ -8,8 +8,11 @@
  * SPDX-License-Identifier: ISC
  */
 #include <config.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "filsys.h"
 #include "v7fs.h"
 #include "filsys_ops.h"
@@ -244,5 +247,120 @@ filsys_edition_t filsys_getformat(int edition) {
         return f;   /* ops == NULL marks an unknown edition */
     }
     }
+}
+
+/* ---- byte-order resolution ------------------------------------------------ */
+
+static const char *bo_endian_name(const byte_order_ops_t *bo) {
+    if (bo == &bo_le) return "little";
+    if (bo == &bo_be) return "big";
+    if (bo == &bo_me) return "middle (PDP-11)";
+    return "unknown";
+}
+
+/* Byte offset of a magic-bearing edition's 4-byte magic word within the image,
+ * measured from the start of the filesystem.  System V keeps its 512-byte
+ * superblock at byte 512 whatever the logical block size; Xenix keeps its magic
+ * at byte 1016 of its block-1 superblock (1024 bytes). */
+static off_t magic_byte_offset(const filsys_edition_t *fmt) {
+    if (fmt->dyn_bsize)
+        return 512 + (off_t)fmt->magic_off;
+    return (off_t)fmt->bsize + fmt->magic_off;
+}
+
+/* Resolve the byte order of a magic-bearing edition from its on-disk magic
+ * word, and apply the user's `arch` (if any) against it.  The magic determines
+ * the byte order, and the byte order determines whether the other superblock
+ * fields parse -- the kernel reads s_magic in both orders first, sets
+ * s_bytesex, then reads everything else.  This is the same chicken-and-egg
+ * resolved up front, so a big-endian volume opens whether or not the user
+ * names the arch.
+ *
+ * On success fmt->bo is the resolved order and 0 is returned.  On failure a
+ * negative errno is returned and *errmsg (if non-NULL) receives a static
+ * description the caller should print.
+ *
+ *   arch == NULL   -- detect the order from the magic word.  If it reads in
+ *                     neither order (a wrong magic) the open is refused.
+ *   arch != NULL   -- the user insists on `arch`.  A magic word that reads in
+ *                     the *other* order is a conflict (EINVAL); a magic word
+ *                     that reads in neither is refused (EILSEQ) unless `force`.
+ */
+int filsys_resolve_byteorder(filsys_edition_t *fmt, const char *path,
+                             uint64_t offset, const char *arch, int force,
+                             const char **errmsg) {
+    static char msgbuf[160];
+    if (errmsg)
+        *errmsg = NULL;
+
+    const byte_order_ops_t *arch_bo = NULL;
+    if (arch) {
+        arch_bo = filsys_arch_bo(arch);
+        if (!arch_bo) {
+            snprintf(msgbuf, sizeof msgbuf, "unknown architecture '%s'", arch);
+            if (errmsg) *errmsg = msgbuf;
+            return -EINVAL;
+        }
+    }
+
+    /* No magic word: nothing to detect; the arch (if any) simply wins. */
+    if (!fmt->magic) {
+        if (arch_bo)
+            fmt->bo = arch_bo;
+        return 0;
+    }
+
+    uint8_t m[4];
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        int e = errno;
+        snprintf(msgbuf, sizeof msgbuf, "cannot open image: %s", strerror(e));
+        if (errmsg) *errmsg = msgbuf;
+        return -e;
+    }
+    off_t moff = magic_byte_offset(fmt) + (off_t)offset;
+    ssize_t n = pread(fd, m, sizeof m, moff);
+    close(fd);
+    if (n != (ssize_t)sizeof m) {
+        snprintf(msgbuf, sizeof msgbuf, "cannot read superblock magic at byte %lld",
+                 (long long)moff);
+        if (errmsg) *errmsg = msgbuf;
+        return -EIO;
+    }
+
+    int le = (bo_get32le(m) == fmt->magic);
+    int be = (bo_get32be(m) == fmt->magic);
+
+    if (arch_bo) {
+        if (arch_bo->get32(m) == fmt->magic) {
+            fmt->bo = arch_bo;             /* the arch matches the magic */
+            return 0;
+        }
+        if (le || be) {                    /* valid magic, but the other order */
+            snprintf(msgbuf, sizeof msgbuf,
+                     "superblock magic is %s-endian, but arch '%s' is %s-endian",
+                     le ? "little" : "big", arch, bo_endian_name(arch_bo));
+            if (errmsg) *errmsg = msgbuf;
+            return -EINVAL;
+        }
+        if (force) {                       /* wrong magic, but the user insists */
+            fmt->bo = arch_bo;
+            fmt->ignore_magic = 1;
+            return 0;
+        }
+        snprintf(msgbuf, sizeof msgbuf,
+                 "bad superblock magic 0x%08x (expected 0x%08x); use -F to force arch '%s'",
+                 bo_get32le(m), fmt->magic, arch);
+        if (errmsg) *errmsg = msgbuf;
+        return -EILSEQ;
+    }
+
+    if (le) { fmt->bo = &bo_le; return 0; }
+    if (be) { fmt->bo = &bo_be; return 0; }
+    snprintf(msgbuf, sizeof msgbuf,
+             "bad superblock magic 0x%08x (expected 0x%08x); cannot determine byte order",
+             bo_get32le(m), fmt->magic);
+    if (errmsg) *errmsg = msgbuf;
+    return -EILSEQ;
 }
 
