@@ -259,13 +259,20 @@ static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
     /* Xenix and System V carry a magic word at a fixed superblock offset (in the
      * edition's byte order); System V also carries s_type naming the block size.
      * Write both once, since super_write preserves the bytes it does not
-     * maintain. */
+     * maintain.  System V's superblock is a 512-byte struct at byte 512, not
+     * block 1, whatever the logical block size. */
     if (fs->magic) {
         uint8_t sb[V7_MAXBSIZE] = {0};
         fs->bo->put32(sb + fs->magic_off, fs->magic);
-        if (fs->dyn_bsize)
-            fs->bo->put32(sb + V7_SYSV_TYPE_OFF, V7_SYSV_Fs1b);  /* 512-byte blocks */
-        fs->ops->write_block(fs, V7_SUPERB, sb);
+        if (fs->dyn_bsize) {
+            uint32_t st = fs->bsize == 512 ? V7_SYSV_Fs1b
+                        : fs->bsize == 1024 ? V7_SYSV_Fs2b
+                        : V7_SYSV_Fs4b;
+            fs->bo->put32(sb + V7_SYSV_TYPE_OFF, st);
+            fs->io->write(fs, sb, 512, 512 + (off_t)fs->base);
+        } else {
+            fs->ops->write_block(fs, V7_SUPERB, sb);
+        }
     }
 
     uint8_t zb[V7_MAXBSIZE] = {0};
@@ -618,9 +625,10 @@ int main(int argc, char **argv)
     int edition = -1;   /* no default: the version must be named explicitly */
     const char *packing = NULL;   /* PDP-7 word container codec */
     const char *arch = NULL;      /* CPU arch: overrides the edition's byte order */
+    uint32_t user_bsize = 0;      /* -B: System V logical block size (512/1024/2048) */
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:b:m:n:P:a:")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:b:m:n:P:a:B:")) != -1) {
         switch (c) {
         case 'v':
             edition = filsys_parse_edition("mkfs.filsys", optarg);
@@ -633,14 +641,15 @@ int main(int argc, char **argv)
         case 'n': v7_n = (uint16_t)strtoul(optarg, NULL, 0); break;
         case 'P': packing = optarg; break;
         case 'a': arch = optarg; break;
+        case 'B': user_bsize = (uint32_t)strtoul(optarg, NULL, 0); break;
         default:
-            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-b boot] [-m m] [-n n] image [blocks]\n"
+            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-B bsize] [-b boot] [-m m] [-n n] image [blocks]\n"
                             "  editions: %s\n", filsys_editions_usage());
             return 1;
         }
     }
     if (optind >= argc) {
-        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-b boot] [-m m] [-n n] image [blocks]\n"
+        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-B bsize] [-b boot] [-m m] [-n n] image [blocks]\n"
                         "  editions: %s\n", filsys_editions_usage());
         return 1;
     }
@@ -674,6 +683,19 @@ int main(int argc, char **argv)
             return 1;
         }
         fs.bo = bo;
+    }
+    if (user_bsize) {
+        if (!fs.dyn_bsize) {
+            fprintf(stderr, "mkfs.filsys: -B block size is System-V-only\n");
+            return 1;
+        }
+        if (user_bsize != 512 && user_bsize != 1024 && user_bsize != 2048) {
+            fprintf(stderr, "mkfs.filsys: bad block size %u (want 512, 1024 or 2048)\n",
+                    user_bsize);
+            return 1;
+        }
+        fs.bsize = user_bsize;
+        fs.nindir = user_bsize / fs.daddr_wid;
     }
     bsize = fs.bsize;
     blocks = resolve_blocks(path, offblock, blocks);
