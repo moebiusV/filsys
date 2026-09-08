@@ -138,7 +138,7 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
 int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly,
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
                      const char *arch, int force, const filsys_geom_t *geom,
-                     const char **errmsg);
+                     int no_lock, const char **errmsg);
 /* Close and flush.  Returns the final sync result (0 on success, or a negative
  * errno if the last flush failed); the caller should report it and set a
  * non-zero exit status -- the final write is the one a silent failure loses

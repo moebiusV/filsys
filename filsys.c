@@ -17,6 +17,7 @@
 #include "pdp7fs.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -184,10 +185,36 @@ static int split_path(const char *path, char *dir, size_t dirsz,
 
 /* ---- public API ---------------------------------------------------------- */
 
+/* Advisory byte-range lock over one filesystem's extent within the image, so
+ * two read-write mounts of the same extent can't hand out the same block (the
+ * silent, persistent corruption case).  Only a read-write mount takes a lock
+ * (an OFD write lock); a read-only mount takes none but warns if a write lock
+ * is already held there.  Nested mounts (root at offset 0, /usr at offset N)
+ * hold disjoint extents and coexist.  OFD, not POSIX record locks, so the lock
+ * isn't dropped when any descriptor of the file is closed.  Advisory: it does
+ * not stop simh, which does not participate. */
+static int lock_image(filsys_t *fs, const char *path, uint64_t offset) {
+    uint64_t len = (uint64_t)fs->fs->fsize * fs->fs->bsize;
+    struct flock lk = { .l_type = F_WRLCK, .l_whence = SEEK_SET,
+                        .l_start = (off_t)offset, .l_len = (off_t)len };
+    int fd = fs->fs->fd;
+    if (fs->readonly) {
+        if (fcntl(fd, F_OFD_GETLK, &lk) == 0 && lk.l_type == F_WRLCK)
+            fprintf(stderr, "filsys: warning: %s is open read-write elsewhere; "
+                    "this mount won't see those writes\n", path);
+        return 0;
+    }
+    if (fcntl(fd, F_OFD_SETLK, &lk) == 0)
+        return 0;
+    fprintf(stderr, "filsys: %s is already open read-write (use -o no_lock to override)\n",
+            path);
+    return -EBUSY;
+}
+
 int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly,
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
                      const char *arch, int force, const filsys_geom_t *geom,
-                     const char **errmsg) {
+                     int no_lock, const char **errmsg) {
     filsys_edition_t fmt = filsys_getformat(edition);
     if (!fmt.ops)
         return -EINVAL;
@@ -225,6 +252,15 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
         free(fs);
         return rc;
     }
+    if (!no_lock) {
+        rc = lock_image(fs, path, offset);
+        if (rc) {
+            fs->ops->close(fs->fs);
+            free(fs->fs);
+            free(fs);
+            return rc;
+        }
+    }
     /* A read-write open is dirty until a clean close clears s_fmod (see the
      * backends' close); stamp it now so a crash before close is flagged.  If the
      * dirty stamp itself can't be persisted, refuse the open -- otherwise a crash
@@ -245,7 +281,7 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
 
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
                 uint64_t offset, uid_t uid, gid_t gid, const char *packing) {
-    return filsys_open_arch(out, edition, path, readonly, offset, uid, gid, packing, NULL, 0, NULL, NULL);
+    return filsys_open_arch(out, edition, path, readonly, offset, uid, gid, packing, NULL, 0, NULL, 0, NULL);
 }
 
 int filsys_close(filsys_t *fs) {
