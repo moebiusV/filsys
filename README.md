@@ -723,6 +723,17 @@ emulator is running.
   killing the process after `k` writes, and requires every image to be
   alias-free and `fsck -s`-recoverable — complete over the operation, not a
   sample of it.
+- **`mkdir` is the one non-recoverable crash.**  `mkdir` is non-monotone: its
+  inode and `.`/`..` land before the parent's entry (rule 1, correctly), so a
+  crash between them orphans the new directory.  `fsck` cannot auto-repair an
+  orphan *directory* without a `lost+found` phase, so `crash_prefix_test` covers
+  the recoverable ops, and `mkdir`'s error path (where the rollback runs) is
+  covered by fault injection.  `dup == 0` still holds at every `mkdir` prefix —
+  the limit is recoverability, not aliasing.
+- **`property_sequences` drives random operation histories** against the library
+  and a small in-memory model, then requires the image to be fsck-clean and every
+  surviving file to read back at its modelled size.  A hand-written matrix only
+  finds bugs someone thought to write a case for; this finds a different class.
 - The `-c` integrity check walks the free list and the inode table and
   reports out-of-range block numbers, cycles, and unreadable inodes.
 - The triple-indirect path is exercised by `v7_triple_indirect` in
