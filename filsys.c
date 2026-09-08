@@ -256,7 +256,15 @@ void filsys_set_io(filsys_t *fs, const filsys_io_t *io) {
 }
 
 int filsys_sync(filsys_t *fs) {
-    return fs->ops->sync(fs->fs);
+    int rc = fs->ops->sync(fs->fs);
+    /* ops->sync pushed the superblock and pending metadata into the host page
+     * cache via pwrite.  fsync the backing fd so the FUSE fsync path -- and an
+     * application's fsync(2) on a mounted file -- actually reaches the device
+     * rather than stopping at the cache: without this the guarantee ends at
+     * "process-crash durable" and says nothing about host crash / power loss. */
+    if (rc == 0 && !fs->readonly && fs->fs->fd >= 0 && fsync(fs->fs->fd) != 0)
+        rc = -errno;
+    return rc;
 }
 
 int filsys_is_readonly(const filsys_t *fs) {
