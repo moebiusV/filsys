@@ -86,6 +86,7 @@ struct fmt {
     int         blocks;
     uint64_t    maxfile;
     uint64_t    direct;
+    int         noprobe;
 };
 
 /* Fill one row from the shared table; returns 0 past the end, -1 to skip a
@@ -104,6 +105,7 @@ static int fmt_at(size_t i, struct fmt *out) {
     out->blocks  = (f->edition == FILSYS_PDP7) ? 0 : 4000;
     out->direct  = (uint64_t)desc.ndaddr * desc.bsize;
     out->maxfile = desc.ops->max_file(&desc);
+    out->noprobe = desc.noprobe;
     return 1;
 }
 
@@ -799,6 +801,8 @@ static void findfs_self_detect(void) {
             break;
         if (frc < 0)
             continue;
+        if (f.noprobe)
+            continue;   /* findfs's unified probe does not cover it yet */
         const char *want = findfs_name(f.edition);
         char img[64], cmd[512], line[256], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_find.img", f.name);

@@ -99,8 +99,10 @@ struct mkfs_fmt {
 
 static uint32_t isize_v7(uint32_t blocks, uint32_t ipb);
 static uint32_t isize_v6(uint32_t blocks, uint32_t ipb);
+static uint32_t isize_v8(uint32_t blocks, uint32_t ipb);
 static uint32_t seed_v7(filsys_edition_t *fs);
 static uint32_t seed_v6(filsys_edition_t *fs);
+static uint32_t seed_v8(filsys_edition_t *fs);
 static uint32_t seed_bsd211(filsys_edition_t *fs);
 static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
                         const char *path, uint32_t blocks, const char *bootfile);
@@ -185,6 +187,18 @@ static uint32_t isize_v6(uint32_t blocks, uint32_t ipb)
     return isz;       /* s_isize counts i-list blocks */
 }
 
+/* V8-family: s_isize is the first data block; mkbitfs picks
+ * (size - 2) / (1 + INOPB) and caps the inode count at 65536 (16-bit ino_t). */
+static uint32_t isize_v8(uint32_t blocks, uint32_t ipb)
+{
+    uint32_t isz = (blocks - 2) / (1 + ipb);
+    if (isz < 3)
+        isz = 3;                 /* need block 2 for inode 2 (the root) */
+    if (isz > 65536 / ipb)
+        isz = 65536 / ipb;
+    return isz;                  /* s_isize is the first data block */
+}
+
 static uint32_t seed_v7(filsys_edition_t *fs)
 {
     filsys_inode_t ip;
@@ -214,6 +228,31 @@ static uint32_t seed_v7(filsys_edition_t *fs)
     ip.addr[0] = bno;
     fs->ops->write_inode(fs, fs->rootino, &ip);
     return 2;
+}
+
+/* V8-family: no bad-block inode; only the root directory is seeded. */
+static uint32_t seed_v8(filsys_edition_t *fs)
+{
+    filsys_inode_t ip;
+    uint8_t db[V7_MAXBSIZE];
+
+    uint32_t bno;
+    fs->alloc->balloc(fs, &bno);
+    memset(db, 0, fs->bsize);
+    fs->bo->put16(db, fs->rootino);
+    memcpy(db + 2, ".", 1);
+    fs->bo->put16(db + fs->dirent_size, fs->rootino);
+    memcpy(db + fs->dirent_size + 2, "..", 2);
+    fs->ops->write_block(fs, bno, db);
+
+    memset(&ip, 0, sizeof ip);
+    ip.ino = fs->rootino;
+    ip.mode = fs->ifdir | 0777;
+    ip.nlink = 2;
+    ip.size = 2 * fs->dirent_size;
+    ip.addr[0] = bno;
+    fs->ops->write_inode(fs, fs->rootino, &ip);
+    return 1;
 }
 
 static uint32_t seed_v6(filsys_edition_t *fs)
@@ -723,10 +762,13 @@ int main(int argc, char **argv)
 
     const struct mkfs_fmt v7_hook = { isize_v7, seed_v7 };
     const struct mkfs_fmt v6_hook = { isize_v6, seed_v6 };
+    const struct mkfs_fmt v8_hook = { isize_v8, seed_v8 };
     const struct mkfs_fmt bsd211_hook = { isize_v7, seed_bsd211 };
     const struct mkfs_fmt *hook =
         (edition == FILSYS_V6) ? &v6_hook :
-        (edition == FILSYS_BSD211) ? &bsd211_hook : &v7_hook;
+        (edition == FILSYS_BSD211) ? &bsd211_hook :
+        (edition == FILSYS_V8 || edition == FILSYS_V9 || edition == FILSYS_V10) ? &v8_hook :
+        &v7_hook;
     mkfs_common(&fs, hook, path, blocks, bootfile);
 
     close(fd);
