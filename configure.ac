@@ -72,7 +72,7 @@ AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
                 [fuse3_hdr=no])])
         AS_IF([test "x$fuse3_hdr" = xyes], [
             save_LIBS=$LIBS
-            AC_SEARCH_LIBS([fuse_main], [fuse3 fuse refuse],
+            AC_SEARCH_LIBS([fuse_main], [fuse3 fuse refuse puffs],
                 [have_fuse3=yes], [have_fuse3=no])
             AS_IF([test "x$have_fuse3" = xyes], [
                 AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
