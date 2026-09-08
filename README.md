@@ -714,6 +714,15 @@ emulator is running.
   the reachable post-crash states are a subset of those the original kernel
   could produce, and `fsck.filsys` repairs every one — a weaker claim than
   transactional consistency, and a stronger one than the tests alone establish.
+- **The write path is ordered by the soft-updates rules** (McKusick & Ganger):
+  never point to a structure before initialising it; never reuse a resource
+  before nullifying every previous pointer to it (the aliasing invariant,
+  `dup == 0`); never reset the last pointer to a live resource before setting a
+  new one.  `crash_prefix_test` proves them over a bounded domain: it learns a
+  bounded op's write count `W`, then re-runs the op for every prefix `k = 0..W`,
+  killing the process after `k` writes, and requires every image to be
+  alias-free and `fsck -s`-recoverable — complete over the operation, not a
+  sample of it.
 - The `-c` integrity check walks the free list and the inode table and
   reports out-of-range block numbers, cycles, and unreadable inodes.
 - The triple-indirect path is exercised by `v7_triple_indirect` in
