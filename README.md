@@ -1,7 +1,8 @@
 # filsys
 
 Mount a **Research Unix** filesystem image (PDP-11) as a FUSE filesystem on
-Linux, so files can be copied on and off the disk for use with a simulator
+Linux, macOS, FreeBSD, NetBSD, or OpenBSD, so files can be copied on and off
+the disk for use with a simulator
 (SIMH `pdp11`).  Linux's own `sysv`/`v7` kernel driver was removed in 6.15
 (2025) and never handled the PDP-7 through V6 or 32V to begin with, so this is now the
 only way to mount these filesystems — see "Linux kernel support" below.
@@ -25,17 +26,40 @@ mount.filsys -v bsd211 bsd211.dsk mnt    # 2.11BSD format (32-bit inode, variabl
 
 Home: <https://github.com/moebiusV/filsys>
 
+## Platform support
+
+| platform | FUSE | status |
+|---|---|---|
+| Linux | fuse3 (default) / fuse2 | **built + tested** (`make check`, `test.sh`) |
+| FreeBSD | fuse3 (`fusefs-libs3`) | builds, untested |
+| macOS | fuse3 (macFUSE ≥ 5.2) / fuse2 (macFUSE 4.x, FUSE-T) | builds, untested |
+| NetBSD ≥ 10 | fuse3 (librefuse) | builds, untested |
+| NetBSD 9 | fuse2 (librefuse) | builds, untested |
+| OpenBSD | fuse2 (base libfuse, 2.6-era) | builds, untested |
+| Windows | — | unsupported |
+
+"Builds, untested" means the adapters and the configure probe compile and link,
+but the platform has not yet run a live mount.  Nothing is listed as tested
+ahead of a real image being mounted on it.  The FUSE-free callback core
+(`fuse_core.c`) is exercised by `make check` on every host; the per-version
+adapters (`fuseops.c` for FUSE3, `fuseops_openbsd.c` for OpenBSD's base
+libfuse) are the only untested surface.
+
 ## Dependencies
 
 - a C17 compiler (`gcc` or `clang`)
-- **libfuse3** (`libfuse3-dev` on Debian/Ubuntu, `fuse3-devel` on Fedora, `fuse3` on Arch)
+- **libfuse3** (`libfuse3-dev` on Debian/Ubuntu, `fuse3-devel` on Fedora, `fuse3` on Arch,
+  `fusefs-libs3` on FreeBSD) — the default, everywhere but OpenBSD
+- **libfuse 2.x** on OpenBSD (in base, no package) — `./configure --with-fuse=fuse2`
 
 `mkfs.filsys` and `fsck.filsys` are built here too (see "Creating and checking
 filesystems" below); they need no extra dependencies beyond a C compiler.
 
-If you can't install the dev package, `./fetch.sh` downloads and extracts the
-libfuse3 headers locally and the build falls back to linking the runtime
-SONAME directly.
+`./configure --with-fuse=auto|fuse3|fuse2` selects the API level; `auto` (the
+default) picks fuse3 where present and falls back to fuse2.  If you can't
+install the dev package, `./fetch.sh` downloads and extracts the libfuse3
+headers locally and the build falls back to linking the runtime SONAME
+directly.
 
 ## Build
 

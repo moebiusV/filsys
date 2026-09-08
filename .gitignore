@@ -57,3 +57,4 @@ test-suite.log
 
 # --- local notes (never pushed to the remote) ---
 docs/
+qemu-images/
