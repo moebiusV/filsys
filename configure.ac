@@ -72,11 +72,20 @@ AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
                 [fuse3_hdr=no])])
         AS_IF([test "x$fuse3_hdr" = xyes], [
             save_LIBS=$LIBS
-            AC_SEARCH_LIBS([fuse_main], [fuse3 fuse refuse puffs],
+            AC_SEARCH_LIBS([fuse_main], [fuse3 fuse refuse],
                 [have_fuse3=yes], [have_fuse3=no])
+            AS_IF([test "x$have_fuse3" = xno], [
+                # NetBSD's librefuse sits on libpuffs and needs it at link time.
+                LIBS="$save_LIBS -lpuffs"
+                AS_UNSET([ac_cv_search_fuse_main])
+                AC_SEARCH_LIBS([fuse_main], [refuse],
+                    [have_fuse3=yes; fuse3_puffs=yes], [have_fuse3=no])
+            ])
             AS_IF([test "x$have_fuse3" = xyes], [
                 AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
                     [FUSE3_LIBS=""], [FUSE3_LIBS="$ac_cv_search_fuse_main"])
+                AS_IF([test "x$fuse3_puffs" = xyes],
+                    [FUSE3_LIBS="$FUSE3_LIBS -lpuffs"])
                 FUSE3_CFLAGS=""
             ])
             LIBS=$save_LIBS
