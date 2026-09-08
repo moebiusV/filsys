@@ -302,6 +302,7 @@ typedef struct {
 } freelist_state;
 
 extern const alloc_ops_t freelist_alloc_ops;
+extern const alloc_ops_t v8_bitmap_alloc_ops;
 
 typedef struct filsys_edition {
     /* ---- format descriptor (static; set by filsys_getformat) ---- */
@@ -380,6 +381,14 @@ typedef struct filsys_edition {
                                   superblock must be flushed before an inode that
                                   references a newly-allocated block (else a crash
                                   leaves the block both free and referenced) */
+    /* V8-family bitmap state (heap-backed; NULL for free-list forms).  bit i is
+     * set iff the block is free; v8_base maps bit 0 to its block number
+     * (s_isize for the in-superblock bitmap, 0 for the out-of-superblock one). */
+    uint8_t  *v8_bits;
+    uint32_t  v8_nbits;
+    uint32_t  v8_base;
+    uint32_t  v8_nblks;        /* on-disk bitmap blocks (0 = in-superblock) */
+    uint32_t  v8_blk_start;    /* first on-disk bitmap block (out-of-superblock) */
 } filsys_edition_t;
 
 /* The descriptor for an edition: a copy of the V7 default with the edition's
@@ -419,6 +428,8 @@ int v7fs_mark_dirty(filsys_edition_t *fs);
  * the free-list/inode cache counts exceed their depths (mis-decoded block 1). */
 int v8_sb_decode(filsys_edition_t *fs, const uint8_t *sb);
 int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb);
+/* Load the V8-family free-space bitmap into fs->v8_bits (bit i set = free). */
+int v8_bitmap_load(filsys_edition_t *fs, const uint8_t *sb);
 
 /* Apply the V8-family `-o` geometry overrides (blocksize/freemap/byteorder) to a
  * descriptor, enforcing the one-bit-selects-both rule the kernels honour.  ed is
