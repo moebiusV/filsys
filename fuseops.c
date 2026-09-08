@@ -62,23 +62,28 @@ static int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int fuse_open(const char *path, struct fuse_file_info *fi)
 {
     fuse_ctx_t c = C();
-    return fuse_op_open(&c, path, fi->flags);
+    uint64_t fh = 0;
+    int rc = fuse_op_open(&c, path, fi->flags, &fh);
+    if (rc)
+        return rc;
+    fi->fh = fh;   /* stash the inode number; read/write use it, not the path */
+    return 0;
 }
 
 static int fuse_read(const char *path, char *buf, size_t size, off_t off,
                      struct fuse_file_info *fi)
 {
-    (void)fi;
+    (void)path;
     fuse_ctx_t c = C();
-    return fuse_op_read(&c, path, buf, size, off);
+    return fuse_op_read(&c, fi->fh, buf, size, off);
 }
 
 static int fuse_write(const char *path, const char *buf, size_t size, off_t off,
                       struct fuse_file_info *fi)
 {
-    (void)fi;
+    (void)path;
     fuse_ctx_t c = C();
-    return fuse_op_write(&c, path, buf, size, off);
+    return fuse_op_write(&c, fi->fh, buf, size, off);
 }
 
 static int fuse_readlink(const char *path, char *buf, size_t size)
