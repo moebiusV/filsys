@@ -1,7 +1,15 @@
 name: macos
 
-# Runs on a native runner (there is no macos-vm action).  Uses macFUSE (>= 5.2
-# ships libfuse3), the primary macOS backend, matching the Homebrew formula.
+# Runs on a native runner (there is no macos-vm action).  Uses FUSE-T (fuse2,
+# kext-free) rather than macFUSE for two concrete reasons:
+#   - macFUSE's fuse3 API is not Linux/BSD fuse3: its getattr/readdir take
+#     struct fuse_darwin_attr and statfs takes struct statfs, so the FUSE3
+#     adapter (fuseops.c) does not compile against it.
+#   - macFUSE's kext cannot be loaded headlessly on a runner (it needs a
+#     System Settings approval + reboot).
+# FUSE-T is a drop-in, macfuse-compatible libfuse 2.x that mounts through a
+# local NFS server -- no kext, no approval -- which is the one path that can
+# both compile and mount a live image here.
 
 on:
   push:
@@ -12,16 +20,16 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: macOS — fuse3 (macFUSE)
+      - name: macOS — fuse2 (FUSE-T, kext-free)
         run: |
           eval "$(brew shellenv)"
           brew install pkg-config
-          brew install --cask macfuse
-          ./configure --with-fuse=fuse3
+          brew install macos-fuse-t/homebrew-cask/fuse-t
+          ./configure --with-fuse=fuse2
           make
           make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
           curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
           gunzip rp06-0.disk.gz
-          ./configure --with-fuse=fuse3 --enable-image-tests
+          ./configure --with-fuse=fuse2 --enable-image-tests
           make
           make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
