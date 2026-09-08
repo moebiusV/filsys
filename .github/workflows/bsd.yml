@@ -1,0 +1,82 @@
+name: bsd
+
+# Build and test on real FreeBSD, OpenBSD and NetBSD kernels via the vmactions
+# -vm actions (a QEMU-accelerated BSD VM per job).  Two tiers:
+#
+#   1. `gmake check` runs test_matrix, the FUSE-free core test that creates,
+#      writes, reads, truncates and deletes files on every edition through the
+#      library.  It proves the code builds and the library is correct on a real
+#      BSD kernel with no FUSE in the picture.
+#   2. `test.sh` (enabled with --enable-image-tests) mounts a real V7 image
+#      through FUSE and exercises read/write/mkdir/rename/truncate/persistence.
+#      This is what exercises the FUSE2/FUSE3 adapters on each platform.
+#
+# The BSDs use GNU make (gmake) for autotools-generated Makefiles, so `gmake`,
+# not `make`.  FUSE is fuse3 on FreeBSD (fusefs-libs3) and NetBSD >= 10
+# (librefuse), fuse2 on OpenBSD (base libfuse, 2.6-era).
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: FreeBSD — fuse3 (fusefs-libs3)
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y gmake pkgconf fusefs-libs3
+            kldload fusefs
+          run: |
+            ./configure --with-fuse=fuse3
+            gmake
+            gmake check
+            curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
+            gunzip rp06-0.disk.gz
+            ./configure --with-fuse=fuse3 --enable-image-tests
+            gmake
+            gmake check
+
+  openbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: OpenBSD — fuse2 (base libfuse)
+        uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg_add gmake pkgconf
+          run: |
+            ./configure --with-fuse=fuse2
+            gmake
+            gmake check
+            curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
+            gunzip rp06-0.disk.gz
+            ./configure --with-fuse=fuse2 --enable-image-tests
+            gmake
+            gmake check
+
+  netbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: NetBSD — fuse3 (librefuse)
+        uses: vmactions/netbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg_add gmake pkgconf
+          run: |
+            ./configure --with-fuse=fuse3
+            gmake
+            gmake check
+            curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
+            gunzip rp06-0.disk.gz
+            ./configure --with-fuse=fuse3 --enable-image-tests
+            gmake
+            gmake check
