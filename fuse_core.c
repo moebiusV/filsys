@@ -71,6 +71,16 @@ int fuse_op_write(fuse_ctx_t *c, const char *path, const char *buf,
     return filsys_write(c->fs, path, buf, size, off);
 }
 
+int fuse_op_readlink(fuse_ctx_t *c, const char *path, char *buf, size_t size)
+{
+    ssize_t n = filsys_readlink(c->fs, path, buf, size);
+    if (n < 0)
+        return (int)n;
+    if (n < (ssize_t)size)
+        buf[n] = '\0';   /* filsys_readlink returns the target without a NUL */
+    return 0;
+}
+
 int fuse_op_create(fuse_ctx_t *c, const char *path, mode_t mode)
 {
     return filsys_create(c->fs, path, mode, c->uid, c->gid);
@@ -84,6 +94,11 @@ int fuse_op_mkdir(fuse_ctx_t *c, const char *path, mode_t mode)
 int fuse_op_mknod(fuse_ctx_t *c, const char *path, mode_t mode, dev_t rdev)
 {
     return filsys_mknod(c->fs, path, mode, rdev, c->uid, c->gid);
+}
+
+int fuse_op_symlink(fuse_ctx_t *c, const char *target, const char *linkpath)
+{
+    return filsys_symlink(c->fs, target, linkpath);
 }
 
 int fuse_op_unlink(fuse_ctx_t *c, const char *path)

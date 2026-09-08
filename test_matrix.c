@@ -88,6 +88,7 @@ struct fmt {
     uint64_t    maxfile;
     uint64_t    direct;
     uint32_t    bsize;
+    int         iflnk;
     int         noprobe;
 };
 
@@ -107,6 +108,7 @@ static int fmt_at(size_t i, struct fmt *out) {
     out->blocks  = (f->edition == FILSYS_PDP7) ? 0 : 4000;
     out->direct  = (uint64_t)desc.ndaddr * desc.bsize;
     out->bsize   = desc.bsize;
+    out->iflnk   = desc.iflnk != 0;
     out->maxfile = desc.ops->max_file(&desc);
     out->noprobe = desc.noprobe;
     return 1;
@@ -255,6 +257,21 @@ static void run(const struct fmt *f) {
            stat_blocks(fs, "/s4") * 512 >= (long)(f->direct + bsize));
         free(big);
         free(b);
+    }
+
+    /* Symlinks: only the editions that carry IFLNK (V8 family, 2.11BSD). */
+    {
+        static const char tgt[] = "/some/target";
+        char buf[64] = "";
+        if (f->iflnk) {
+            ok("symlink create", filsys_symlink(fs, tgt, "/lnk") == 0);
+            ssize_t n = filsys_readlink(fs, "/lnk", buf, sizeof buf);
+            ok("readlink target", n == (ssize_t)strlen(tgt) &&
+               memcmp(buf, tgt, strlen(tgt)) == 0);
+        } else {
+            ok("symlink rejected (predates IFLNK)",
+               filsys_symlink(fs, tgt, "/lnk") == -ENOSYS);
+        }
     }
 
     filsys_close(fs);

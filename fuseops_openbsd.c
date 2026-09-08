@@ -88,6 +88,12 @@ static int fuse_write(const char *path, const char *buf, size_t size, off_t off,
     return fuse_op_write(&c, path, buf, size, off);
 }
 
+static int fuse_readlink(const char *path, char *buf, size_t size)
+{
+    fuse_ctx_t c = C();
+    return fuse_op_readlink(&c, path, buf, size);
+}
+
 static int fuse_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     (void)fi;
@@ -105,6 +111,12 @@ static int fuse_mknod(const char *path, mode_t mode, dev_t rdev)
 {
     fuse_ctx_t c = C();
     return fuse_op_mknod(&c, path, mode, rdev);
+}
+
+static int fuse_symlink(const char *target, const char *linkpath)
+{
+    fuse_ctx_t c = C();
+    return fuse_op_symlink(&c, target, linkpath);
 }
 
 static int fuse_unlink(const char *path) { fuse_ctx_t c = C(); return fuse_op_unlink(&c, path); }
@@ -199,8 +211,10 @@ static struct fuse_operations fuse_ops = {
     .open     = fuse_open,
     .read     = fuse_read,
     .write    = fuse_write,
+    .readlink = fuse_readlink,
     .create   = fuse_create,
     .link     = fuse_link,
+    .symlink  = fuse_symlink,
     .mkdir    = fuse_mkdir,
     .mknod    = fuse_mknod,
     .unlink   = fuse_unlink,

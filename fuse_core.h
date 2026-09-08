@@ -31,9 +31,11 @@ int fuse_op_read(fuse_ctx_t *c, const char *path, char *buf, size_t size,
                  off_t off);
 int fuse_op_write(fuse_ctx_t *c, const char *path, const char *buf, size_t size,
                   off_t off);
+int fuse_op_readlink(fuse_ctx_t *c, const char *path, char *buf, size_t size);
 int fuse_op_create(fuse_ctx_t *c, const char *path, mode_t mode);
 int fuse_op_mkdir(fuse_ctx_t *c, const char *path, mode_t mode);
 int fuse_op_mknod(fuse_ctx_t *c, const char *path, mode_t mode, dev_t rdev);
+int fuse_op_symlink(fuse_ctx_t *c, const char *target, const char *linkpath);
 int fuse_op_unlink(fuse_ctx_t *c, const char *path);
 int fuse_op_rmdir(fuse_ctx_t *c, const char *path);
 int fuse_op_link(fuse_ctx_t *c, const char *from, const char *to);
