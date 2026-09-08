@@ -34,12 +34,12 @@ jobs:
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
             gmake
-            gmake check
+            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
             gmake
-            gmake check
+            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
 
   openbsd:
     runs-on: ubuntu-latest
@@ -51,15 +51,16 @@ jobs:
           usesh: true
           prepare: |
             pkg_add gmake pkgconf curl
+            ls -la /usr/lib/libfuse* /usr/lib/librefuse* /usr/lib/libpuffs* 2>&1
           run: |
             MAKE=gmake ./configure --with-fuse=fuse2
             gmake
-            gmake check
+            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse2 --enable-image-tests
             gmake
-            gmake check
+            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
 
   netbsd:
     runs-on: ubuntu-latest
@@ -71,12 +72,13 @@ jobs:
           usesh: true
           prepare: |
             pkg_add gmake pkgconf curl
+            ls -la /usr/lib/libfuse* /usr/lib/librefuse* /usr/lib/libpuffs* 2>&1
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
             gmake
-            gmake check
+            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
             gmake
-            gmake check
+            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
