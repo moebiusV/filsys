@@ -342,10 +342,24 @@ ssize_t filsys_read(filsys_t *fs, const char *path, void *buf, size_t size, off_
     return file_read(fs, &ip, (uint8_t *)buf, size, off);
 }
 
+ssize_t filsys_read_ino(filsys_t *fs, uint32_t ino, void *buf, size_t size, off_t off) {
+    filsys_inode_t ip;
+    int rc = read_inode(fs, ino, &ip);
+    if (rc) return rc;
+    return file_read(fs, &ip, (uint8_t *)buf, size, off);
+}
+
 ssize_t filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, off_t off) {
     filsys_inode_t ip;
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
+    if (rc) return rc;
+    return filsys_write_ino(fs, ino, buf, size, off);
+}
+
+ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t size, off_t off) {
+    filsys_inode_t ip;
+    int rc = read_inode(fs, ino, &ip);
     if (rc) return rc;
     if (off < 0)
         return -EINVAL;
@@ -705,8 +719,14 @@ int filsys_link(filsys_t *fs, const char *from, const char *to) {
     return do_link(fs, to, ino);
 }
 
+/* rename(2) flags (the Linux renameat2 ABI; frozen values).  FUSE3 passes them
+ * on Linux; FUSE2 (OpenBSD) passes none.  filsys supports only NOREPLACE --
+ * the kernel's silly-rename for unlink-of-open-file uses it, so the descriptor
+ * (now ino-keyed) can outlive the directory entry. */
+enum { FS_RENAME_NOREPLACE = 1 };
+
 int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int flags) {
-    if (flags) return -EINVAL;
+    if (flags & ~FS_RENAME_NOREPLACE) return -EINVAL;   /* EXCHANGE/unknown unsupported */
     if (!strcmp(from, to)) return 0;
     filsys_inode_t sip;
     uint32_t sino;
@@ -743,6 +763,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     int had_target = 0;
     int free_target = 0;               /* orphaned target to free at commit */
     if (dir_lookup(fs, &tdirip, tname, &tino) == 0) {
+        if (flags & FS_RENAME_NOREPLACE) return -EEXIST;   /* don't clobber */
         if (tino == sino) return 0;   /* already there */
         filsys_inode_t tip;
         if (read_inode(fs, tino, &tip)) return -EIO;

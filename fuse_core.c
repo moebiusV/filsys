@@ -43,7 +43,7 @@ int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit,
     return 0;
 }
 
-int fuse_op_open(fuse_ctx_t *c, const char *path, int flags)
+int fuse_op_open(fuse_ctx_t *c, const char *path, int flags, uint64_t *fh)
 {
     filsys_inode_t ip;
     uint32_t ino;
@@ -56,19 +56,20 @@ int fuse_op_open(fuse_ctx_t *c, const char *path, int flags)
         return -EISDIR;
     if ((flags & O_ACCMODE) != O_RDONLY && filsys_is_readonly(c->fs))
         return -EROFS;
+    *fh = ino;   /* read/write use the ino, so the fd outlives the directory entry */
     return 0;
 }
 
-int fuse_op_read(fuse_ctx_t *c, const char *path, char *buf, size_t size,
+int fuse_op_read(fuse_ctx_t *c, uint64_t fh, char *buf, size_t size,
                    off_t off)
 {
-    return filsys_read(c->fs, path, buf, size, off);
+    return (int)filsys_read_ino(c->fs, (uint32_t)fh, buf, size, off);
 }
 
-int fuse_op_write(fuse_ctx_t *c, const char *path, const char *buf,
+int fuse_op_write(fuse_ctx_t *c, uint64_t fh, const char *buf,
                     size_t size, off_t off)
 {
-    return filsys_write(c->fs, path, buf, size, off);
+    return (int)filsys_write_ino(c->fs, (uint32_t)fh, buf, size, off);
 }
 
 int fuse_op_readlink(fuse_ctx_t *c, const char *path, char *buf, size_t size)

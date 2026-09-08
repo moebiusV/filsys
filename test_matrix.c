@@ -279,6 +279,25 @@ static void run(const struct fmt *f) {
     ok("create rejects oversized uid",
        filsys_create(fs, "/biguid", 0644, 70000, 0) == -EINVAL);
 
+    /* Ino-keyed read/write: an open descriptor reads by inode, not path. */
+    {
+        uint8_t wbuf[32], rbuf[32] = {0};
+        for (int i = 0; i < 32; i++) wbuf[i] = (uint8_t)i;
+        filsys_create(fs, "/ino", 0644, 0, 0);
+        filsys_write(fs, "/ino", wbuf, sizeof wbuf, 0);
+        uint32_t ino; filsys_inode_t ip;
+        filsys_lookup(fs, "/ino", &ino, &ip);
+        ok("read_ino round-trip",
+           filsys_read_ino(fs, ino, rbuf, sizeof rbuf, 0) == (ssize_t)sizeof rbuf &&
+           memcmp(wbuf, rbuf, sizeof wbuf) == 0);
+        /* rename NOREPLACE: refuse to clobber, allow a fresh target */
+        filsys_create(fs, "/ino2", 0644, 0, 0);
+        ok("rename NOREPLACE over existing",
+           filsys_rename(fs, "/ino", "/ino2", 1) == -EEXIST);
+        ok("rename NOREPLACE fresh",
+           filsys_rename(fs, "/ino", "/ino3", 1) == 0);
+    }
+
     filsys_close(fs);
     ok("fsck clean", fsck_is_clean(f->name, img));
     unlink(img);
