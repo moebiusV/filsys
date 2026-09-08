@@ -50,9 +50,8 @@ jobs:
         with:
           usesh: true
           prepare: |
-            pkg_add gmake pkgconf curl
-            ls -la /usr/lib/libfuse* /usr/lib/librefuse* /usr/lib/libpuffs* 2>&1
-            nm -D /usr/lib/librefuse.so 2>/dev/null | grep -i "fuse_main\|fuse_new" || echo "fuse_main not in librefuse"
+            pkg_add gmake curl
+            pkg_add pkgconf || pkg_add pkg-config
           run: |
             MAKE=gmake ./configure --with-fuse=fuse2
             gmake
@@ -72,9 +71,8 @@ jobs:
         with:
           usesh: true
           prepare: |
-            pkg_add gmake pkgconf curl
-            ls -la /usr/lib/libfuse* /usr/lib/librefuse* /usr/lib/libpuffs* 2>&1
-            nm -D /usr/lib/librefuse.so 2>/dev/null | grep -i "fuse_main\|fuse_new" || echo "fuse_main not in librefuse"
+            pkg_add gmake curl
+            pkg_add pkgconf || pkg_add pkg-config
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
             gmake
