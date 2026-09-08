@@ -15,8 +15,21 @@ MNT=mnt
 [ -f "$IMG" ] || { echo "FAIL: disk image absent (run ./fetch.sh first)"; exit 1; }
 [ -x ./mount.filsys ] || { echo "run make first"; exit 1; }
 
+# Unmount the FUSE filesystem, picking the tool the platform uses: Linux
+# mounts through the setuid fusermount3/fusermount helper, so it unmounts
+# through it too; the BSDs and macOS mount directly and use plain umount.
+fs_umount() {
+    if command -v fusermount3 >/dev/null 2>&1; then
+        fusermount3 -uz "$1" 2>/dev/null
+    elif command -v fusermount >/dev/null 2>&1; then
+        fusermount -uz "$1" 2>/dev/null
+    else
+        umount "$1" 2>/dev/null
+    fi
+}
+
 cleanup() {
-    fusermount3 -uz "$MNT" 2>/dev/null || true
+    fs_umount "$MNT" || true
 }
 trap cleanup EXIT
 
@@ -30,7 +43,7 @@ sleep 1.5
 [ -f "$MNT/etc/passwd" ] || { echo "FAIL: cannot read /etc/passwd"; exit 1; }
 grep -q '^root:' "$MNT/etc/passwd" && echo "  ok: read /etc/passwd"
 ls "$MNT/bin" >/dev/null && echo "  ok: list /bin"
-fusermount3 -uz "$MNT"; sleep 0.5
+fs_umount "$MNT"; sleep 0.5
 
 echo "== mount read-write on a copy =="
 ./mount.filsys -v v7 -f "$COPY" "$MNT" >mount.log 2>&1 &
@@ -48,7 +61,7 @@ rmdir "$MNT/tmp/subdir" && echo "  ok: rmdir"
 cp "$MNT/bin/ls" ./ls-off
 [ -s ./ls-off ] && echo "  ok: copy binary off"
 
-fusermount3 -uz "$MNT"; sleep 0.5
+fs_umount "$MNT"; sleep 0.5
 
 echo "== truncate must not produce duplicate block references =="
 ./mount.filsys -v v7 -f "$COPY" "$MNT" >mount.log 2>&1 &
@@ -58,7 +71,7 @@ for sz in 60000 30000 45000 1000 40000; do
     truncate -s "$sz" "$MNT/tmp/trunctest"
 done
 sync
-fusermount3 -uz "$MNT"; sleep 0.5
+fs_umount "$MNT"; sleep 0.5
 if ./fsck.filsys -f -v 7 "$COPY" 2>&1 | grep -q 'dup=0'; then
     echo "  ok: no duplicate blocks after truncate"
 else
@@ -73,7 +86,7 @@ if [ "$(cat "$MNT/tmp/persist.txt")" = "persist me" ]; then
 else
     echo "  FAIL: persist.txt missing or wrong"; exit 1
 fi
-fusermount3 -uz "$MNT"; sleep 0.5
+fs_umount "$MNT"; sleep 0.5
 
 rm -f ./ls-off
 echo "PASS"
