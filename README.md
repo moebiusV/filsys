@@ -35,16 +35,19 @@ Home: <https://github.com/moebiusV/filsys>
 | FreeBSD | fuse3 (`fusefs-libs3`) | **built + tested** |
 | NetBSD ≥ 10 | fuse3 (librefuse) | **built + tested** |
 | OpenBSD | fuse2 (base libfuse, 2.6-era) | **built + tested** |
-| macOS | fuse3 (macFUSE ≥ 5.2) / fuse2 (macFUSE 4.x, FUSE-T) | builds, untested (runner pending) |
+| macOS | fuse3 (macFUSE ≥ 5.2) / fuse2 (macFUSE 4.x, FUSE-T) | **built + core tested** (CI); mount is local-only (macFUSE kext) |
 
 "Built + tested" means the platform has mounted a real V7 image and passed
 `test.sh` — read/write/mkdir/rename/truncate/persistence — in addition to
 `make check` (the FUSE-free core).  Linux runs this locally; FreeBSD, NetBSD
 11, and OpenBSD run it in CI (vmactions VMs on a real kernel) on every push.
 Windows is supported through WSL2, which runs a real Linux kernel and so takes
-the Linux fuse3 path.  "Builds, untested" means the adapters and the configure
-probe compile and link, but no live mount has been run on that platform yet;
-macOS will be marked tested once a macOS CI runner is added.
+the Linux fuse3 path.  macOS builds against macFUSE's fuse3 (via the
+`fuseops_macos.c` adapter) and runs `make check` in CI, but a live mount needs
+macFUSE's kernel extension, which requires a System Settings approval and
+reboot that no CI runner can grant — so macOS mounts are a local-only step.
+"Builds, untested" means the adapters and the configure probe compile and link,
+but no live mount has been run on that platform yet.
 
 ## Dependencies
 
