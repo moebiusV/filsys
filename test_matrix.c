@@ -316,6 +316,46 @@ static void v6_large_file(void) {
     unlink(img);
 }
 
+/* V7 triple indirect: the triple slot di_addr[12] is only reached past
+ * 10 direct + 128 single + 128² double = 16522 blocks (~8.07 MiB).  run()'s
+ * largest write (200000 bytes) stops in double-indirect, so this pins the third
+ * level: write 9 MiB, read it back, and require fsck to still be clean. */
+static void v7_triple_indirect(void) {
+    char img[64], cmd[256];
+    snprintf(img, sizeof img, "test_matrix_v7triple.img");
+    unlink(img);
+    snprintf(cmd, sizeof cmd, "./mkfs.filsys -v v7 %s 22000 >/dev/null 2>&1", img);
+    if (system(cmd) != 0) { ok("v7 triple mkfs", 0); unlink(img); return; }
+
+    filsys_t *fs;
+    if (filsys_open(&fs, FILSYS_V7, img, 0, 0, 0, 0, NULL)) {
+        ok("v7 triple open", 0); unlink(img); return;
+    }
+
+    size_t bytes = 9 * 1024 * 1024;   /* past 8.07 MiB: forces the triple slot */
+    uint8_t *buf = malloc(bytes);
+    uint8_t *back = malloc(bytes);
+    int write_ok = 0, read_ok = 0;
+    if (buf && back) {
+        for (size_t i = 0; i < bytes; i++)
+            buf[i] = (uint8_t)(i & 0xff);
+        filsys_create(fs, "/big", 0644, 0, 0);
+        write_ok = filsys_write(fs, "/big", buf, bytes, 0) == (int)bytes;
+        if (write_ok) {
+            memset(back, 0, bytes);
+            read_ok = filsys_read(fs, "/big", back, bytes, 0) == (int)bytes &&
+                      memcmp(buf, back, bytes) == 0;
+        }
+    }
+    ok("v7 triple write", write_ok);
+    ok("v7 triple read", read_ok);
+    free(buf);
+    free(back);
+    filsys_close(fs);
+    ok("v7 triple fsck clean", fsck_is_clean("v7", img));
+    unlink(img);
+}
+
 /* Directory-entry name widths, asserted per edition at 14/30/63/64 characters.
  * This is the regression for the facade bug that hardcoded a 14-character
  * component buffer and rejected 2.11BSD's 63-character names before they
@@ -926,6 +966,7 @@ int main(void) {
     mkfs_cleanliness();
     namelength();
     v6_large_file();
+    v7_triple_indirect();
     bitmap_roundtrip();
     crash_consistency();
     durability_test();
