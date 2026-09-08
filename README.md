@@ -701,6 +701,19 @@ emulator is running.
 
 - Mount read-write only on a **copy** of the image; V4-V7 have no journal; a
   bug corrupts the image.
+- **Durability has two boundaries, and only one is tested.**  The
+  `crash_consistency` and fault-injection tests in `test_matrix` prove the
+  *process* boundary: after any single injected I/O failure, or a crash before
+  close, no block is both free and referenced (`dup == 0`) and `fsck.filsys -s`
+  recovers the image with loss bounded to the in-flight operation.  `fsync(2)`
+  on a file inside the mount (or unmounting) now `fsync`s the backing image fd,
+  so a completed sync also survives *host* crash and power loss.  What is not a
+  property of the format is atomicity: a V7 `creat` is eight non-atomic 512-byte
+  writes across four structures, and no ordering leaves a consistent image at
+  every prefix.  That is why V7 ran `sync` before halt and why `fsck` exists:
+  the reachable post-crash states are a subset of those the original kernel
+  could produce, and `fsck.filsys` repairs every one — a weaker claim than
+  transactional consistency, and a stronger one than the tests alone establish.
 - The `-c` integrity check walks the free list and the inode table and
   reports out-of-range block numbers, cycles, and unreadable inodes.
 - The triple-indirect path is exercised by `v7_triple_indirect` in
