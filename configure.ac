@@ -136,8 +136,10 @@ AS_IF([test "x$with_fuse" = xfuse2 || test "x$have_fuse3" = xno], [
 ])
 
 AS_IF([test "x$have_fuse3" = xno && test "x$have_fuse2" = xno], [
-    AC_MSG_ERROR([no FUSE backend found; install libfuse3-dev or libfuse-dev, or use --with-fuse=fuse3|fuse2])
+    AC_MSG_WARN([no FUSE backend found; mount.filsys will not be built (install libfuse3-dev or libfuse-dev, or use --with-fuse=fuse3|fuse2)])
 ])
+
+AM_CONDITIONAL([HAVE_FUSE], [test "x$have_fuse3" = xyes || test "x$have_fuse2" = xyes])
 
 # Normalise onto one variable set, and pick the FUSE_USE_VERSION -D.
 AS_IF([test "x$have_fuse3" = xyes], [

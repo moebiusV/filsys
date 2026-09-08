@@ -13,9 +13,14 @@ dist-hook:
 	@find $(distdir) -exec chmod a-s {} +
 
 # mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir;
-# the disk utilities are ordinary user commands.
+# the disk utilities are ordinary user commands.  mount.filsys is the only
+# FUSE-dependent program, so it is conditional: without a FUSE backend the
+# FUSE-free core (libfilsys.a, mkfs, fsck, findfs, test_matrix) still builds and
+# `make check` works.
 bin_PROGRAMS = findfs.filsys mkfs.filsys fsck.filsys
+if HAVE_FUSE
 sbin_PROGRAMS = mount.filsys
+endif
 
 # The version-agnostic library: the facade (filsys.c) plus the two on-disk
 # backends.  Installed as libfilsys.a + filsys.h so other projects can link
