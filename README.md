@@ -703,6 +703,10 @@ emulator is running.
   bug corrupts the image.
 - The `-c` integrity check walks the free list and the inode table and
   reports out-of-range block numbers, cycles, and unreadable inodes.
+- The triple-indirect path is implemented but not yet forced by the synthetic
+  suite: its largest write (200000 bytes) stops in the double-indirect range,
+  so a dedicated multi-level write that crosses the triple boundary (~8 MB for
+  V7) is the one mapping test still missing.
 - The on-disk `fsize` and every inode's `size` are validated against the real
   image size and the data area **before any allocation**, so a corrupt image
   cannot trigger a multi-gigabyte `malloc` or an unbounded loop.  (libFuzzer +
@@ -834,6 +838,18 @@ couldn't check it, and dropped it in 6.15.  filsys handles the PDP-7
 through 32V, has `findfs` for locating a superblock on a raw image, and has
 both `mkfs` and `fsck`.  That is not an incremental improvement on what the
 kernel had — it is the only implementation that exists.
+
+On the one thing that decides whether a large file reads back, the block mapping,
+filsys and the kernel were **at parity, not ahead of each other**: both descend
+the full V7 triple-indirect chain (10 direct + single + double + triple).  filsys
+walks all three indirect levels in `v7fs_bmap`; the kernel's `fs/sysv/itree.c`
+`block_to_path` is `DIRECT=10, DEPTH=4` ("Have triple indirect"), with the
+triple slot at `di_addr[12]`.  The port that is genuinely short of this is
+**plan9port's `v10fs`**, which is single-indirect only (its own comment: "only
+singly-indirect files for now"; it treats slots 10/11/12 as three consecutive
+single indirects) and also uses the wrong mode constants (`VFMT 0160000` rather
+than `IFMT 0170000`) — so a file past roughly 4 MB reads garbage and a symlink
+masks to its character-device test and is lost.
 
 Two things follow.
 
