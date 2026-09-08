@@ -308,8 +308,12 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     st->st_atime   = ip->atime;
     st->st_mtime   = ip->mtime;
     st->st_ctime   = ip->ctime;
-    st->st_blksize = fs->ops->blocksize(fs->fs);
-    st->st_blocks  = (ip->size + st->st_blksize - 1) / st->st_blksize;
+    uint32_t blksize = fs->ops->blocksize(fs->fs);
+    st->st_blksize = blksize;
+    /* POSIX: st_blocks counts 512-byte units, not filesystem blocks, and only
+     * blocks actually allocated -- a hole (zero block address) is not counted,
+     * so a sparse file reports less than st_size implies. */
+    st->st_blocks  = (fs->ops->inode->allocated_blocks(fs->fs, ip) * blksize + 511) / 512;
 }
 
 int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents, size_t *count) {

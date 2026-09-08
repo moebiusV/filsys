@@ -492,6 +492,28 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
     return 0;
 }
 
+static uint64_t p7fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip) {
+    p7fs_t *f = fs;
+    uint64_t n = 0;
+    if (ip->mode & P7_ILARG) {
+        for (int i = 0; i < P7_NIADDR; i++) {   /* 7 single-indirect slots */
+            uint32_t blk = ip->addr[i];
+            if (blk == 0)
+                continue;
+            uint32_t words[P7_WSIZE];
+            if (read_words(f, blk, words))
+                continue;
+            n++;   /* the indirect block itself */
+            for (uint32_t j = 0; j < P7_NINDIR; j++)
+                if (words[j]) n++;
+        }
+    } else {
+        for (int i = 0; i < P7_NIADDR; i++)
+            if (ip->addr[i]) n++;
+    }
+    return n;
+}
+
 /* ---- file data ----------------------------------------------------------
  * Shared with the V7 engine: blk_get/blk_put unpack each block to bsize
  * logical bytes, so v7fs_file_read/write apply unchanged.
@@ -760,6 +782,7 @@ static const struct filsys_inode_ops inode_pdp7 = {
     .write_inode = p7fs_write_inode,
     .bmap        = p7fs_bmap,
     .inode_state = p7_inode_state,
+    .allocated_blocks = p7fs_allocated_blocks,
 };
 
 const struct filsys_ops p7fs_ops = {

@@ -749,6 +749,35 @@ int v7fs_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, ui
     return ind_follow(fs, &ip->addr[fs->ndaddr + 2], 3, idx, create, bno);
 }
 
+/* Count the blocks in an indirect chain of `levels` levels, including the
+ * indirect blocks themselves (they are allocated and do count toward
+ * st_blocks).  A zero entry is a hole and contributes nothing. */
+static uint64_t v7_ind_count(filsys_edition_t *fs, uint32_t blk, int levels) {
+    if (blk == 0)
+        return 0;
+    uint8_t buf[V7_MAXBSIZE];
+    if (v7fs_read_block(fs, blk, buf))
+        return 0;   /* unreadable: report nothing rather than fail a stat */
+    uint64_t n = 1;   /* the indirect block itself */
+    for (uint32_t i = 0; i < v7_nindir(fs); i++) {
+        uint32_t sub = fs->bo->get32(buf + 4 * i);
+        if (sub == 0)
+            continue;
+        n += levels == 1 ? 1 : v7_ind_count(fs, sub, levels - 1);
+    }
+    return n;
+}
+
+static uint64_t v7fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip) {
+    uint64_t n = 0;
+    for (int i = 0; i < fs->ndaddr; i++)
+        if (ip->addr[i]) n++;
+    n += v7_ind_count(fs, ip->addr[fs->ndaddr], 1);      /* single */
+    n += v7_ind_count(fs, ip->addr[fs->ndaddr + 1], 2);  /* double */
+    n += v7_ind_count(fs, ip->addr[fs->ndaddr + 2], 3);  /* triple */
+    return n;
+}
+
 /* ---- file data ---------------------------------------------------------- */
 
 ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off) {
@@ -1257,6 +1286,7 @@ static const struct filsys_inode_ops inode_64 = {
     .write_inode = v7fs_write_inode,
     .bmap        = v7fs_bmap,
     .inode_state = v7_inode_state,
+    .allocated_blocks = v7fs_allocated_blocks,
 };
 
 const struct filsys_ops v7fs_ops = {
@@ -1431,6 +1461,7 @@ static const struct filsys_inode_ops inode_64_32addr = {
     .write_inode = v7fs_write_inode,
     .bmap        = v7fs_bmap,
     .inode_state = bsd211_inode_state,
+    .allocated_blocks = v7fs_allocated_blocks,
 };
 
 const struct filsys_ops bsd211fs_ops = {
@@ -1702,6 +1733,35 @@ static uint32_t v6_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx) {
     return nfree;
 }
 
+static uint64_t v6_ind_count(filsys_edition_t *fs, uint32_t blk, int levels) {
+    if (blk == 0)
+        return 0;
+    uint8_t buf[V6_BSIZE];
+    if (v7fs_read_block(fs, blk, buf))
+        return 0;
+    uint64_t n = 1;   /* the indirect block itself */
+    for (uint32_t i = 0; i < V6_NINDIR; i++) {
+        uint32_t sub = fs->bo->get16(buf + 2 * i);
+        if (sub == 0)
+            continue;
+        n += levels == 1 ? 1 : v6_ind_count(fs, sub, levels - 1);
+    }
+    return n;
+}
+
+static uint64_t v6_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip) {
+    uint64_t n = 0;
+    if (ip->mode & V6_ILARG) {
+        for (int i = 0; i < V6_NDADDR - 1; i++)        /* 7 single-indirect slots */
+            n += v6_ind_count(fs, ip->addr[i], 1);
+        n += v6_ind_count(fs, ip->addr[V6_NDADDR - 1], 2);  /* 1 double-indirect */
+    } else {
+        for (int i = 0; i < V6_NDADDR; i++)
+            if (ip->addr[i]) n++;
+    }
+    return n;
+}
+
 static uint8_t v6_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode) {
     (void)fs; (void)ino;
     if (mode == 0)
@@ -1731,6 +1791,7 @@ static const struct filsys_inode_ops inode_32 = {
     .write_inode = v6_write_inode,
     .bmap        = v6_bmap,
     .inode_state = v6_inode_state,
+    .allocated_blocks = v6_allocated_blocks,
 };
 
 const struct filsys_ops v6fs_ops = {
