@@ -657,6 +657,8 @@ HAVE_FUSE_DARWIN_FALSE
 HAVE_FUSE_DARWIN_TRUE
 HAVE_FUSE2_FALSE
 HAVE_FUSE2_TRUE
+HAVE_FUSE_FALSE
+HAVE_FUSE_TRUE
 FUSE2_LIBS
 FUSE2_CFLAGS
 FUSE3_LIBS
@@ -5994,9 +5996,19 @@ fi
 if test "x$have_fuse3" = xno && test "x$have_fuse2" = xno
 then :
 
-    as_fn_error $? "no FUSE backend found; install libfuse3-dev or libfuse-dev, or use --with-fuse=fuse3|fuse2" "$LINENO" 5
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: no FUSE backend found; mount.filsys will not be built (install libfuse3-dev or libfuse-dev, or use --with-fuse=fuse3|fuse2)" >&5
+printf "%s\n" "$as_me: WARNING: no FUSE backend found; mount.filsys will not be built (install libfuse3-dev or libfuse-dev, or use --with-fuse=fuse3|fuse2)" >&2;}
 
 fi
+
+ if test "x$have_fuse3" = xyes || test "x$have_fuse2" = xyes; then
+  HAVE_FUSE_TRUE=
+  HAVE_FUSE_FALSE='#'
+else
+  HAVE_FUSE_TRUE='#'
+  HAVE_FUSE_FALSE=
+fi
+
 
 # Normalise onto one variable set, and pick the FUSE_USE_VERSION -D.
 if test "x$have_fuse3" = xyes
@@ -6316,6 +6328,10 @@ then :
   enableval=$enable_year2038;
 fi
 
+if test -z "${HAVE_FUSE_TRUE}" && test -z "${HAVE_FUSE_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_FUSE\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
 if test -z "${HAVE_FUSE2_TRUE}" && test -z "${HAVE_FUSE2_FALSE}"; then
   as_fn_error $? "conditional \"HAVE_FUSE2\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5

@@ -96,7 +96,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 bin_PROGRAMS = findfs.filsys$(EXEEXT) mkfs.filsys$(EXEEXT) \
 	fsck.filsys$(EXEEXT)
-sbin_PROGRAMS = mount.filsys$(EXEEXT)
+@HAVE_FUSE_TRUE@sbin_PROGRAMS = mount.filsys$(EXEEXT)
 TESTS = test_matrix$(EXEEXT) $(am__append_1) $(am__EXEEXT_1)
 check_PROGRAMS = test_matrix$(EXEEXT) $(am__EXEEXT_1)
 @ENABLE_IMAGE_TESTS_TRUE@am__append_1 = test.sh
