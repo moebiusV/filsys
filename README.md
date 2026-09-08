@@ -31,19 +31,19 @@ Home: <https://github.com/moebiusV/filsys>
 | platform | FUSE | status |
 |---|---|---|
 | Linux | fuse3 (default) / fuse2 | **built + tested** (`make check`, `test.sh`) |
-| FreeBSD | fuse3 (`fusefs-libs3`) | builds, untested |
+| FreeBSD | fuse3 (`fusefs-libs3`) | **built + tested** (CI: `make check` + live `test.sh`) |
+| NetBSD ≥ 10 | fuse3 (librefuse) | **built + tested** (CI: `make check` + live `test.sh`) |
+| OpenBSD | fuse2 (base libfuse, 2.6-era) | **built + tested** (CI: `make check` + live `test.sh`) |
 | macOS | fuse3 (macFUSE ≥ 5.2) / fuse2 (macFUSE 4.x, FUSE-T) | builds, untested |
-| NetBSD ≥ 10 | fuse3 (librefuse) | builds, untested |
 | NetBSD 9 | fuse2 (librefuse) | builds, untested |
-| OpenBSD | fuse2 (base libfuse, 2.6-era) | builds, untested |
 | Windows | — | unsupported |
 
+"Built + tested" means the platform has mounted a real V7 image and passed
+`test.sh` — read/write/mkdir/rename/truncate/persistence — in addition to
+`make check` (the FUSE-free core).  Linux runs this locally; FreeBSD, NetBSD
+11, and OpenBSD run it in CI (vmactions VMs on a real kernel) on every push.
 "Builds, untested" means the adapters and the configure probe compile and link,
-but the platform has not yet run a live mount.  Nothing is listed as tested
-ahead of a real image being mounted on it.  The FUSE-free callback core
-(`fuse_core.c`) is exercised by `make check` on every host; the per-version
-adapters (`fuseops.c` for FUSE3, `fuseops_openbsd.c` for OpenBSD's base
-libfuse) are the only untested surface.
+but no live mount has been run on that platform yet.
 
 ## Dependencies
 
