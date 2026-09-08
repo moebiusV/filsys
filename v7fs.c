@@ -380,6 +380,12 @@ int v8_bitmap_load(filsys_edition_t *fs, const uint8_t *sb)
         fs->v8_base = fs->isize;
         fs->v8_nbits = fs->fsize - fs->isize;
         fs->v8_nblks = 0;
+        /* The in-superblock bitmap holds V8_BITMAP_BITS (30752) blocks; a data
+         * area past that cannot be described there and the superblock read would
+         * walk off the valid bytes into garbage.  A volume this large must use
+         * the out-of-superblock bigmap. */
+        if (fs->v8_nbits > V8_BITMAP_BITS)
+            return -E2BIG;
     }
     fs->v8_bits = calloc((size_t)(fs->v8_nbits + 7) / 8, 1);
     if (!fs->v8_bits)
