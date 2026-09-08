@@ -162,6 +162,28 @@ static int matches(int filter, const char *class) {
     return filter < 0 || edition_selector(class) == filter;
 }
 
+/* The canonical FILSYS_* selectors each probe family can report.  A `-v` filter
+ * naming none of a probe's editions skips the probe entirely, so the filter
+ * reduces work (fewer reads/traversals) instead of only filtering the report.
+ * Lists are NULL-terminated with -1.  (PDP-7 is word-addressed, probed apart.) */
+static const int fam_v1[]    = { FILSYS_V1, -1 };
+static const int fam_v6[]    = { FILSYS_V6, -1 };
+static const int fam_v7[]    = { FILSYS_V7, FILSYS_32V, FILSYS_COHERENT, -1 };
+static const int fam_sysv[]  = { FILSYS_SVR2, FILSYS_SVR4, -1 };
+static const int fam_v8[]    = { FILSYS_V8, FILSYS_V10, -1 };
+static const int fam_v9[]    = { FILSYS_V9, -1 };
+static const int fam_xenix[] = { FILSYS_XENIX, -1 };
+static const int fam_bsd29[] = { FILSYS_BSD29, FILSYS_BSD211, -1 };
+
+static int probe_wanted(int filter, const int *fam) {
+    if (filter < 0)
+        return 1;
+    for (; *fam >= 0; fam++)
+        if (*fam == filter)
+            return 1;
+    return 0;
+}
+
 /* Does block b (a candidate superblock) describe a V7 filesystem whose
  * superblock sits at absolute block `bno` (so the fs starts at bno-1)?
  * The free-list entries are checked to be in-range, which rejects the vast
@@ -270,20 +292,17 @@ static int super_v6(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
  * from inode 41) follows it.  There is no s_isize: the i-list size is derived
  * from the inode-map byte count.  Root is inode 41, a 32-byte inode in block 4.
  * Returns 1 (valid) or 0 (not a candidate). */
-static int super_v1(int fd, uint32_t bno, uint32_t nblocks,
+static int super_v1(int fd, const uint8_t *sb, uint32_t bno, uint32_t nblocks,
                     uint16_t *isize, uint32_t *fsize, const char **why) {
-    uint8_t sb[BSIZE * 2];
-    if (pread(fd, sb, sizeof sb, (off_t)bno * BSIZE) != (ssize_t)sizeof sb)
-        return 0;
     uint16_t freemap_bytes = bo_get16le(sb + 0);
     if (freemap_bytes == 0)
         return 0;
     uint32_t inodemap_bytes_off = 2 + freemap_bytes;
-    if (inodemap_bytes_off + 2 > sizeof sb)
+    if (inodemap_bytes_off + 2 > BSIZE * 2)
         return 0;
     uint16_t inodemap_bytes = bo_get16le(sb + inodemap_bytes_off);
     uint32_t inodemap_off = inodemap_bytes_off + 2;
-    if (inodemap_bytes == 0 || inodemap_off + inodemap_bytes > sizeof sb)
+    if (inodemap_bytes == 0 || inodemap_off + inodemap_bytes > BSIZE * 2)
         return 0;
     uint32_t fsz = (uint32_t)freemap_bytes * 8;
     uint32_t maxino = (uint32_t)inodemap_bytes * 8;
@@ -914,45 +933,6 @@ static void emit(const char *image, int verbose) {
     }
 }
 
-/* Scan for V8-family superblocks at `bsize`-byte block granularity.  The
- * superblock sits at block 1 of a bsize-byte-block filesystem (block 0 is the
- * boot block), so a candidate is byte offset bno*bsize. */
-static void scan_v8(int fd, uint64_t nbytes, int bsize, int stride,
-                    int edition_filter, int *found, uint64_t *skip_end)
-{
-    uint8_t *b = malloc((size_t)bsize);
-    if (!b)
-        return;
-    uint64_t nb = nbytes / bsize;
-    for (uint64_t bno = 1; bno < nb; bno += (uint64_t)stride) {
-        uint64_t sb_byte = bno * bsize;
-        if (sb_byte < *skip_end) {
-            bno = *skip_end / bsize;   /* jump past a validated fs's data area */
-            continue;
-        }
-        if (pread(fd, b, bsize, (off_t)sb_byte) != bsize)
-            continue;
-        const char *ed = NULL, *note = NULL, *why = NULL;
-        uint16_t isz = 0; uint32_t fsz = 0, segs = 0; int bitmap = 0;
-        int rc = super_v8(fd, b, sb_byte, bsize, nbytes, &ed, &note, &isz, &fsz,
-                          &bitmap, &why, &segs);
-        if (rc == 0 || !matches(edition_filter, ed))
-            continue;
-        uint64_t byte = sb_byte - bsize;
-        uint32_t blk = (uint32_t)(byte / BSIZE);
-        if (rc == 1) {
-            uint64_t de = byte + (uint64_t)fsz * (uint64_t)bsize;
-            add_cand(blk, byte, ed, note, isz, fsz, segs, 1, bitmap, 1, de, NULL);
-            if (de > *skip_end)
-                *skip_end = de;
-        } else {
-            add_cand(blk, byte, ed, note, isz, fsz, 0, 0, bitmap, 0, 0, why);
-        }
-        (*found)++;
-    }
-    free(b);
-}
-
 int main(int argc, char **argv) {
     int stride = 1, backtrace = 0, edition_filter = -1, verbose = 0;
     const char *image = NULL;
@@ -985,146 +965,188 @@ int main(int argc, char **argv) {
     uint64_t sz = 0;
     if (filsys_dev_size(fd, &sz) || sz < BSIZE) { fprintf(stderr, "cannot size image\n"); return 1; }
     uint32_t nblocks = (uint32_t)(sz / BSIZE);
-    uint8_t buf[BSIZE];
+    uint8_t *sb_buf = malloc(8192);   /* largest superblock read */
+    if (!sb_buf) { fprintf(stderr, "out of memory\n"); return 1; }
 
     int found = 0;
     /* Blocks below `skip_end` (bytes) belong to an already-validated fs's data
      * area, so their free-list dump blocks are not independent candidates. */
     uint64_t skip_end = 0;
 
-    /* 512-byte scan.  `fb` is a candidate filesystem *start* block (≡ 0 mod
-     * stride).  V1 has no boot block, so its superblock is fs block 0 = fb; the
-     * V7 family stores a boot block at fb and its superblock at fs block 1 =
-     * fb+1.  One monotonic pass finds both, at any offset in the file. */
-    for (uint32_t fb = 0; fb + 1 < nblocks; fb += (uint32_t)stride) {
-        if ((uint64_t)fb * BSIZE < skip_end) {
-            uint32_t sb = (uint32_t)(skip_end / BSIZE);
-            fb = (sb - 1) / (uint32_t)stride * (uint32_t)stride;
+    /* One pass over superblock offsets (512-byte units).  A bsize-byte-block
+     * filesystem stores its superblock at block 1 = byte bsize, so every
+     * superblock lands at a 512-byte-aligned offset and is probed once here for
+     * each bsize whose block 1 could land there (sb % (bsize/512) == 0).  The
+     * offset is read once, at the largest applicable block size, and every probe
+     * that could report there shares that buffer -- no per-format re-scans. */
+    for (uint32_t sb = 0; sb < nblocks; sb += (uint32_t)stride) {
+        uint64_t sb_byte = (uint64_t)sb * BSIZE;
+        if (sb_byte < skip_end) {
+            sb = (uint32_t)(skip_end / BSIZE);
             continue;
         }
-        uint64_t byte = (uint64_t)fb * BSIZE;
+        int maxb = BSIZE;               /* V7/SysV/V6 need one 512-byte block */
+        if (probe_wanted(edition_filter, fam_v1))
+            maxb = 1024;                /* V1's 2-block superblock, every sb */
+        if (sb % 2 == 0 && maxb < 1024 &&
+            (probe_wanted(edition_filter, fam_v8) ||
+             probe_wanted(edition_filter, fam_xenix) ||
+             probe_wanted(edition_filter, fam_bsd29)))
+            maxb = 1024;
+        if (sb % 8 == 0 && maxb < 4096 && probe_wanted(edition_filter, fam_v8))
+            maxb = 4096;
+        if (sb % 16 == 0 && maxb < 8192 && probe_wanted(edition_filter, fam_v9))
+            maxb = 8192;
+        if (pread(fd, sb_buf, maxb, (off_t)sb_byte) != maxb)
+            continue;
 
-        /* V1: superblock at fb. */
-        {
+        /* V1: dual-bitmap superblock at fs block 0 -- the fs starts AT sb. */
+        if (probe_wanted(edition_filter, fam_v1)) {
             uint16_t isz = 0; uint32_t fsz = 0;
             const char *why = NULL;
-            if (super_v1(fd, fb, nblocks, &isz, &fsz, &why) == 1 &&
+            if (super_v1(fd, sb_buf, sb, nblocks, &isz, &fsz, &why) == 1 &&
                 matches(edition_filter, "v1, v2 or v3")) {
-                uint64_t de = (uint64_t)(fb + fsz) * BSIZE;
-                add_cand(fb, byte, "v1, v2 or v3", NULL, isz, fsz, 0, 1, 1, 1, de, NULL);
+                uint64_t de = sb_byte + (uint64_t)fsz * BSIZE;
+                add_cand(sb, sb_byte, "v1, v2 or v3", NULL, isz, fsz, 0, 1, 1, 1, de, NULL);
                 if (de > skip_end)
                     skip_end = de;
                 found++;
             }
         }
 
-        /* V7 family: superblock at fb+1.  System V is checked first: its
-         * superblock is V7-shaped, but the s_magic at offset 504 is the stronger
-         * signal, so a sysvr2 volume reports as sysvr2 rather than a false "V7". */
-        if (pread(fd, buf, BSIZE, (off_t)(fb + 1) * BSIZE) != BSIZE)
-            continue;
-        uint16_t isz = 0; uint32_t fsz = 0;
-        const char *ed = NULL, *note = NULL, *why = NULL;
-        uint32_t segs = 0;
-        int bs = BSIZE;   /* V7/V6 block size; super_sysv overrides */
+        /* V7 family (512-byte fs, superblock at block 1 = sb): fs starts at sb-1.
+         * System V is checked first: its superblock is V7-shaped but the s_magic
+         * at offset 504 is the stronger signal. */
+        if (sb >= 1) {
+            uint64_t byte = (uint64_t)(sb - 1) * BSIZE;
+            uint16_t isz = 0; uint32_t fsz = 0;
+            const char *ed = NULL, *note = NULL, *why = NULL;
+            uint32_t segs = 0;
+            int bs = BSIZE;   /* V7/V6 block size; super_sysv overrides */
+            int rc = 0;
 
-        int rc = super_sysv(fd, buf, fb + 1, nblocks, &ed, &note, &isz, &fsz, &bs, &why, &segs);
-        if (rc == 0) {
-            bs = BSIZE;
-            rc = super_v7(fd, buf, fb + 1, nblocks, &ed, &isz, &fsz, &why, &segs);
-            if (rc == 0) {
+            if (probe_wanted(edition_filter, fam_sysv))
+                rc = super_sysv(fd, sb_buf, sb, nblocks, &ed, &note, &isz, &fsz, &bs, &why, &segs);
+            if (rc == 0 && probe_wanted(edition_filter, fam_v7)) {
+                bs = BSIZE;
+                rc = super_v7(fd, sb_buf, sb, nblocks, &ed, &isz, &fsz, &why, &segs);
+            }
+            if (rc == 0 && probe_wanted(edition_filter, fam_v6)) {
                 ed = "v4, v5, v6 or usgpg3";
-                rc = super_v6(fd, buf, fb + 1, nblocks, &isz, &fsz, &why, &segs);
+                rc = super_v6(fd, sb_buf, sb, nblocks, &isz, &fsz, &why, &segs);
             }
-        }
-        if (rc >= 1 && matches(edition_filter, ed)) {
-            if (!strcmp(ed, "AFS"))
-                printf("fs @ block %u  (byte %llu)  AFS (bitmap free list, unsupported)\n",
-                       fb, (unsigned long long)byte);
-            else if (rc == 1) {
-                uint64_t de = byte + (uint64_t)fsz * (uint64_t)bs;
-                add_cand(fb, byte, ed, note, isz, fsz, segs, strcmp(ed, "v4, v5, v6 or usgpg3") != 0,
-                         0, 1, de, NULL);
-                if (de > skip_end)
-                    skip_end = de;
-            } else
-                add_cand(fb, byte, ed, note, isz, fsz, 0, 0, 0, 0, 0, why);
-            found++;
-        }
-
-        /* inode-table backtrace: is fb+1 the first inode block of a filesystem
-         * whose superblock is at fb?  A damaged superblock can fail its own
-         * chain walk here -- that is the damage being recovered -- so a near-miss
-         * still reports. */
-        if (backtrace && inode_block(buf) && fb >= 1 &&
-            pread(fd, buf, BSIZE, (off_t)fb * BSIZE) == BSIZE) {
-            const char *ed_bt = NULL, *why_bt = NULL;
-            uint16_t isz_bt = 0; uint32_t fsz_bt = 0, segs_bt = 0;
-            int r = super_v7(fd, buf, fb, nblocks, &ed_bt, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
-            if (r == 0) {
-                ed_bt = "v4, v5, v6 or usgpg3";
-                r = super_v6(fd, buf, fb, nblocks, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
-            }
-            if (r >= 1 && matches(edition_filter, ed_bt)) {
-                printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u   [via inode backtrace]\n",
-                       fb - 1, (unsigned long long)(fb - 1) * BSIZE, ed_bt, isz_bt, fsz_bt);
+            if (rc >= 1 && matches(edition_filter, ed)) {
+                if (!strcmp(ed, "AFS"))
+                    printf("fs @ block %u  (byte %llu)  AFS (bitmap free list, unsupported)\n",
+                           (uint32_t)(sb - 1), (unsigned long long)byte);
+                else if (rc == 1) {
+                    uint64_t de = byte + (uint64_t)fsz * (uint64_t)bs;
+                    add_cand((uint32_t)(sb - 1), byte, ed, note, isz, fsz, segs,
+                             strcmp(ed, "v4, v5, v6 or usgpg3") != 0, 0, 1, de, NULL);
+                    if (de > skip_end)
+                        skip_end = de;
+                } else
+                    add_cand((uint32_t)(sb - 1), byte, ed, note, isz, fsz, 0, 0, 0, 0, 0, why);
                 found++;
             }
-        }
-    }
-    /* 1024-byte-block scan: Xenix (magic at offset 1016) and 2.9BSD
-     * (V7-shaped, no magic -- so only tried when Xenix's magic is absent). */
-    uint8_t xb[1024];
-    uint32_t xnblocks = (uint32_t)(sz / 1024);
-    for (uint32_t xbno = 1; xbno < xnblocks; xbno += (uint32_t)stride) {
-        if ((uint64_t)xbno * 1024 < skip_end) {
-            uint32_t sb = (uint32_t)(skip_end / 1024);
-            xbno = (((sb - 1) / (uint32_t)stride + 1) * (uint32_t)stride + 1) - (uint32_t)stride;
-            continue;
-        }
-        if (pread(fd, xb, 1024, (off_t)xbno * 1024) != 1024)
-            continue;
-        uint16_t isz = 0; uint32_t fsz = 0;
-        const char *why = NULL, *ed = NULL, *note = NULL;
-        uint32_t segs = 0; int bitmap = 0;
-        uint64_t byte = (uint64_t)(xbno - 1) * 1024;
-        uint32_t blk = (xbno - 1) * 2;
 
-        /* V8-family first: its 1024-byte free-list superblock also parses as a
-         * 2.9BSD superblock (the 2-byte alignment hole before s_fsize makes the
-         * middle-endian read land on the low half), so the stronger structural
-         * test gets first refusal. */
-        int rc = super_v8(fd, xb, (uint64_t)xbno * 1024, 1024, sz, &ed, &note,
-                          &isz, &fsz, &bitmap, &why, &segs);
-        if (rc == 0) {
-            ed = "Xenix";
-            rc = super_xenix(fd, xb, xbno, xnblocks, &isz, &fsz, &why, &segs);
-            if (rc == 0) {
+            /* inode-table backtrace: is sb the first inode block of a filesystem
+             * whose superblock is at sb-1?  A damaged superblock can fail its own
+             * chain walk here -- that is the damage being recovered -- so a
+             * near-miss still reports. */
+            if (backtrace && inode_block(sb_buf) && sb >= 2 &&
+                pread(fd, sb_buf, BSIZE, (off_t)(uint64_t)(sb - 1) * BSIZE) == BSIZE) {
+                const char *ed_bt = NULL, *why_bt = NULL;
+                uint16_t isz_bt = 0; uint32_t fsz_bt = 0, segs_bt = 0;
+                int r = super_v7(fd, sb_buf, sb - 1, nblocks, &ed_bt, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
+                if (r == 0) {
+                    ed_bt = "v4, v5, v6 or usgpg3";
+                    r = super_v6(fd, sb_buf, sb - 1, nblocks, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
+                }
+                if (r >= 1 && matches(edition_filter, ed_bt)) {
+                    printf("fs @ block %u  (byte %llu)  %s  isize=%u fsize=%u   [via inode backtrace]\n",
+                           (uint32_t)(sb - 2), (unsigned long long)(uint64_t)(sb - 2) * BSIZE,
+                           ed_bt, isz_bt, fsz_bt);
+                    found++;
+                }
+            }
+        }
+
+        /* 1024-byte fs (superblock at block 1 = sb, fs starts at sb-2).  V8-family
+         * first: its 1024-byte free-list superblock also parses as a 2.9BSD
+         * superblock, so the stronger structural test gets first refusal. */
+        if (sb >= 2 && sb % 2 == 0) {
+            uint64_t byte = (uint64_t)(sb - 2) * BSIZE;
+            uint16_t isz = 0; uint32_t fsz = 0;
+            const char *why = NULL, *ed = NULL, *note = NULL;
+            uint32_t segs = 0; int bitmap = 0;
+            uint32_t blk = sb - 2;
+            uint32_t xnblocks = (uint32_t)(sz / 1024);
+            int rc = 0;
+
+            if (probe_wanted(edition_filter, fam_v8))
+                rc = super_v8(fd, sb_buf, sb_byte, 1024, sz, &ed, &note, &isz, &fsz, &bitmap, &why, &segs);
+            if (rc == 0 && probe_wanted(edition_filter, fam_xenix)) {
+                ed = "Xenix";
+                rc = super_xenix(fd, sb_buf, sb / 2, xnblocks, &isz, &fsz, &why, &segs);
+            }
+            if (rc == 0 && probe_wanted(edition_filter, fam_bsd29)) {
                 ed = "2.9BSD";
-                rc = super_bsd29(fd, xb, xbno, xnblocks, &isz, &fsz, &why, &segs);
-                if (rc == 1 && bsd211_root_dir(fd, (uint64_t)(xbno - 1) * BSIZE, 1024))
+                rc = super_bsd29(fd, sb_buf, sb / 2, xnblocks, &isz, &fsz, &why, &segs);
+                if (rc == 1 && bsd211_root_dir(fd, (uint64_t)(sb / 2 - 1) * BSIZE, 1024))
                     ed = "2.11BSD";
             }
+            if (rc >= 1 && matches(edition_filter, ed)) {
+                if (rc == 1) {
+                    uint64_t de = byte + (uint64_t)fsz * 1024;
+                    add_cand(blk, byte, ed, note, isz, fsz, segs, 1, bitmap, 1, de, NULL);
+                    if (de > skip_end)
+                        skip_end = de;
+                } else
+                    add_cand(blk, byte, ed, note, isz, fsz, 0, 0, bitmap, 0, 0, why);
+                found++;
+            }
         }
-        if (rc >= 1 && matches(edition_filter, ed)) {
-            if (rc == 1) {
-                uint64_t de = (uint64_t)(xbno - 1) * 1024 + (uint64_t)fsz * 1024;
-                add_cand(blk, byte, ed, note, isz, fsz, segs, 1, bitmap, 1, de, NULL);
-                if (de > skip_end)
-                    skip_end = de;
-            } else
-                add_cand(blk, byte, ed, note, isz, fsz, 0, 0, bitmap, 0, 0, why);
-            found++;
-        }
-    }
 
-    /* V8-family: block 1 of a 4096/8192-byte-block filesystem (the 1024-byte
-     * form is probed in the 1024-byte scan above, ahead of Xenix/2.9BSD). */
-    {
-        static const int vsizes[] = { 4096, 8192 };
-        for (size_t i = 0; i < sizeof vsizes / sizeof vsizes[0]; i++)
-            scan_v8(fd, sz, vsizes[i], stride, edition_filter, &found, &skip_end);
+        /* V8-family 4096/8192-byte blocks (superblock at block 1 = sb). */
+        if (sb >= 8 && sb % 8 == 0 && probe_wanted(edition_filter, fam_v8)) {
+            uint64_t byte = (uint64_t)(sb - 8) * BSIZE;
+            uint16_t isz = 0; uint32_t fsz = 0;
+            const char *why = NULL, *ed = NULL, *note = NULL;
+            uint32_t segs = 0; int bitmap = 0;
+            int rc = super_v8(fd, sb_buf, sb_byte, 4096, sz, &ed, &note, &isz, &fsz, &bitmap, &why, &segs);
+            if (rc >= 1 && matches(edition_filter, ed)) {
+                uint32_t blk = (uint32_t)(byte / BSIZE);
+                if (rc == 1) {
+                    uint64_t de = byte + (uint64_t)fsz * 4096;
+                    add_cand(blk, byte, ed, note, isz, fsz, segs, 1, bitmap, 1, de, NULL);
+                    if (de > skip_end)
+                        skip_end = de;
+                } else
+                    add_cand(blk, byte, ed, note, isz, fsz, 0, 0, bitmap, 0, 0, why);
+                found++;
+            }
+        }
+        if (sb >= 16 && sb % 16 == 0 && probe_wanted(edition_filter, fam_v9)) {
+            uint64_t byte = (uint64_t)(sb - 16) * BSIZE;
+            uint16_t isz = 0; uint32_t fsz = 0;
+            const char *why = NULL, *ed = NULL, *note = NULL;
+            uint32_t segs = 0; int bitmap = 0;
+            int rc = super_v8(fd, sb_buf, sb_byte, 8192, sz, &ed, &note, &isz, &fsz, &bitmap, &why, &segs);
+            if (rc >= 1 && matches(edition_filter, ed)) {
+                uint32_t blk = (uint32_t)(byte / BSIZE);
+                if (rc == 1) {
+                    uint64_t de = byte + (uint64_t)fsz * 8192;
+                    add_cand(blk, byte, ed, note, isz, fsz, segs, 1, bitmap, 1, de, NULL);
+                    if (de > skip_end)
+                        skip_end = de;
+                } else
+                    add_cand(blk, byte, ed, note, isz, fsz, 0, 0, bitmap, 0, 0, why);
+                found++;
+            }
+        }
     }
+    free(sb_buf);
 
     /* emit the collected candidates: validated before rejected, with in-fs
      * candidates suppressed; rejected reasons print only under -V */
