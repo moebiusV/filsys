@@ -428,8 +428,17 @@ static void v1fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     st->f_files = v1->maxino;
     st->f_ffree = v1->bm.tinode;
 }
+static const struct filsys_inode_ops inode_v1 = {
+    .read_inode  = v1fs_read_inode,
+    .write_inode = v1fs_write_inode,
+    .bmap        = v1fs_bmap,
+    .inode_state = v1_inode_state,
+};
+
 const struct filsys_ops v1fs_ops = {
     .name        = "v1",
+    .dir         = &dir_fixed,
+    .inode       = &inode_v1,
     .blocksize   = v1fs_blocksize_op,
     .open        = v1fs_open,
     .close       = v1fs_close,
@@ -438,23 +447,16 @@ const struct filsys_ops v1fs_ops = {
     .write_block = v1fs_write_block,
     .blk_get     = v1fs_read_block,
     .blk_put     = v1fs_write_block,
-    .read_inode  = v1fs_read_inode,
-    .write_inode = v1fs_write_inode,
     .ialloc      = v1fs_ialloc,
     .ifree       = v1fs_ifree,
-    .bmap        = v1fs_bmap,
     .file_read   = v7fs_file_read,
     .file_write  = v7fs_file_write,
-    .dir_read    = v7fs_dir_read,
     .dir_lookup  = v7fs_dir_lookup,
-    .dir_add     = v7fs_dir_add,
-    .dir_remove  = v7fs_dir_remove,
     .lookup      = v7fs_lookup,
     .check       = v1fs_check_op,
     .maxino      = v1_chk_maxino,
     .data_start  = v1_chk_data_start,
     .data_end    = v1_chk_data_end,
-    .inode_state = v1_inode_state,
     .walk_free   = v1_chk_walk_free,
     .makefree    = v1fs_makefree,
     .is_clean    = v1_chk_is_clean,

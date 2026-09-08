@@ -208,7 +208,7 @@ static uint32_t seed_v7(filsys_edition_t *fs)
     memset(&ip, 0, sizeof ip);
     ip.ino = 1;
     ip.mode = fs->ifreg;
-    fs->ops->write_inode(fs, 1, &ip);
+    fs->ops->inode->write_inode(fs, 1, &ip);
 
     /* root: a one-block directory with "." and ".." */
     uint32_t bno;
@@ -226,7 +226,7 @@ static uint32_t seed_v7(filsys_edition_t *fs)
     ip.nlink = 2;
     ip.size = 2 * fs->dirent_size;
     ip.addr[0] = bno;
-    fs->ops->write_inode(fs, fs->rootino, &ip);
+    fs->ops->inode->write_inode(fs, fs->rootino, &ip);
     return 2;
 }
 
@@ -251,7 +251,7 @@ static uint32_t seed_v8(filsys_edition_t *fs)
     ip.nlink = 2;
     ip.size = 2 * fs->dirent_size;
     ip.addr[0] = bno;
-    fs->ops->write_inode(fs, fs->rootino, &ip);
+    fs->ops->inode->write_inode(fs, fs->rootino, &ip);
     return 1;
 }
 
@@ -276,7 +276,7 @@ static uint32_t seed_v6(filsys_edition_t *fs)
     ip.nlink = 2;
     ip.size = 32;
     ip.addr[0] = bno;
-    fs->ops->write_inode(fs, V6_ROOTINO, &ip);
+    fs->ops->inode->write_inode(fs, V6_ROOTINO, &ip);
     return 1;
 }
 
@@ -626,7 +626,7 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
     memset(&ip, 0, sizeof ip);
     ip.ino = 1;
     ip.mode = BSD211_IFREG;
-    fs->ops->write_inode(fs, 1, &ip);
+    fs->ops->inode->write_inode(fs, 1, &ip);
 
     /* lost+found (inode 3): two 512-byte directory blocks */
     uint32_t lfb;
@@ -649,7 +649,7 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
     ip.nlink = 2;
     ip.size = BSD211_DIRBLKSIZ * 2;
     ip.addr[0] = lfb;
-    fs->ops->write_inode(fs, BSD211_LOSTFOUNDINO, &ip);
+    fs->ops->inode->write_inode(fs, BSD211_LOSTFOUNDINO, &ip);
 
     /* root (inode 2): ".", "..", "lost+found" */
     uint32_t rb;
@@ -679,7 +679,7 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
     ip.nlink = 3;
     ip.size = BSD211_DIRBLKSIZ;
     ip.addr[0] = rb;
-    fs->ops->write_inode(fs, BSD211_ROOTINO, &ip);
+    fs->ops->inode->write_inode(fs, BSD211_ROOTINO, &ip);
     return 3;
 }
 

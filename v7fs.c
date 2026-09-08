@@ -630,13 +630,13 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
             if (cand < 2 || cand > maxino)
                 continue;   /* bad cache entry: skip */
             v7_inode_t ip;
-            if (fs->ops->read_inode(fs, cand, &ip))
+            if (fs->ops->inode->read_inode(fs, cand, &ip))
                 return -EIO;   /* read error, not "in use": don't reclassify */
             if (ip.mode != 0)
                 continue;   /* was already allocated; look again */
             memset(&ip, 0, sizeof(ip));
             ip.ino = cand;
-            fs->ops->write_inode(fs, cand, &ip);
+            fs->ops->inode->write_inode(fs, cand, &ip);
             if (fs->fl.tinode) fs->fl.tinode--;
             fs->fl_dirty = 1;   /* inode cache changed: flush before reference */
             *ino = cand;
@@ -646,7 +646,7 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
         fs->fl.ninode = 0;
         for (uint32_t in = 2; in <= maxino && fs->fl.ninode < fs->nicinod; in++) {
             v7_inode_t ip;
-            if (fs->ops->read_inode(fs, in, &ip))
+            if (fs->ops->inode->read_inode(fs, in, &ip))
                 return -EIO;   /* a mid-scan read error must propagate, not truncate */
             if (ip.mode == 0)
                 fs->fl.inode[fs->fl.ninode++] = (uint16_t)in;
@@ -765,7 +765,7 @@ ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_
         uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->bsize);
         uint32_t boff = (uint32_t)((off + (off_t)done) % fs->bsize);
         uint32_t pbn;
-        if (fs->ops->bmap(fs, ip, lbn, 0, &pbn))
+        if (fs->ops->inode->bmap(fs, ip, lbn, 0, &pbn))
             return -EIO;
         uint8_t blk[V7_MAXBSIZE];
         if (pbn == 0) {
@@ -791,7 +791,7 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
         uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->bsize);
         uint32_t boff = (uint32_t)((off + (off_t)done) % fs->bsize);
         uint32_t pbn;
-        int rc = fs->ops->bmap(fs, ip, lbn, 1, &pbn);
+        int rc = fs->ops->inode->bmap(fs, ip, lbn, 1, &pbn);
         if (rc)
             return rc;   /* -EIO (allocator commit) or -ENOSPC or -EFBIG */
         if (pbn == 0)
@@ -811,7 +811,7 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
     }
     if ((uint64_t)off + size > ip->size)
         ip->size = (uint32_t)((uint64_t)off + size);
-    int rc = fs->ops->write_inode(fs, ip->ino, ip);
+    int rc = fs->ops->inode->write_inode(fs, ip->ino, ip);
     if (rc)
         return rc;   /* the inode write failed: don't report a partial write */
     return (ssize_t)done;
@@ -867,7 +867,7 @@ void v7fs_dirents_free(v7_dirent_t *ents) {
 int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
     v7_dirent_t *ents = NULL;
     size_t count = 0;
-    int rc = fs->ops->dir_read(fs, ip, &ents, &count);
+    int rc = fs->ops->dir->dir_read(fs, ip, &ents, &count);
     if (rc)
         return rc;
     rc = -ENOENT;
@@ -957,7 +957,7 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
         return -EINVAL;
     uint32_t cur = fs->rootino;
     v7_inode_t dip;
-    if (fs->ops->read_inode(fs, cur, &dip))
+    if (fs->ops->inode->read_inode(fs, cur, &dip))
         return -EIO;
 
     const char *p = path + 1;
@@ -980,7 +980,7 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
         int rc = fs->ops->dir_lookup(fs, &dip, name, &next);
         if (rc)
             return rc;
-        if (fs->ops->read_inode(fs, next, &dip))
+        if (fs->ops->inode->read_inode(fs, next, &dip))
             return -EIO;
         p = slash ? slash + 1 : p + len;
     }
@@ -1043,7 +1043,7 @@ static uint32_t v8_makefree_bitmap(filsys_edition_t *fs, filsys_chkctx_t *cx)
     return nfree;
 }
 
-/* Walk the V8-family bitmap as alloc() would, marking free blocks into cx->bmap
+/* Walk the V8-family bitmap as alloc() would, marking free blocks into cx->inode->bmap
  * (a free block already used is a duplicate) and counting free_blocks. */
 static void v8_walk_free_bitmap(filsys_edition_t *fs, filsys_chkctx_t *cx,
                                 filsys_check_t *rep)
@@ -1144,7 +1144,7 @@ static uint32_t v7_data_end(filsys_edition_t *fs) {
 }
 static int v7_is_clean(filsys_edition_t *fs)        { return ((filsys_edition_t *)fs)->fmod == 0; }
 
-/* Walk the free list exactly as alloc() would, marking free blocks into cx->bmap
+/* Walk the free list exactly as alloc() would, marking free blocks into cx->inode->bmap
  * (a free block already used is a duplicate) and counting free_blocks. */
 static void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
 {
@@ -1256,8 +1256,22 @@ static void v7fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     st->f_files = (v7->isize - 2) * v7_inopb(v7);
     st->f_ffree = v7->fl.tinode;
 }
+const struct filsys_dir_ops dir_fixed = {
+    .dir_read   = v7fs_dir_read,
+    .dir_add    = v7fs_dir_add,
+    .dir_remove = v7fs_dir_remove,
+};
+static const struct filsys_inode_ops inode_64 = {
+    .read_inode  = v7fs_read_inode,
+    .write_inode = v7fs_write_inode,
+    .bmap        = v7fs_bmap,
+    .inode_state = v7_inode_state,
+};
+
 const struct filsys_ops v7fs_ops = {
     .name        = "v7",
+    .dir         = &dir_fixed,
+    .inode       = &inode_64,
     .blocksize   = v7fs_blocksize_op,
     .open        = v7fs_open,
     .close       = v7fs_close,
@@ -1267,23 +1281,16 @@ const struct filsys_ops v7fs_ops = {
     .write_block = v7fs_write_block,
     .blk_get     = v7fs_read_block,
     .blk_put     = v7fs_write_block,
-    .read_inode  = v7fs_read_inode,
-    .write_inode = v7fs_write_inode,
     .ialloc      = v7fs_ialloc,
     .ifree       = v7fs_ifree,
-    .bmap        = v7fs_bmap,
     .file_read   = v7fs_file_read,
     .file_write  = v7fs_file_write,
-    .dir_read    = v7fs_dir_read,
     .dir_lookup  = v7fs_dir_lookup,
-    .dir_add     = v7fs_dir_add,
-    .dir_remove  = v7fs_dir_remove,
     .lookup      = v7fs_lookup,
     .check       = v7fs_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
     .data_end    = v7_data_end,
-    .inode_state = v7_inode_state,
     .walk_free   = v7_walk_free,
     .makefree    = v7fs_makefree,
     .is_clean    = v7_is_clean,
@@ -1427,8 +1434,22 @@ int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
 
 static int bsd211_check_op(filsys_edition_t *fs) { v7_check_t rep; return bsd211_check(fs, &rep, 0); }
 
+static const struct filsys_dir_ops dir_variable = {
+    .dir_read   = bsd211_dir_read,
+    .dir_add    = bsd211_dir_add,
+    .dir_remove = bsd211_dir_remove,
+};
+static const struct filsys_inode_ops inode_64_32addr = {
+    .read_inode  = v7fs_read_inode,
+    .write_inode = v7fs_write_inode,
+    .bmap        = v7fs_bmap,
+    .inode_state = bsd211_inode_state,
+};
+
 const struct filsys_ops bsd211fs_ops = {
     .name        = "bsd211",
+    .dir         = &dir_variable,
+    .inode       = &inode_64_32addr,
     .blocksize   = v7fs_blocksize_op,
     .open        = v7fs_open,
     .close       = v7fs_close,
@@ -1438,23 +1459,16 @@ const struct filsys_ops bsd211fs_ops = {
     .write_block = v7fs_write_block,
     .blk_get     = v7fs_read_block,
     .blk_put     = v7fs_write_block,
-    .read_inode  = v7fs_read_inode,
-    .write_inode = v7fs_write_inode,
     .ialloc      = v7fs_ialloc,
     .ifree       = v7fs_ifree,
-    .bmap        = v7fs_bmap,
     .file_read   = v7fs_file_read,
     .file_write  = v7fs_file_write,
-    .dir_read    = bsd211_dir_read,
     .dir_lookup  = v7fs_dir_lookup,
-    .dir_add     = bsd211_dir_add,
-    .dir_remove  = bsd211_dir_remove,
     .lookup      = v7fs_lookup,
     .check       = bsd211_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
     .data_end    = v7_data_end,
-    .inode_state = bsd211_inode_state,
     .walk_free   = v7_walk_free,
     .makefree    = v7fs_makefree,
     .is_clean    = bsd211_is_clean,
@@ -1733,8 +1747,17 @@ static uint64_t v6_max_file_op(filsys_edition_t *fs) {
     return (1u << 24) - 1;
 }
 
+static const struct filsys_inode_ops inode_32 = {
+    .read_inode  = v6_read_inode,
+    .write_inode = v6_write_inode,
+    .bmap        = v6_bmap,
+    .inode_state = v6_inode_state,
+};
+
 const struct filsys_ops v6fs_ops = {
     .name        = "v6",
+    .dir         = &dir_fixed,
+    .inode       = &inode_32,
     .blocksize   = v7fs_blocksize_op,
     .open        = v7fs_open,
     .close       = v7fs_close,
@@ -1744,23 +1767,16 @@ const struct filsys_ops v6fs_ops = {
     .write_block = v7fs_write_block,
     .blk_get     = v7fs_read_block,
     .blk_put     = v7fs_write_block,
-    .read_inode  = v6_read_inode,
-    .write_inode = v6_write_inode,
     .ialloc      = v7fs_ialloc,
     .ifree       = v7fs_ifree,
-    .bmap        = v6_bmap,
     .file_read   = v7fs_file_read,
     .file_write  = v7fs_file_write,
-    .dir_read    = v7fs_dir_read,
     .dir_lookup  = v7fs_dir_lookup,
-    .dir_add     = v7fs_dir_add,
-    .dir_remove  = v7fs_dir_remove,
     .lookup      = v7fs_lookup,
     .check       = v6_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
     .data_end    = v7_data_end,
-    .inode_state = v6_inode_state,
     .walk_free   = v7_walk_free,
     .makefree    = v6_makefree,
     .is_clean    = v7_is_clean,

@@ -96,10 +96,10 @@ static uint32_t mode_chmod(const filsys_edition_t *f, uint32_t old, mode_t m) {
 /* ---- dispatch (internal): forward through the backend ops table ---------- */
 
 static int read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
-    return fs->ops->read_inode(fs->fs, ino, ip);
+    return fs->ops->inode->read_inode(fs->fs, ino, ip);
 }
 static int write_inode(filsys_t *fs, uint32_t ino, const filsys_inode_t *ip) {
-    return fs->ops->write_inode(fs->fs, ino, ip);
+    return fs->ops->inode->write_inode(fs->fs, ino, ip);
 }
 static int ialloc(filsys_t *fs, uint32_t *ino) {
     return fs->ops->ialloc(fs->fs, ino);
@@ -127,22 +127,22 @@ static ssize_t file_write(filsys_t *fs, filsys_inode_t *ip, const uint8_t *buf, 
     return fs->ops->file_write(fs->fs, ip, buf, sz, off);
 }
 static int dir_read(filsys_t *fs, filsys_inode_t *ip, filsys_dirent_t **e, size_t *n) {
-    return fs->ops->dir_read(fs->fs, ip, e, n);
+    return fs->ops->dir->dir_read(fs->fs, ip, e, n);
 }
 static int dir_lookup(filsys_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino) {
     return fs->ops->dir_lookup(fs->fs, ip, name, ino);
 }
 static int dir_add(filsys_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name) {
-    return fs->ops->dir_add(fs->fs, ip, ino, name);
+    return fs->ops->dir->dir_add(fs->fs, ip, ino, name);
 }
 static int dir_remove(filsys_t *fs, filsys_inode_t *ip, const char *name) {
-    return fs->ops->dir_remove(fs->fs, ip, name);
+    return fs->ops->dir->dir_remove(fs->fs, ip, name);
 }
 static int lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip) {
     return fs->ops->lookup(fs->fs, path, ino, ip);
 }
 static int bmap(filsys_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    return fs->ops->bmap(fs->fs, ip, lbn, create, bno);
+    return fs->ops->inode->bmap(fs->fs, ip, lbn, create, bno);
 }
 
 /* Largest file the selected edition can address, in bytes. */
