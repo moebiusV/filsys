@@ -486,8 +486,16 @@ int filsys_resolve_dups(filsys_edition_t *fs)
             uint8_t  m = (uint8_t)(1u << (off & 7));
             if (cx.bmap[off >> 3] & m) {
                 if (ndup == cap) {
-                    cap = cap ? cap * 2 : 16;
-                    dups = realloc(dups, cap * sizeof(*dups));
+                    size_t ncap = cap ? cap * 2 : 16;
+                    struct dup *nb = realloc(dups, ncap * sizeof(*nb));
+                    if (!nb) {
+                        printf("out of memory tracking duplicates\n");
+                        free(dups);
+                        free(cx.bmap);
+                        return -ENOMEM;
+                    }
+                    dups = nb;
+                    cap = ncap;
                 }
                 dups[ndup].blk = a;
                 dups[ndup].ino = ino;

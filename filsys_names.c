@@ -55,7 +55,7 @@ static const filsys_format_t formats[] = {
     { FILSYS_SVR2,     "sysvr2",   sysvr2_alias },
     { FILSYS_SVR4,     "sysvr4",   sysvr4_alias },
 };
-#define NFMT (sizeof formats / sizeof formats[0])
+static const size_t NFMT = sizeof formats / sizeof formats[0];
 
 const filsys_format_t *filsys_format_nth(size_t i) {
     return i < NFMT ? &formats[i] : NULL;
