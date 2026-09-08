@@ -5691,7 +5691,7 @@ return fuse_main ();
   return 0;
 }
 _ACEOF
-for ac_lib in '' fuse3 refuse
+for ac_lib in '' fuse3 fuse refuse
 do
   if test -z "$ac_lib"; then
     ac_res="none required"
@@ -5854,6 +5854,7 @@ then :
 if test "x$ac_cv_header_fuse_h" = xyes
 then :
   save_LIBS=$LIBS
+             { ac_cv_search_fuse_main=; unset ac_cv_search_fuse_main;}
              { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing fuse_main" >&5
 printf %s "checking for library containing fuse_main... " >&6; }
 if test ${ac_cv_search_fuse_main+y}
