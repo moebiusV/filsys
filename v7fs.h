@@ -325,6 +325,8 @@ typedef struct filsys_edition {
     uint8_t     has_state;          /* s_state field present (SysV R4; R2/R3 leave s_fill[12]) */
     uint8_t     ignore_magic;       /* -F: open despite a magic that matches neither order */
     uint8_t     fmod_back;          /* s_fmod sits N bytes before s_time (V7 2, 2.11BSD 3) */
+    uint8_t     has_fmod;           /* s_fmod is a reliable clean flag (V6/V7 family; not V1/PDP-7/2.11BSD) */
+    uint8_t     size_bits;          /* on-disk size-field width when it caps max_file (V6 24, V1 16; 0 = block map is the limit) */
     uint16_t    rootino;            /* root directory inode (1 / 2 / 41) */
     uint8_t     inode_size;         /* bytes per on-disk inode */
     uint8_t     ndaddr;             /* direct block addresses per inode */

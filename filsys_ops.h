@@ -188,6 +188,11 @@ extern const struct filsys_ops bsd211fs_ops;
  * and V1 (which differs only in dirent_size/max_namlen). */
 extern const struct filsys_dir_ops dir_fixed;
 
+/* The check-side ops shared across every edition (filsys_format.c). */
+int filsys_check_op(filsys_edition_t *fs);
+int filsys_is_clean(filsys_edition_t *fs);
+uint64_t filsys_max_file_op(filsys_edition_t *fs);
+
 /* The shared integrity-check driver (check.c).  fmt is the format descriptor
  * (for rootino / cache depths / generic fields); fs is the backend state. */
 int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
