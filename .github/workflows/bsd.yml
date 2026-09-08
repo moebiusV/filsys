@@ -52,7 +52,6 @@ jobs:
           prepare: |
             pkg_add gmake curl
             pkg_add pkgconf || pkg_add pkg-config
-            nm -D /usr/lib/librefuse.so 2>/dev/null | grep -i fuse | head -40 || true
           run: |
             MAKE=gmake ./configure --with-fuse=fuse2
             gmake
@@ -74,7 +73,6 @@ jobs:
           prepare: |
             pkg_add gmake curl
             pkg_add pkgconf || pkg_add pkg-config
-            nm -D /usr/lib/librefuse.so 2>/dev/null | grep -i fuse | head -40 || true
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
             gmake
@@ -82,5 +80,27 @@ jobs:
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
+            gmake
+            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+
+  netbsd9:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: NetBSD 9 — fuse2 (librefuse)
+        uses: vmactions/netbsd-vm@v1
+        with:
+          usesh: true
+          release: "9"
+          prepare: |
+            pkg_add gmake curl
+            pkg_add pkgconf || pkg_add pkg-config
+          run: |
+            MAKE=gmake ./configure --with-fuse=fuse2
+            gmake
+            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+            curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
+            gunzip rp06-0.disk.gz
+            MAKE=gmake ./configure --with-fuse=fuse2 --enable-image-tests
             gmake
             gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc

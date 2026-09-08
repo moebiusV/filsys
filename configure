@@ -5893,6 +5893,7 @@ then :
 if test "x$ac_cv_header_fuse_h" = xyes
 then :
   save_LIBS=$LIBS
+             fuse2_libs=""
              { ac_cv_search_fuse_main=; unset ac_cv_search_fuse_main;}
              { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing fuse_main" >&5
 printf %s "checking for library containing fuse_main... " >&6; }
@@ -5969,11 +5970,49 @@ then :
 
                  if test "x$ac_cv_search_fuse_main" = "xnone required"
 then :
-  FUSE2_LIBS=""
+  fuse2_libs=""
 else case e in #(
-  e) FUSE2_LIBS="$ac_cv_search_fuse_main" ;;
+  e) fuse2_libs="$ac_cv_search_fuse_main" ;;
 esac
 fi
+
+fi
+             if test "x$have_fuse2" = xno
+then :
+
+                 # NetBSD 9's librefuse defines fuse_main as a macro over
+                 # fuse_main_real, so the symbol fuse_main is absent; librefuse
+                 # needs -lpuffs.  Link a real fuse_main() call through the
+                 # header, the way a user would.
+                 LIBS="$save_LIBS -lrefuse -lpuffs"
+                 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#define FUSE_USE_VERSION 26
+#include <fuse.h>
+int
+main (void)
+{
+return fuse_main(0, (char **)0,
+                              (const struct fuse_operations *)0, (void *)0);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  have_fuse2=yes; fuse2_libs="-lrefuse -lpuffs"
+else case e in #(
+  e) have_fuse2=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+
+fi
+             if test "x$have_fuse2" = xyes
+then :
+
+                 FUSE2_LIBS="$fuse2_libs"
                  FUSE2_CFLAGS=""
 
 fi
