@@ -326,6 +326,7 @@ typedef struct filsys_edition {
     uint8_t     niaddr;             /* total block addresses per inode */
     uint8_t     addr_width;         /* bytes per on-disk di_addr entry (2/3/4) */
     uint8_t     daddr_wid;          /* bytes per block address in free list & indirect blocks (2/4) */
+    uint8_t     df_nfree_wid;       /* bytes per df_nfree in a free-list *chain* block (2 V7 / 4 V8-family) */
     uint8_t     isize_count;        /* s_isize counts i-list blocks (V6) vs first data block (V7) */
     uint32_t    nindir;             /* block pointers per indirect block */
     uint32_t    ilarg_mask;         /* mode bit marking a "large" file (0 = none) */
@@ -459,6 +460,13 @@ static inline void v7_put_daddr(const filsys_edition_t *fs, uint8_t *p, uint32_t
         bo_put16le(p, v & 0xFFFFu);
     else
         fs->bo->put32(p, v);
+}
+
+/* The offset of df_free[] within a free-list *chain* block: after df_nfree
+ * (4 bytes in the V8-family, 2 elsewhere).  V7/32V's 2-byte df_nfree is padded
+ * to 4 on 32V, which fb_free_off(pack4) encodes. */
+static inline int v7_chain_free_off(const filsys_edition_t *fs) {
+    return fs->df_nfree_wid == 4 ? 4 : fb_free_off(fs->pack4);
 }
 
 /* The default indirect-entry codec: 2-byte LE (V6/V1) or 4-byte in the
