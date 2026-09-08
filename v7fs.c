@@ -925,7 +925,7 @@ static void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check
     if (!seen)
         return;
     uint16_t n = f->fl.nfree;
-    uint32_t cur[V7_XEN_NICFREE];
+    uint32_t cur[V8_NICFREE_LARGE];   /* the V8-family cache holds up to 946 */
     memcpy(cur, f->fl.free, sizeof(cur));
     uint32_t guard = 0;
     while (n > 0) {

@@ -341,6 +341,7 @@ typedef struct filsys_edition {
     uint8_t     synth_dot;          /* dir_read synthesizes "." / ".." (PDP-7) */
     uint8_t     freemap;            /* V8-family free-space form (V8_FREEMAP_*); 0 = free list */
     uint8_t     nomkfs;             /* 1 = mkfs.filsys cannot create this format yet (read-only) */
+    uint8_t     noprobe;            /* 1 = findfs cannot detect this format yet (probe pending) */
     /* on-disk type field (V6/V7/BSD211 family); 0 for V1/PDP-7 */
     uint16_t    ifmt, ifdir, ifreg, ifchr, ifblk, iflnk, ifsock, ifmpc, ifmpb;
     /* mode conversion (NULL = derive from the constants above) */

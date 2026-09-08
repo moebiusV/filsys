@@ -221,7 +221,7 @@ static const filsys_edition_t v8 = {
     .addr_width = 3, .daddr_wid = 4, .df_nfree_wid = 4, .nindir = 1024 / 4,
     .rootino = V7_ROOTINO, .max_namlen = V7_DIRSIZ, .dirent_size = V7_DIRENTSZ,
     .freemap = V8_FREEMAP_LIST,
-    .nomkfs = 1,   /* mkfs/fsck for the V8-family lands in Task 9 */
+    .noprobe = 1,   /* findfs's unified probe (Task 98) does not cover it yet */
     .sb_decode = v8_sb_decode, .sb_encode = v8_sb_encode,
     .ifmt = V7_IFMT, .ifdir = V7_IFDIR, .ifreg = V7_IFREG,
     .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .iflnk = V8_IFLNK,
