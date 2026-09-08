@@ -97,8 +97,29 @@ static inline int filsys_in_allocated(uint8_t st) {
  * injection).  Internal, not part of the public filsys.h API. */
 void filsys_set_io(filsys_t *fs, const filsys_io_t *io);
 
+/* Directory-format sub-vtable: the ops that differ with the on-disk directory
+ * entry layout (fixed 16-byte V7 entries vs variable-length 2.11BSD entries vs
+ * the 10-byte V1 entries).  The rest of the directory machinery (dir_lookup) is
+ * shared and stays in filsys_ops. */
+struct filsys_dir_ops {
+    int (*dir_read)(filsys_edition_t *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count);
+    int (*dir_add)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name);
+    int (*dir_remove)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name);
+};
+
+/* Inode-format sub-vtable: the ops that differ with the on-disk inode layout
+ * and address width (32-byte V6, 64-byte V7, 64-byte+32-bit-addr 2.11BSD). */
+struct filsys_inode_ops {
+    int  (*read_inode)(filsys_edition_t *fs, uint32_t ino, filsys_inode_t *ip);
+    int  (*write_inode)(filsys_edition_t *fs, uint32_t ino, const filsys_inode_t *ip);
+    int  (*bmap)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
+    uint8_t (*inode_state)(filsys_edition_t *fs, uint32_t ino, uint32_t mode); /* -> FILSYS_IN_* */
+};
+
 struct filsys_ops {
     const char *name;
+    const struct filsys_dir_ops   *dir;    /* fixed-16 | variable | v1-10byte */
+    const struct filsys_inode_ops *inode;  /* 32-byte | 64-byte | 64+32bit-addr */
     uint32_t (*blocksize)(const filsys_edition_t *fs);  /* logical block size in bytes */
 
     /* lifecycle */
@@ -121,26 +142,16 @@ struct filsys_ops {
     int  (*blk_get)(filsys_edition_t *fs, uint32_t bno, uint8_t *buf);
     int  (*blk_put)(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf);
 
-    /* inode io: on-disk bytes <-> decoded filsys_inode_t */
-    int  (*read_inode)(filsys_edition_t *fs, uint32_t ino, filsys_inode_t *ip);
-    int  (*write_inode)(filsys_edition_t *fs, uint32_t ino, const filsys_inode_t *ip);
-
     /* inode allocation (block allocation is internal to bmap/itrunc) */
     int  (*ialloc)(filsys_edition_t *fs, uint32_t *ino);
     void (*ifree)(filsys_edition_t *fs, uint32_t ino);
-
-    /* block mapping */
-    int  (*bmap)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
 
     /* file data */
     ssize_t (*file_read)(filsys_edition_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off);
     ssize_t (*file_write)(filsys_edition_t *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
 
-    /* directories */
-    int  (*dir_read)(filsys_edition_t *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count);
+    /* directories (dir_read/add/remove live in the dir sub-vtable) */
     int  (*dir_lookup)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino);
-    int  (*dir_add)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name);
-    int  (*dir_remove)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name);
 
     /* path lookup */
     int  (*lookup)(filsys_edition_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip);
@@ -154,7 +165,6 @@ struct filsys_ops {
     uint32_t (*maxino)(filsys_edition_t *fs);              /* last inode number */
     uint32_t (*data_start)(filsys_edition_t *fs);          /* first data block */
     uint32_t (*data_end)(filsys_edition_t *fs);            /* one past the last data block */
-    uint8_t  (*inode_state)(filsys_edition_t *fs, uint32_t ino, uint32_t mode); /* -> FILSYS_IN_* */
     void     (*walk_free)(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep);
                               /* walk the allocator, marking free blocks into cx->bmap
                                * (detecting used+free as dup), counting free_blocks */
@@ -173,6 +183,10 @@ extern const struct filsys_ops v7fs_ops;
 extern const struct filsys_ops v1fs_ops;
 extern const struct filsys_ops p7fs_ops;
 extern const struct filsys_ops bsd211fs_ops;
+
+/* The shared fixed-length directory ops (v7fs_dir_*), used by the V6/V7 family
+ * and V1 (which differs only in dirent_size/max_namlen). */
+extern const struct filsys_dir_ops dir_fixed;
 
 /* The shared integrity-check driver (check.c).  fmt is the format descriptor
  * (for rootino / cache depths / generic fields); fs is the backend state. */

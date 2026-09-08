@@ -659,7 +659,7 @@ static uint32_t p7_chk_data_end(filsys_edition_t *fs)   { (void)fs; return P7_KD
 static int p7_chk_is_clean(filsys_edition_t *fs)        { (void)fs; return 0; }
 
 /* Walk the PDP-7 on-disk free list (9 free blocks per 64-word node), marking
- * free blocks into cx->bmap and counting them. */
+ * free blocks into cx->inode->bmap and counting them. */
 static void p7_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
 {
     p7fs_t *f = fs;
@@ -753,8 +753,22 @@ static void p7fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     st->f_files = P7_MAXINO;
     st->f_ffree = 0;   /* not tracked (read-only) */
 }
+static const struct filsys_dir_ops dir_pdp7 = {
+    .dir_read   = p7fs_dir_read,
+    .dir_add    = p7fs_dir_add,
+    .dir_remove = p7fs_dir_remove,
+};
+static const struct filsys_inode_ops inode_pdp7 = {
+    .read_inode  = p7fs_read_inode,
+    .write_inode = p7fs_write_inode,
+    .bmap        = p7fs_bmap,
+    .inode_state = p7_inode_state,
+};
+
 const struct filsys_ops p7fs_ops = {
     .name        = "pdp7",
+    .dir         = &dir_pdp7,
+    .inode       = &inode_pdp7,
     .blocksize   = p7fs_blocksize_op,   /* 64 words x 2 chars = 128 bytes */
     .open        = p7fs_open,
     .close       = p7fs_close,
@@ -763,23 +777,16 @@ const struct filsys_ops p7fs_ops = {
     .write_block = p7fs_write_block,
     .blk_get     = p7fs_blk_get,
     .blk_put     = p7fs_blk_put,
-    .read_inode  = p7fs_read_inode,
-    .write_inode = p7fs_write_inode,
     .ialloc      = p7fs_ialloc,
     .ifree       = p7fs_ifree,
-    .bmap        = p7fs_bmap,
     .file_read   = v7fs_file_read,
     .file_write  = v7fs_file_write,
-    .dir_read    = p7fs_dir_read,
     .dir_lookup  = v7fs_dir_lookup,
-    .dir_add     = p7fs_dir_add,
-    .dir_remove  = p7fs_dir_remove,
     .lookup      = v7fs_lookup,
     .check       = p7fs_check_op,
     .maxino      = p7_chk_maxino,
     .data_start  = p7_chk_data_start,
     .data_end    = p7_chk_data_end,
-    .inode_state = p7_inode_state,
     .walk_free   = p7_chk_walk_free,
     .makefree    = p7fs_makefree,
     .is_clean    = p7_chk_is_clean,
