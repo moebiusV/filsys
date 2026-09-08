@@ -34,20 +34,27 @@ static int fuse_getattr(const char *path, struct stat *st, struct fuse_file_info
 struct rd_bridge {
     void *buf;
     fuse_fill_dir_t filler;
+    size_t off;   /* resume offset: entries with index < off were already sent */
 };
 
-static int rd_emit(void *arg, const char *name, const struct stat *st)
+static int rd_emit(void *arg, const char *name, const struct stat *st,
+                   size_t index)
 {
     struct rd_bridge *b = arg;
-    return b->filler(b->buf, name, st, 0, 0);
+    if (index < b->off)
+        return 0;                       /* skip past the resume point */
+    return b->filler(b->buf, name, st, (off_t)index + 1, 0);
 }
 
 static int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                         off_t off, struct fuse_file_info *fi,
                         enum fuse_readdir_flags fl)
 {
-    (void)off; (void)fi; (void)fl;
-    struct rd_bridge b = { buf, filler };
+    (void)fi; (void)fl;
+    /* macFUSE >= 5.3 calls readdir with non-zero offsets even for the first
+     * (and only) pass, so the resume offset must be honoured rather than
+     * assumed zero. */
+    struct rd_bridge b = { buf, filler, off < 0 ? 0 : (size_t)off };
     fuse_ctx_t c = C();
     return fuse_op_readdir(&c, path, rd_emit, &b);
 }

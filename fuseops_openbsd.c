@@ -45,21 +45,23 @@ static int fuse_getattr(const char *path, struct stat *st)
 struct rd_bridge {
     void *buf;
     fuse_fill_dir_t filler;
+    size_t off;   /* resume offset: entries with index < off were already sent */
 };
 
-static int rd_emit(void *arg, const char *name, const struct stat *st)
+static int rd_emit(void *arg, const char *name, const struct stat *st,
+                   size_t index)
 {
     struct rd_bridge *b = arg;
-    return b->filler(b->buf, name, st, 0);   /* FUSE2 filler: 4 args, no flags */
+    if (index < b->off)
+        return 0;                       /* skip past the resume point */
+    return b->filler(b->buf, name, st, (off_t)index + 1);   /* FUSE2: 4 args */
 }
 
-/* FUSE2 readdir has no enum fuse_readdir_flags; off is ignored (old-style
- * filler semantics: the emit callback enumerates the whole directory). */
 static int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                         off_t off, struct fuse_file_info *fi)
 {
-    (void)off; (void)fi;
-    struct rd_bridge b = { buf, filler };
+    (void)fi;
+    struct rd_bridge b = { buf, filler, off < 0 ? 0 : (size_t)off };
     fuse_ctx_t c = C();
     return fuse_op_readdir(&c, path, rd_emit, &b);
 }

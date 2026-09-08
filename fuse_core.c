@@ -36,7 +36,7 @@ int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit,
             filsys_fill_stat(c->fs, &eip, &st);
         else
             memset(&st, 0, sizeof(st));
-        if (emit(arg, ents[i].name, &st))
+        if (emit(arg, ents[i].name, &st, i))
             break;
     }
     free(ents);

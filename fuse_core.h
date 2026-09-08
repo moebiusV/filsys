@@ -18,8 +18,11 @@ typedef struct {
     gid_t     gid;
 } fuse_ctx_t;
 
-/* readdir emits one entry per call; a non-zero return stops the walk. */
-typedef int (*fuse_emit_t)(void *arg, const char *name, const struct stat *st);
+/* readdir emits one entry per call; `index` is the entry's 0-based position in
+ * the directory (stable across calls), which the adapter turns into a FUSE
+ * resume offset.  A non-zero return stops the walk. */
+typedef int (*fuse_emit_t)(void *arg, const char *name, const struct stat *st,
+                           size_t index);
 
 int fuse_op_getattr(fuse_ctx_t *c, const char *path, struct stat *st);
 int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit, void *arg);
