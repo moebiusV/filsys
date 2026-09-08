@@ -49,12 +49,13 @@ extern const filsys_io_t filsys_io_file;
  * (not the edition) selects the byte order: System V ran on both endiannesses. */
 const byte_order_ops_t *filsys_arch_bo(const char *arch);
 
-/* The type a to_disk_mode caller is encoding (create / mkdir / mknod). */
+/* The type a to_disk_mode caller is encoding (create / mkdir / mknod / symlink). */
 enum {
     FILSYS_FT_REG = 0,
     FILSYS_FT_DIR,
     FILSYS_FT_CHR,
-    FILSYS_FT_BLK
+    FILSYS_FT_BLK,
+    FILSYS_FT_LNK
 };
 
 enum {

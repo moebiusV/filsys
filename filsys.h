@@ -172,6 +172,9 @@ int filsys_read(filsys_t *fs, const char *path, void *buf, size_t size,
                 off_t off);
 int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size,
                  off_t off);
+/* Read a symlink's target (no trailing NUL) into buf; returns the byte count.
+ * -ENOSYS if the edition predates symlinks, -EINVAL if path is not a symlink. */
+ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size);
 
 /* ---- mutation (uid/gid are used when a new inode is created) ------------- */
 
@@ -186,6 +189,7 @@ int filsys_rmdir(filsys_t *fs, const char *path);
 int filsys_link(filsys_t *fs, const char *from, const char *to);
 int filsys_rename(filsys_t *fs, const char *from, const char *to,
                   unsigned int flags);
+int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath);
 int filsys_truncate(filsys_t *fs, const char *path, off_t size);
 int filsys_chmod(filsys_t *fs, const char *path, mode_t mode);
 int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid);

@@ -84,6 +84,7 @@ static uint32_t mode_to_disk(const filsys_edition_t *f, mode_t m, int type) {
     case FILSYS_FT_DIR: return base | f->ifdir;
     case FILSYS_FT_CHR: return base | f->ifchr;
     case FILSYS_FT_BLK: return base | f->ifblk;
+    case FILSYS_FT_LNK: return base | f->iflnk;
     default:            return f->ifreg ? (base | f->ifreg) : base;
     }
 }
@@ -885,6 +886,61 @@ int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
 
     ip.size = newsize;
     return write_inode(fs, ino, &ip);
+}
+
+ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) {
+    if (!fs->fmt.iflnk)
+        return -ENOSYS;   /* this edition predates symlinks */
+    filsys_inode_t ip;
+    uint32_t ino;
+    int rc = lookup(fs, path, &ino, &ip);
+    if (rc) return rc;
+    if ((ip.mode & fs->fmt.ifmt) != fs->fmt.iflnk)
+        return -EINVAL;
+    size_t n = ip.size < size ? ip.size : size;
+    if (n == 0)
+        return 0;
+    return file_read(fs, &ip, (uint8_t *)buf, n, 0);
+}
+
+int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {
+    if (!fs->fmt.iflnk)
+        return -ENOSYS;   /* this edition predates symlinks */
+    char dir[PATH_MAX], name[64];
+    int rc = split_path(linkpath, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
+    if (rc) return rc;
+    filsys_inode_t ddir;
+    uint32_t dino;
+    rc = lookup(fs, dir, &dino, &ddir);
+    if (rc) return rc;
+    uint32_t nino;
+    rc = ialloc(fs, &nino);
+    if (rc) return rc;
+    filsys_inode_t nip;
+    memset(&nip, 0, sizeof(nip));
+    nip.ino = nino;
+    nip.mode = mode_to_disk(&fs->fmt, 0777, FILSYS_FT_LNK);
+    nip.nlink = 1;
+    nip.uid = (int16_t)fs->uid;
+    nip.gid = (int16_t)fs->gid;
+    nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
+    rc = write_inode(fs, nino, &nip);
+    if (rc) { ifree(fs, nino); return rc; }
+    /* The target is the file's data (a "slow" symlink): a short write. */
+    ssize_t w = file_write(fs, &nip, (const uint8_t *)target, strlen(target), 0);
+    if (w != (ssize_t)strlen(target)) {
+        nip.mode = 0;
+        if (write_inode(fs, nino, &nip) == 0)
+            ifree(fs, nino);
+        return w < 0 ? (int)w : -EIO;
+    }
+    rc = dir_add(fs, &ddir, nino, name);
+    if (rc) {
+        nip.mode = 0;
+        if (write_inode(fs, nino, &nip) == 0)
+            ifree(fs, nino);
+    }
+    return rc;
 }
 
 int filsys_chmod(filsys_t *fs, const char *path, mode_t mode) {

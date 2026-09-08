@@ -1156,7 +1156,7 @@ static uint8_t v7_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode)
         return FILSYS_IN_UNALLOC;
     switch (mode & V7_IFMT) {
     case V7_IFDIR: return FILSYS_IN_IDIR;
-    case V7_IFREG: return FILSYS_IN_IREG;
+    case V7_IFREG: case V8_IFLNK: return FILSYS_IN_IREG;
     case V7_IFCHR: case V7_IFMPC: return FILSYS_IN_ICHR;
     case V7_IFBLK: case V7_IFMPB: return FILSYS_IN_IBLK;
     case V7_IFIFO: return FILSYS_IN_IPIPE;
