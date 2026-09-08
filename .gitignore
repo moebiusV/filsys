@@ -28,6 +28,10 @@ tm0.tap
 libfuse3-dev_*.deb
 fuselib/
 
+# --- local libfuse2 dev package + extracted headers (for --with-fuse=fuse2) ---
+libfuse-dev_*.deb
+fuselib2/
+
 # --- scratch / tooling ---
 .venv/
 __pycache__/

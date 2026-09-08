@@ -3,8 +3,10 @@
 /* mount.filsys.c - mount a Research Unix filesystem image (PDP-11) as a FUSE
  * filesystem, selecting the on-disk edition at run time.
  *
- * This file is a thin FUSE shim over the filsys library (libfilsys); the
- * on-disk backends (V6, V7/32V) and the version dispatch live there.
+ * This file is main(): argument parsing, image opening, and the integrity
+ * check, shared by both FUSE adapters.  The callback bodies live in the
+ * FUSE-free fuse_core.c; the adapters (fuseops.c for FUSE3, fuseops_openbsd.c
+ * for OpenBSD's base-libfuse 2.6) translate their callback signatures onto it.
  *
  * One binary, every edition we care about (canonical -v names):
  *
@@ -37,6 +39,7 @@
  */
 #include <config.h>
 #include "filsys.h"
+#include "fuse_core.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -45,185 +48,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include <fuse.h>
-
-static filsys_t *K(void) {
-    return (filsys_t *)fuse_get_context()->private_data;
-}
-
-/* ---- callbacks ----------------------------------------------------------- */
-
-static int fuse_getattr(const char *path, struct stat *st, struct fuse_file_info *fi) {
-    (void)fi;
-    filsys_inode_t ip;
-    uint32_t ino;
-    int rc = filsys_lookup(K(), path, &ino, &ip);
-    if (rc) return rc;
-    filsys_fill_stat(K(), &ip, st);
-    return 0;
-}
-
-static int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-                        off_t off, struct fuse_file_info *fi, enum fuse_readdir_flags fl) {
-    (void)off; (void)fi; (void)fl;
-    filsys_dirent_t *ents = NULL;
-    size_t count = 0;
-    int rc = filsys_readdir(K(), path, &ents, &count);
-    if (rc) return rc;
-    for (size_t i = 0; i < count; i++) {
-        struct stat st;
-        filsys_inode_t eip;
-        if (filsys_read_inode(K(), ents[i].ino, &eip) == 0)
-            filsys_fill_stat(K(), &eip, &st);
-        else
-            memset(&st, 0, sizeof(st));
-        if (filler(buf, ents[i].name, &st, 0, 0))
-            break;
-    }
-    free(ents);
-    return 0;
-}
-
-static int fuse_open(const char *path, struct fuse_file_info *fi) {
-    filsys_inode_t ip;
-    uint32_t ino;
-    int rc = filsys_lookup(K(), path, &ino, &ip);
-    if (rc) return rc;
-    struct stat st;
-    filsys_fill_stat(K(), &ip, &st);
-    if (S_ISDIR(st.st_mode)) return -EISDIR;
-    if ((fi->flags & O_ACCMODE) != O_RDONLY && filsys_is_readonly(K()))
-        return -EROFS;
-    return 0;
-}
-
-static int fuse_read(const char *path, char *buf, size_t size, off_t off, struct fuse_file_info *fi) {
-    (void)fi;
-    return filsys_read(K(), path, buf, size, off);
-}
-
-static int fuse_write(const char *path, const char *buf, size_t size, off_t off, struct fuse_file_info *fi) {
-    (void)fi;
-    return filsys_write(K(), path, buf, size, off);
-}
-
-static int fuse_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
-    (void)fi;
-    const struct fuse_context *ctx = fuse_get_context();
-    return filsys_create(K(), path, mode, ctx->uid, ctx->gid);
-}
-
-static int fuse_mkdir(const char *path, mode_t mode) {
-    const struct fuse_context *ctx = fuse_get_context();
-    return filsys_mkdir(K(), path, mode, ctx->uid, ctx->gid);
-}
-
-static int fuse_mknod(const char *path, mode_t mode, dev_t rdev) {
-    const struct fuse_context *ctx = fuse_get_context();
-    return filsys_mknod(K(), path, mode, rdev, ctx->uid, ctx->gid);
-}
-
-static int fuse_unlink(const char *path) { return filsys_unlink(K(), path); }
-static int fuse_rmdir(const char *path) { return filsys_rmdir(K(), path); }
-static int fuse_link(const char *from, const char *to) { return filsys_link(K(), from, to); }
-static int fuse_rename(const char *from, const char *to, unsigned int flags) { return filsys_rename(K(), from, to, flags); }
-static int fuse_chmod(const char *path, mode_t mode, struct fuse_file_info *fi) { (void)fi; return filsys_chmod(K(), path, mode); }
-static int fuse_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_info *fi) { (void)fi; return filsys_chown(K(), path, uid, gid); }
-static int fuse_truncate(const char *path, off_t size, struct fuse_file_info *fi) { (void)fi; return filsys_truncate(K(), path, size); }
-static int fuse_utimens(const char *path, const struct timespec tv[2], struct fuse_file_info *fi) { (void)fi; return filsys_utimens(K(), path, tv); }
-static int fuse_statfs(const char *path, struct statvfs *st) { (void)path; return filsys_statfs(K(), st); }
-
-static int fuse_access(const char *path, int mask) {
-    const struct fuse_context *ctx = fuse_get_context();
-    filsys_t *k = K();
-    filsys_inode_t ip;
-    uint32_t ino;
-    int rc = filsys_lookup(k, path, &ino, &ip);
-    if (rc) return rc;
-    if ((mask & W_OK) && filsys_is_readonly(k))
-        return -EROFS;
-    /* Check the rwx bits against the caller's ownership class.  The whole image
-     * is reported as owned by the mounting user (fill_stat st_uid/st_gid), so
-     * compare against that, not the on-disk V7 uids. */
-    int bits;
-    if (ctx->uid == 0) {
-        /* root: R/W always allowed; X_OK needs at least one exec bit set */
-        return (mask & X_OK) && !(ip.mode & 0111) ? -EACCES : 0;
-    }
-    if (ctx->uid == filsys_uid(k))
-        bits = (ip.mode >> 6) & 7;          /* owner */
-    else if (ctx->gid == filsys_gid(k))
-        bits = (ip.mode >> 3) & 7;          /* group (primary gid only) */
-    else
-        bits = ip.mode & 7;                 /* other */
-    if ((mask & R_OK) && !(bits & 4)) return -EACCES;
-    if ((mask & W_OK) && !(bits & 2)) return -EACCES;
-    if ((mask & X_OK) && !(bits & 1)) return -EACCES;
-    return 0;
-}
-
-static int fuse_flush(const char *path, struct fuse_file_info *fi) {
-    (void)path; (void)fi;
-    /* Data blocks go straight to the image, but the free list and superblock are
-     * batched in memory (see v6fs/v7fs_sync).  flush fires on every close(2), so
-     * it is the natural place to persist them rather than holding free-list state
-     * in memory until an explicit fsync or unmount. */
-    return filsys_sync(K());
-}
-
-static int fuse_fsync(const char *path, int isdatasync, struct fuse_file_info *fi) {
-    (void)path; (void)isdatasync; (void)fi;
-    return filsys_sync(K());
-}
-
-static int fuse_release(const char *path, struct fuse_file_info *fi) {
-    (void)path; (void)fi;
-    return 0;   /* no per-open state to release */
-}
-
-static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg) {
-    (void)conn;
-    cfg->kernel_cache = 0;   /* backing store is a plain file; don't cache pages */
-    cfg->use_ino = 1;        /* stable inode numbers are reported (see fill_stat) */
-    /* init's return value becomes private_data for every later callback (and for
-     * destroy()), overriding the handle we passed to fuse_main.  Inside init,
-     * fuse_get_context()->private_data still holds that original handle, so hand
-     * it back unchanged rather than clobbering it with NULL. */
-    return fuse_get_context()->private_data;
-}
-
-static void filsys_destroy(void *private_data) {
-    filsys_sync((filsys_t *)private_data);   /* flush on unmount; main() closes */
-}
-
-static struct fuse_operations filsys_ops = {
-    .getattr  = fuse_getattr,
-    .readdir  = fuse_readdir,
-    .open     = fuse_open,
-    .read     = fuse_read,
-    .write    = fuse_write,
-    .create   = fuse_create,
-    .link     = fuse_link,
-    .mkdir    = fuse_mkdir,
-    .mknod    = fuse_mknod,
-    .unlink   = fuse_unlink,
-    .rmdir    = fuse_rmdir,
-    .rename   = fuse_rename,
-    .chmod    = fuse_chmod,
-    .chown    = fuse_chown,
-    .truncate = fuse_truncate,
-    .utimens  = fuse_utimens,
-    .statfs   = fuse_statfs,
-    .access   = fuse_access,
-    .flush    = fuse_flush,
-    .fsync    = fuse_fsync,
-    .release  = fuse_release,
-    .init     = fuse_init,
-    .destroy  = filsys_destroy,
-};
-
-/* ---- main ---------------------------------------------------------------- */
 
 static void usage(const char *p) {
     fprintf(stderr,
@@ -323,12 +147,6 @@ int main(int argc, char *argv[]) {
         return crc == 0 ? 0 : 1;
     }
 
-    struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
-    fuse_opt_add_arg(&args, argv[0]);
-    fuse_opt_add_arg(&args, mountpoint);
-    fuse_opt_add_arg(&args, "-s");
-    if (foreground) fuse_opt_add_arg(&args, "-f");
-    if (debug)      fuse_opt_add_arg(&args, "-d");
     if (readonly) {
         if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
         strncat(fuse_opts, "ro", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
@@ -338,10 +156,20 @@ int main(int argc, char *argv[]) {
      * fuse_config field, so it works on both FUSE2 and FUSE3. */
     if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
     strncat(fuse_opts, "default_permissions", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
-    if (fuse_opts[0]) { fuse_opt_add_arg(&args, "-o"); fuse_opt_add_arg(&args, fuse_opts); }
 
-    rc = fuse_main(args.argc, args.argv, &filsys_ops, k);
-    fuse_opt_free_args(&args);
+    fuse_ctx_t ctx;
+    ctx.fs = k;
+    ctx.uid = uid >= 0 ? (uid_t)uid : getuid();
+    ctx.gid = gid >= 0 ? (gid_t)gid : getgid();
+
+    fuse_mount_opts_t mopts;
+    mopts.argv0 = argv[0];
+    mopts.mountpoint = mountpoint;
+    mopts.foreground = foreground;
+    mopts.debug = debug;
+    mopts.fuse_opts = fuse_opts;
+
+    rc = fuse_run(&ctx, &mopts);
 
     filsys_close(k);
     return rc;

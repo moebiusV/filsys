@@ -650,6 +650,13 @@ ENABLE_ORACLE_TESTS_FALSE
 ENABLE_ORACLE_TESTS_TRUE
 ENABLE_IMAGE_TESTS_FALSE
 ENABLE_IMAGE_TESTS_TRUE
+FUSE_CPPFLAGS
+FUSE_LIBS
+FUSE_CFLAGS
+HAVE_FUSE2_FALSE
+HAVE_FUSE2_TRUE
+FUSE2_LIBS
+FUSE2_CFLAGS
 FUSE3_LIBS
 FUSE3_CFLAGS
 PKG_CONFIG_LIBDIR
@@ -756,6 +763,7 @@ enable_silent_rules
 enable_maintainer_mode
 enable_dependency_tracking
 enable_largefile
+with_fuse
 enable_image_tests
 enable_oracle_tests
 enable_year2038
@@ -772,7 +780,9 @@ PKG_CONFIG
 PKG_CONFIG_PATH
 PKG_CONFIG_LIBDIR
 FUSE3_CFLAGS
-FUSE3_LIBS'
+FUSE3_LIBS
+FUSE2_CFLAGS
+FUSE2_LIBS'
 
 
 # Initialize some variables set by options.
@@ -1411,6 +1421,12 @@ Optional Features:
                           check'
   --enable-year2038       support timestamps after 2038
 
+Optional Packages:
+  --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
+  --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
+  --with-fuse=auto|fuse3|fuse2
+                          FUSE API level to build against (default: auto)
+
 Some influential environment variables:
   CC          C compiler command
   CFLAGS      C compiler flags
@@ -1427,6 +1443,9 @@ Some influential environment variables:
   FUSE3_CFLAGS
               C compiler flags for FUSE3, overriding pkg-config
   FUSE3_LIBS  linker flags for FUSE3, overriding pkg-config
+  FUSE2_CFLAGS
+              C compiler flags for FUSE2, overriding pkg-config
+  FUSE2_LIBS  linker flags for FUSE2, overriding pkg-config
 
 Use these variables to override the choices made by 'configure' or to help
 it to find libraries and programs with nonstandard names/locations.
@@ -1583,6 +1602,117 @@ printf "%s\n" "$ac_res" >&6; }
   eval $as_lineno_stack; ${as_lineno_stack:+:} unset as_lineno
 
 } # ac_fn_c_check_header_compile
+
+# ac_fn_c_try_link LINENO
+# -----------------------
+# Try to link conftest.$ac_ext, and return whether this succeeded.
+ac_fn_c_try_link ()
+{
+  as_lineno=${as_lineno-"$1"} as_lineno_stack=as_lineno_stack=$as_lineno_stack
+  rm -f conftest.$ac_objext conftest.beam conftest$ac_exeext
+  if { { ac_try="$ac_link"
+case "(($ac_try" in
+  *\"* | *\`* | *\\*) ac_try_echo=\$ac_try;;
+  *) ac_try_echo=$ac_try;;
+esac
+eval ac_try_echo="\"\$as_me:${as_lineno-$LINENO}: $ac_try_echo\""
+printf "%s\n" "$ac_try_echo"; } >&5
+  (eval "$ac_link") 2>conftest.err
+  ac_status=$?
+  if test -s conftest.err; then
+    grep -v '^ *+' conftest.err >conftest.er1
+    cat conftest.er1 >&5
+    mv -f conftest.er1 conftest.err
+  fi
+  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; } && {
+	 test -z "$ac_c_werror_flag" ||
+	 test ! -s conftest.err
+       } && test -s conftest$ac_exeext && {
+	 test "$cross_compiling" = yes ||
+	 test -x conftest$ac_exeext
+       }
+then :
+  ac_retval=0
+else case e in #(
+  e) printf "%s\n" "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+	ac_retval=1 ;;
+esac
+fi
+  # Delete the IPA/IPO (Inter Procedural Analysis/Optimization) information
+  # created by the PGI compiler (conftest_ipa8_conftest.oo), as it would
+  # interfere with the next link command; also delete a directory that is
+  # left behind by Apple's compiler.  We do this before executing the actions.
+  rm -rf conftest.dSYM conftest_ipa8_conftest.oo
+  eval $as_lineno_stack; ${as_lineno_stack:+:} unset as_lineno
+  as_fn_set_status $ac_retval
+
+} # ac_fn_c_try_link
+
+# ac_fn_c_check_member LINENO AGGR MEMBER VAR INCLUDES
+# ----------------------------------------------------
+# Tries to find if the field MEMBER exists in type AGGR, after including
+# INCLUDES, setting cache variable VAR accordingly.
+ac_fn_c_check_member ()
+{
+  as_lineno=${as_lineno-"$1"} as_lineno_stack=as_lineno_stack=$as_lineno_stack
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $2.$3" >&5
+printf %s "checking for $2.$3... " >&6; }
+if eval test \${$4+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+$5
+int
+main (void)
+{
+static $2 ac_aggr;
+if (ac_aggr.$3)
+return 0;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  eval "$4=yes"
+else case e in #(
+  e) cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+$5
+int
+main (void)
+{
+static $2 ac_aggr;
+if (sizeof ac_aggr.$3)
+return 0;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  eval "$4=yes"
+else case e in #(
+  e) eval "$4=no" ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext ;;
+esac
+fi
+eval ac_res=\$$4
+	       { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_res" >&5
+printf "%s\n" "$ac_res" >&6; }
+  eval $as_lineno_stack; ${as_lineno_stack:+:} unset as_lineno
+
+} # ac_fn_c_check_member
 ac_configure_args_raw=
 for ac_arg
 do
@@ -5245,12 +5375,35 @@ fi
 
 
 # ---------------------------------------------------------------------------
-# libfuse3.
+# FUSE backend.
 #
-# Prefer pkg-config (a distro build has libfuse3-dev installed, which ships
-# fuse3.pc).  Fall back to the locally-fetched headers from ./fetch.sh and
-# link the runtime SONAME directly, so a no-root build still works.
+# --with-fuse=auto|fuse3|fuse2 picks the API level; auto prefers fuse3 (every
+# platform but OpenBSD ships it) and falls back to fuse2.  Each level probes in
+# order: pkg-config, then a bare header + link search (the only path that finds
+# OpenBSD's base libfuse and NetBSD's librefuse, neither of which ships a .pc
+# file), then -- for fuse3 only -- the local ./fetch.sh headers so a no-root
+# build still works.
+#
+# FUSE_USE_VERSION is the one -D the <fuse.h> API mandates before inclusion, so
+# configure sets it into AM_CPPFLAGS, never a source file.  Its encoding changed
+# at 3.10 (maj*10+min -> maj*100+min), so 35 means 3.5 and 26 means 2.6.  Never
+# emit -l: (GNU-ld syntax that fails on the BSD linkers).
 # ---------------------------------------------------------------------------
+
+# Check whether --with-fuse was given.
+if test ${with_fuse+y}
+then :
+  withval=$with_fuse; with_fuse=$withval
+else case e in #(
+  e) with_fuse=auto ;;
+esac
+fi
+
+
+have_fuse3=no
+have_fuse2=no
+
+# fuse3 (explicit, or the first choice under auto).
 
 
 
@@ -5386,6 +5539,9 @@ fi
 if test -z "$PKG_CONFIG"; then
 	as_fn_error $? "pkg-config not found" "$LINENO" 5
 fi
+if test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3
+then :
+
 
 pkg_failed=no
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for fuse3 >= 3.0" >&5
@@ -5457,16 +5613,367 @@ else
 printf "%s\n" "yes" >&6; }
         have_fuse3=yes
 fi
-if test "x$have_fuse3" = xno
+    if test "x$have_fuse3" = xno
 then :
 
-    FUSE3_CFLAGS="-I\$(top_srcdir)/fuselib/usr/include/fuse3"
-    FUSE3_LIBS="-l:libfuse3.so.4"
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: fuse3.pc not found: using local headers from ./fetch.sh" >&5
+        ac_fn_c_check_header_compile "$LINENO" "fuse3/fuse.h" "ac_cv_header_fuse3_fuse_h" "$ac_includes_default"
+if test "x$ac_cv_header_fuse3_fuse_h" = xyes
+then :
+  save_LIBS=$LIBS
+             { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing fuse_main" >&5
+printf %s "checking for library containing fuse_main... " >&6; }
+if test ${ac_cv_search_fuse_main+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char fuse_main (void);
+int
+main (void)
+{
+return fuse_main ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' fuse3
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_fuse_main=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_fuse_main+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_fuse_main+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_fuse_main=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_fuse_main" >&5
+printf "%s\n" "$ac_cv_search_fuse_main" >&6; }
+ac_res=$ac_cv_search_fuse_main
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+  have_fuse3=yes
+else case e in #(
+  e) have_fuse3=no ;;
+esac
+fi
+
+             if test "x$have_fuse3" = xyes
+then :
+
+                 if test "x$ac_cv_search_fuse_main" = "xnone required"
+then :
+  FUSE3_LIBS=""
+else case e in #(
+  e) FUSE3_LIBS="$ac_cv_search_fuse_main" ;;
+esac
+fi
+                 FUSE3_CFLAGS=""
+
+fi
+             LIBS=$save_LIBS
+else case e in #(
+  e) have_fuse3=no ;;
+esac
+fi
+
+
+fi
+    if test "x$have_fuse3" = xno
+then :
+
+        # No system fuse3: use the local ./fetch.sh headers if present (and
+        # only if present, so OpenBSD -- which has no fuse3 at all -- falls
+        # through to the fuse2 probe below instead of claiming fuse3 here).
+        if test -f "$srcdir/fuselib/usr/include/fuse3/fuse.h"
+then :
+
+            FUSE3_CFLAGS="-I\$(top_srcdir)/fuselib/usr/include/fuse3"
+            FUSE3_LIBS="-lfuse3"
+            have_fuse3=yes
+            { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: fuse3.pc not found: using local headers from ./fetch.sh" >&5
 printf "%s\n" "$as_me: WARNING: fuse3.pc not found: using local headers from ./fetch.sh" >&2;}
 
 fi
 
+fi
+
+fi
+
+# fuse2 (explicit, or the fallback under auto after fuse3 failed).
+if test "x$with_fuse" = xfuse2 || test "x$have_fuse3" = xno
+then :
+
+
+pkg_failed=no
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for fuse" >&5
+printf %s "checking for fuse... " >&6; }
+
+if test -n "$FUSE2_CFLAGS"; then
+    pkg_cv_FUSE2_CFLAGS="$FUSE2_CFLAGS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"fuse\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "fuse") 2>&5
+  ac_status=$?
+  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_FUSE2_CFLAGS=`$PKG_CONFIG --cflags "fuse" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+if test -n "$FUSE2_LIBS"; then
+    pkg_cv_FUSE2_LIBS="$FUSE2_LIBS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"fuse\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "fuse") 2>&5
+  ac_status=$?
+  printf "%s\n" "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_FUSE2_LIBS=`$PKG_CONFIG --libs "fuse" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+
+
+
+if test $pkg_failed = yes; then
+        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; }
+
+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+        _pkg_short_errors_supported=yes
+else
+        _pkg_short_errors_supported=no
+fi
+        if test $_pkg_short_errors_supported = yes; then
+                FUSE2_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "fuse" 2>&1`
+        else
+                FUSE2_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "fuse" 2>&1`
+        fi
+        # Put the nasty error message in config.log where it belongs
+        echo "$FUSE2_PKG_ERRORS" >&5
+
+        have_fuse2=no
+elif test $pkg_failed = untried; then
+        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; }
+        have_fuse2=no
+else
+        FUSE2_CFLAGS=$pkg_cv_FUSE2_CFLAGS
+        FUSE2_LIBS=$pkg_cv_FUSE2_LIBS
+        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }
+        have_fuse2=yes
+fi
+    if test "x$have_fuse2" = xno
+then :
+
+        ac_fn_c_check_header_compile "$LINENO" "fuse.h" "ac_cv_header_fuse_h" "$ac_includes_default"
+if test "x$ac_cv_header_fuse_h" = xyes
+then :
+  save_LIBS=$LIBS
+             { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing fuse_main" >&5
+printf %s "checking for library containing fuse_main... " >&6; }
+if test ${ac_cv_search_fuse_main+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char fuse_main (void);
+int
+main (void)
+{
+return fuse_main ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' fuse refuse
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_fuse_main=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_fuse_main+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_fuse_main+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_fuse_main=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_fuse_main" >&5
+printf "%s\n" "$ac_cv_search_fuse_main" >&6; }
+ac_res=$ac_cv_search_fuse_main
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+  have_fuse2=yes
+else case e in #(
+  e) have_fuse2=no ;;
+esac
+fi
+
+             if test "x$have_fuse2" = xyes
+then :
+
+                 if test "x$ac_cv_search_fuse_main" = "xnone required"
+then :
+  FUSE2_LIBS=""
+else case e in #(
+  e) FUSE2_LIBS="$ac_cv_search_fuse_main" ;;
+esac
+fi
+                 FUSE2_CFLAGS=""
+
+fi
+             LIBS=$save_LIBS
+else case e in #(
+  e) have_fuse2=no ;;
+esac
+fi
+
+
+fi
+
+fi
+
+if test "x$have_fuse3" = xno && test "x$have_fuse2" = xno
+then :
+
+    as_fn_error $? "no FUSE backend found; install libfuse3-dev or libfuse-dev, or use --with-fuse=fuse3|fuse2" "$LINENO" 5
+
+fi
+
+# Normalise onto one variable set, and pick the FUSE_USE_VERSION -D.
+if test "x$have_fuse3" = xyes
+then :
+
+    FUSE_CFLAGS="$FUSE3_CFLAGS"
+    FUSE_LIBS="$FUSE3_LIBS"
+    FUSE_CPPFLAGS="-DFUSE_USE_VERSION=35"
+
+else case e in #(
+  e)
+    FUSE_CFLAGS="$FUSE2_CFLAGS"
+    FUSE_LIBS="$FUSE2_LIBS"
+    FUSE_CPPFLAGS="-DFUSE_USE_VERSION=26"
+ ;;
+esac
+fi
+
+ if test "x$have_fuse2" = xyes; then
+  HAVE_FUSE2_TRUE=
+  HAVE_FUSE2_FALSE='#'
+else
+  HAVE_FUSE2_TRUE='#'
+  HAVE_FUSE2_FALSE=
+fi
+
+
+
+
+
+# Which struct stat time field does this host use?  macOS has st_atimespec,
+# not st_atim; the accessor objects are selected by these results, not by OS
+# name.  st_birthtime is macOS-only and likewise value-level.
+ac_fn_c_check_member "$LINENO" "struct stat" "st_atim" "ac_cv_member_struct_stat_st_atim" "#include <sys/stat.h>
+"
+if test "x$ac_cv_member_struct_stat_st_atim" = xyes
+then :
+
+printf "%s\n" "#define HAVE_STRUCT_STAT_ST_ATIM 1" >>confdefs.h
+
+
+fi
+ac_fn_c_check_member "$LINENO" "struct stat" "st_atimespec" "ac_cv_member_struct_stat_st_atimespec" "#include <sys/stat.h>
+"
+if test "x$ac_cv_member_struct_stat_st_atimespec" = xyes
+then :
+
+printf "%s\n" "#define HAVE_STRUCT_STAT_ST_ATIMESPEC 1" >>confdefs.h
+
+
+fi
+ac_fn_c_check_member "$LINENO" "struct stat" "st_birthtime" "ac_cv_member_struct_stat_st_birthtime" "#include <sys/stat.h>
+"
+if test "x$ac_cv_member_struct_stat_st_birthtime" = xyes
+then :
+
+printf "%s\n" "#define HAVE_STRUCT_STAT_ST_BIRTHTIME 1" >>confdefs.h
+
+
+fi
 
 
 # ---------------------------------------------------------------------------
@@ -5676,6 +6183,10 @@ then :
   enableval=$enable_year2038;
 fi
 
+if test -z "${HAVE_FUSE2_TRUE}" && test -z "${HAVE_FUSE2_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_FUSE2\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
 if test -z "${ENABLE_IMAGE_TESTS_TRUE}" && test -z "${ENABLE_IMAGE_TESTS_FALSE}"; then
   as_fn_error $? "conditional \"ENABLE_IMAGE_TESTS\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
