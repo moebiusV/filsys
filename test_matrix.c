@@ -774,15 +774,15 @@ static void durability_test(void) {
 static const char *findfs_name(int edition) {
     switch (edition) {
     case FILSYS_PDP7:     return "PDP-7";
-    case FILSYS_V1:       return "V1";
-    case FILSYS_V6:       return "V6";
-    case FILSYS_V7:       return "V7";
+    case FILSYS_V1:       return "v1";
+    case FILSYS_V6:       return "v6";
+    case FILSYS_V7:       return "v7";
     case FILSYS_32V:      return "32V";
     case FILSYS_COHERENT: return "Coherent";
     case FILSYS_XENIX:    return "Xenix";
     case FILSYS_BSD29:    return "2.9BSD";
     case FILSYS_BSD211:   return "2.11BSD";
-    case FILSYS_SYSIII:   return "V7";
+    case FILSYS_SYSIII:   return "v7";
     case FILSYS_SVR2:     return "sysvr2";
     case FILSYS_SVR4:     return "sysvr2";
     case FILSYS_V8:       return "v8";

@@ -132,28 +132,34 @@ static int root_ok(int fd, uint64_t base, int bsize,
     return 0;
 }
 
-/* Map one of findfs's reported edition names back to a FILSYS_* selector so
- * `-v` can restrict the scan to a single edition. */
-static int edition_selector(const char *name) {
-    if (!strcmp(name, "V7"))       return FILSYS_V7;
-    if (!strcmp(name, "32V"))      return FILSYS_32V;
-    if (!strcmp(name, "Coherent")) return FILSYS_COHERENT;
-    if (!strcmp(name, "V6"))       return FILSYS_V6;
-    if (!strcmp(name, "V1"))       return FILSYS_V1;
-    if (!strcmp(name, "PDP-7"))    return FILSYS_PDP7;
-    if (!strcmp(name, "Xenix"))    return FILSYS_XENIX;
-    if (!strcmp(name, "2.9BSD"))   return FILSYS_BSD29;
-    if (!strcmp(name, "2.11BSD"))  return FILSYS_BSD211;
-    if (!strcmp(name, "sysvr2"))   return FILSYS_SVR2;
-    if (!strcmp(name, "sysvr4"))   return FILSYS_SVR4;
-    if (!strcmp(name, "v8"))       return FILSYS_V8;
-    if (!strcmp(name, "v9"))       return FILSYS_V9;
-    if (!strcmp(name, "v10"))      return FILSYS_V10;
-    return -1;
+/* Map a reported class back to its canonical `-v` token -- the earliest member
+ * of the equivalence class, except E2 where "v6" is the name in universal use
+ * (Lions' *Commentary*).  The class is prose for the reader; the token is what
+ * `-v` and the mount line act on. */
+static const char *canonical_token(const char *class) {
+    if (!strncmp(class, "v1,", 3))         return "v1";
+    if (!strncmp(class, "v4,", 3))         return "v6";
+    if (!strncmp(class, "v7,", 3))         return "v7";
+    if (!strncmp(class, "v8 or v10", 9))   return "v8";
+    if (!strncmp(class, "v10,", 4))        return "v10";
+    if (!strncmp(class, "sysvr2", 6))      return "sysvr2";
+    if (!strcmp(class, "32V"))             return "vax32";
+    if (!strcmp(class, "Coherent"))        return "coherent";
+    if (!strcmp(class, "Xenix"))           return "xenix";
+    if (!strcmp(class, "2.9BSD"))          return "bsd29";
+    if (!strcmp(class, "2.11BSD"))         return "bsd211";
+    if (!strcmp(class, "sysvr4"))          return "sysvr4";
+    if (!strcmp(class, "v9"))              return "v9";
+    return class;   /* singleton leaf already in -v form */
 }
-/* True if the `-v` filter (or "no filter") admits this reported edition. */
-static int matches(int filter, const char *name) {
-    return filter < 0 || edition_selector(name) == filter;
+
+/* Map a reported class to a FILSYS_* selector so `-v` can restrict the scan. */
+static int edition_selector(const char *class) {
+    return filsys_edition_by_name(canonical_token(class));
+}
+/* True if the `-v` filter (or "no filter") admits this reported class. */
+static int matches(int filter, const char *class) {
+    return filter < 0 || edition_selector(class) == filter;
 }
 
 /* Does block b (a candidate superblock) describe a V7 filesystem whose
@@ -177,7 +183,7 @@ static int super_v7(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
         const char *name;
         int nicfree;
     } L[] = {
-        { 0, 0, "V7",       V7_NICFREE },
+        { 0, 0, "v7, sysiii or sysvr1", V7_NICFREE },
         { 1, 0, "32V",      V7_NICFREE },
         { 0, 1, "Coherent", V7_COH_NICFREE },
     };
@@ -357,16 +363,16 @@ static int super_sysv(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
     uint32_t s = 0;
     if (walk_chain(fd, g32(b + 12), isz, fsz, base, bsz, V7_NICFREE, 4,
                    g16, g32, 4, &s, why) < 0) {
-        *edition = "sysvr2"; *note = le ? "LE" : "BE";
+        *edition = "sysvr2 or sysvr3"; *note = le ? "LE" : "BE";
         *isize = isz; *fsize = fsz; *segs = s;
         return 2;
     }
     if (root_ok(fd, base, bsz, g16, g32, why) < 0) {
-        *edition = "sysvr2"; *note = le ? "LE" : "BE";
+        *edition = "sysvr2 or sysvr3"; *note = le ? "LE" : "BE";
         *isize = isz; *fsize = fsz; *segs = s;
         return 2;
     }
-    *edition = "sysvr2";
+    *edition = "sysvr2 or sysvr3";
     *note = le ? "LE" : "BE";
     *isize = isz; *fsize = fsz; *segs = s;
     return 1;
@@ -643,11 +649,12 @@ static int super_v8(int fd, const uint8_t *b, uint64_t sb_byte, int bsize,
             *isize = isz; *fsize = fsz; *segs = s;
             *bitmap = (form != V8_FREEMAP_LIST);
             if (form == V8_FREEMAP_BIGMAP)
-                *edition = "v10";
+                *edition = "v10, bs=4096, bigmap";
             else if (bsize == 8192)
                 *edition = "v9";
             else
-                *edition = "v8/v10";   /* byte-identical: §6.3 */
+                *edition = (bsize == 4096) ? "v8 or v10, bs=4096, bitmap"
+                                           : "v8 or v10, bs=1024";
             snprintf(note_buf, sizeof note_buf, "%d-byte blocks, %s, %s", bsize,
                      form == V8_FREEMAP_LIST ? "free list" :
                      form == V8_FREEMAP_BITMAP ? "in-superblock bitmap" :
@@ -788,22 +795,6 @@ static int inode_block(const uint8_t *b) {
     return ok >= 6 && used > 0;
 }
 
-/* The mount.filsys -v spelling for a reported edition name. */
-static const char *mount_name(const char *ed) {
-    if (!strcmp(ed, "V7"))       return "v7";
-    if (!strcmp(ed, "32V"))      return "vax32";
-    if (!strcmp(ed, "Coherent")) return "coherent";
-    if (!strcmp(ed, "V6"))       return "v6";
-    if (!strcmp(ed, "V1"))       return "v1";
-    if (!strcmp(ed, "PDP-7"))    return "pdp7";
-    if (!strcmp(ed, "Xenix"))    return "xenix";
-    if (!strcmp(ed, "2.9BSD"))   return "bsd29";
-    if (!strcmp(ed, "2.11BSD"))  return "bsd211";
-    if (!strcmp(ed, "sysvr2"))   return "sysvr2";
-    if (!strcmp(ed, "sysvr4"))   return "sysvr4";
-    return ed;
-}
-
 /* ---- candidate collection + reporting -------------------------------------- */
 
 /* A candidate superblock found by the scan: either validated (chain ok, root ok)
@@ -814,7 +805,8 @@ static const char *mount_name(const char *ed) {
 struct cand {
     uint32_t blk;                 /* fs-start block (512-byte units) */
     uint64_t byte;                /* fs-start byte offset */
-    char     ed[16];              /* edition label */
+    char     class_desc[48];      /* the whole equivalence class, for the reader */
+    char     ed[16];              /* canonical -v token (derived, never printed as prose) */
     char     note[48];            /* extra note, or "" */
     uint16_t isz;
     uint32_t fsz;
@@ -831,7 +823,9 @@ enum { MAXCAND = 256 };
 static struct cand cands[MAXCAND];
 static int ncand;
 
-static void add_cand(uint32_t blk, uint64_t byte, const char *ed, const char *note,
+/* `class` is the human-readable disjunction (e.g. "v7, sysiii or sysvr1");
+ * `ed` is derived from it as the canonical -v token.  The two stay separate. */
+static void add_cand(uint32_t blk, uint64_t byte, const char *class, const char *note,
                      uint16_t isz, uint32_t fsz, uint32_t segs, int root,
                      int bitmap, int valid, uint64_t end, const char *why) {
     if (ncand >= MAXCAND)
@@ -841,12 +835,13 @@ static void add_cand(uint32_t blk, uint64_t byte, const char *ed, const char *no
     c->segs = segs; c->root = root; c->bitmap = bitmap;
     c->valid = valid; c->end = end; c->why = why;
     c->drop = 0;
-    snprintf(c->ed, sizeof c->ed, "%s", ed);
+    snprintf(c->class_desc, sizeof c->class_desc, "%s", class);
+    snprintf(c->ed, sizeof c->ed, "%s", canonical_token(class));
     snprintf(c->note, sizeof c->note, "%s", note ? note : "");
 }
 
 static void print_cand(const char *image, const struct cand *c) {
-    printf("found a %s filesystem", c->ed);
+    printf("found a %s filesystem", c->class_desc);
     if (c->note[0])
         printf(" (%s)", c->note);
     printf(" at block %u (byte %llu), isize=%u fsize=%u", c->blk,
@@ -859,12 +854,12 @@ static void print_cand(const char *image, const struct cand *c) {
         printf(", root inode ok");
     printf("\n");
     printf("  mount.filsys -v %s -o offset=%llu %s /mnt\n",
-           mount_name(c->ed), (unsigned long long)c->byte, image);
+           c->ed, (unsigned long long)c->byte, image);
 }
 
 static void print_miss(const struct cand *c) {
     printf("fs @ block %u  (byte %llu)  %s%s%s%s  isize=%u fsize=%u  REJECTED: %s\n",
-           c->blk, (unsigned long long)c->byte, c->ed,
+           c->blk, (unsigned long long)c->byte, c->class_desc,
            c->note[0] ? " (" : "", c->note[0] ? c->note : "",
            c->note[0] ? ")" : "", c->isz, c->fsz, c->why);
 }
@@ -1000,9 +995,9 @@ int main(int argc, char **argv) {
             uint16_t isz = 0; uint32_t fsz = 0;
             const char *why = NULL;
             if (super_v1(fd, fb, nblocks, &isz, &fsz, &why) == 1 &&
-                matches(edition_filter, "V1")) {
+                matches(edition_filter, "v1, v2 or v3")) {
                 uint64_t de = (uint64_t)(fb + fsz) * BSIZE;
-                add_cand(fb, byte, "V1", NULL, isz, fsz, 0, 1, 1, 1, de, NULL);
+                add_cand(fb, byte, "v1, v2 or v3", NULL, isz, fsz, 0, 1, 1, 1, de, NULL);
                 if (de > skip_end)
                     skip_end = de;
                 found++;
@@ -1024,7 +1019,7 @@ int main(int argc, char **argv) {
             bs = BSIZE;
             rc = super_v7(fd, buf, fb + 1, nblocks, &ed, &isz, &fsz, &why, &segs);
             if (rc == 0) {
-                ed = "V6";
+                ed = "v4, v5, v6 or usgpg3";
                 rc = super_v6(fd, buf, fb + 1, nblocks, &isz, &fsz, &why, &segs);
             }
         }
@@ -1034,7 +1029,7 @@ int main(int argc, char **argv) {
                        fb, (unsigned long long)byte);
             else if (rc == 1) {
                 uint64_t de = byte + (uint64_t)fsz * (uint64_t)bs;
-                add_cand(fb, byte, ed, note, isz, fsz, segs, strcmp(ed, "V6") != 0,
+                add_cand(fb, byte, ed, note, isz, fsz, segs, strcmp(ed, "v4, v5, v6 or usgpg3") != 0,
                          0, 1, de, NULL);
                 if (de > skip_end)
                     skip_end = de;
@@ -1053,7 +1048,7 @@ int main(int argc, char **argv) {
             uint16_t isz_bt = 0; uint32_t fsz_bt = 0, segs_bt = 0;
             int r = super_v7(fd, buf, fb, nblocks, &ed_bt, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
             if (r == 0) {
-                ed_bt = "V6";
+                ed_bt = "v4, v5, v6 or usgpg3";
                 r = super_v6(fd, buf, fb, nblocks, &isz_bt, &fsz_bt, &why_bt, &segs_bt);
             }
             if (r >= 1 && matches(edition_filter, ed_bt)) {

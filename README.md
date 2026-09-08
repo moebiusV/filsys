@@ -591,8 +591,8 @@ the false positives a block-by-block sweep of file data produces:
 
 ```
 findfs.filsys -s 418 rp06-0.disk
-# found a V7 filesystem at block 0 (byte 0), isize=202 fsize=5000, chain ok ...
-# found a V7 filesystem at block 18392 (byte 9416704), isize=8189 fsize=322278, ...
+# found a v7, sysiii or sysvr1 filesystem at block 0 (byte 0), isize=202 fsize=5000, chain ok ...
+# found a v7, sysiii or sysvr1 filesystem at block 18392 (byte 9416704), isize=8189 fsize=322278, ...
 ```
 
 Mount any hit with `mount.filsys -o offset=<byte>`.
@@ -600,11 +600,13 @@ Mount any hit with `mount.filsys -o offset=<byte>`.
 It identifies the V8 family by *traversal* rather than a magic word — it chases
 the root inode, walks the i-list (which rules out the wrong byte order), and
 then decides free-list vs bitmap by walking whichever representation survives
-against `s_tfree`.  It reports the geometry it found
-(`found a v8/v10 filesystem (1024-byte blocks, free list, LE) …`), honestly
-reporting `v8/v10` where the two are byte-identical.  By default it is **silent
-about the hypotheses it discarded**; pass `-V` to see each rejected candidate
-and the reason.
+against `s_tfree`.  It reports the **equivalence class** and the geometry it
+found (`found a v8 or v10, bs=1024 filesystem …`), honestly grouping the
+byte-identical editions (`v1, v2 or v3`, `v4, v5, v6 or usgpg3`,
+`v7, sysiii or sysvr1`); the copy-paste `mount.filsys` line underneath uses a
+single canonical `-v` token (`v1`, `v6`, `v7`, `v8`, …).  By default it is
+**silent about the hypotheses it discarded**; pass `-V` to see each rejected
+candidate and the reason.
 
 ## Verification
 
