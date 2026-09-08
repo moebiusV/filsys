@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <setjmp.h>
 
 static int failures;
 
@@ -608,6 +609,122 @@ static void fault_test(void) {
     }
 }
 
+/* ---- crash-prefix enumeration (soft updates) ----------------------------
+ *
+ * The fault-injection suite above samples the crash space (one injected EIO at
+ * a time, with the mutation's error handling free to unwind): that proves the
+ * *process-error* boundary.  The host-crash boundary is different -- the
+ * process simply dies, so no error handling runs, and the on-disk state is
+ * exactly the prefix of the write sequence that landed before the crash.
+ *
+ * A bounded mutation is only ~8-12 writes, so every prefix is enumerable: run
+ * the op once cleanly to learn its write count W, then re-run it for each
+ * k = 0..W, killing the process after k writes (longjmp out of the write
+ * transport, before write k+1 lands).  Each image must be alias-free (dup==0,
+ * soft-updates rule 2) and fsck-salvageable back to clean (rule 3 leaves only
+ * recoverable leaks).  Complete over the operation, not a sample of it. */
+
+static jmp_buf g_crash_jmp;
+static int g_crash_at;      /* crash before this 1-based write (0 = never) */
+static int g_crash_count;   /* writes seen since (re)arm */
+
+static int crash_read(filsys_edition_t *fs, void *buf, size_t n, off_t off) {
+    return filsys_io_file.read(fs, buf, n, off);
+}
+static int crash_write(filsys_edition_t *fs, const void *buf, size_t n, off_t off) {
+    g_crash_count++;
+    if (g_crash_at > 0 && g_crash_count == g_crash_at)
+        longjmp(g_crash_jmp, 1);   /* crash: this write never lands */
+    return filsys_io_file.write(fs, buf, n, off);
+}
+static const filsys_io_t crash_io = { crash_read, crash_write };
+
+/* Closing after a crash must not flush: close clears s_fmod and re-writes the
+ * superblock, which would stamp the in-memory (post-op) state over the crashed
+ * image and mask the crash.  Swap to a discard transport first. */
+static int discard_write(filsys_edition_t *fs, const void *buf, size_t n, off_t off) {
+    (void)fs; (void)buf; (void)n; (void)off;
+    return 0;
+}
+static const filsys_io_t discard_io = { crash_read, discard_write };
+
+static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
+    char img[64], cmd[512], what[128];
+    filsys_t *fs;
+
+    /* learn the op's write count W on a clean run */
+    snprintf(img, sizeof img, "test_matrix_%s_crash.img", f->name);
+    unlink(img);
+    if (f->edition == FILSYS_PDP7)
+        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f->name, img);
+    else
+        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                 f->name, img, f->blocks);
+    if (system(cmd) != 0) { ok("crash mkfs", 0); unlink(img); return; }
+    if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
+        ok("crash open", 0); unlink(img); return;
+    }
+    filsys_set_io(fs, &crash_io);
+    g_crash_at = 0;
+    mut->setup(fs);
+    g_crash_count = 0;
+    (void)mut->op(fs);
+    int W = g_crash_count;
+    filsys_close(fs);
+    unlink(img);
+    if (W == 0)
+        return;
+
+    /* enumerate every prefix k = 0..W */
+    for (int k = 0; k <= W; k++) {
+        unlink(img);
+        if (f->edition == FILSYS_PDP7)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f->name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                     f->name, img, f->blocks);
+        if (system(cmd) != 0) { ok("crash mkfs", 0); unlink(img); return; }
+        if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
+            ok("crash open", 0); unlink(img); return;
+        }
+        filsys_set_io(fs, &crash_io);
+        g_crash_at = 0;
+        mut->setup(fs);
+        g_crash_count = 0;
+        g_crash_at = k + 1;
+        if (setjmp(g_crash_jmp) == 0)
+            (void)mut->op(fs);   /* longjmps out on write k+1 (k < W) */
+        filsys_set_io(fs, &discard_io);   /* close without flushing */
+        filsys_close(fs);
+
+        int dup_ok   = fsck_dup_zero(f->name, img);
+        int recov_ok = fsck_recover_clean(f->name, img);
+        snprintf(what, sizeof what, "%s %s crash-prefix-%d%s%s", f->name, mut->name, k,
+                 dup_ok ? "" : " [dup]", recov_ok ? "" : " [recover]");
+        ok(what, dup_ok && recov_ok);
+        unlink(img);
+    }
+}
+
+static void crash_prefix_test(void) {
+    static const mutator_t mut[] = {
+        { "create",   setup_none, op_create },
+        { "write",    setup_file, op_write },
+        { "truncate", setup_file, op_truncate },
+        { "unlink",   setup_file, op_unlink },
+    };
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        int frc = fmt_at(i, &f);
+        if (!frc)
+            break;
+        if (frc < 0)
+            continue;
+        for (size_t m = 0; m < sizeof mut / sizeof mut[0]; m++)
+            crash_mutator(&f, &mut[m]);
+    }
+}
+
 /* Rename semantics: the POSIX type rules and the no-cycle rule.  Deterministic
  * (no fault injection): each rejected operation must return the right errno and
  * leave the filesystem clean.  The cycle rule walks ".." entries, which the
@@ -741,12 +858,6 @@ static void durability_test(void) {
         if (frc < 0)
             continue;
         if (f.edition == FILSYS_V1 || f.edition == FILSYS_PDP7)
-            continue;
-        /* 2.11BSD's check is "check only, no salvage/preen" (bsd211_check ignores
-         * mode), so a destroyed free-list chain cannot be rebuilt; its chain-
-         * reload path also still destroys the chain under this test.  Skip until
-         * bsd211 grows a salvage mode. */
-        if (f.edition == FILSYS_BSD211)
             continue;
 
         filsys_edition_t desc = filsys_getformat(f.edition);
@@ -974,6 +1085,7 @@ int main(void) {
     dir_link_semantics();
     findfs_self_detect();
     fault_test();
+    crash_prefix_test();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;
