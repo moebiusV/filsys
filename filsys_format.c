@@ -117,6 +117,30 @@ static uint32_t p7_chmod_mode(const filsys_edition_t *f, uint32_t old, mode_t m)
     return (old & ~(uint32_t)017) | bits;
 }
 
+/* V9/V10 mode: bit 01000 is ICONC (concurrency), not ISVTX (sticky).  When
+ * clear, 04000/02000 are setuid/setgid as usual; when set, ICCTYP (07000) is
+ * the concurrency type and the setuid/setgid bits are NOT reported (docs/
+ * impl-v10fs.md §5.7).  V8 keeps V7's ISVTX and uses the shared derivation. */
+static mode_t v910_to_posix_mode(const filsys_edition_t *f, const filsys_inode_t *ip) {
+    mode_t m = ip->mode & 0777;                    /* permissions */
+    if (!(ip->mode & V8_ICONC)) {
+        if (ip->mode & 04000) m |= S_ISUID;
+        if (ip->mode & 02000) m |= S_ISGID;
+    }
+    uint32_t t = ip->mode & f->ifmt;
+    if (t == f->ifdir)
+        m |= S_IFDIR;
+    else if (t == f->ifchr || (f->ifmpc && t == f->ifmpc))
+        m |= S_IFCHR;
+    else if (t == f->ifblk || (f->ifmpb && t == f->ifmpb))
+        m |= S_IFBLK;
+    else if (f->iflnk && t == f->iflnk)
+        m |= S_IFLNK;
+    else
+        m |= S_IFREG;
+    return m;
+}
+
 /* ---- format table -------------------------------------------------------- */
 
 /* The V7 format is the prototype for the V7-family variants (32V, Coherent,
@@ -217,6 +241,7 @@ filsys_edition_t filsys_getformat(int edition) {
         filsys_edition_t f; memcpy(&f, &v8, sizeof f);
         f.name = "v9"; f.bsize = 8192; f.bo = &bo_be;
         f.nicfree = V8_NICFREE_LARGE; f.nindir = 8192 / 4;
+        f.to_posix_mode = v910_to_posix_mode;   /* ICONC/ICCTYP, not ISVTX */
         return f;
     }
     case FILSYS_V10: {
@@ -225,6 +250,7 @@ filsys_edition_t filsys_getformat(int edition) {
          * overrides (Task 6). */
         filsys_edition_t f; memcpy(&f, &v8, sizeof f);
         f.name = "v10";
+        f.to_posix_mode = v910_to_posix_mode;   /* ICONC/ICCTYP, not ISVTX */
         return f;
     }
     case FILSYS_32V: {
