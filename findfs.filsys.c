@@ -583,6 +583,11 @@ static int v8_try(int fd, const uint8_t *b, uint64_t base, int bsize,
     if ((uint64_t)fsz * bsize > nbytes + (uint64_t)bsize)
         return 0;
 
+    /* Past the "not a candidate" gates, every remaining return carries real
+     * isize/fsize values -- including the tier-3 near-miss path, so super_v8's
+     * "REJECTED:" report shows the true geometry rather than uninitialised 0s. */
+    *isize = isz; *fsize = fsz;
+
     /* tier 3: chase the root (inode 2 = block 2, slot 1) */
     uint8_t ib[128];
     if (pread(fd, ib, sizeof ib, (off_t)(base + 2 * (uint64_t)bsize)) != (ssize_t)sizeof ib) {
