@@ -411,9 +411,10 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
         uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
-        fs->fl.nfree = fs->bo->get16(buf + 0);
+        fs->fl.nfree = fs->df_nfree_wid == 4 ? fs->bo->get32(buf + 0)
+                                             : fs->bo->get16(buf + 0);
         for (int i = 0; i < fs->nicfree; i++)
-            fs->fl.free[i] = v7_get_daddr(fs, buf + fb_free_off(fs->pack4) + fs->daddr_wid * i);
+            fs->fl.free[i] = v7_get_daddr(fs, buf + v7_chain_free_off(fs) + fs->daddr_wid * i);
         /* blk was the on-disk chain head; its contents (the next segment) are
          * now in the cache, and blk is about to become file data.  Commit the
          * allocator state *before* the caller overwrites blk, else a crash would
@@ -447,9 +448,12 @@ void v7fs_bfree(filsys_edition_t *fs, uint32_t bno) {
     if (fs->fl.nfree >= fs->nicfree) {
         uint8_t buf[V7_MAXBSIZE];
         memset(buf, 0, fs->bsize);
-        fs->bo->put16(buf + 0, fs->fl.nfree);
+        if (fs->df_nfree_wid == 4)
+            fs->bo->put32(buf + 0, fs->fl.nfree);
+        else
+            fs->bo->put16(buf + 0, fs->fl.nfree);
         for (int i = 0; i < fs->nicfree; i++)
-            v7_put_daddr(fs, buf + fb_free_off(fs->pack4) + fs->daddr_wid * i, fs->fl.free[i]);
+            v7_put_daddr(fs, buf + v7_chain_free_off(fs) + fs->daddr_wid * i, fs->fl.free[i]);
         /* The dump block must reach disk before the cache is reset, else the
          * freed blocks are lost; and a failed dump must not fall through to
          * free[nfree++] with nfree == nicfree -- that overflows free[].  On a
