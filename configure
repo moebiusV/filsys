@@ -5663,6 +5663,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
 then :
 
             save_LIBS=$LIBS
+            fuse3_libs=""
             { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing fuse_main" >&5
 printf %s "checking for library containing fuse_main... " >&6; }
 if test ${ac_cv_search_fuse_main+y}
@@ -5691,7 +5692,7 @@ return fuse_main ();
   return 0;
 }
 _ACEOF
-for ac_lib in '' fuse3 fuse refuse
+for ac_lib in '' fuse3 fuse
 do
   if test -z "$ac_lib"; then
     ac_res="none required"
@@ -5733,98 +5734,54 @@ else case e in #(
 esac
 fi
 
-            if test "x$have_fuse3" = xno
-then :
-
-                # NetBSD's librefuse sits on libpuffs and needs it at link time.
-                LIBS="$save_LIBS -lpuffs"
-                { ac_cv_search_fuse_main=; unset ac_cv_search_fuse_main;}
-                { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing fuse_main" >&5
-printf %s "checking for library containing fuse_main... " >&6; }
-if test ${ac_cv_search_fuse_main+y}
-then :
-  printf %s "(cached) " >&6
-else case e in #(
-  e) ac_func_search_save_LIBS=$LIBS
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.
-   The 'extern "C"' is for builds by C++ compilers;
-   although this is not generally supported in C code supporting it here
-   has little cost and some practical benefit (sr 110532).  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char fuse_main (void);
-int
-main (void)
-{
-return fuse_main ();
-  ;
-  return 0;
-}
-_ACEOF
-for ac_lib in '' refuse
-do
-  if test -z "$ac_lib"; then
-    ac_res="none required"
-  else
-    ac_res=-l$ac_lib
-    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
-  fi
-  if ac_fn_c_try_link "$LINENO"
-then :
-  ac_cv_search_fuse_main=$ac_res
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.beam \
-    conftest$ac_exeext
-  if test ${ac_cv_search_fuse_main+y}
-then :
-  break
-fi
-done
-if test ${ac_cv_search_fuse_main+y}
-then :
-
-else case e in #(
-  e) ac_cv_search_fuse_main=no ;;
-esac
-fi
-rm conftest.$ac_ext
-LIBS=$ac_func_search_save_LIBS ;;
-esac
-fi
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_fuse_main" >&5
-printf "%s\n" "$ac_cv_search_fuse_main" >&6; }
-ac_res=$ac_cv_search_fuse_main
-if test "$ac_res" != no
-then :
-  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
-  have_fuse3=yes; fuse3_puffs=yes
-else case e in #(
-  e) have_fuse3=no ;;
-esac
-fi
-
-
-fi
             if test "x$have_fuse3" = xyes
 then :
 
                 if test "x$ac_cv_search_fuse_main" = "xnone required"
 then :
-  FUSE3_LIBS=""
+  fuse3_libs=""
 else case e in #(
-  e) FUSE3_LIBS="$ac_cv_search_fuse_main" ;;
+  e) fuse3_libs="$ac_cv_search_fuse_main" ;;
 esac
 fi
-                if test "x$fuse3_puffs" = xyes
-then :
-  FUSE3_LIBS="$FUSE3_LIBS -lpuffs"
+
 fi
+            if test "x$have_fuse3" = xno
+then :
+
+                # NetBSD's librefuse defines fuse_main as a static-inline in
+                # <fuse.h> (over __fuse_main), so the symbol is not in the
+                # library; librefuse needs -lpuffs.  Link a real fuse_main()
+                # call through the header, the way a user would.
+                LIBS="$save_LIBS -lrefuse -lpuffs"
+                cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#define FUSE_USE_VERSION 35
+#include <fuse.h>
+int
+main (void)
+{
+return fuse_main(0, (char **)0,
+                             (const struct fuse_operations *)0, (void *)0);
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  have_fuse3=yes; fuse3_libs="-lrefuse -lpuffs"
+else case e in #(
+  e) have_fuse3=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+
+fi
+            if test "x$have_fuse3" = xyes
+then :
+
+                FUSE3_LIBS="$fuse3_libs"
                 FUSE3_CFLAGS=""
 
 fi
