@@ -87,6 +87,7 @@ struct fmt {
     int         blocks;
     uint64_t    maxfile;
     uint64_t    direct;
+    uint32_t    bsize;
     int         noprobe;
 };
 
@@ -105,6 +106,7 @@ static int fmt_at(size_t i, struct fmt *out) {
     out->name    = f->name;
     out->blocks  = (f->edition == FILSYS_PDP7) ? 0 : 4000;
     out->direct  = (uint64_t)desc.ndaddr * desc.bsize;
+    out->bsize   = desc.bsize;
     out->maxfile = desc.ops->max_file(&desc);
     out->noprobe = desc.noprobe;
     return 1;
@@ -145,6 +147,17 @@ static int write_verify(filsys_t *fs, const char *path, uint64_t size) {
     filsys_fill_stat(fs, &ip, &st);
     free(buf); free(back);
     return (uint64_t)st.st_size == size;
+}
+
+/* st_blocks (512-byte units) for `path`, or -1 on lookup failure. */
+static long stat_blocks(filsys_t *fs, const char *path) {
+    uint32_t ino;
+    filsys_inode_t ip;
+    struct stat st;
+    if (filsys_lookup(fs, path, &ino, &ip))
+        return -1;
+    filsys_fill_stat(fs, &ip, &st);
+    return (long)st.st_blocks;
 }
 
 static void run(const struct fmt *f) {
@@ -208,6 +221,40 @@ static void run(const struct fmt *f) {
         ok("truncate zero", filsys_truncate(fs, "/big", 0) == 0);
         filsys_unlink(fs, "/big");
         free(buf);
+    }
+
+    /* st_blocks: POSIX 512-byte units of blocks actually allocated, not the
+     * size-derived fs-block count.  A hole (zero block address) allocates
+     * nothing; an indirect block itself is allocated and must be counted. */
+    {
+        uint32_t bsize = f->bsize;
+        uint8_t *b = malloc(bsize + 1);
+        memset(b, 'a', bsize + 1);
+
+        filsys_create(fs, "/s1", 0644, 0, 0);
+        filsys_write(fs, "/s1", b, bsize, 0);
+        ok("st_blocks one block (512-unit)",
+           stat_blocks(fs, "/s1") == (long)((bsize + 511) / 512));
+
+        filsys_create(fs, "/s2", 0644, 0, 0);
+        filsys_write(fs, "/s2", b, bsize + 1, 0);
+        ok("st_blocks two blocks",
+           stat_blocks(fs, "/s2") == (long)((2 * bsize + 511) / 512));
+
+        filsys_create(fs, "/s3", 0644, 0, 0);
+        filsys_truncate(fs, "/s3", 1048576);
+        ok("st_blocks sparse == 0", stat_blocks(fs, "/s3") == 0);
+
+        /* direct+1 bytes forces one indirect block past the direct slots; that
+         * block is allocated, so the count must exceed the direct data alone. */
+        uint8_t *big = malloc(f->direct + 1);
+        memset(big, 'b', f->direct + 1);
+        filsys_create(fs, "/s4", 0644, 0, 0);
+        filsys_write(fs, "/s4", big, f->direct + 1, 0);
+        ok("st_blocks counts indirect block",
+           stat_blocks(fs, "/s4") * 512 >= (long)(f->direct + bsize));
+        free(big);
+        free(b);
     }
 
     filsys_close(fs);
