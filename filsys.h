@@ -50,6 +50,9 @@ enum {
     FILSYS_V1   = 1,
     FILSYS_V6   = 6,
     FILSYS_V7   = 7,
+    FILSYS_V8   = 8,    /* Eighth Edition: V7 inode/dir, V8-family superblock, 1K list / 4K bitmap */
+    FILSYS_V9   = 9,    /* Ninth Edition: Sun-3 port, 8K blocks, big-endian */
+    FILSYS_V10  = 10,   /* Tenth Edition: V8-family + S_flag + out-of-superblock bitmap */
     FILSYS_32V  = 32,
     FILSYS_COHERENT = 33, /* Coherent (Mark Williams): V7-family, middle-endian, NICFREE=64 */
     FILSYS_XENIX = 34,   /* Xenix (SCO): V7-family, little-endian 2-byte, NICFREE=100 */
