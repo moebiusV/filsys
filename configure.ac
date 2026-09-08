@@ -72,7 +72,7 @@ AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
                 [fuse3_hdr=no])])
         AS_IF([test "x$fuse3_hdr" = xyes], [
             save_LIBS=$LIBS
-            AC_SEARCH_LIBS([fuse_main], [fuse3 refuse],
+            AC_SEARCH_LIBS([fuse_main], [fuse3 fuse refuse],
                 [have_fuse3=yes], [have_fuse3=no])
             AS_IF([test "x$have_fuse3" = xyes], [
                 AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
@@ -102,6 +102,7 @@ AS_IF([test "x$with_fuse" = xfuse2 || test "x$have_fuse3" = xno], [
     AS_IF([test "x$have_fuse2" = xno], [
         AC_CHECK_HEADER([fuse.h],
             [save_LIBS=$LIBS
+             AS_UNSET([ac_cv_search_fuse_main])
              AC_SEARCH_LIBS([fuse_main], [fuse refuse],
                  [have_fuse2=yes], [have_fuse2=no])
              AS_IF([test "x$have_fuse2" = xyes], [

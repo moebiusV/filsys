@@ -29,7 +29,7 @@ jobs:
         with:
           usesh: true
           prepare: |
-            pkg install -y gmake pkgconf fusefs-libs3
+            pkg install -y gmake pkgconf fusefs-libs3 curl
             kldload fusefs
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
@@ -50,7 +50,7 @@ jobs:
         with:
           usesh: true
           prepare: |
-            pkg_add gmake pkgconf
+            pkg_add gmake pkgconf curl
           run: |
             MAKE=gmake ./configure --with-fuse=fuse2
             gmake
@@ -70,7 +70,7 @@ jobs:
         with:
           usesh: true
           prepare: |
-            pkg_add gmake pkgconf
+            pkg_add gmake pkgconf curl
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
             gmake
