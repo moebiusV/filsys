@@ -322,6 +322,7 @@ typedef struct filsys_edition {
     uint32_t    magic;              /* superblock magic word (0 = none) */
     int         magic_off;          /* byte offset of magic in the superblock */
     uint8_t     dyn_bsize;          /* block size comes from s_type (System V) */
+    uint8_t     has_state;          /* s_state field present (SysV R4; R2/R3 leave s_fill[12]) */
     uint8_t     ignore_magic;       /* -F: open despite a magic that matches neither order */
     uint8_t     fmod_back;          /* s_fmod sits N bytes before s_time (V7 2, 2.11BSD 3) */
     uint16_t    rootino;            /* root directory inode (1 / 2 / 41) */

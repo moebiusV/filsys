@@ -281,9 +281,9 @@ static int super_write(filsys_edition_t *fs) {
         uint32_t now = (uint32_t)time(NULL);
         fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree), now);  /* s_time */
         sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back] = (uint8_t)(fs->fmod != 0); /* s_fmod */
-        if (fs->dyn_bsize)
+        if (fs->has_state)
             fs->bo->put32(sb + V7_SYSV_STATE_OFF,
-                          fs->fmod ? V7_SYSV_STATE_ACTIVE : V7_SYSV_STATE_CLEAN); /* s_state */
+                          fs->fmod ? V7_SYSV_STATE_ACTIVE : V7_SYSV_STATE_CLEAN); /* s_state (R4 only) */
         if (!fs->pack4 || fs->magic) {
             int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->dyn_bsize);
             fs->bo->put32(sb + toff, fs->fl.tfree);        /* s_tfree */
