@@ -72,20 +72,30 @@ AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
                 [fuse3_hdr=no])])
         AS_IF([test "x$fuse3_hdr" = xyes], [
             save_LIBS=$LIBS
-            AC_SEARCH_LIBS([fuse_main], [fuse3 fuse refuse],
+            fuse3_libs=""
+            AC_SEARCH_LIBS([fuse_main], [fuse3 fuse],
                 [have_fuse3=yes], [have_fuse3=no])
-            AS_IF([test "x$have_fuse3" = xno], [
-                # NetBSD's librefuse sits on libpuffs and needs it at link time.
-                LIBS="$save_LIBS -lpuffs"
-                AS_UNSET([ac_cv_search_fuse_main])
-                AC_SEARCH_LIBS([fuse_main], [refuse],
-                    [have_fuse3=yes; fuse3_puffs=yes], [have_fuse3=no])
-            ])
             AS_IF([test "x$have_fuse3" = xyes], [
                 AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
-                    [FUSE3_LIBS=""], [FUSE3_LIBS="$ac_cv_search_fuse_main"])
-                AS_IF([test "x$fuse3_puffs" = xyes],
-                    [FUSE3_LIBS="$FUSE3_LIBS -lpuffs"])
+                    [fuse3_libs=""], [fuse3_libs="$ac_cv_search_fuse_main"])
+            ])
+            AS_IF([test "x$have_fuse3" = xno], [
+                # NetBSD's librefuse defines fuse_main as a static-inline in
+                # <fuse.h> (over __fuse_main), so the symbol is not in the
+                # library; librefuse needs -lpuffs.  Link a real fuse_main()
+                # call through the header, the way a user would.
+                LIBS="$save_LIBS -lrefuse -lpuffs"
+                AC_LINK_IFELSE(
+                    [AC_LANG_PROGRAM(
+                        [#define FUSE_USE_VERSION 35
+#include <fuse.h>],
+                        [return fuse_main(0, (char **)0,
+                             (const struct fuse_operations *)0, (void *)0);])],
+                    [have_fuse3=yes; fuse3_libs="-lrefuse -lpuffs"],
+                    [have_fuse3=no])
+            ])
+            AS_IF([test "x$have_fuse3" = xyes], [
+                FUSE3_LIBS="$fuse3_libs"
                 FUSE3_CFLAGS=""
             ])
             LIBS=$save_LIBS
