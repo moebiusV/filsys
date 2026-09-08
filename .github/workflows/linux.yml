@@ -1,0 +1,41 @@
+name: linux
+
+# The primary platform: build and test natively on Ubuntu.  This is the one
+# platform the other workflows do not cover -- bsd.yml and macos.yml use
+# ubuntu-latest only as the VM host for their guests.  Two tiers, as there:
+#
+#   1. `make check` runs test_matrix (the FUSE-free core) and links mount.filsys
+#      against the system libfuse3, so the FUSE3 adapter compiles too.
+#   2. `test.sh` (enabled with --enable-image-tests) mounts a real V7 image
+#      through FUSE and exercises read/write/mkdir/rename/truncate/persistence,
+#      which is the live end-to-end path every Linux user will actually run.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse3-dev pkg-config
+
+      - name: Build and run the FUSE-free core (make check)
+        run: |
+          ./configure --with-fuse=fuse3
+          make
+          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+
+      - name: Mount a real V7 image through FUSE (test.sh)
+        run: |
+          curl -L -o rp06-0.disk.gz \
+            https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
+          gunzip rp06-0.disk.gz
+          ./configure --with-fuse=fuse3 --enable-image-tests
+          make
+          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
