@@ -311,6 +311,15 @@ static int super_v1(int fd, uint32_t bno, uint32_t nblocks,
     return 1;
 }
 
+/* System V Release 4's s_state word (FsOKAY/FsACTIVE at offset 500) tells R4
+ * from R2/R3, whose s_fill[12] is left zero.  The one thing the shared s5fs
+ * layout alone cannot say. */
+static const char *sysv_class(const uint8_t *b, uint32_t (*g32)(const uint8_t *)) {
+    uint32_t st = g32(b + V7_SYSV_STATE_OFF);
+    return (st == V7_SYSV_STATE_CLEAN || st == V7_SYSV_STATE_ACTIVE)
+               ? "sysvr4" : "sysvr2 or sysvr3";
+}
+
 /* System V s5fs superblock: s_magic 0xfd187e20 at offset 504 (LE or BE), s_type
  * at 508 names the block size.  The superblock sits at a fixed byte offset
  * (512), which the 512-byte scan reaches at bno == 1.  AFS signals itself with
@@ -363,16 +372,16 @@ static int super_sysv(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
     uint32_t s = 0;
     if (walk_chain(fd, g32(b + 12), isz, fsz, base, bsz, V7_NICFREE, 4,
                    g16, g32, 4, &s, why) < 0) {
-        *edition = "sysvr2 or sysvr3"; *note = le ? "LE" : "BE";
+        *edition = sysv_class(b, g32); *note = le ? "LE" : "BE";
         *isize = isz; *fsize = fsz; *segs = s;
         return 2;
     }
     if (root_ok(fd, base, bsz, g16, g32, why) < 0) {
-        *edition = "sysvr2 or sysvr3"; *note = le ? "LE" : "BE";
+        *edition = sysv_class(b, g32); *note = le ? "LE" : "BE";
         *isize = isz; *fsize = fsz; *segs = s;
         return 2;
     }
-    *edition = "sysvr2 or sysvr3";
+    *edition = sysv_class(b, g32);
     *note = le ? "LE" : "BE";
     *isize = isz; *fsize = fsz; *segs = s;
     return 1;

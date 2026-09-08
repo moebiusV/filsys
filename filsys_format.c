@@ -301,6 +301,7 @@ filsys_edition_t filsys_getformat(int edition) {
         f.name = "sysvr4"; f.bo = &bo_le;
         f.pack4 = 1;
         f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
+        f.has_state = 1;
         return f;
     }
     default: {

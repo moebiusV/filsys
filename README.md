@@ -1,7 +1,7 @@
 # filsys
 
 Mount a **Research Unix** filesystem image — the PDP-7 through Tenth Edition,
-plus 32V, Coherent, SCO Xenix, 2.9/2.11BSD and System III/V — as a FUSE
+plus 32V, Coherent, early Xenix, 2.9/2.11BSD and System III/V — as a FUSE
 filesystem on Linux, macOS, FreeBSD, NetBSD, or OpenBSD, so files can be copied
 on and off the disk for use with a simulator (SIMH `pdp11`/`vax780`).  Linux's
 own `sysv`/`v7` kernel driver was removed in 6.15 (2025) and never handled the
@@ -20,7 +20,7 @@ mount.filsys -v v6 v6root.dsk mnt        # V6 format (also V4 and V5, identical 
 mount.filsys -v v7 rp06-0.disk mnt       # V7 format
 mount.filsys -v vax32 32vroot.dsk mnt    # 32V format (V7 for the VAX, little-endian)
 mount.filsys -v coherent coh.dsk mnt     # Coherent format (Mark Williams Co., V7 + interleave)
-mount.filsys -v xenix xenix.dsk mnt      # SCO Xenix format (little-endian, 1 KB blocks)
+mount.filsys -v xenix xenix.dsk mnt      # early V7-derived Xenix (little-endian, 1 KB blocks)
 mount.filsys -v bsd29 bsd29.dsk mnt      # 2.9BSD format (V7 inode, 1 KB blocks)
 mount.filsys -v bsd211 bsd211.dsk mnt    # 2.11BSD format (32-bit inode, variable dirs)
 mount.filsys -v v8 v8.dsk mnt            # Eighth Edition (1 KB free list, or 4 KB bitmap)
@@ -92,7 +92,7 @@ mount.filsys -v <edition> -c <image>   # integrity check (no mount)
 `-v` takes the Unix edition: `pdp7` (the word-addressed PDP-7), `v1`/`v2`/`v3`,
 `v4`/`v5`/`v6`, `v7`, `v8` (Eighth Edition), `v9` (Ninth Edition), `v10`
 (Tenth Edition), `vax32` (32V), `coherent` (Mark Williams Co.), `xenix`
-(SCO Xenix), `bsd29` (2.9BSD), `bsd211` (2.11BSD), `sysiii` (System III),
+(early V7-derived Xenix), `bsd29` (2.9BSD), `bsd211` (2.11BSD), `sysiii` (System III),
 `sysvr2` (System V Release 2), or `sysvr4` (System V Release 4).  A bare number — `0`,
 `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `10`, `32`, `33`, `34`, `35`,
 `36` — is also accepted, and `v0`/`p7` spell the PDP-7.  `v1`, `v2` and `v3`
@@ -114,7 +114,7 @@ default, and a wrong `-v` is an error, not a fallback.
 | `-v v7` | V7 format                          |
 | `-v vax32`| 32V format (little-endian V7)     |
 | `-v coherent`| Coherent format (middle-endian V7, 64-entry free cache, interleave) |
-| `-v xenix`| Xenix format (little-endian, 1 KB blocks, 100-entry free cache) |
+| `-v xenix`| early V7-derived Xenix (little-endian, 1 KB blocks, 100-entry free cache, magic `0x2b5544`) |
 | `-v bsd29`| 2.9BSD format (V7 inode, 1 KB blocks, 4+3 addresses) |
 | `-v bsd211`| 2.11BSD format (32-bit inode, variable 63-char dirs) |
 | `-v sysiii`| System III format (V7's on-disk layout) |
@@ -159,6 +159,14 @@ fsck.filsys: big-endian.dk: superblock magic is big-endian, but arch 'vax' is li
 
 `-F` (mount) / `-F` (fsck) overrides a magic word that matches *neither* byte
 order, forcing the `arch` you name (for a foreign or damaged image).
+
+**"Xenix" names two different on-disk formats, a decade apart.**  `-v xenix` is
+the *early* V7-derived Xenix (Microsoft, the PDP-11/Z8000/8086 era): magic
+`0x2b5544`, 1 KB blocks, little-endian, a 100-entry free-list cache.  The later
+SCO Xenix (286/386, after Xenix was rebased on System III and then System V)
+stored its filesystem as the System V `s5fs` — magic `0xfd187e20`.  That is
+**not a Xenix variant**; it is System V's filesystem, byte-identical to
+`sysvr2`/`sysvr4`, and it mounts under those names, never under `-v xenix`.
 
 **The V8 family** (Eighth/Ninth/Tenth Edition) is V7's inode, directory and
 block-mapping engine with a *rearranged* superblock, a varying block size, a
@@ -326,7 +334,7 @@ and V8-family codecs).
 
 ### Format table
 
-| | PDP-7 | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V | Coherent | Xenix | 2.9BSD | 2.11BSD | V8 | V9 | V10 |
+| | PDP-7 | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V | Coherent | Xenix (early) | 2.9BSD | 2.11BSD | V8 | V9 | V10 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | block size | 64 words (256 B) | 512 | 512 | 512 | 512 | 512 | 1024 | 1024 | 1024 | 1024 / 4096 | 8192 | 1024 / 4096 |
 | inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) | 64 B (8/block) | 64 B (16/block) | 64 B (16/block) | 64 B (16/block) | 64 B (16/64 per block) | 64 B (128/block) | 64 B (16/64 per block) |
@@ -391,7 +399,7 @@ disk image holds:
 | V7 | 8 GB (2²⁴ blocks × 512 B) | 65,536 | ~1.08 GB (triple indirect) |
 | 32V | 8 GB | 65,536 | ~1.08 GB |
 | Coherent | 8 GB | 65,536 | ~1.08 GB |
-| Xenix | 16 GB (2²⁴ blocks × 1024 B) | 65,536 | ~16.1 GB (triple indirect) |
+| Xenix (early) | 16 GB (2²⁴ blocks × 1024 B) | 65,536 | ~16.1 GB (triple indirect) |
 | 2.9BSD | 16 GB | 65,536 | ~16.1 GB (triple indirect) |
 | 2.11BSD | 4 TB (2³² blocks × 1024 B) | 65,536 | ~16.1 GB (triple indirect) |
 | V8 / V10 | 16 GB (2²⁴ blocks × 1024 B), or 64 GB (2²⁴ × 4096 B) | 65,536 (16-bit i-number) | ~16 GB (triple indirect) |
