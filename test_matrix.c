@@ -785,6 +785,9 @@ static const char *findfs_name(int edition) {
     case FILSYS_SYSIII:   return "V7";
     case FILSYS_SVR2:     return "sysvr2";
     case FILSYS_SVR4:     return "sysvr2";
+    case FILSYS_V8:       return "v8";
+    case FILSYS_V9:       return "v9";
+    case FILSYS_V10:      return "v10";
     default:              return NULL;
     }
 }
