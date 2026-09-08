@@ -241,13 +241,15 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
     return filsys_open_arch(out, edition, path, readonly, offset, uid, gid, packing, NULL, 0, NULL, NULL);
 }
 
-void filsys_close(filsys_t *fs) {
+int filsys_close(filsys_t *fs) {
     if (!fs)
-        return;
+        return 0;
+    int rc = 0;
     if (fs->fs)
-        fs->ops->close(fs->fs);
+        rc = fs->ops->close(fs->fs);   /* final flush; return its result */
     free(fs->fs);
     free(fs);
+    return rc;
 }
 
 /* Test hook: swap the byte-slice transport (fault injection).  Internal, used

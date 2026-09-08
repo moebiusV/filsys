@@ -91,7 +91,7 @@ typedef filsys_edition_t p7fs_t;
 
 int p7fs_open(p7fs_t *fs, const char *path, int readonly,
               const filsys_edition_t *proto, uint64_t offset);
-void p7fs_close(p7fs_t *fs);
+int p7fs_close(p7fs_t *fs);
 int p7fs_sync(p7fs_t *fs);
 
 /* ---- block / inode io -------------------------------------------------- */

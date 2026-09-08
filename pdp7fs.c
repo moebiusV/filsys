@@ -208,13 +208,15 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly,
     return 0;
 }
 
-void p7fs_close(p7fs_t *fs) {
+int p7fs_close(p7fs_t *fs) {
+    int rc = 0;
     if (fs->fd >= 0) {
         if (!fs->readonly)
-            super_write(fs);
+            rc = super_write(fs);
         close(fs->fd);
         fs->fd = -1;
     }
+    return rc;
 }
 
 int p7fs_sync(p7fs_t *fs) {

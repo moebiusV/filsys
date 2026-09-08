@@ -185,7 +185,8 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
     return 0;
 }
 
-void v7fs_close(filsys_edition_t *fs) {
+int v7fs_close(filsys_edition_t *fs) {
+    int rc = 0;
     if (fs->fd >= 0) {
         /* The superblock is flushed once here, not per alloc/free: V7's kernel
          * syncs the superblock periodically rather than on every block handoff,
@@ -193,13 +194,14 @@ void v7fs_close(filsys_edition_t *fs) {
          * A clean close clears s_fmod: the image is now consistent. */
         if (!fs->readonly) {
             fs->fmod = 0;
-            flush_fs(fs);
+            rc = flush_fs(fs);
         }
         close(fs->fd);
         fs->fd = -1;
     }
     free(fs->v8_bits);
     fs->v8_bits = NULL;
+    return rc;
 }
 
 int v7fs_sync(filsys_edition_t *fs) {

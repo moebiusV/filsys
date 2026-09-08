@@ -94,10 +94,11 @@ int v1fs_open(v1fs_t *fs, const char *path, int readonly,
     return 0;
 }
 
-void v1fs_close(v1fs_t *fs) {
+int v1fs_close(v1fs_t *fs) {
+    int rc = 0;
     if (fs->fd >= 0) {
         if (!fs->readonly)
-            super_write(fs);
+            rc = super_write(fs);
         close(fs->fd);
         fs->fd = -1;
     }
@@ -105,6 +106,7 @@ void v1fs_close(v1fs_t *fs) {
     free(fs->bm.inodemap);
     fs->bm.freemap = NULL;
     fs->bm.inodemap = NULL;
+    return rc;
 }
 
 int v1fs_sync(v1fs_t *fs) {

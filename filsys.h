@@ -139,8 +139,11 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
                      const char *arch, int force, const filsys_geom_t *geom,
                      const char **errmsg);
-/* Flush the superblock (and pending metadata) and close. */
-void filsys_close(filsys_t *fs);
+/* Close and flush.  Returns the final sync result (0 on success, or a negative
+ * errno if the last flush failed); the caller should report it and set a
+ * non-zero exit status -- the final write is the one a silent failure loses
+ * the most. */
+int filsys_close(filsys_t *fs);
 /* Flush the superblock (and pending metadata) without closing. */
 int filsys_sync(filsys_t *fs);
 int filsys_is_readonly(const filsys_t *fs);
