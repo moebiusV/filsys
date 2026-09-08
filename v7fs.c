@@ -965,14 +965,14 @@ static void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check
                 rep->errors++;
                 break;
             }
-            n = fs->bo->get16(blk);
+            n = f->df_nfree_wid == 4 ? f->bo->get32(blk) : f->bo->get16(blk);
             if (n > f->nicfree) {
                 printf("free-list block %u has bad count %u\n", bno, n);
                 rep->errors++;
                 break;
             }
             for (int i = 0; i < f->nicfree; i++)
-                cur[i] = v7_get_daddr(f, blk + fb_free_off(f->pack4) + f->daddr_wid * i);
+                cur[i] = v7_get_daddr(f, blk + v7_chain_free_off(f) + f->daddr_wid * i);
         }
     }
     free(seen);
