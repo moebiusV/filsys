@@ -272,6 +272,9 @@ enum {
     V8_NICFREE_LARGE = 946, /* V9's 8K free-list cache depth */
     V8_BITMAP        = 961, /* in-superblock bitmap longwords */
     V8_BITCELL       = 32,  /* bits per bitmap longword */
+    V8_BITMAP_BITS   = V8_BITMAP * V8_BITCELL, /* 30752: data blocks the
+                           in-superblock bitmap can describe (the bigmap
+                           threshold) */
     V8_IFLNK         = 0120000, /* symbolic link (present in V8) */
     /* V9/V10 concurrency bits: ICONC overlaps the sticky bit, ICCTYP overlaps
      * setuid/setgid (§5.7).  V8 has ISVTX (V7_ISVTX) instead. */

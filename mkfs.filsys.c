@@ -306,6 +306,15 @@ static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
         die("%s: %u blocks too small for an i-list of %u blocks\n",
             path, blocks, fs->isize);
 
+    /* The in-superblock bitmap holds V8_BITMAP_BITS (30752) data blocks; a
+     * larger data area must use the out-of-superblock bigmap (v10 only).  Reject
+     * it here rather than write a bitmap the decode side cannot read back. */
+    if (fs->freemap == V8_FREEMAP_BITMAP &&
+        fs->fsize - fs->isize > V8_BITMAP_BITS)
+        die("%s: %u-block data area exceeds the %u-block in-superblock bitmap; "
+            "use -g freemap=bigmap (v10) or a smaller volume\n",
+            path, fs->fsize - fs->isize, (uint32_t)V8_BITMAP_BITS);
+
     if (bootfile)
         write_boot(bootfile);
 
