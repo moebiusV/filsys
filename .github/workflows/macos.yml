@@ -1,15 +1,10 @@
 name: macos
 
 # Runs on a native runner (there is no macos-vm action).  Uses FUSE-T (fuse2,
-# kext-free) rather than macFUSE for two concrete reasons:
-#   - macFUSE's fuse3 API is not Linux/BSD fuse3: its getattr/readdir take
-#     struct fuse_darwin_attr and statfs takes struct statfs, so the FUSE3
-#     adapter (fuseops.c) does not compile against it.
-#   - macFUSE's kext cannot be loaded headlessly on a runner (it needs a
-#     System Settings approval + reboot).
-# FUSE-T is a drop-in, macfuse-compatible libfuse 2.x that mounts through a
-# local NFS server -- no kext, no approval -- which is the one path that can
-# both compile and mount a live image here.
+# kext-free) rather than macFUSE: macFUSE's fuse3 API is not Linux/BSD fuse3
+# (getattr/readdir take struct fuse_darwin_attr, statfs takes struct statfs),
+# and its kext cannot be loaded headlessly.  FUSE-T is a drop-in macfuse-
+# compatible libfuse 2.x that mounts through a local NFS server (no kext).
 
 on:
   push:
@@ -25,6 +20,15 @@ jobs:
           eval "$(brew shellenv)"
           brew install pkg-config
           brew install macos-fuse-t/homebrew-cask/fuse-t
+          # FUSE-T ships no .pc file and installs its header in a fuse/ subdir
+          # off the default path; locate fuse.h and the libfuse dylib and point
+          # configure at them.
+          FUSE_H="$(find /usr/local /opt/homebrew -name fuse.h 2>/dev/null | head -1)"
+          FUSE_LIB="$(find /usr/local /opt/homebrew -name 'libfuse*.dylib' 2>/dev/null | head -1)"
+          [ -n "$FUSE_H" ]   || { echo "FUSE-T fuse.h not found"; exit 1; }
+          [ -n "$FUSE_LIB" ] || { echo "FUSE-T libfuse not found"; exit 1; }
+          export CPPFLAGS="-I$(dirname "$FUSE_H")"
+          export LDFLAGS="-L$(dirname "$FUSE_LIB")"
           ./configure --with-fuse=fuse2
           make
           make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
