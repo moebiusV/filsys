@@ -63,10 +63,12 @@ findfs_filsys_SOURCES = findfs.filsys.c
 findfs_filsys_LDADD = libfilsys.a
 findfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
-mkfs_filsys_SOURCES = mkfs.filsys.c filsys_ops.h filsys_format.c filsys_names.c blocktree.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+mkfs_filsys_SOURCES = mkfs.filsys.c
+mkfs_filsys_LDADD = libfilsys.a
 mkfs_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
-fsck_filsys_SOURCES = fsck.filsys.c filsys_ops.h filsys_format.c filsys_names.c blocktree.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+fsck_filsys_SOURCES = fsck.filsys.c
+fsck_filsys_LDADD = libfilsys.a
 fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
