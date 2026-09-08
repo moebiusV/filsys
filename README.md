@@ -1,16 +1,17 @@
 # filsys
 
-Mount a **Research Unix** filesystem image (PDP-11) as a FUSE filesystem on
-Linux, macOS, FreeBSD, NetBSD, or OpenBSD, so files can be copied on and off
-the disk for use with a simulator
-(SIMH `pdp11`).  Linux's own `sysv`/`v7` kernel driver was removed in 6.15
-(2025) and never handled the PDP-7 through V6 or 32V to begin with, so this is now the
-only way to mount these filesystems — see "Linux kernel support" below.
+Mount a **Research Unix** filesystem image — the PDP-7 through Tenth Edition,
+plus 32V, Coherent, SCO Xenix, 2.9/2.11BSD and System III/V — as a FUSE
+filesystem on Linux, macOS, FreeBSD, NetBSD, or OpenBSD, so files can be copied
+on and off the disk for use with a simulator (SIMH `pdp11`/`vax780`).  Linux's
+own `sysv`/`v7` kernel driver was removed in 6.15 (2025) and never handled the
+PDP-7 through V6, 32V, or the V8 family to begin with, so this is now the only
+way to mount these filesystems — see "Linux kernel support" below.
 
 One binary, every edition we care about: the on-disk format is understood
-(middle-endian byte order and the kernel's own free-list allocation
-discipline), so files staged with it are seen by a running kernel after you
-boot the image.
+(middle-endian, little-endian, and big-endian byte orders, and the kernel's own
+free-list and bitmap allocation disciplines), so files staged with it are seen
+by a running kernel after you boot the image.
 
 ```
 mount.filsys -v pdp7 pdp7.dsk mnt        # PDP-7 format, word-addressed
@@ -22,6 +23,9 @@ mount.filsys -v coherent coh.dsk mnt     # Coherent format (Mark Williams Co., V
 mount.filsys -v xenix xenix.dsk mnt      # SCO Xenix format (little-endian, 1 KB blocks)
 mount.filsys -v bsd29 bsd29.dsk mnt      # 2.9BSD format (V7 inode, 1 KB blocks)
 mount.filsys -v bsd211 bsd211.dsk mnt    # 2.11BSD format (32-bit inode, variable dirs)
+mount.filsys -v v8 v8.dsk mnt            # Eighth Edition (1 KB free list, or 4 KB bitmap)
+mount.filsys -v v9 v9.dsk mnt            # Ninth Edition (8 KB blocks, big-endian Sun-3)
+mount.filsys -v v10 v10.dsk mnt          # Tenth Edition (1 KB free list, or 4 KB bitmap)
 ```
 
 Home: <https://github.com/moebiusV/filsys>
@@ -86,15 +90,16 @@ mount.filsys -v <edition> -c <image>   # integrity check (no mount)
 ```
 
 `-v` takes the Unix edition: `pdp7` (the word-addressed PDP-7), `v1`/`v2`/`v3`,
-`v4`/`v5`/`v6`, `v7`, `vax32` (32V), `coherent` (Mark Williams Co.), `xenix`
+`v4`/`v5`/`v6`, `v7`, `v8` (Eighth Edition), `v9` (Ninth Edition), `v10`
+(Tenth Edition), `vax32` (32V), `coherent` (Mark Williams Co.), `xenix`
 (SCO Xenix), `bsd29` (2.9BSD), `bsd211` (2.11BSD), `sysiii` (System III),
 `sysvr2` (System V Release 2), or `sysvr4` (System V Release 4).  A bare number — `0`,
-`1`, `2`, `3`, `4`, `5`, `6`, `7`, `32`, `33`, `34`, `35`, `36` — is also
-accepted, and `v0`/`p7` spell the PDP-7.  `v1`, `v2` and `v3` are one on-disk
-format, and `v4` and `v5` are byte-identical to `v6`, so the seven pre-V7
-editions collapse onto two code paths.  `usgpg3` (USG Program Generic Issue 3)
-resolves to `v6`, and `sysvr1` (System V Release 1) to `v7`, both verified
-against real media.  The edition is **required**: there is no
+`1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `10`, `32`, `33`, `34`, `35`,
+`36` — is also accepted, and `v0`/`p7` spell the PDP-7.  `v1`, `v2` and `v3`
+are one on-disk format, and `v4` and `v5` are byte-identical to `v6`, so the
+seven pre-V7 editions collapse onto two code paths.  `usgpg3` (USG Program
+Generic Issue 3) resolves to `v6`, and `sysvr1` (System V Release 1) to `v7`,
+both verified against real media.  The edition is **required**: there is no
 default, and a wrong `-v` is an error, not a fallback.
 
 | option | meaning                          |
@@ -115,8 +120,15 @@ default, and a wrong `-v` is an error, not a fallback.
 | `-v sysiii`| System III format (V7's on-disk layout) |
 | `-v sysvr2`| System V Release 2/3 (s5fs: 4-byte-aligned fields + magic; byte order from `arch=`) |
 | `-v sysvr4`| System V Release 4 (same layout + an `s_state` clean/dirty word) |
+| `-v v8` | Eighth Edition (V7 inode, rearranged superblock; 1 KB free list or 4 KB bitmap) |
+| `-v v9` | Ninth Edition (Sun-3 port: 8 KB blocks, big-endian; free list or bitmap) |
+| `-v v10`| Tenth Edition (V8 + the out-of-superblock bitmap at 4 KB) |
 | `-o offset=N` | mount a filesystem at byte offset N (a partition) |
 | `-o arch=NAME` | override the byte order (System V on a non-default CPU) |
+| `-o blocksize=N` | V8-family block size (1024/4096; 8192 for v9) |
+| `-o freemap=LIST` | V8-family free space: `list` or `bitmap` (implied by block size for v8/v10) |
+| `-o bitmap=SUPER\|BLOCKS` | v10 bitmap location: in-superblock (`super`) or tail blocks (`blocks`) |
+| `-o byteorder=LE\|BE` | V8-family byte order (v9 is `be`; v8/v10 are `le`) |
 | `-o uid=N,gid=N` | override reported ownership (default: you) |
 | `-o allow_other,...` | pass a FUSE option through |
 | `-r`   | mount read-only                  |
@@ -148,6 +160,27 @@ fsck.filsys: big-endian.dk: superblock magic is big-endian, but arch 'vax' is li
 `-F` (mount) / `-F` (fsck) overrides a magic word that matches *neither* byte
 order, forcing the `arch` you name (for a foreign or damaged image).
 
+**The V8 family** (Eighth/Ninth/Tenth Edition) is V7's inode, directory and
+block-mapping engine with a *rearranged* superblock, a varying block size, a
+free-space **bitmap** as an alternative to the free list, and symbolic links.
+Unlike System V it carries no magic word, so its geometry is named on the
+command line rather than read from disk:
+
+- **v8** and **v10**: one device bit selects block size *and* free space
+  together — 1024 ⇒ free list, 4096 ⇒ bitmap (in-superblock).  A 1 KB bitmap or
+  4 KB free list cannot exist, and those combinations are rejected.
+- **v9** is the **Sun-3** port: 8 KB blocks fixed, **big-endian**, and the
+  free-list/bitmap choice is the one place block size does not settle it (both
+  are legal at 8 KB), so `-o freemap=` may be needed.
+- **v10** adds the **out-of-superblock** bitmap: when a 4 KB bitmap volume is
+  too large for the 961-longword in-superblock map (data area > 30752 blocks),
+  the bitmap lives in trailing blocks (`-o bitmap=blocks`).  v8 and v9 cannot
+  represent it.
+
+With no `-o`, an edition's defaults are used (`v8`/`v10` = 1 KB free list, `v9`
+= 8 KB free list).  `findfs.filsys` detects the block size, byte order and
+free-space form itself — see "Finding partitions" below.
+
 ```sh
 mkdir mnt
 mount.filsys -v v7 rp06-0.disk mnt        # read-write (make a copy first!)
@@ -174,29 +207,41 @@ mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partitio
 mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block first
 mkfs.filsys -v sysvr2 -B 1024 image.dk  # a 1K-block System V filesystem
 mkfs.filsys -v sysvr4 -B 2048 image.dk  # a 2K-block System V filesystem
+mkfs.filsys -v v10 -g blocksize=4096,freemap=bitmap image.dk   # a 4K-block V10 bitmap filesystem
+mkfs.filsys -v v10 -g blocksize=4096,freemap=bigmap image.dk   # ...with the bitmap in tail blocks
 
-fsck.filsys -v v7 image.dk             # check the filesystem at block 0
+fsck.filsys -v v7 -f image.dk          # force a check of the filesystem at block 0
 fsck.filsys -v v7 -o 18392 image.dk    # check a filesystem at block 18392
 fsck.filsys -v v7 -p image.dk          # preen: fix the safe subset without prompting
 fsck.filsys -v v7 -i image.dk          # prompt before each repair
+fsck.filsys -v v10 -g blocksize=4096,freemap=bitmap image.dk   # check a bitmap filesystem
 ```
 
 `mkfs.filsys` writes a superblock, a zeroed i-list, an interleaved free-block
 list, and an empty root directory, laying out the root inode (and, for V7/32V,
 the empty bad-block file) exactly as that edition expects — root is inode 1 in
-V6, inode 2 in V7/32V, inode 41 in V1–V3, and inode 4 on the PDP-7.  `-o`
+V6, inode 2 in V7/32V and the V8 family, inode 41 in V1–V3, and inode 4 on the
+PDP-7.  `-o`
 places the filesystem at a block offset for multi-partition images; `-b`
 installs a boot block (a PDP-11 `a.out`, V7 magic `0407`) into block 0 before
 the superblock.  `-B` sets the logical block size of a System V filesystem
 (`sysvr2`/`sysvr4`) to 512, 1024, or 2048 bytes — the `s_type` superblock field
 — since System V is the one edition whose block size is read from the
 superblock rather than fixed by the format; every other edition ignores `-B`.
+The V8 family's block size and free-space form are named with `-g`
+(`-g blocksize=4096,freemap=bitmap`), mirroring `mount.filsys`'s `-o` options.
 
 `fsck.filsys` is more than the mount driver's `-c`: it folds V7's
 `icheck`+`dcheck` pair into one pass (block-bitmap and duplicate detection,
 free-list walk, link-count cross-check) and adds repair — `-s` rebuilds the
 free list, `-r` copies out duplicate blocks (`salv -a`), `-p`/`-y` fix the safe
 subset, `-i` prompts on each fix, and `-N`/`-C` are `ncheck`/`clri`.
+
+Like the original `fsck`, a volume that already looks clean (its `s_fmod` flag
+is clear) is skipped — a plain `fsck.filsys -v v7 image.dk` on a clean image
+prints "filesystem clean; skipped" and does nothing.  Pass **`-f`** to force the
+check regardless: `fsck.filsys -v v7 -f image.dk`.  `-g blocksize=,freemap=,byteorder=`
+names the V8-family geometry the same way `mount.filsys`'s `-o` does.
 
 These checker features are the classic **BSD `fsck`** design — the multi-phase
 structure, the per-inode state byte, the bad-block/errflag handling, the
@@ -211,8 +256,9 @@ repair.
 
 These are the format facts learned the hard way while building this, folded
 together with the history of the filesystem itself.  They are the
-documentation of record for the `pdp7fs.c` / `v1fs.c` / `v6fs.c` / `v7fs.c`
-backends.
+documentation of record for the `pdp7fs.c` / `v1fs.c` / `v7fs.c`
+backends (V6 is folded into `v7fs.c` alongside the V7/32V/Coherent/Xenix/BSD
+and V8-family codecs).
 
 ### History
 
@@ -264,19 +310,32 @@ backends.
   `s_m`/`s_n` cylinder interleave applied when the free list is built.  Its
   byte order is the PDP-11's middle-endian — the format was fixed on the PDP-11
   and preserved verbatim on x86 — so it rides the V7 code path, not 32V's.
+- **V8 (Eighth Edition, 1985)**, **V9 (Ninth, 1986)**, **V10 (Tenth, 1989)** are
+  the post-V7 Research line.  They keep V7's 64-byte inode (13 three-byte
+  addresses) and 16-byte directory entry **byte-identical**, but rearrange the
+  superblock — the free list moves into a union at the *end* (offset 248), and
+  `s_fsmnt[14]`, `s_lasti` and `s_nbehind` appear — and add symbolic links
+  (`IFLNK`).  Free space can be the V7 free list **or a bitmap**; the block size
+  grew to 1 KB (V8/V10) and 8 KB (V9), and the free-list cache depth to 178
+  (V8/V10) and 946 (V9).  **V9 is big-endian**: it is the Sun-3 (m68k) port, the
+  only one whose sources survive.  V10 further adds an *out-of-superblock*
+  bitmap for volumes too large for the in-superblock map.  filsys implements
+  the family from the published kernel sources (`usr/src/cmd/mkfs.c`,
+  `sys/sys/filsys.h`, `filsys.c`); the on-disk layout has not yet been
+  cross-checked against surviving V8/V9/V10 media.
 
 ### Format table
 
-| | PDP-7 | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V | Coherent | Xenix | 2.9BSD | 2.11BSD |
-|---|---|---|---|---|---|---|---|---|---|
-| block size | 64 words (256 B) | 512 | 512 | 512 | 512 | 512 | 1024 | 1024 | 1024 |
-| inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) | 64 B (8/block) | 64 B (16/block) | 64 B (16/block) | 64 B (16/block) |
-| block addresses | 7 words | 8 × 16-bit | 8 × 16-bit | 13 × 24-bit (3-byte packed) | 13 × 24-bit (LE) | 13 × 24-bit (ME) | 13 × 24-bit (LE) | 7 × 24-bit (ME) | 7 × 32-bit (ME) |
-| allocator | free list | bitmap (in superblock) | free list | free list | free list | free list (interleaved) | free list (100-entry) | free list | free list |
-| file size | 56 KB | 64 KB (16-bit) | 24-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit |
-| root inode | 4 | 41 | 1 | 2 | 2 | 2 | 2 | 2 | 2 |
-| bad-block file | none | none | none | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 |
-| directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B | 16 B | 16 B | 16 B | variable (≤ 63-char) |
+| | PDP-7 | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V | Coherent | Xenix | 2.9BSD | 2.11BSD | V8 | V9 | V10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| block size | 64 words (256 B) | 512 | 512 | 512 | 512 | 512 | 1024 | 1024 | 1024 | 1024 / 4096 | 8192 | 1024 / 4096 |
+| inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) | 64 B (8/block) | 64 B (16/block) | 64 B (16/block) | 64 B (16/block) | 64 B (16/64 per block) | 64 B (128/block) | 64 B (16/64 per block) |
+| block addresses | 7 words | 8 × 16-bit | 8 × 16-bit | 13 × 24-bit (3-byte packed) | 13 × 24-bit (LE) | 13 × 24-bit (ME) | 13 × 24-bit (LE) | 7 × 24-bit (ME) | 7 × 32-bit (ME) | 13 × 24-bit (LE) | 13 × 24-bit (BE) | 13 × 24-bit (LE) |
+| allocator | free list | bitmap (in superblock) | free list | free list | free list | free list (interleaved) | free list (100-entry) | free list | free list | free list or bitmap | free list or bitmap | free list or bitmap (or tail-blocks) |
+| file size | 56 KB | 64 KB (16-bit) | 24-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit |
+| root inode | 4 | 41 | 1 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 |
+| bad-block file | none | none | none | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 | none | none | none |
+| directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B | 16 B | 16 B | 16 B | variable (≤ 63-char) | 16 B | 16 B | 16 B |
 
 One engine covers the whole range: a `filsys_edition_t` descriptor plus a
 `filsys_ops` vtable (`v7fs.c` / `filsys.c` / `filsys_format.c` / `check.c`).
@@ -335,6 +394,8 @@ disk image holds:
 | Xenix | 16 GB (2²⁴ blocks × 1024 B) | 65,536 | ~16.1 GB (triple indirect) |
 | 2.9BSD | 16 GB | 65,536 | ~16.1 GB (triple indirect) |
 | 2.11BSD | 4 TB (2³² blocks × 1024 B) | 65,536 | ~16.1 GB (triple indirect) |
+| V8 / V10 | 16 GB (2²⁴ blocks × 1024 B), or 64 GB (2²⁴ × 4096 B) | 65,536 (16-bit i-number) | ~16 GB (triple indirect) |
+| V9 | 128 GB (2²⁴ blocks × 8192 B) | 65,536 | ~128 GB (triple indirect) |
 
 The PDP-7's real RB09 disk held only 8000 blocks (2 MB) per surface; 64 MB is
 the 18-bit block-number ceiling.  V1's 16-bit block numbers could address 32 MB,
@@ -449,10 +510,16 @@ The PDP-11 is **middle-endian**:
   inode and directory entry are *not* shifted (their fields already fall on
   4-byte boundaries), so only `filsys` and `fblk` differ in *layout*; every
   other structure differs from V7 only in byte order.
+- **V8/V10** are **little-endian** (VAX/386), and **V9** is **big-endian** (the
+  Sun-3/m68k port): every multi-byte field — `s_fsize`, `s_tfree`, the 3-byte
+  `di_addr` packed `[lo, mid, hi]` vs `[hi, mid, lo]`, the 4-byte free-list
+  `df_nfree`/`df_free[]` — follows that byte order.  The descriptor's `bo_le` /
+  `bo_be` byte-order ops handle both, with `-o byteorder=` to override.
 
-`v6fs.c` and `v7fs.c` implement `balloc`/`bfree`/`ialloc`/`ifree`/`itrunc`
-mirroring the respective kernel's `sys/alloc.c`, so the free list stays
-interchangeable with what a running kernel expects.
+`v7fs.c` implements `balloc`/`bfree`/`ialloc`/`ifree`/`itrunc`
+mirroring the respective kernel's `sys/alloc.c` (V6's and V7's free-list
+discipline, and the V8-family's free-list and bitmap allocators), so the free
+list stays interchangeable with what a running kernel expects.
 
 ### Disk partitions
 
@@ -524,11 +591,20 @@ the false positives a block-by-block sweep of file data produces:
 
 ```
 findfs.filsys -s 418 rp06-0.disk
-# fs @ block 0      (byte 0)       V7  isize=202  fsize=5000
-# fs @ block 18392  (byte 9416704) V7  isize=8189 fsize=322278
+# found a V7 filesystem at block 0 (byte 0), isize=202 fsize=5000, chain ok ...
+# found a V7 filesystem at block 18392 (byte 9416704), isize=8189 fsize=322278, ...
 ```
 
 Mount any hit with `mount.filsys -o offset=<byte>`.
+
+It identifies the V8 family by *traversal* rather than a magic word — it chases
+the root inode, walks the i-list (which rules out the wrong byte order), and
+then decides free-list vs bitmap by walking whichever representation survives
+against `s_tfree`.  It reports the geometry it found
+(`found a v8/v10 filesystem (1024-byte blocks, free list, LE) …`), honestly
+reporting `v8/v10` where the two are byte-identical.  By default it is **silent
+about the hypotheses it discarded**; pass `-V` to see each rejected candidate
+and the reason.
 
 ## Verification
 
@@ -549,10 +625,18 @@ create/write/delete path for every edition is additionally run by
 | V7 | pcollinson `rp06-0.disk` | yes | yes | yes | yes | yes |
 | 32V (VAX) | `32v-root.disk`, `32v-rp06.disk` (`/usr`) | yes | yes | yes | yes | yes |
 | Coherent | `disk1..4.4.10.dd` (PUPS base floppies) | yes | — | — | — | — |
+| V8 / V9 / V10 | no original media survive | — | — | synthetic images only | — | — |
 
 On-disk verification dumped the raw 32-byte inode blocks after `chmod`/`chown`
 and confirmed the mode, uid/gid and size fields landed correctly, and that
 delete freed the inode and data block (free counts restored, `errors=0`).
+
+The V8/V9/V10 rows are honest: the format is implemented from the published
+kernel sources (`usr/src/cmd/mkfs.c`, `sys/sys/filsys.h`, `filsys.c`), and
+`test_matrix` round-trips mkfs → write → read → truncate → fsck on synthetic
+images in every geometry (1K free list, 4K bitmap, the V10 tail-blocks bitmap,
+and V9's 8K big-endian forms), but no original V8/V9/V10 disk image is known to
+survive, so it has not been validated against original media.
 
 32V has no published disk image, so the test image was built from scratch:
 compile open-simh's VAX-11/780 (`vax780`, which requires the `vmb.exe` ROM),
@@ -576,22 +660,28 @@ emulator is running.
 ## Layout
 
 - `v7fs.h` / `v7fs.c`: the shared engine — `filsys_edition_t`, the free-list
-  allocator, and the V6/V7/32V/Coherent/Xenix/2.9BSD and 2.11BSD codecs (the
-  2.11BSD variable-length dirent lives here too).
+  and bitmap allocators, and the V6/V7/32V/Coherent/Xenix/2.9BSD/2.11BSD and
+  V8/V9/V10 codecs (the 2.11BSD variable-length dirent lives here too).
 - `v1fs.h` / `v1fs.c`: V1/V2/V3 — the 32-byte inode, 10-byte dirent and bitmap
   allocator (its file/dir/lookup layer is shared).
 - `pdp7fs.h` / `pdp7fs.c`: PDP-7 — the word container codec (`read_words` +
   `blk_get`/`blk_put`), the 8-word dirent and the on-disk free list.
 - `filsys.h` / `filsys.c`: the public API and the format-independent path walker.
 - `filsys_format.c`: the per-edition descriptor table (`filsys_getformat`).
+- `filsys_names.c`: the edition name/alias table (`filsys_edition_by_name`).
 - `filsys_ops.h`: the backend vtable.
+- `blocktree.c`: the indirect-block tree walk shared by the checkers.
 - `check.h` / `check.c`: the shared integrity-check driver.
 - `byteorder.h` / `byteorder.c`: the byte-order ops (`bo_le`/`bo_be`/`bo_me`).
+- `fuse_core.c` / `fuse_core.h`: the FUSE-free core callbacks.
+- `fuseops.c` / `fuseops_macos.c` / `fuseops_openbsd.c`: the FUSE3 / macFUSE /
+  OpenBSD-libfuse adapters (one is compiled per platform).
 - `mount.filsys.c`: FUSE callbacks + the `-v` edition selector.
 - `findfs.filsys.c`: locate filesystem superblocks (partitions) on a raw image.
 - `mkfs.filsys.c`: create a filesystem of any edition in an image.
 - `fsck.filsys.c`: check a filesystem of any edition (dispatches to the
   backend's `*_check()`).
+- `test_matrix.c`, `test_oracle.c`: the regression and oracle tests.
 - `filsys.5`, `mount.filsys.1`, `findfs.filsys.1`, `mkfs.filsys.1`,
   `fsck.filsys.1`: the format and tool manpages.
 - `configure.ac`, `Makefile.am`: GNU autotools build.
@@ -607,7 +697,16 @@ emulator is running.
   image size and the data area **before any allocation**, so a corrupt image
   cannot trigger a multi-gigabyte `malloc` or an unbounded loop.  (libFuzzer +
   ASan/UBSan found this class of bug before it shipped; the read path fuzzes
-  clean, and `gcc -fanalyzer` / `clang --analyze` are quiet.)
+  clean.  `clang --analyze` is quiet; `gcc -fanalyzer` reports one false
+  positive — it cannot see through the `fs->io->read` / `fs->word->get`
+  indirection in `pdp7fs.c`'s `read_words` to prove all 64 slots are filled.)
+
+`make check` exercises the FUSE-free core (the format codecs, allocators and
+checker) through `test_matrix`; it depends on `all`, which also builds
+`mount.filsys`, so a link against libfuse is still needed even to run
+`make check` alone.  To run the same suite without any FUSE on the link path,
+build the test binary directly — `make test_matrix && ./test_matrix` — which
+links only `libfilsys.a` (the FUSE-free core) and never touches `mount.filsys`.
 
 ## Linux kernel support
 
@@ -822,8 +921,11 @@ work.
 
 ## License
 
-The original code (`pdp7fs.c`, `v1fs.c`, `v6fs.c`, `v7fs.c`, `filsys.c`,
-`mount.filsys.c`, `findfs.filsys.c`, `mkfs.filsys.c`, `fsck.filsys.c`, and
+The original code (`pdp7fs.c`, `v1fs.c`, `v7fs.c`, `filsys.c`,
+`filsys_format.c`, `filsys_names.c`, `blocktree.c`, `byteorder.c`, `check.c`,
+`fuse_core.c`, `mount.filsys.c`, `findfs.filsys.c`, `mkfs.filsys.c`,
+`fsck.filsys.c`, the FUSE adapters `fuseops.c` / `fuseops_macos.c` /
+`fuseops_openbsd.c`, the test drivers `test_matrix.c` / `test_oracle.c`, and
 their headers) is licensed under the **ISC license**: Copyright (c) 2026 David
 Walther.
 

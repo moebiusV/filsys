@@ -108,7 +108,7 @@ AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
         # through to the fuse2 probe below instead of claiming fuse3 here).
         AS_IF([test -f "$srcdir/fuselib/usr/include/fuse3/fuse.h"], [
             FUSE3_CFLAGS="-I\$(top_srcdir)/fuselib/usr/include/fuse3"
-            FUSE3_LIBS="-lfuse3"
+            FUSE3_LIBS="-L\$(top_srcdir)/fuselib/lib -lfuse3"
             have_fuse3=yes
             AC_MSG_WARN([fuse3.pc not found: using local headers from ./fetch.sh])
         ])
