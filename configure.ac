@@ -26,21 +26,104 @@ AM_PROG_AR
 AC_PROG_RANLIB
 
 # ---------------------------------------------------------------------------
-# libfuse3.
+# FUSE backend.
 #
-# Prefer pkg-config (a distro build has libfuse3-dev installed, which ships
-# fuse3.pc).  Fall back to the locally-fetched headers from ./fetch.sh and
-# link the runtime SONAME directly, so a no-root build still works.
+# --with-fuse=auto|fuse3|fuse2 picks the API level; auto prefers fuse3 (every
+# platform but OpenBSD ships it) and falls back to fuse2.  Each level probes in
+# order: pkg-config, then a bare header + link search (the only path that finds
+# OpenBSD's base libfuse and NetBSD's librefuse, neither of which ships a .pc
+# file), then -- for fuse3 only -- the local ./fetch.sh headers so a no-root
+# build still works.
+#
+# FUSE_USE_VERSION is the one -D the <fuse.h> API mandates before inclusion, so
+# configure sets it into AM_CPPFLAGS, never a source file.  Its encoding changed
+# at 3.10 (maj*10+min -> maj*100+min), so 35 means 3.5 and 26 means 2.6.  Never
+# emit -l: (GNU-ld syntax that fails on the BSD linkers).
 # ---------------------------------------------------------------------------
-PKG_CHECK_MODULES([FUSE3], [fuse3 >= 3.0],
-    [have_fuse3=yes], [have_fuse3=no])
-AS_IF([test "x$have_fuse3" = xno], [
-    FUSE3_CFLAGS="-I\$(top_srcdir)/fuselib/usr/include/fuse3"
-    FUSE3_LIBS="-l:libfuse3.so.4"
-    AC_MSG_WARN([fuse3.pc not found: using local headers from ./fetch.sh])
+AC_ARG_WITH([fuse],
+    [AS_HELP_STRING([--with-fuse=auto|fuse3|fuse2],
+                    [FUSE API level to build against (default: auto)])],
+    [with_fuse=$withval], [with_fuse=auto])
+
+have_fuse3=no
+have_fuse2=no
+
+# fuse3 (explicit, or the first choice under auto).
+AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
+    PKG_CHECK_MODULES([FUSE3], [fuse3 >= 3.0],
+        [have_fuse3=yes], [have_fuse3=no])
+    AS_IF([test "x$have_fuse3" = xno], [
+        AC_CHECK_HEADER([fuse3/fuse.h],
+            [save_LIBS=$LIBS
+             AC_SEARCH_LIBS([fuse_main], [fuse3],
+                 [have_fuse3=yes], [have_fuse3=no])
+             AS_IF([test "x$have_fuse3" = xyes], [
+                 AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
+                     [FUSE3_LIBS=""], [FUSE3_LIBS="$ac_cv_search_fuse_main"])
+                 FUSE3_CFLAGS=""
+             ])
+             LIBS=$save_LIBS],
+            [have_fuse3=no])
+    ])
+    AS_IF([test "x$have_fuse3" = xno], [
+        # No system fuse3: use the local ./fetch.sh headers if present (and
+        # only if present, so OpenBSD -- which has no fuse3 at all -- falls
+        # through to the fuse2 probe below instead of claiming fuse3 here).
+        AS_IF([test -f "$srcdir/fuselib/usr/include/fuse3/fuse.h"], [
+            FUSE3_CFLAGS="-I\$(top_srcdir)/fuselib/usr/include/fuse3"
+            FUSE3_LIBS="-lfuse3"
+            have_fuse3=yes
+            AC_MSG_WARN([fuse3.pc not found: using local headers from ./fetch.sh])
+        ])
+    ])
 ])
-AC_SUBST([FUSE3_CFLAGS])
-AC_SUBST([FUSE3_LIBS])
+
+# fuse2 (explicit, or the fallback under auto after fuse3 failed).
+AS_IF([test "x$with_fuse" = xfuse2 || test "x$have_fuse3" = xno], [
+    PKG_CHECK_MODULES([FUSE2], [fuse],
+        [have_fuse2=yes], [have_fuse2=no])
+    AS_IF([test "x$have_fuse2" = xno], [
+        AC_CHECK_HEADER([fuse.h],
+            [save_LIBS=$LIBS
+             AC_SEARCH_LIBS([fuse_main], [fuse refuse],
+                 [have_fuse2=yes], [have_fuse2=no])
+             AS_IF([test "x$have_fuse2" = xyes], [
+                 AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
+                     [FUSE2_LIBS=""], [FUSE2_LIBS="$ac_cv_search_fuse_main"])
+                 FUSE2_CFLAGS=""
+             ])
+             LIBS=$save_LIBS],
+            [have_fuse2=no])
+    ])
+])
+
+AS_IF([test "x$have_fuse3" = xno && test "x$have_fuse2" = xno], [
+    AC_MSG_ERROR([no FUSE backend found; install libfuse3-dev or libfuse-dev, or use --with-fuse=fuse3|fuse2])
+])
+
+# Normalise onto one variable set, and pick the FUSE_USE_VERSION -D.
+AS_IF([test "x$have_fuse3" = xyes], [
+    FUSE_CFLAGS="$FUSE3_CFLAGS"
+    FUSE_LIBS="$FUSE3_LIBS"
+    FUSE_CPPFLAGS="-DFUSE_USE_VERSION=35"
+], [
+    FUSE_CFLAGS="$FUSE2_CFLAGS"
+    FUSE_LIBS="$FUSE2_LIBS"
+    FUSE_CPPFLAGS="-DFUSE_USE_VERSION=26"
+])
+
+AM_CONDITIONAL([HAVE_FUSE2], [test "x$have_fuse2" = xyes])
+AC_SUBST([FUSE_CFLAGS])
+AC_SUBST([FUSE_LIBS])
+AC_SUBST([FUSE_CPPFLAGS])
+
+# Which struct stat time field does this host use?  macOS has st_atimespec,
+# not st_atim; the accessor objects are selected by these results, not by OS
+# name.  st_birthtime is macOS-only and likewise value-level.
+AC_CHECK_MEMBERS([struct stat.st_atim,
+                  struct stat.st_atimespec,
+                  struct stat.st_birthtime],
+                 [], [], [[#include <sys/stat.h>]])
 
 # ---------------------------------------------------------------------------
 # Optional end-to-end image tests (test.sh): mount a real V7 disk image through

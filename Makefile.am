@@ -32,14 +32,22 @@ pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = filsys.pc
 
 # mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir.
-mount_filsys_SOURCES = mount.filsys.c
+# The callback bodies are FUSE-free (fuse_core.c); exactly one adapter is
+# compiled, selected by --with-fuse: fuseops.c (FUSE3, the default) or
+# fuseops_openbsd.c (OpenBSD's base-libfuse 2.6 / older macFUSE).
+if HAVE_FUSE2
+mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_openbsd.c
+else
+mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops.c
+endif
 # C17, not C23: Microsoft's toolchain tops out at C17, so we match.
 mount_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
-mount_filsys_CPPFLAGS = -DFUSE_USE_VERSION=35 $(FUSE3_CFLAGS)
+# FUSE_USE_VERSION (35 or 26) comes from configure, never from a source file.
+mount_filsys_CPPFLAGS = $(FUSE_CPPFLAGS) $(FUSE_CFLAGS)
 # FUSE's high-level API runs single-threaded here (main passes -s) because the
 # in-core superblock is shared state; a second thread would race on nfree/free[].
 # No -lpthread is needed.
-mount_filsys_LDADD = $(FUSE3_LIBS) libfilsys.a
+mount_filsys_LDADD = $(FUSE_LIBS) libfilsys.a
 
 findfs_filsys_SOURCES = findfs.filsys.c
 findfs_filsys_LDADD = libfilsys.a
