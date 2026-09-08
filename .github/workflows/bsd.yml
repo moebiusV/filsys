@@ -32,12 +32,12 @@ jobs:
             pkg install -y gmake pkgconf fusefs-libs3
             kldload fusefs
           run: |
-            ./configure --with-fuse=fuse3
+            MAKE=gmake ./configure --with-fuse=fuse3
             gmake
             gmake check
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip rp06-0.disk.gz
-            ./configure --with-fuse=fuse3 --enable-image-tests
+            MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
             gmake
             gmake check
 
@@ -52,12 +52,12 @@ jobs:
           prepare: |
             pkg_add gmake pkgconf
           run: |
-            ./configure --with-fuse=fuse2
+            MAKE=gmake ./configure --with-fuse=fuse2
             gmake
             gmake check
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip rp06-0.disk.gz
-            ./configure --with-fuse=fuse2 --enable-image-tests
+            MAKE=gmake ./configure --with-fuse=fuse2 --enable-image-tests
             gmake
             gmake check
 
@@ -72,11 +72,11 @@ jobs:
           prepare: |
             pkg_add gmake pkgconf
           run: |
-            ./configure --with-fuse=fuse3
+            MAKE=gmake ./configure --with-fuse=fuse3
             gmake
             gmake check
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip rp06-0.disk.gz
-            ./configure --with-fuse=fuse3 --enable-image-tests
+            MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
             gmake
             gmake check

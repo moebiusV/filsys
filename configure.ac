@@ -53,17 +53,34 @@ AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
     PKG_CHECK_MODULES([FUSE3], [fuse3 >= 3.0],
         [have_fuse3=yes], [have_fuse3=no])
     AS_IF([test "x$have_fuse3" = xno], [
-        AC_CHECK_HEADER([fuse3/fuse.h],
-            [save_LIBS=$LIBS
-             AC_SEARCH_LIBS([fuse_main], [fuse3],
-                 [have_fuse3=yes], [have_fuse3=no])
-             AS_IF([test "x$have_fuse3" = xyes], [
-                 AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
-                     [FUSE3_LIBS=""], [FUSE3_LIBS="$ac_cv_search_fuse_main"])
-                 FUSE3_CFLAGS=""
-             ])
-             LIBS=$save_LIBS],
-            [have_fuse3=no])
+        # No fuse3.pc: probe the header directly.  The standard FUSE3 location
+        # is fuse3/fuse.h; NetBSD's librefuse ships the FUSE3 API at fuse.h (no
+        # subdir).  Both require FUSE_USE_VERSION, and a FUSE3-only op
+        # (write_buf) tells a FUSE3 fuse.h apart from OpenBSD's FUSE2 one.
+        AC_COMPILE_IFELSE(
+            [AC_LANG_PROGRAM(
+                [#define FUSE_USE_VERSION 35
+#include <fuse3/fuse.h>],
+                [struct fuse_operations o = {0}; o.write_buf = 0; (void)o;])],
+            [fuse3_hdr=yes],
+            [AC_COMPILE_IFELSE(
+                [AC_LANG_PROGRAM(
+                    [#define FUSE_USE_VERSION 35
+#include <fuse.h>],
+                    [struct fuse_operations o = {0}; o.write_buf = 0; (void)o;])],
+                [fuse3_hdr=yes],
+                [fuse3_hdr=no])])
+        AS_IF([test "x$fuse3_hdr" = xyes], [
+            save_LIBS=$LIBS
+            AC_SEARCH_LIBS([fuse_main], [fuse3 refuse],
+                [have_fuse3=yes], [have_fuse3=no])
+            AS_IF([test "x$have_fuse3" = xyes], [
+                AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
+                    [FUSE3_LIBS=""], [FUSE3_LIBS="$ac_cv_search_fuse_main"])
+                FUSE3_CFLAGS=""
+            ])
+            LIBS=$save_LIBS
+        ])
     ])
     AS_IF([test "x$have_fuse3" = xno], [
         # No system fuse3: use the local ./fetch.sh headers if present (and
@@ -116,6 +133,10 @@ AM_CONDITIONAL([HAVE_FUSE2], [test "x$have_fuse2" = xyes])
 AC_SUBST([FUSE_CFLAGS])
 AC_SUBST([FUSE_LIBS])
 AC_SUBST([FUSE_CPPFLAGS])
+
+# major()/minor(): glibc >= 2.28 moved them from <sys/types.h> to
+# <sys/sysmacros.h>; the BSDs and macOS still declare them in <sys/types.h>.
+AC_CHECK_HEADERS([sys/sysmacros.h])
 
 # Which struct stat time field does this host use?  macOS has st_atimespec,
 # not st_atim; the accessor objects are selected by these results, not by OS

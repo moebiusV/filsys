@@ -5616,11 +5616,54 @@ fi
     if test "x$have_fuse3" = xno
 then :
 
-        ac_fn_c_check_header_compile "$LINENO" "fuse3/fuse.h" "ac_cv_header_fuse3_fuse_h" "$ac_includes_default"
-if test "x$ac_cv_header_fuse3_fuse_h" = xyes
+        # No fuse3.pc: probe the header directly.  The standard FUSE3 location
+        # is fuse3/fuse.h; NetBSD's librefuse ships the FUSE3 API at fuse.h (no
+        # subdir).  Both require FUSE_USE_VERSION, and a FUSE3-only op
+        # (write_buf) tells a FUSE3 fuse.h apart from OpenBSD's FUSE2 one.
+        cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#define FUSE_USE_VERSION 35
+#include <fuse3/fuse.h>
+int
+main (void)
+{
+struct fuse_operations o = {0}; o.write_buf = 0; (void)o;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
 then :
-  save_LIBS=$LIBS
-             { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing fuse_main" >&5
+  fuse3_hdr=yes
+else case e in #(
+  e) cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#define FUSE_USE_VERSION 35
+#include <fuse.h>
+int
+main (void)
+{
+struct fuse_operations o = {0}; o.write_buf = 0; (void)o;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  fuse3_hdr=yes
+else case e in #(
+  e) fuse3_hdr=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
+        if test "x$fuse3_hdr" = xyes
+then :
+
+            save_LIBS=$LIBS
+            { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing fuse_main" >&5
 printf %s "checking for library containing fuse_main... " >&6; }
 if test ${ac_cv_search_fuse_main+y}
 then :
@@ -5648,7 +5691,7 @@ return fuse_main ();
   return 0;
 }
 _ACEOF
-for ac_lib in '' fuse3
+for ac_lib in '' fuse3 refuse
 do
   if test -z "$ac_lib"; then
     ac_res="none required"
@@ -5690,25 +5733,22 @@ else case e in #(
 esac
 fi
 
-             if test "x$have_fuse3" = xyes
+            if test "x$have_fuse3" = xyes
 then :
 
-                 if test "x$ac_cv_search_fuse_main" = "xnone required"
+                if test "x$ac_cv_search_fuse_main" = "xnone required"
 then :
   FUSE3_LIBS=""
 else case e in #(
   e) FUSE3_LIBS="$ac_cv_search_fuse_main" ;;
 esac
 fi
-                 FUSE3_CFLAGS=""
+                FUSE3_CFLAGS=""
 
 fi
-             LIBS=$save_LIBS
-else case e in #(
-  e) have_fuse3=no ;;
-esac
-fi
+            LIBS=$save_LIBS
 
+fi
 
 fi
     if test "x$have_fuse3" = xno
@@ -5942,6 +5982,16 @@ fi
 
 
 
+
+
+# major()/minor(): glibc >= 2.28 moved them from <sys/types.h> to
+# <sys/sysmacros.h>; the BSDs and macOS still declare them in <sys/types.h>.
+ac_fn_c_check_header_compile "$LINENO" "sys/sysmacros.h" "ac_cv_header_sys_sysmacros_h" "$ac_includes_default"
+if test "x$ac_cv_header_sys_sysmacros_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_SYS_SYSMACROS_H 1" >>confdefs.h
+
+fi
 
 
 # Which struct stat time field does this host use?  macOS has st_atimespec,
