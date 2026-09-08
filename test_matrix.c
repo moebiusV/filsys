@@ -187,6 +187,14 @@ static void run(const struct fmt *f) {
         return;
     }
 
+    /* A second read-write open of the same image must be refused by the
+     * advisory lock (the two allocators would hand out the same block). */
+    {
+        filsys_t *fs2 = NULL;
+        ok("second RW open rejected (lock)",
+           filsys_open(&fs2, f->edition, img, 0, 0, 0, 0, NULL) == -EBUSY);
+    }
+
     /* The sizes that bit us: odd bytes (a half-full trailing word), the exact
      * direct->indirect promotion boundary, and a large write to force every
      * indirect level.  `large` is the exact size-field ceiling when that is
@@ -1240,7 +1248,7 @@ static void bitmap_roundtrip(void) {
         filsys_geom_t geom = { forms[i].blocksize, forms[i].freemap, NULL };
         filsys_t *fs;
         if (filsys_open_arch(&fs, forms[i].edition, img, 0, 0, 0, 0, NULL,
-                             NULL, 0, &geom, NULL)) {
+                             NULL, 0, &geom, 0, NULL)) {
             snprintf(what, sizeof what, "%s %s open", forms[i].name, fm);
             ok(what, 0);
             unlink(img);

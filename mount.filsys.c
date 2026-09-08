@@ -59,6 +59,7 @@ static void usage(const char *p) {
 
 int main(int argc, char *argv[]) {
     int ver = -1, readonly = 0, foreground = 0, debug = 0, check = 0, force = 0;
+    int no_lock = 0;
     uint64_t offset = 0;
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
     const char *packing = NULL; /* PDP-7 word container codec (rb09|packed18|rim) */
@@ -114,6 +115,8 @@ int main(int argc, char *argv[]) {
                     else bad = 1;
                 } else if (!strncmp(tok, "byteorder=", 10)) {
                     geom.byteorder = strdup(tok + 10); /* copy: opts is freed below */
+                } else if (!strcmp(tok, "no_lock")) {
+                    no_lock = 1;   /* skip the advisory RW lock (debugging) */
                 } else {
                     /* pass anything else through to FUSE (allow_other, ...) */
                     if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
@@ -147,7 +150,7 @@ int main(int argc, char *argv[]) {
     int rc = filsys_open_arch(&k, ver, image, readonly || check, offset,
                               uid >= 0 ? (uid_t)uid : getuid(),
                               gid >= 0 ? (gid_t)gid : getgid(), packing, arch,
-                              force, &geom, &errmsg);
+                              force, &geom, no_lock, &errmsg);
     free((void *)packing);
     free((void *)arch);
     free((void *)geom.byteorder);
