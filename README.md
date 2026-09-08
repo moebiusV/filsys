@@ -703,10 +703,9 @@ emulator is running.
   bug corrupts the image.
 - The `-c` integrity check walks the free list and the inode table and
   reports out-of-range block numbers, cycles, and unreadable inodes.
-- The triple-indirect path is implemented but not yet forced by the synthetic
-  suite: its largest write (200000 bytes) stops in the double-indirect range,
-  so a dedicated multi-level write that crosses the triple boundary (~8 MB for
-  V7) is the one mapping test still missing.
+- The triple-indirect path is exercised by `v7_triple_indirect` in
+  `test_matrix`: a 9 MiB write crosses the double-indirect boundary (16522
+  blocks) and forces `di_addr[12]`, then reads back and fsck's clean.
 - The on-disk `fsize` and every inode's `size` are validated against the real
   image size and the data area **before any allocation**, so a corrupt image
   cannot trigger a multi-gigabyte `malloc` or an unbounded loop.  (libFuzzer +
