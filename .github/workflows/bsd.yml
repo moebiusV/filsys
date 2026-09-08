@@ -52,6 +52,7 @@ jobs:
           prepare: |
             pkg_add gmake curl
             pkg_add pkgconf || pkg_add pkg-config
+            nm -D /usr/lib/librefuse.so 2>/dev/null | grep -i fuse | head -40 || true
           run: |
             MAKE=gmake ./configure --with-fuse=fuse2
             gmake
@@ -73,6 +74,7 @@ jobs:
           prepare: |
             pkg_add gmake curl
             pkg_add pkgconf || pkg_add pkg-config
+            nm -D /usr/lib/librefuse.so 2>/dev/null | grep -i fuse | head -40 || true
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
             gmake
