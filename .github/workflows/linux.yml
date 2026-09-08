@@ -1,36 +1,68 @@
 name: linux
 
-# The primary platform: build and test natively on Ubuntu.  This is the one
-# platform the other workflows do not cover -- bsd.yml and macos.yml use
-# ubuntu-latest only as the VM host for their guests.  Two tiers, as there:
+# The primary platform, two ways.
 #
-#   1. `make check` runs test_matrix (the FUSE-free core) and links mount.filsys
-#      against the system libfuse3, so the FUSE3 adapter compiles too.
-#   2. `test.sh` (enabled with --enable-image-tests) mounts a real V7 image
-#      through FUSE and exercises read/write/mkdir/rename/truncate/persistence,
-#      which is the live end-to-end path every Linux user will actually run.
+#   `distros` -- a matrix over the five major Linux families, each as a
+#   container job.  These catch libc and toolchain differences (musl on
+#   Alpine, the apt/dnf/zypper package-name drift, glibc-version spread) by
+#   building and running `make check` (the FUSE-free core + the fuse3 link)
+#   on every family.  Containers have no /dev/fuse, so no live mount here.
+#
+#   `fuse` -- one native ubuntu-latest VM job that mounts the real RP06 image
+#   through FUSE (--enable-image-tests), the live end-to-end path every Linux
+#   user actually runs.  This is the only place /dev/fuse is available.
 
 on:
   push:
   pull_request:
 
 jobs:
-  linux:
+  distros:
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: alpine
+            image: alpine:latest
+            prepare: apk add --no-cache gcc make musl-dev pkgconf fuse3-dev
+          - name: debian
+            image: debian:stable
+            prepare: apt-get update && apt-get install -y gcc make pkg-config libfuse3-dev
+          - name: ubuntu
+            image: ubuntu:latest
+            prepare: apt-get update && apt-get install -y gcc make pkg-config libfuse3-dev
+          - name: fedora
+            image: fedora:latest
+            prepare: dnf install -y gcc make pkgconf-pkg-config fuse3-devel
+          - name: opensuse
+            image: opensuse/leap:latest
+            prepare: zypper --non-interactive install gcc make pkg-config fuse3-devel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: ${{ matrix.prepare }}
+      - name: Build and run make check
+        run: |
+          ./configure
+          make
+          make check; rc=$?; cat test-suite.log 2>/dev/null; exit $rc
+
+  fuse:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libfuse3-dev pkg-config
-
       - name: Build and run the FUSE-free core (make check)
         run: |
           ./configure --with-fuse=fuse3
           make
           make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
-
       - name: Mount a real V7 image through FUSE (test.sh)
         run: |
           curl -L -o rp06-0.disk.gz \
