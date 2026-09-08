@@ -65,9 +65,9 @@ filesystems" below); they need no extra dependencies beyond a C compiler.
 
 `./configure --with-fuse=auto|fuse3|fuse2` selects the API level; `auto` (the
 default) picks fuse3 where present and falls back to fuse2.  If you can't
-install the dev package, `./fetch.sh` downloads and extracts the libfuse3
-headers locally and the build falls back to linking the runtime SONAME
-directly.
+install the dev package (no root/sysadmin), `./fetch.sh` downloads and extracts
+the libfuse3 headers and static archive into a local `fuselib/` (gitignored,
+never committed) and the build links against that fallback.
 
 ## Build
 
