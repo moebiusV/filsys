@@ -22,9 +22,16 @@ if [ -d fuselib/usr/include/fuse3 ]; then
 else
     apt-get download libfuse3-dev
     rm -rf fuselib
-    mkdir -p fuselib
+    mkdir -p fuselib/lib
     dpkg -x libfuse3-dev_*.deb fuselib/
     rm -f libfuse3-dev_*.deb
+    # libfuse3-dev ships the linker name libfuse3.so (a symlink resolving to the
+    # runtime libfuse3.so.3) under a Debian multiarch path.  Pin it at a stable
+    # fuselib/lib location so configure can -L it without guessing the triplet.
+    so=$(find fuselib -name 'libfuse3.so' -print 2>/dev/null | head -n 1)
+    if [ -n "$so" ]; then
+        ln -sf "../${so#fuselib/}" fuselib/lib/libfuse3.so
+    fi
 fi
 
 echo "done.  run: make"

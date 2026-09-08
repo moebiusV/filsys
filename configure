@@ -5803,7 +5803,7 @@ then :
 then :
 
             FUSE3_CFLAGS="-I\$(top_srcdir)/fuselib/usr/include/fuse3"
-            FUSE3_LIBS="-lfuse3"
+            FUSE3_LIBS="-L\$(top_srcdir)/fuselib/lib -lfuse3"
             have_fuse3=yes
             { printf "%s\n" "$as_me:${as_lineno-$LINENO}: WARNING: fuse3.pc not found: using local headers from ./fetch.sh" >&5
 printf "%s\n" "$as_me: WARNING: fuse3.pc not found: using local headers from ./fetch.sh" >&2;}

@@ -96,6 +96,14 @@ const word_codec_t word_rb09     = { rb09_get,       rb09_put,       P7_WSIZE * 
 const word_codec_t word_packed18 = { bo_get18packed, bo_put18packed, P7_WSIZE * 18 / 8 };
 const word_codec_t word_rim      = { rim_get,        rim_put,        P7_WSIZE * 3 };
 
+/* The container invariant: read_words/write_words stage the container in a
+ * P7_MAXBLOCKBYTES buffer and the codec loop walks a fixed P7_WSIZE, so every
+ * codec's `block_bytes` must fit that buffer -- a fourth codec with a wider
+ * container would smash the stack.  Pinned here, once per codec. */
+_Static_assert(P7_WSIZE * 4 <= P7_MAXBLOCKBYTES, "rb09 container fits the buffer");
+_Static_assert(P7_WSIZE * 18 / 8 <= P7_MAXBLOCKBYTES, "packed18 container fits the buffer");
+_Static_assert(P7_WSIZE * 3 <= P7_MAXBLOCKBYTES, "RIM container fits the buffer");
+
 const word_codec_t *filsys_word_codec_by_name(const char *name) {
     if (!name)
         return NULL;

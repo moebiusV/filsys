@@ -29,7 +29,10 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
     memset(rep, 0, sizeof(*rep));
 
     if (o->is_clean(fs) && !(mode & (FILSYS_CK_SALVAGE | FILSYS_CK_FORCE))) {
-        printf("filesystem clean; skipped (use -f to force)\n");
+        /* No "(use -f to force)" here: -f means force only on fsck.filsys; on
+         * mount.filsys -f is "stay in foreground", so the hint would lie.  The
+         * fsck manpage/README document -f. */
+        printf("filesystem clean; skipped\n");
         return 0;
     }
 
