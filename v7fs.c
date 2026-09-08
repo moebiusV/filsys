@@ -78,7 +78,15 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         close(fs->fd);
         return -EIO;
     }
-    if (fs->isize_count) {
+    if (fs->sb_decode) {
+        /* V8-family: the rearranged superblock is decoded by the format's own
+         * codec (v8_sb_decode), which also validates the cache counts. */
+        if (fs->sb_decode(fs, sb)) {
+            close(fs->fd);
+            fs->fd = -1;
+            return -EINVAL;
+        }
+    } else if (fs->isize_count) {
         /* V6: 16-bit superblock (s_fsize and the free cache are 2 bytes). */
         fs->isize  = fs->bo->get16(sb + 0);
         fs->fsize  = fs->bo->get16(sb + 2);
@@ -114,8 +122,11 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
     /* s_tfree/s_tinode carry the true free-space totals (v7fs_makefree writes
      * them); the 50/100-entry caches are only the in-core spill.  Read them so
      * statfs can report real free space rather than the cache depth.  V6 has no
-     * such fields, so its totals are recomputed from the free list + i-list. */
-    if (fs->isize_count)
+     * such fields, so its totals are recomputed from the free list + i-list.
+     * The V8-family codec already read them. */
+    if (fs->sb_decode)
+        ;   /* totals already read by v8_sb_decode */
+    else if (fs->isize_count)
         v6_count_free(fs, &fs->fl.tfree, &fs->fl.tinode);
     else if (!fs->pack4 || fs->magic) {
         int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->dyn_bsize);
@@ -220,7 +231,10 @@ static int super_write(filsys_edition_t *fs) {
             ? fs->io->read(fs, sb, 512, 512 + (off_t)fs->base)
             : v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
-    if (fs->isize_count) {
+    if (fs->sb_encode) {
+        /* V8-family: the rearranged superblock is encoded by its own codec. */
+        fs->sb_encode(fs, sb);
+    } else if (fs->isize_count) {
         /* V6: a 16-bit superblock (s_fsize and the free cache are 2 bytes), and
          * no s_tfree/s_tinode -- those totals are recomputed on open. */
         fs->bo->put16(sb + 0, fs->isize);
@@ -264,6 +278,48 @@ static int super_write(filsys_edition_t *fs) {
             : v7fs_write_block(fs, V7_SUPERB, sb))
         return -EIO;
     fs->fl_dirty = 0;   /* the on-disk free list now matches the in-core one */
+    return 0;
+}
+
+/* ---- V8-family superblock codec (Eighth/Ninth/Tenth Edition) -------------- */
+
+int v8_sb_decode(filsys_edition_t *fs, const uint8_t *sb) {
+    fs->isize  = fs->bo->get16(sb + V8_SB_ISIZE);
+    fs->fsize  = fs->bo->get32(sb + V8_SB_FSIZE);
+    fs->fl.ninode = fs->bo->get16(sb + V8_SB_NINODE);
+    for (int i = 0; i < V7_NICINOD; i++)
+        fs->fl.inode[i] = fs->bo->get16(sb + V8_SB_INODE + 2 * i);
+    fs->time   = fs->bo->get32(sb + V8_SB_TIME);
+    fs->fmod   = sb[V8_SB_FMOD];
+    fs->fl.tfree  = fs->bo->get32(sb + V8_SB_TFREE);
+    fs->fl.tinode = fs->bo->get16(sb + V8_SB_TINODE);
+    if (fs->freemap == V8_FREEMAP_LIST) {
+        fs->fl.nfree = fs->bo->get16(sb + V8_SB_NFREE);
+        for (int i = 0; i < fs->nicfree; i++)
+            fs->fl.free[i] = fs->bo->get32(sb + V8_SB_FREE + 4 * i);
+    } else {
+        fs->fl.nfree = 0;   /* bitmap: no free-list cache */
+    }
+    if (fs->fl.nfree > fs->nicfree || fs->fl.ninode > fs->nicinod)
+        return -EINVAL;
+    return 0;
+}
+
+int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb) {
+    fs->bo->put16(sb + V8_SB_ISIZE, fs->isize);
+    fs->bo->put32(sb + V8_SB_FSIZE, fs->fsize);
+    fs->bo->put16(sb + V8_SB_NINODE, fs->fl.ninode);
+    for (int i = 0; i < V7_NICINOD; i++)
+        fs->bo->put16(sb + V8_SB_INODE + 2 * i, fs->fl.inode[i]);
+    fs->bo->put32(sb + V8_SB_TIME, (uint32_t)time(NULL));
+    sb[V8_SB_FMOD] = (uint8_t)(fs->fmod != 0);
+    fs->bo->put32(sb + V8_SB_TFREE, fs->fl.tfree);
+    fs->bo->put16(sb + V8_SB_TINODE, (uint16_t)fs->fl.tinode);
+    if (fs->freemap == V8_FREEMAP_LIST) {
+        fs->bo->put16(sb + V8_SB_NFREE, fs->fl.nfree);
+        for (int i = 0; i < fs->nicfree; i++)
+            fs->bo->put32(sb + V8_SB_FREE + 4 * i, fs->fl.free[i]);
+    }
     return 0;
 }
 

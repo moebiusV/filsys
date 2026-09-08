@@ -88,7 +88,8 @@ struct fmt {
     uint64_t    direct;
 };
 
-/* Fill one row from the shared table; returns 0 past the end. */
+/* Fill one row from the shared table; returns 0 past the end, -1 to skip a
+ * format that is not mkfs-able yet (read-only V8/V9/V10), 1 on success. */
 static int fmt_at(size_t i, struct fmt *out) {
     const filsys_format_t *f = filsys_format_nth(i);
     if (!f)
@@ -96,6 +97,8 @@ static int fmt_at(size_t i, struct fmt *out) {
     filsys_edition_t desc = filsys_getformat(f->edition);
     if (!desc.ops)
         return 0;
+    if (desc.nomkfs)
+        return -1;
     out->edition = f->edition;
     out->name    = f->name;
     out->blocks  = (f->edition == FILSYS_PDP7) ? 0 : 4000;
@@ -234,8 +237,11 @@ static void mkfs_cleanliness(void) {
 
     for (size_t i = 0; ; i++) {
         struct fmt f;
-        if (!fmt_at(i, &f))
+        int frc = fmt_at(i, &f);
+        if (!frc)
             break;
+        if (frc < 0)
+            continue;
 
         if (f.edition == FILSYS_PDP7) {
             char img[64], cmd[512];
@@ -369,8 +375,11 @@ static void namelength(void) {
 static void crash_consistency(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
-        if (!fmt_at(i, &f))
+        int frc = fmt_at(i, &f);
+        if (!frc)
             break;
+        if (frc < 0)
+            continue;
         char img[64], cmd[512], what[96];
         snprintf(img, sizeof img, "test_matrix_%s_crash.img", f.name);
         unlink(img);
@@ -546,8 +555,11 @@ static void fault_test(void) {
 
     for (size_t i = 0; ; i++) {
         struct fmt f;
-        if (!fmt_at(i, &f))
+        int frc = fmt_at(i, &f);
+        if (!frc)
             break;
+        if (frc < 0)
+            continue;
         for (size_t m = 0; m < sizeof mut / sizeof mut[0]; m++)
             for (size_t mo = 0; mo < sizeof modes / sizeof modes[0]; mo++)
                 fault_mutator(&f, &mut[m], modes[mo].mode, modes[mo].label);
@@ -562,8 +574,11 @@ static void fault_test(void) {
 static void rename_semantics(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
-        if (!fmt_at(i, &f))
+        int frc = fmt_at(i, &f);
+        if (!frc)
             break;
+        if (frc < 0)
+            continue;
         char img[64], cmd[512], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_ren.img", f.name);
         unlink(img);
@@ -616,8 +631,11 @@ static void rename_semantics(void) {
 static void dir_link_semantics(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
-        if (!fmt_at(i, &f))
+        int frc = fmt_at(i, &f);
+        if (!frc)
             break;
+        if (frc < 0)
+            continue;
         if (f.edition == FILSYS_PDP7)
             continue;
         char img[64], cmd[512], what[128];
@@ -675,8 +693,11 @@ static void dir_link_semantics(void) {
 static void durability_test(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
-        if (!fmt_at(i, &f))
+        int frc = fmt_at(i, &f);
+        if (!frc)
             break;
+        if (frc < 0)
+            continue;
         if (f.edition == FILSYS_V1 || f.edition == FILSYS_PDP7)
             continue;
         /* 2.11BSD's check is "check only, no salvage/preen" (bsd211_check ignores
@@ -773,8 +794,11 @@ static const char *findfs_name(int edition) {
 static void findfs_self_detect(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
-        if (!fmt_at(i, &f))
+        int frc = fmt_at(i, &f);
+        if (!frc)
             break;
+        if (frc < 0)
+            continue;
         const char *want = findfs_name(f.edition);
         char img[64], cmd[512], line[256], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_find.img", f.name);
@@ -807,8 +831,11 @@ static void findfs_self_detect(void) {
 int main(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
-        if (!fmt_at(i, &f))
+        int frc = fmt_at(i, &f);
+        if (!frc)
             break;
+        if (frc < 0)
+            continue;
         run(&f);
     }
     mkfs_validation();

@@ -184,6 +184,25 @@ static const filsys_edition_t bsd211 = {
     .iflnk = BSD211_IFLNK, .ifsock = BSD211_IFSOCK,
 };
 
+/* The V8-family (Eighth/Ninth/Tenth Edition) is the V7 inode/dir/bmap engine
+ * with a rearranged superblock (v8_sb_decode/v8_sb_encode), a larger block size
+ * (1K/8K), and IFLNK symlinks.  The V8 prototype is the 1K free-list form; v9
+ * and v10 override byte order / block size / free-cache depth from it. */
+static const filsys_edition_t v8 = {
+    .ops = &v7fs_ops, .alloc = &freelist_alloc_ops,
+    .state_size = sizeof(filsys_edition_t), .name = "v8",
+    .bsize = 1024, .bo = &bo_le,
+    .nicfree = V8_NICFREE_SMALL, .nicinod = V7_NICINOD,
+    .inode_size = V7_INODESZ, .ndaddr = V7_NDADDR, .niaddr = V7_NIADDR,
+    .addr_width = 3, .daddr_wid = 4, .nindir = 1024 / 4,
+    .rootino = V7_ROOTINO, .max_namlen = V7_DIRSIZ, .dirent_size = V7_DIRENTSZ,
+    .freemap = V8_FREEMAP_LIST,
+    .nomkfs = 1,   /* mkfs/fsck for the V8-family lands in Task 9 */
+    .sb_decode = v8_sb_decode, .sb_encode = v8_sb_encode,
+    .ifmt = V7_IFMT, .ifdir = V7_IFDIR, .ifreg = V7_IFREG,
+    .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .iflnk = V8_IFLNK,
+};
+
 filsys_edition_t filsys_getformat(int edition) {
     switch (edition) {
     case FILSYS_PDP7:   return pdp7;
@@ -191,6 +210,23 @@ filsys_edition_t filsys_getformat(int edition) {
     case FILSYS_V6:     return v6;
     case FILSYS_BSD211: return bsd211;
     case FILSYS_V7:     return v7;
+    case FILSYS_V8:     return v8;
+    case FILSYS_V9: {
+        /* Ninth Edition: the Sun-3 port, 8K blocks, big-endian.  NICFREE 946
+         * (the V8-family free-list cache depth for an 8K superblock). */
+        filsys_edition_t f; memcpy(&f, &v8, sizeof f);
+        f.name = "v9"; f.bsize = 8192; f.bo = &bo_be;
+        f.nicfree = V8_NICFREE_LARGE; f.nindir = 8192 / 4;
+        return f;
+    }
+    case FILSYS_V10: {
+        /* Tenth Edition: the 1K free-list default is byte-identical to V8's;
+         * the 4K in-/out-of-superblock bitmap forms are selected by -o
+         * overrides (Task 6). */
+        filsys_edition_t f; memcpy(&f, &v8, sizeof f);
+        f.name = "v10";
+        return f;
+    }
     case FILSYS_32V: {
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
         f.name = "vax32"; f.bo = &bo_le; f.pack4 = 1;

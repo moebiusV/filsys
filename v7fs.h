@@ -59,7 +59,7 @@ enum {
 
 enum {
     V7_BSIZE    = 512,          /* default / legacy block size */
-    V7_MAXBSIZE = 2048,         /* largest block size the engine supports (512/1024/2048) */
+    V7_MAXBSIZE = 8192,         /* largest block size the engine supports (512..8192; V9's 8K) */
     V7_INOPB    = 8,            /* inodes per block (at V7_BSIZE) */
     V7_INODESZ  = 64,           /* sizeof(struct dinode) */
     V7_NICFREE  = 50,          /* superblock free-block cache size (V7/32V) */
@@ -233,6 +233,54 @@ enum {
     BSD211_SB_CYL     = 426,   /* u16: interleave n */
 };
 
+/* ---- V8-family (Eighth/Ninth/Tenth Edition) on-disk constants -------------- */
+/* See docs/impl-v10fs.md §5.  The inode (64 bytes, 13 three-byte addresses) and
+ * the 16-byte directory entry are byte-identical to V7's, so the V7 engine's
+ * inode/dir/bmap code is reused unchanged; only the superblock is rearranged.
+ * V7 puts the free-list cache (s_nfree/s_free) right after s_fsize and
+ * s_fname/s_fpack at the tail; the V8 family moves the free-list/bitmap into a
+ * union at the *end* and adds s_fsmnt/s_lasti/s_nbehind. */
+enum {
+    V8_SB_ISIZE    = 0,     /* u16: first data block number (not a count) */
+    V8_SB_FSIZE    = 4,     /* u32: total blocks (4-byte aligned) */
+    V8_SB_NINODE   = 8,     /* u16: valid entries in s_inode */
+    V8_SB_INODE    = 10,    /* u16 x NICINOD */
+    V8_SB_FMOD     = 212,   /* u8: superblock-modified flag */
+    V8_SB_TIME     = 216,   /* u32 */
+    V8_SB_TFREE    = 220,   /* u32: total free blocks */
+    V8_SB_TINODE   = 224,   /* u16: total free inodes */
+    V8_SB_DINFO    = 226,   /* s_m @226, s_n @228 (V7 interleave / V10 cylsize+aspace) */
+    V8_SB_FSMNT    = 230,   /* 14-byte mount name */
+    V8_SB_LASTI    = 244,   /* u16: inode allocation rotor */
+    V8_SB_NBEHIND  = 246,   /* u16: est. free inodes below s_lasti */
+    V8_SB_UNION    = 248,   /* free-list or bitmap (below) */
+    /* free-list union arm (§5.9a): s_nfree is a 2-byte short here */
+    V8_SB_NFREE    = 248,
+    V8_SB_FREE     = 252,   /* u32 x NICFREE */
+    /* in-superblock bitmap arm (§5.9b) */
+    V8_SB_VALID    = 248,   /* u8: S_valid (1 on disk = valid) */
+    V8_SB_FLAG     = 249,   /* u8: S_flag (V10 only; padding in V8/V9) */
+    V8_SB_BFREE    = 252,   /* u32 x V8_BITMAP */
+    /* out-of-superblock bitmap arm (§5.9c, v10 only) */
+    V8_SB_BSIZE    = 252,   /* u32: bits per bitmap block */
+    /* free-space forms (freemap descriptor field) */
+    V8_FREEMAP_LIST   = 0,  /* free list */
+    V8_FREEMAP_BITMAP = 1,  /* in-superblock bitmap */
+    V8_FREEMAP_BIGMAP = 2,  /* out-of-superblock bitmap (v10 only) */
+    /* geometry constants */
+    V8_NICFREE_SMALL = 178, /* free-list cache depth (1K/4K blocks) */
+    V8_NICFREE_LARGE = 946, /* V9's 8K free-list cache depth */
+    V8_BITMAP        = 961, /* in-superblock bitmap longwords */
+    V8_BITCELL       = 32,  /* bits per bitmap longword */
+    V8_IFLNK         = 0120000, /* symbolic link (present in V8) */
+    /* V9/V10 concurrency bits: ICONC overlaps the sticky bit, ICCTYP overlaps
+     * setuid/setgid (§5.7).  V8 has ISVTX (V7_ISVTX) instead. */
+    V8_ICONC         = 0001000,
+    V8_ICCTYP        = 0007000,
+    V8_ISYNC         = 0001000,
+    V8_IEXCL         = 0003000,
+};
+
 /* ---- core types -------------------------------------------------------- */
 
 /* Decoded inode/dirent are the public filsys types (no per-backend copy, so
@@ -246,7 +294,7 @@ typedef filsys_dirent_t v7_dirent_t;
  * one allocator's runtime state. */
 typedef struct {
     uint16_t nfree;
-    uint32_t free[V7_XEN_NICFREE];   /* max free-cache depth: 50/64/100 */
+    uint32_t free[V8_NICFREE_LARGE]; /* max free-cache depth: 50/64/100/178/946 */
     uint16_t ninode;
     uint16_t inode[V7_NICINOD];
     uint32_t tfree;                  /* total free blocks (s_tfree) */
@@ -290,6 +338,8 @@ typedef struct filsys_edition {
     uint8_t     max_namlen;         /* longest entry name (8 / 14 / 63) */
     uint8_t     dirent_size;        /* bytes per fixed entry (0 = variable) */
     uint8_t     synth_dot;          /* dir_read synthesizes "." / ".." (PDP-7) */
+    uint8_t     freemap;            /* V8-family free-space form (V8_FREEMAP_*); 0 = free list */
+    uint8_t     nomkfs;             /* 1 = mkfs.filsys cannot create this format yet (read-only) */
     /* on-disk type field (V6/V7/BSD211 family); 0 for V1/PDP-7 */
     uint16_t    ifmt, ifdir, ifreg, ifchr, ifblk, iflnk, ifsock, ifmpc, ifmpb;
     /* mode conversion (NULL = derive from the constants above) */
@@ -298,6 +348,12 @@ typedef struct filsys_edition {
     int      (*is_device)(const struct filsys_edition *, const filsys_inode_t *);
     uint32_t (*to_disk_mode)(const struct filsys_edition *, mode_t m, int type);
     uint32_t (*chmod_mode)(const struct filsys_edition *, uint32_t old_mode, mode_t m);
+    /* Superblock codec: decode/encode the block-1 bytes into/from the in-core
+     * fields (isize, fsize, free-list cache, totals, fmod, time).  NULL = the
+     * V7-family inline codec; the V8-family sets these to its own rearranged
+     * layout (v8_sb_decode/v8_sb_encode). */
+    int  (*sb_decode)(struct filsys_edition *fs, const uint8_t *sb);
+    int  (*sb_encode)(struct filsys_edition *fs, uint8_t *sb);
 
     /* ---- runtime (filled by v7fs_open) ---- */
     int        fd;             /* open disk image */
@@ -353,6 +409,14 @@ int v7fs_sync(filsys_edition_t *fs);
 /* Mark the filesystem dirty (s_fmod) and flush: a read-write mount is dirty
  * until a clean close clears it, so a crash leaves the image flagged for fsck. */
 int v7fs_mark_dirty(filsys_edition_t *fs);
+
+/* V8-family superblock codec (Eighth/Ninth/Tenth Edition, docs/impl-v10fs.md
+ * §5.8).  The on-disk superblock is rearranged relative to V7's, so these
+ * decode/encode it into/from the shared in-core fields.  Wired into the
+ * descriptor's sb_decode/sb_encode slots; v8_sb_decode returns 0, or -EINVAL if
+ * the free-list/inode cache counts exceed their depths (mis-decoded block 1). */
+int v8_sb_decode(filsys_edition_t *fs, const uint8_t *sb);
+int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb);
 
 /* ---- block / inode io -------------------------------------------------- */
 

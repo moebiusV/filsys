@@ -26,6 +26,9 @@ static const char *const pdp7_alias[]     = { "0", "p7", NULL };
 static const char *const v1_alias[]       = { "1", "2", "3", NULL };
 static const char *const v6_alias[]       = { "4", "5", "6", "usgpg3", NULL };
 static const char *const v7_alias[]       = { "7", "sysvr1", NULL };
+static const char *const v8_alias[]       = { "8", NULL };
+static const char *const v9_alias[]       = { "9", NULL };
+static const char *const v10_alias[]      = { "10", NULL };
 static const char *const vax32_alias[]    = { "32v", "32", NULL };
 static const char *const coherent_alias[] = { "coh", "33", NULL };
 static const char *const xenix_alias[]    = { "34", NULL };
@@ -40,6 +43,9 @@ static const filsys_format_t formats[] = {
     { FILSYS_V1,       "v1",       v1_alias },
     { FILSYS_V6,       "v6",       v6_alias },
     { FILSYS_V7,       "v7",       v7_alias },
+    { FILSYS_V8,       "v8",       v8_alias },
+    { FILSYS_V9,       "v9",       v9_alias },
+    { FILSYS_V10,      "v10",      v10_alias },
     { FILSYS_32V,      "vax32",    vax32_alias },
     { FILSYS_COHERENT, "coherent", coherent_alias },
     { FILSYS_XENIX,    "xenix",    xenix_alias },
