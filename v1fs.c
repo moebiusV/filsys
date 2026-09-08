@@ -359,8 +359,6 @@ static uint8_t v1_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode)
 static uint32_t v1_chk_maxino(filsys_edition_t *fs)     { return ((v1fs_t *)fs)->maxino; }
 static uint32_t v1_chk_data_start(filsys_edition_t *fs) { v1fs_t *f = fs; return v1_data_start(f->maxino); }
 static uint32_t v1_chk_data_end(filsys_edition_t *fs)   { return ((v1fs_t *)fs)->fsize; }
-static int v1_chk_is_clean(filsys_edition_t *fs)        { (void)fs; return 0; }
-
 /* V1's allocator is a bitmap: a block is free iff its freemap bit is set. */
 static void v1_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
 {
@@ -413,14 +411,6 @@ static uint32_t v1fs_blocksize_op(const filsys_edition_t *fs) { (void)fs; return
 
 
 
-static int v1fs_check_op(filsys_edition_t *fs) { v1_check_t rep; return v1fs_check(fs, &rep, 0); }
-static uint64_t v1fs_max_file_op(filsys_edition_t *fs) {
-    (void)fs;
-    /* The large-file flag can address a megabyte of blocks, but the 16-bit
-     * size field caps a file at 65535 bytes (past that it wraps to zero). */
-    return (1u << 16) - 1;
-}
-
 static void v1fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     v1fs_t *v1 = fs;
     st->f_blocks = v1->fsize;
@@ -453,15 +443,15 @@ const struct filsys_ops v1fs_ops = {
     .file_write  = v7fs_file_write,
     .dir_lookup  = v7fs_dir_lookup,
     .lookup      = v7fs_lookup,
-    .check       = v1fs_check_op,
+    .check       = filsys_check_op,
     .maxino      = v1_chk_maxino,
     .data_start  = v1_chk_data_start,
     .data_end    = v1_chk_data_end,
     .walk_free   = v1_chk_walk_free,
     .makefree    = v1fs_makefree,
-    .is_clean    = v1_chk_is_clean,
+    .is_clean    = filsys_is_clean,
     .statfs      = v1fs_statfs_op,
-    .max_file    = v1fs_max_file_op,
+    .max_file    = filsys_max_file_op,
 };
 
 /* ---- allocator vtable: V1's dual bitmap -------------------------------- */

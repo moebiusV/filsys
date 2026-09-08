@@ -152,7 +152,7 @@ static const filsys_edition_t v7 = {
     .bsize = V7_BSIZE, .bo = &bo_me,
     .nicfree = V7_NICFREE, .nicinod = V7_NICINOD,
     .inode_size = V7_INODESZ, .ndaddr = V7_NDADDR, .niaddr = V7_NIADDR,
-    .addr_width = 3, .daddr_wid = 4, .df_nfree_wid = 2, .nindir = V7_NINDIR, .fmod_back = 2,
+    .addr_width = 3, .daddr_wid = 4, .df_nfree_wid = 2, .nindir = V7_NINDIR, .fmod_back = 2, .has_fmod = 1,
     .rootino = V7_ROOTINO, .badino = V7_BADFIN,
     .max_namlen = V7_DIRSIZ, .dirent_size = V7_DIRENTSZ,
     .ifmt = V7_IFMT, .ifdir = V7_IFDIR, .ifreg = V7_IFREG,
@@ -164,7 +164,7 @@ static const filsys_edition_t v6 = {
     .bsize = V6_BSIZE, .bo = &bo_me,
     .nicfree = V6_NICFREE, .nicinod = V6_NICINOD,
     .inode_size = V6_INODESZ, .ndaddr = V6_NDADDR, .niaddr = V6_NIADDR,
-    .daddr_wid = 2, .df_nfree_wid = 2, .nindir = V6_NINDIR, .isize_count = 1, .rootino = V6_ROOTINO,
+    .daddr_wid = 2, .df_nfree_wid = 2, .nindir = V6_NINDIR, .isize_count = 1, .has_fmod = 1, .size_bits = 24, .rootino = V6_ROOTINO,
     .ilarg_mask = V6_ILARG, .large_single = 7, .large_double = 1,
     .max_namlen = V6_DIRSIZ, .dirent_size = 2 + V6_DIRSIZ,
     .ifmt = V6_IFMT, .ifdir = V6_IFDIR, .ifchr = V6_IFCHR, .ifblk = V6_IFBLK,
@@ -174,7 +174,7 @@ static const filsys_edition_t v1 = {
     .state_size = sizeof(filsys_edition_t), .name = "v1",
     .bsize = V1_BSIZE, .bo = &bo_me,
     .inode_size = V1_INODESZ, .ndaddr = V1_NDADDR, .niaddr = V1_NIADDR,
-    .daddr_wid = 2, .nindir = V1_NINDIR,
+    .daddr_wid = 2, .nindir = V1_NINDIR, .has_fmod = 0, .size_bits = 16,
     .ilarg_mask = V1_ILARG, .large_single = 8, .large_double = 0,
     .rootino = V1_ROOTINO, .max_namlen = V1_DIRSIZ, .dirent_size = V1_DIRENTSZ,
     .to_posix_mode = v1_to_posix_mode, .is_dir = v1_is_dir,
@@ -186,7 +186,7 @@ static const filsys_edition_t pdp7 = {
     .state_size = sizeof(filsys_edition_t), .name = "pdp7",
     .bsize = P7_WSIZE * 2, .bo = &bo_me,
     .inode_size = P7_INODESZ, .ndaddr = P7_NIADDR, .niaddr = P7_NIADDR,
-    .nindir = P7_NINDIR, .ilarg_mask = P7_ILARG, .large_single = 7, .large_double = 0,
+    .nindir = P7_NINDIR, .ilarg_mask = P7_ILARG, .large_single = 7, .large_double = 0, .has_fmod = 0,
     .ind_get = p7_ind_get, .ind_put = p7_ind_put, .word = &word_rb09,
     .max_namlen = P7_DIRSIZ, .dirent_size = P7_DIRENTSZ,
     .rootino = P7_ROOTINO, .synth_dot = 1,
@@ -200,7 +200,7 @@ static const filsys_edition_t bsd211 = {
     .bsize = BSD211_BSIZE, .bo = &bo_me,
     .nicfree = BSD211_NICFREE, .nicinod = BSD211_NICINOD,
     .inode_size = BSD211_INODESZ, .ndaddr = BSD211_NDADDR, .niaddr = BSD211_NIADDR,
-    .addr_width = 4, .daddr_wid = 4, .df_nfree_wid = 2, .nindir = BSD211_NINDIR, .fmod_back = 3,
+    .addr_width = 4, .daddr_wid = 4, .df_nfree_wid = 2, .nindir = BSD211_NINDIR, .fmod_back = 3, .has_fmod = 0,
     .rootino = BSD211_ROOTINO,
     .max_namlen = BSD211_MAXNAMLEN, .dirent_size = 0,
     .ifmt = BSD211_IFMT, .ifdir = BSD211_IFDIR, .ifreg = BSD211_IFREG,
@@ -218,7 +218,7 @@ static const filsys_edition_t v8 = {
     .bsize = 1024, .bo = &bo_le,
     .nicfree = V8_NICFREE_SMALL, .nicinod = V7_NICINOD,
     .inode_size = V7_INODESZ, .ndaddr = V7_NDADDR, .niaddr = V7_NIADDR,
-    .addr_width = 3, .daddr_wid = 4, .df_nfree_wid = 4, .nindir = 1024 / 4,
+    .addr_width = 3, .daddr_wid = 4, .df_nfree_wid = 4, .has_fmod = 1, .nindir = 1024 / 4,
     .rootino = V7_ROOTINO, .max_namlen = V7_DIRSIZ, .dirent_size = V7_DIRENTSZ,
     .freemap = V8_FREEMAP_LIST,
     .sb_decode = v8_sb_decode, .sb_encode = v8_sb_encode,
@@ -309,6 +309,37 @@ filsys_edition_t filsys_getformat(int edition) {
         return f;   /* ops == NULL marks an unknown edition */
     }
     }
+}
+
+/* The three check-side ops shared across every edition, expressed once against
+ * the descriptor fields.  The per-edition *_check_op / *_is_clean /
+ * *_max_file_op wrappers were identical or a function of the descriptor, so the
+ * ops tables point here instead.  Lives here (not filsys.c) so the standalone
+ * mkfs/fsck, which compile the format/backend files but not the facade, link
+ * them too. */
+
+int filsys_check_op(filsys_edition_t *fs) {
+    filsys_check_t rep;
+    return filsys_check_common(fs, fs, &rep, 0);
+}
+
+int filsys_is_clean(filsys_edition_t *fs) {
+    return fs->has_fmod ? fs->fmod == 0 : 0;
+}
+
+uint64_t filsys_max_file_op(filsys_edition_t *fs) {
+    /* The block-mapping capacity (direct + single + double + triple indirect),
+     * capped by the on-disk size-field width where that is the smaller limit
+     * (V6's 24-bit and V1's 16-bit size field).  Word-addressed PDP-7 keeps its
+     * own constant. */
+    uint64_t n = fs->nindir;
+    uint64_t cap = (fs->ndaddr + n + n * n + n * n * n) * (uint64_t)fs->bsize;
+    if (fs->size_bits) {
+        uint64_t field = (1ULL << fs->size_bits) - 1;
+        if (cap > field)
+            cap = field;
+    }
+    return cap;
 }
 
 /* ---- V8-family geometry overrides ----------------------------------------- */

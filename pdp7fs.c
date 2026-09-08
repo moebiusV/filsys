@@ -656,8 +656,6 @@ static uint8_t p7_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode)
 static uint32_t p7_chk_maxino(filsys_edition_t *fs)     { (void)fs; return P7_MAXINO; }
 static uint32_t p7_chk_data_start(filsys_edition_t *fs) { (void)fs; return P7_DATASTART; }
 static uint32_t p7_chk_data_end(filsys_edition_t *fs)   { (void)fs; return P7_KDATA; }
-static int p7_chk_is_clean(filsys_edition_t *fs)        { (void)fs; return 0; }
-
 /* Walk the PDP-7 on-disk free list (9 free blocks per 64-word node), marking
  * free blocks into cx->inode->bmap and counting them. */
 static void p7_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
@@ -740,7 +738,6 @@ static uint32_t p7fs_blocksize_op(const filsys_edition_t *fs) { (void)fs; return
 
 
 
-static int p7fs_check_op(filsys_edition_t *fs) { p7_check_t rep; return p7fs_check(fs, &rep, 0); }
 static uint64_t p7fs_max_file_op(filsys_edition_t *fs) {
     (void)fs;
     return (uint64_t)P7_NIADDR * P7_NINDIR * P7_WSIZE * 2;   /* 7*64*64*2 bytes */
@@ -783,13 +780,13 @@ const struct filsys_ops p7fs_ops = {
     .file_write  = v7fs_file_write,
     .dir_lookup  = v7fs_dir_lookup,
     .lookup      = v7fs_lookup,
-    .check       = p7fs_check_op,
+    .check       = filsys_check_op,
     .maxino      = p7_chk_maxino,
     .data_start  = p7_chk_data_start,
     .data_end    = p7_chk_data_end,
     .walk_free   = p7_chk_walk_free,
     .makefree    = p7fs_makefree,
-    .is_clean    = p7_chk_is_clean,
+    .is_clean    = filsys_is_clean,
     .statfs      = p7fs_statfs_op,
     .max_file    = p7fs_max_file_op,
 };

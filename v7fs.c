@@ -1142,8 +1142,6 @@ static uint32_t v7_data_end(filsys_edition_t *fs) {
      * free or data blocks; exclude them from the checker's data band. */
     return ((filsys_edition_t *)fs)->fsize - ((filsys_edition_t *)fs)->v8_nblks;
 }
-static int v7_is_clean(filsys_edition_t *fs)        { return ((filsys_edition_t *)fs)->fmod == 0; }
-
 /* Walk the free list exactly as alloc() would, marking free blocks into cx->inode->bmap
  * (a free block already used is a duplicate) and counting free_blocks. */
 static void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
@@ -1242,13 +1240,6 @@ static uint32_t v7fs_blocksize_op(const filsys_edition_t *fs) {
 
 
 
-static int v7fs_check_op(filsys_edition_t *fs) { v7_check_t rep; return v7fs_check(fs, &rep, 0); }
-static uint64_t v7fs_max_file_op(filsys_edition_t *fs) {
-    const filsys_edition_t *v7 = fs;
-    uint64_t n = v7_nindir(v7);
-    return ((uint64_t)v7->ndaddr + n + n * n + n * n * n) * v7->bsize;
-}
-
 static void v7fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     filsys_edition_t *v7 = fs;
     st->f_blocks = v7->fsize;
@@ -1287,15 +1278,15 @@ const struct filsys_ops v7fs_ops = {
     .file_write  = v7fs_file_write,
     .dir_lookup  = v7fs_dir_lookup,
     .lookup      = v7fs_lookup,
-    .check       = v7fs_check_op,
+    .check       = filsys_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
     .data_end    = v7_data_end,
     .walk_free   = v7_walk_free,
     .makefree    = v7fs_makefree,
-    .is_clean    = v7_is_clean,
+    .is_clean    = filsys_is_clean,
     .statfs      = v7fs_statfs_op,
-    .max_file    = v7fs_max_file_op,
+    .max_file    = filsys_max_file_op,
 };
 
 /* ---- 2.11BSD directories (variable-length entries) ------------------------ */
@@ -1421,8 +1412,6 @@ static uint8_t bsd211_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t m
     }
 }
 
-static int bsd211_is_clean(filsys_edition_t *fs) { (void)fs; return 0; }
-
 int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
     return filsys_check_common(fs, fs, rep, mode);
 }
@@ -1431,8 +1420,6 @@ int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
 
 
 
-
-static int bsd211_check_op(filsys_edition_t *fs) { v7_check_t rep; return bsd211_check(fs, &rep, 0); }
 
 static const struct filsys_dir_ops dir_variable = {
     .dir_read   = bsd211_dir_read,
@@ -1465,15 +1452,15 @@ const struct filsys_ops bsd211fs_ops = {
     .file_write  = v7fs_file_write,
     .dir_lookup  = v7fs_dir_lookup,
     .lookup      = v7fs_lookup,
-    .check       = bsd211_check_op,
+    .check       = filsys_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
     .data_end    = v7_data_end,
     .walk_free   = v7_walk_free,
     .makefree    = v7fs_makefree,
-    .is_clean    = bsd211_is_clean,
+    .is_clean    = filsys_is_clean,
     .statfs      = v7fs_statfs_op,
-    .max_file    = v7fs_max_file_op,
+    .max_file    = filsys_max_file_op,
 };
 
 /* ======================= Sixth Edition (V6) ============================== *
@@ -1739,14 +1726,6 @@ int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
 
 
 
-static int v6_check_op(filsys_edition_t *fs) { v7_check_t rep; return v6_check(fs, &rep, 0); }
-static uint64_t v6_max_file_op(filsys_edition_t *fs) {
-    (void)fs;
-    /* The large-file layout can address ~32 MB, but the 24-bit size field
-     * caps a file at 16777215 bytes. */
-    return (1u << 24) - 1;
-}
-
 static const struct filsys_inode_ops inode_32 = {
     .read_inode  = v6_read_inode,
     .write_inode = v6_write_inode,
@@ -1773,15 +1752,15 @@ const struct filsys_ops v6fs_ops = {
     .file_write  = v7fs_file_write,
     .dir_lookup  = v7fs_dir_lookup,
     .lookup      = v7fs_lookup,
-    .check       = v6_check_op,
+    .check       = filsys_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
     .data_end    = v7_data_end,
     .walk_free   = v7_walk_free,
     .makefree    = v6_makefree,
-    .is_clean    = v7_is_clean,
+    .is_clean    = filsys_is_clean,
     .statfs      = v7fs_statfs_op,
-    .max_file    = v6_max_file_op,
+    .max_file    = filsys_max_file_op,
 };
 
 /* ---- allocator vtable: the free-list cache (V6/V7/BSD211) ---------------- */
