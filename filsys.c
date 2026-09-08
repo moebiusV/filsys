@@ -94,6 +94,13 @@ static uint32_t mode_chmod(const filsys_edition_t *f, uint32_t old, mode_t m) {
     return (old & f->ifmt) | ((uint32_t)m & 07777);
 }
 
+/* The on-disk uid/gid is 16-bit; a modern uid like 70000 would silently wrap
+ * to 4464 on create.  Reject rather than truncate (mknod already does this for
+ * major/minor). */
+static int uidgid_fit(uid_t uid, gid_t gid) {
+    return (uid > INT16_MAX || gid > INT16_MAX) ? -EINVAL : 0;
+}
+
 /* ---- dispatch (internal): forward through the backend ops table ---------- */
 
 static int read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
@@ -327,15 +334,15 @@ int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents, size_
     return dir_read(fs, &ip, ents, count);
 }
 
-int filsys_read(filsys_t *fs, const char *path, void *buf, size_t size, off_t off) {
+ssize_t filsys_read(filsys_t *fs, const char *path, void *buf, size_t size, off_t off) {
     filsys_inode_t ip;
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
     if (rc) return rc;
-    return (int)file_read(fs, &ip, (uint8_t *)buf, size, off);
+    return file_read(fs, &ip, (uint8_t *)buf, size, off);
 }
 
-int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, off_t off) {
+ssize_t filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, off_t off) {
     filsys_inode_t ip;
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
@@ -368,12 +375,14 @@ int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size, o
         }
         filsys_blklist_drain(fs->fs, bl);
     }
-    return (int)n;
+    return n;
 }
 
 int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
+    int rc = uidgid_fit(uid, gid);
+    if (rc) return rc;
     char dir[PATH_MAX], name[64];
-    int rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
+    rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
     if (rc) return rc;
     filsys_inode_t ddir;
     uint32_t dino;
@@ -409,8 +418,10 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
 }
 
 int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
+    int rc = uidgid_fit(uid, gid);
+    if (rc) return rc;
     char dir[PATH_MAX], name[64];
-    int rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
+    rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
     if (rc) return rc;
     filsys_inode_t ddir;
     uint32_t dino;
@@ -468,6 +479,8 @@ fail:
 
 int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
                  uid_t uid, gid_t gid) {
+    if (uidgid_fit(uid, gid))
+        return -EINVAL;
     /* V1 has no device type bits: devices are the fixed inodes 1..40, wired up
      * by the kernel at boot (u0.s), not created with mknod(2). */
     if (fs->ver == FILSYS_V1)
@@ -908,8 +921,10 @@ ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) 
 int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {
     if (!fs->fmt.iflnk)
         return -ENOSYS;   /* this edition predates symlinks */
+    int rc = uidgid_fit(fs->uid, fs->gid);
+    if (rc) return rc;
     char dir[PATH_MAX], name[64];
-    int rc = split_path(linkpath, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
+    rc = split_path(linkpath, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
     if (rc) return rc;
     filsys_inode_t ddir;
     uint32_t dino;
@@ -956,6 +971,9 @@ int filsys_chmod(filsys_t *fs, const char *path, mode_t mode) {
 }
 
 int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid) {
+    if ((uid != (uid_t)-1 && uid > INT16_MAX) ||
+        (gid != (gid_t)-1 && gid > INT16_MAX))
+        return -EINVAL;
     filsys_inode_t ip;
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
