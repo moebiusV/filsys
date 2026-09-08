@@ -653,6 +653,8 @@ ENABLE_IMAGE_TESTS_TRUE
 FUSE_CPPFLAGS
 FUSE_LIBS
 FUSE_CFLAGS
+HAVE_FUSE_DARWIN_FALSE
+HAVE_FUSE_DARWIN_TRUE
 HAVE_FUSE2_FALSE
 HAVE_FUSE2_TRUE
 FUSE2_LIBS
@@ -5402,6 +5404,7 @@ fi
 
 have_fuse3=no
 have_fuse2=no
+have_fuse_darwin=no
 
 # fuse3 (explicit, or the first choice under auto).
 
@@ -6021,6 +6024,46 @@ else
 fi
 
 
+# macFUSE's fuse3 is not Linux/BSD fuse3: its getattr/readdir take
+# struct fuse_darwin_attr and statfs takes struct statfs.  Detect that API (not
+# the OS) so the build selects fuseops_macos.c; a plain Linux/BSD libfuse3 has no
+# such type and keeps fuseops.c.
+if test "x$have_fuse3" = xyes
+then :
+
+    save_CPPFLAGS=$CPPFLAGS
+    CPPFLAGS="$FUSE_CPPFLAGS $FUSE_CFLAGS $CPPFLAGS"
+    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <fuse.h>
+int
+main (void)
+{
+struct fuse_darwin_attr a; (void)a;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  have_fuse_darwin=yes
+else case e in #(
+  e) have_fuse_darwin=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
+    CPPFLAGS=$save_CPPFLAGS
+
+fi
+ if test "x$have_fuse_darwin" = xyes; then
+  HAVE_FUSE_DARWIN_TRUE=
+  HAVE_FUSE_DARWIN_FALSE='#'
+else
+  HAVE_FUSE_DARWIN_TRUE='#'
+  HAVE_FUSE_DARWIN_FALSE=
+fi
+
+
 
 
 
@@ -6275,6 +6318,10 @@ fi
 
 if test -z "${HAVE_FUSE2_TRUE}" && test -z "${HAVE_FUSE2_FALSE}"; then
   as_fn_error $? "conditional \"HAVE_FUSE2\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${HAVE_FUSE_DARWIN_TRUE}" && test -z "${HAVE_FUSE_DARWIN_FALSE}"; then
+  as_fn_error $? "conditional \"HAVE_FUSE_DARWIN\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${ENABLE_IMAGE_TESTS_TRUE}" && test -z "${ENABLE_IMAGE_TESTS_FALSE}"; then

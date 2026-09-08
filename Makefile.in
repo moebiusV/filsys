@@ -200,11 +200,13 @@ mkfs_filsys_LDADD = $(LDADD)
 mkfs_filsys_LINK = $(CCLD) $(mkfs_filsys_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am__mount_filsys_SOURCES_DIST = mount.filsys.c fuse_core.c fuse_core.h \
-	fuseops.c fuseops_openbsd.c
-@HAVE_FUSE2_FALSE@am_mount_filsys_OBJECTS =  \
-@HAVE_FUSE2_FALSE@	mount_filsys-mount.filsys.$(OBJEXT) \
-@HAVE_FUSE2_FALSE@	mount_filsys-fuse_core.$(OBJEXT) \
-@HAVE_FUSE2_FALSE@	mount_filsys-fuseops.$(OBJEXT)
+	fuseops.c fuseops_macos.c fuseops_openbsd.c
+@HAVE_FUSE2_FALSE@@HAVE_FUSE_DARWIN_FALSE@am_mount_filsys_OBJECTS = mount_filsys-mount.filsys.$(OBJEXT) \
+@HAVE_FUSE2_FALSE@@HAVE_FUSE_DARWIN_FALSE@	mount_filsys-fuse_core.$(OBJEXT) \
+@HAVE_FUSE2_FALSE@@HAVE_FUSE_DARWIN_FALSE@	mount_filsys-fuseops.$(OBJEXT)
+@HAVE_FUSE2_FALSE@@HAVE_FUSE_DARWIN_TRUE@am_mount_filsys_OBJECTS = mount_filsys-mount.filsys.$(OBJEXT) \
+@HAVE_FUSE2_FALSE@@HAVE_FUSE_DARWIN_TRUE@	mount_filsys-fuse_core.$(OBJEXT) \
+@HAVE_FUSE2_FALSE@@HAVE_FUSE_DARWIN_TRUE@	mount_filsys-fuseops_macos.$(OBJEXT)
 @HAVE_FUSE2_TRUE@am_mount_filsys_OBJECTS =  \
 @HAVE_FUSE2_TRUE@	mount_filsys-mount.filsys.$(OBJEXT) \
 @HAVE_FUSE2_TRUE@	mount_filsys-fuse_core.$(OBJEXT) \
@@ -271,6 +273,7 @@ am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po \
 	./$(DEPDIR)/mkfs_filsys-v7fs.Po \
 	./$(DEPDIR)/mount_filsys-fuse_core.Po \
 	./$(DEPDIR)/mount_filsys-fuseops.Po \
+	./$(DEPDIR)/mount_filsys-fuseops_macos.Po \
 	./$(DEPDIR)/mount_filsys-fuseops_openbsd.Po \
 	./$(DEPDIR)/mount_filsys-mount.filsys.Po \
 	./$(DEPDIR)/test_matrix-test_matrix.Po \
@@ -667,12 +670,14 @@ filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = filsys.pc
-@HAVE_FUSE2_FALSE@mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops.c
+@HAVE_FUSE2_FALSE@@HAVE_FUSE_DARWIN_FALSE@mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops.c
+@HAVE_FUSE2_FALSE@@HAVE_FUSE_DARWIN_TRUE@mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_macos.c
 
 # mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir.
 # The callback bodies are FUSE-free (fuse_core.c); exactly one adapter is
-# compiled, selected by --with-fuse: fuseops.c (FUSE3, the default) or
-# fuseops_openbsd.c (OpenBSD's base-libfuse 2.6 / older macFUSE).
+# compiled: fuseops_openbsd.c (--with-fuse=fuse2: OpenBSD base-libfuse 2.6),
+# fuseops_macos.c (macFUSE's fuse3, whose darwin attr types differ from Linux),
+# or fuseops.c (plain FUSE3).
 @HAVE_FUSE2_TRUE@mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_openbsd.c
 # C17, not C23: Microsoft's toolchain tops out at C17, so we match.
 mount_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
@@ -948,6 +953,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mkfs_filsys-v7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-fuse_core.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-fuseops.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-fuseops_macos.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-fuseops_openbsd.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-mount.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_matrix-test_matrix.Po@am__quote@ # am--include-marker
@@ -1406,6 +1412,20 @@ mount_filsys-fuseops.obj: fuseops.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='fuseops.c' object='mount_filsys-fuseops.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mount_filsys_CPPFLAGS) $(CPPFLAGS) $(mount_filsys_CFLAGS) $(CFLAGS) -c -o mount_filsys-fuseops.obj `if test -f 'fuseops.c'; then $(CYGPATH_W) 'fuseops.c'; else $(CYGPATH_W) '$(srcdir)/fuseops.c'; fi`
+
+mount_filsys-fuseops_macos.o: fuseops_macos.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mount_filsys_CPPFLAGS) $(CPPFLAGS) $(mount_filsys_CFLAGS) $(CFLAGS) -MT mount_filsys-fuseops_macos.o -MD -MP -MF $(DEPDIR)/mount_filsys-fuseops_macos.Tpo -c -o mount_filsys-fuseops_macos.o `test -f 'fuseops_macos.c' || echo '$(srcdir)/'`fuseops_macos.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mount_filsys-fuseops_macos.Tpo $(DEPDIR)/mount_filsys-fuseops_macos.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='fuseops_macos.c' object='mount_filsys-fuseops_macos.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mount_filsys_CPPFLAGS) $(CPPFLAGS) $(mount_filsys_CFLAGS) $(CFLAGS) -c -o mount_filsys-fuseops_macos.o `test -f 'fuseops_macos.c' || echo '$(srcdir)/'`fuseops_macos.c
+
+mount_filsys-fuseops_macos.obj: fuseops_macos.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mount_filsys_CPPFLAGS) $(CPPFLAGS) $(mount_filsys_CFLAGS) $(CFLAGS) -MT mount_filsys-fuseops_macos.obj -MD -MP -MF $(DEPDIR)/mount_filsys-fuseops_macos.Tpo -c -o mount_filsys-fuseops_macos.obj `if test -f 'fuseops_macos.c'; then $(CYGPATH_W) 'fuseops_macos.c'; else $(CYGPATH_W) '$(srcdir)/fuseops_macos.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mount_filsys-fuseops_macos.Tpo $(DEPDIR)/mount_filsys-fuseops_macos.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='fuseops_macos.c' object='mount_filsys-fuseops_macos.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mount_filsys_CPPFLAGS) $(CPPFLAGS) $(mount_filsys_CFLAGS) $(CFLAGS) -c -o mount_filsys-fuseops_macos.obj `if test -f 'fuseops_macos.c'; then $(CYGPATH_W) 'fuseops_macos.c'; else $(CYGPATH_W) '$(srcdir)/fuseops_macos.c'; fi`
 
 mount_filsys-fuseops_openbsd.o: fuseops_openbsd.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mount_filsys_CPPFLAGS) $(CPPFLAGS) $(mount_filsys_CFLAGS) $(CFLAGS) -MT mount_filsys-fuseops_openbsd.o -MD -MP -MF $(DEPDIR)/mount_filsys-fuseops_openbsd.Tpo -c -o mount_filsys-fuseops_openbsd.o `test -f 'fuseops_openbsd.c' || echo '$(srcdir)/'`fuseops_openbsd.c
@@ -2120,6 +2140,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-fuse_core.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-fuseops.Po
+	-rm -f ./$(DEPDIR)/mount_filsys-fuseops_macos.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-fuseops_openbsd.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
@@ -2203,6 +2224,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/mkfs_filsys-v7fs.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-fuse_core.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-fuseops.Po
+	-rm -f ./$(DEPDIR)/mount_filsys-fuseops_macos.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-fuseops_openbsd.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po

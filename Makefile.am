@@ -33,12 +33,17 @@ pkgconfig_DATA = filsys.pc
 
 # mount.filsys is a mount(8) helper (`mount -t filsys`), so it lives in sbindir.
 # The callback bodies are FUSE-free (fuse_core.c); exactly one adapter is
-# compiled, selected by --with-fuse: fuseops.c (FUSE3, the default) or
-# fuseops_openbsd.c (OpenBSD's base-libfuse 2.6 / older macFUSE).
+# compiled: fuseops_openbsd.c (--with-fuse=fuse2: OpenBSD base-libfuse 2.6),
+# fuseops_macos.c (macFUSE's fuse3, whose darwin attr types differ from Linux),
+# or fuseops.c (plain FUSE3).
 if HAVE_FUSE2
 mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_openbsd.c
 else
+if HAVE_FUSE_DARWIN
+mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_macos.c
+else
 mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops.c
+endif
 endif
 # C17, not C23: Microsoft's toolchain tops out at C17, so we match.
 mount_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow

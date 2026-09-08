@@ -47,6 +47,7 @@ AC_ARG_WITH([fuse],
 
 have_fuse3=no
 have_fuse2=no
+have_fuse_darwin=no
 
 # fuse3 (explicit, or the first choice under auto).
 AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
@@ -150,6 +151,21 @@ AS_IF([test "x$have_fuse3" = xyes], [
 ])
 
 AM_CONDITIONAL([HAVE_FUSE2], [test "x$have_fuse2" = xyes])
+
+# macFUSE's fuse3 is not Linux/BSD fuse3: its getattr/readdir take
+# struct fuse_darwin_attr and statfs takes struct statfs.  Detect that API (not
+# the OS) so the build selects fuseops_macos.c; a plain Linux/BSD libfuse3 has no
+# such type and keeps fuseops.c.
+AS_IF([test "x$have_fuse3" = xyes], [
+    save_CPPFLAGS=$CPPFLAGS
+    CPPFLAGS="$FUSE_CPPFLAGS $FUSE_CFLAGS $CPPFLAGS"
+    AC_COMPILE_IFELSE(
+        [AC_LANG_PROGRAM([#include <fuse.h>],
+                         [struct fuse_darwin_attr a; (void)a;])],
+        [have_fuse_darwin=yes], [have_fuse_darwin=no])
+    CPPFLAGS=$save_CPPFLAGS
+])
+AM_CONDITIONAL([HAVE_FUSE_DARWIN], [test "x$have_fuse_darwin" = xyes])
 AC_SUBST([FUSE_CFLAGS])
 AC_SUBST([FUSE_LIBS])
 AC_SUBST([FUSE_CPPFLAGS])
