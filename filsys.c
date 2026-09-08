@@ -20,8 +20,14 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/sysmacros.h>
 #include <time.h>
+
+/* major()/minor(): glibc >= 2.28 moved them from <sys/types.h> (which filsys.h
+ * pulls in) into <sys/sysmacros.h>; the BSDs and macOS still declare them in
+ * <sys/types.h>. */
+#ifdef HAVE_SYS_SYSMACROS_H
+#include <sys/sysmacros.h>
+#endif
 
 struct filsys {
     const struct filsys_ops *ops;
