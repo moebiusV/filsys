@@ -63,6 +63,7 @@ int main(int argc, char *argv[]) {
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
     const char *packing = NULL; /* PDP-7 word container codec (rb09|packed18|rim) */
     const char *arch = NULL;    /* CPU arch: overrides the edition's byte order (3b2/68k = BE) */
+    filsys_geom_t geom = {0, -1, NULL}; /* V8-family -o blocksize/freemap/byteorder overrides */
     char fuse_opts[512] = ""; /* -o options passed through to FUSE (allow_other, ...) */
     int c;
 
@@ -99,6 +100,20 @@ int main(int argc, char *argv[]) {
                     packing = strdup(tok + 8);   /* copy: opts is freed below */
                 } else if (!strncmp(tok, "arch=", 5)) {
                     arch = strdup(tok + 5);      /* copy: opts is freed below */
+                } else if (!strncmp(tok, "blocksize=", 10)) {
+                    char *end = NULL;
+                    geom.blocksize = (uint32_t)strtoul(tok + 10, &end, 0);
+                    if (!end || *end) bad = 1;
+                } else if (!strncmp(tok, "freemap=", 8)) {
+                    if (!strcmp(tok + 8, "list"))       geom.freemap = FILSYS_FREEMAP_LIST;
+                    else if (!strcmp(tok + 8, "bitmap")) geom.freemap = FILSYS_FREEMAP_BITMAP;
+                    else bad = 1;
+                } else if (!strncmp(tok, "bitmap=", 7)) {
+                    if (!strcmp(tok + 7, "super"))      geom.freemap = FILSYS_FREEMAP_BITMAP;
+                    else if (!strcmp(tok + 7, "blocks")) geom.freemap = FILSYS_FREEMAP_BIGMAP;
+                    else bad = 1;
+                } else if (!strncmp(tok, "byteorder=", 10)) {
+                    geom.byteorder = strdup(tok + 10); /* copy: opts is freed below */
                 } else {
                     /* pass anything else through to FUSE (allow_other, ...) */
                     if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
@@ -132,9 +147,10 @@ int main(int argc, char *argv[]) {
     int rc = filsys_open_arch(&k, ver, image, readonly || check, offset,
                               uid >= 0 ? (uid_t)uid : getuid(),
                               gid >= 0 ? (gid_t)gid : getgid(), packing, arch,
-                              force, &errmsg);
+                              force, &geom, &errmsg);
     free((void *)packing);
     free((void *)arch);
+    free((void *)geom.byteorder);
     if (rc) {
         fprintf(stderr, "filsys: cannot open %s: %s\n", image,
                 errmsg ? errmsg : strerror(-rc));

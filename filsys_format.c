@@ -311,6 +311,67 @@ filsys_edition_t filsys_getformat(int edition) {
     }
 }
 
+/* ---- V8-family geometry overrides ----------------------------------------- */
+
+int filsys_apply_geom(filsys_edition_t *fmt, int ed, const filsys_geom_t *g,
+                      const char **errmsg) {
+    static char msgbuf[128];
+    if (errmsg)
+        *errmsg = NULL;
+
+    uint32_t bs = g->blocksize ? g->blocksize : fmt->bsize;
+    int fm = g->freemap;
+    if (fm < 0)
+        fm = (bs == 4096) ? V8_FREEMAP_BITMAP : V8_FREEMAP_LIST;   /* 4096 ⇒ bitmap */
+
+    if (fm == V8_FREEMAP_BIGMAP && ed != FILSYS_V10) {
+        snprintf(msgbuf, sizeof msgbuf, "out-of-superblock bitmap is V10-only");
+        if (errmsg) *errmsg = msgbuf;
+        return -EINVAL;
+    }
+
+    if (ed == FILSYS_V9) {
+        if (bs != 8192) {
+            snprintf(msgbuf, sizeof msgbuf, "V9 block size is fixed at 8192 (got %u)", bs);
+            if (errmsg) *errmsg = msgbuf;
+            return -EINVAL;
+        }
+        /* V9 accepts either free-space form at 8192 */
+    } else {
+        /* V8/V10: one device-minor bit selects block size AND free-space form. */
+        if (bs == 1024 && fm != V8_FREEMAP_LIST) {
+            snprintf(msgbuf, sizeof msgbuf, "1024-byte blocks imply a free list (BITFS clear)");
+            if (errmsg) *errmsg = msgbuf;
+            return -EINVAL;
+        }
+        if (bs == 4096 && fm == V8_FREEMAP_LIST) {
+            snprintf(msgbuf, sizeof msgbuf, "4096-byte blocks imply a bitmap (BITFS set)");
+            if (errmsg) *errmsg = msgbuf;
+            return -EINVAL;
+        }
+        if (bs != 1024 && bs != 4096) {
+            snprintf(msgbuf, sizeof msgbuf, "unsupported block size %u (1024 or 4096)", bs);
+            if (errmsg) *errmsg = msgbuf;
+            return -EINVAL;
+        }
+    }
+
+    if (g->byteorder) {
+        if (!strcmp(g->byteorder, "le")) fmt->bo = &bo_le;
+        else if (!strcmp(g->byteorder, "be")) fmt->bo = &bo_be;
+        else {
+            snprintf(msgbuf, sizeof msgbuf, "unknown byte order '%s' (le|be)", g->byteorder);
+            if (errmsg) *errmsg = msgbuf;
+            return -EINVAL;
+        }
+    }
+
+    fmt->bsize = bs;
+    fmt->nindir = bs / 4;
+    fmt->freemap = (uint8_t)fm;
+    return 0;
+}
+
 /* ---- byte-order resolution ------------------------------------------------ */
 
 static const char *bo_endian_name(const byte_order_ops_t *bo) {

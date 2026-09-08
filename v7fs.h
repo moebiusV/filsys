@@ -263,10 +263,10 @@ enum {
     V8_SB_BFREE    = 252,   /* u32 x V8_BITMAP */
     /* out-of-superblock bitmap arm (§5.9c, v10 only) */
     V8_SB_BSIZE    = 252,   /* u32: bits per bitmap block */
-    /* free-space forms (freemap descriptor field) */
-    V8_FREEMAP_LIST   = 0,  /* free list */
-    V8_FREEMAP_BITMAP = 1,  /* in-superblock bitmap */
-    V8_FREEMAP_BIGMAP = 2,  /* out-of-superblock bitmap (v10 only) */
+    /* free-space forms (freemap descriptor field; = the public FILSYS_FREEMAP_*) */
+    V8_FREEMAP_LIST   = FILSYS_FREEMAP_LIST,
+    V8_FREEMAP_BITMAP = FILSYS_FREEMAP_BITMAP,
+    V8_FREEMAP_BIGMAP = FILSYS_FREEMAP_BIGMAP,
     /* geometry constants */
     V8_NICFREE_SMALL = 178, /* free-list cache depth (1K/4K blocks) */
     V8_NICFREE_LARGE = 946, /* V9's 8K free-list cache depth */
@@ -417,6 +417,12 @@ int v7fs_mark_dirty(filsys_edition_t *fs);
  * the free-list/inode cache counts exceed their depths (mis-decoded block 1). */
 int v8_sb_decode(filsys_edition_t *fs, const uint8_t *sb);
 int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb);
+
+/* Apply the V8-family `-o` geometry overrides (blocksize/freemap/byteorder) to a
+ * descriptor, enforcing the one-bit-selects-both rule the kernels honour.  ed is
+ * the FILSYS_* selector.  Returns 0, or -EINVAL with *errmsg set. */
+int filsys_apply_geom(filsys_edition_t *fmt, int ed, const filsys_geom_t *g,
+                      const char **errmsg);
 
 /* ---- block / inode io -------------------------------------------------- */
 
