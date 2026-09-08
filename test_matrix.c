@@ -90,7 +90,7 @@ struct fmt {
 };
 
 /* Fill one row from the shared table; returns 0 past the end, -1 to skip a
- * format that is not mkfs-able yet (read-only V8/V9/V10), 1 on success. */
+ * format that is not mkfs-able yet (nomkfs), 1 on success. */
 static int fmt_at(size_t i, struct fmt *out) {
     const filsys_format_t *f = filsys_format_nth(i);
     if (!f)
@@ -832,6 +832,83 @@ static void findfs_self_detect(void) {
     }
 }
 
+/* V8-family bitmap free-space forms: drive the in-superblock and
+ * out-of-superblock bitmaps through write/read/truncate/fsck, the same cycle
+ * run() drives for the free-list forms.  This pins the bitmap allocator's
+ * balloc/bfree and the bigmap's tail-metadata exclusion (data_end). */
+static void bitmap_roundtrip(void) {
+    static const struct {
+        const char *name;
+        int edition;
+        uint32_t blocksize;
+        int freemap;
+    } forms[] = {
+        { "v8",  FILSYS_V8,  4096, FILSYS_FREEMAP_BITMAP },
+        { "v9",  FILSYS_V9,  8192, FILSYS_FREEMAP_BITMAP },
+        { "v10", FILSYS_V10, 4096, FILSYS_FREEMAP_BITMAP },
+        { "v10", FILSYS_V10, 4096, FILSYS_FREEMAP_BIGMAP },
+    };
+    for (size_t i = 0; i < sizeof forms / sizeof forms[0]; i++) {
+        char img[64], gspec[64], cmd[512], what[96];
+        const char *fm = forms[i].freemap == FILSYS_FREEMAP_BITMAP ? "bitmap" : "bigmap";
+        snprintf(gspec, sizeof gspec, "blocksize=%u,freemap=%s", forms[i].blocksize, fm);
+        snprintf(img, sizeof img, "test_matrix_%s_%s.img", forms[i].name, fm);
+        unlink(img);
+        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s -g %s %s 1000 >/dev/null 2>&1",
+                 forms[i].name, gspec, img);
+        if (system(cmd) != 0) {
+            snprintf(what, sizeof what, "%s %s mkfs", forms[i].name, fm);
+            ok(what, 0);
+            unlink(img);
+            continue;
+        }
+
+        filsys_geom_t geom = { forms[i].blocksize, forms[i].freemap, NULL };
+        filsys_t *fs;
+        if (filsys_open_arch(&fs, forms[i].edition, img, 0, 0, 0, 0, NULL,
+                             NULL, 0, &geom, NULL)) {
+            snprintf(what, sizeof what, "%s %s open", forms[i].name, fm);
+            ok(what, 0);
+            unlink(img);
+            continue;
+        }
+
+        uint64_t sz = 8192;   /* several blocks, past the direct-block boundary */
+        uint8_t *buf = malloc(sz), *back = malloc(sz);
+        int wr = 0, rd = 0, trunc_ok = 0;
+        if (buf && back) {
+            for (uint64_t j = 0; j < sz; j++)
+                buf[j] = (uint8_t)(j & 0x7f);
+            filsys_create(fs, "/big", 0644, 0, 0);
+            wr = filsys_write(fs, "/big", buf, (size_t)sz, 0) == (int)sz;
+            memset(back, 0, sz);
+            rd = wr && filsys_read(fs, "/big", back, (size_t)sz, 0) == (int)sz &&
+                 memcmp(buf, back, sz) == 0;
+            trunc_ok = filsys_truncate(fs, "/big", 0) == 0;
+            filsys_unlink(fs, "/big");
+        }
+        free(buf);
+        free(back);
+        snprintf(what, sizeof what, "%s %s write", forms[i].name, fm); ok(what, wr);
+        snprintf(what, sizeof what, "%s %s read", forms[i].name, fm);  ok(what, rd);
+        snprintf(what, sizeof what, "%s %s truncate", forms[i].name, fm); ok(what, trunc_ok);
+        filsys_close(fs);
+
+        char fcmd[512], out[4096] = "";
+        snprintf(fcmd, sizeof fcmd, "./fsck.filsys -f -v %s -g %s %s 2>&1",
+                 forms[i].name, gspec, img);
+        FILE *p = popen(fcmd, "r");
+        if (p) {
+            (void)!fread(out, 1, sizeof out - 1, p);
+            pclose(p);
+        }
+        snprintf(what, sizeof what, "%s %s fsck clean", forms[i].name, fm);
+        ok(what, strstr(out, "errors=0") && strstr(out, "missing=0") &&
+                 strstr(out, "dup=0"));
+        unlink(img);
+    }
+}
+
 int main(void) {
     for (size_t i = 0; ; i++) {
         struct fmt f;
@@ -846,6 +923,7 @@ int main(void) {
     mkfs_cleanliness();
     namelength();
     v6_large_file();
+    bitmap_roundtrip();
     crash_consistency();
     durability_test();
     rename_semantics();

@@ -369,6 +369,7 @@ int filsys_apply_geom(filsys_edition_t *fmt, int ed, const filsys_geom_t *g,
     fmt->bsize = bs;
     fmt->nindir = bs / 4;
     fmt->freemap = (uint8_t)fm;
+    fmt->alloc = (fm == V8_FREEMAP_LIST) ? &freelist_alloc_ops : &v8_bitmap_alloc_ops;
     return 0;
 }
 

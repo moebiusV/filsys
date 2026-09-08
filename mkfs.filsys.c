@@ -294,6 +294,14 @@ static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
     fs->n = v7_n;
     fs->unique = 0;
 
+    /* The out-of-superblock bitmap's blocks sit at the tail as metadata; work
+     * them out up front so data_end (and the checker's data band) exclude them. */
+    if (fs->freemap == V8_FREEMAP_BIGMAP) {
+        uint32_t bits_per_blk = fs->bsize * 8;
+        fs->v8_nblks = (fs->fsize + bits_per_blk - 1) / bits_per_blk;
+        fs->v8_blk_start = fs->fsize - fs->v8_nblks;
+    }
+
     if (v7_data_first(fs) >= fs->fsize)
         die("%s: %u blocks too small for an i-list of %u blocks\n",
             path, blocks, fs->isize);
@@ -333,7 +341,7 @@ static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
     /* Build the free list by reusing the check driver's salvage op, which
      * applies the per-edition interleave (Coherent maptab / V6 stride / none)
      * against an empty used-block map -- nothing is allocated yet. */
-    uint32_t nblk = fs->fsize - v7_data_first(fs);
+    uint32_t nblk = fs->ops->data_end(fs) - v7_data_first(fs);
     uint8_t *bmap = calloc((size_t)(nblk + 7) / 8, 1);
     if (!bmap)
         die("out of memory\n");
@@ -670,6 +678,49 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
 
 /* ---- main --------------------------------------------------------------- */
 
+/* Parse a -g geometry spec ("blocksize=4096,freemap=bitmap,byteorder=be") into
+ * a filsys_geom_t.  Returns 0, or -1 with *errmsg set.  byteorder is strdup'd
+ * (mkfs is one-shot; the process owns it until exit). */
+static int parse_geom(const char *spec, filsys_geom_t *g, const char **errmsg)
+{
+    static char msgbuf[128];
+    *errmsg = NULL;
+    char *s = strdup(spec);
+    if (!s)
+        return -1;
+    for (char *tok = strtok(s, ","); tok; tok = strtok(NULL, ",")) {
+        if (!strncmp(tok, "blocksize=", 10)) {
+            char *end = NULL;
+            g->blocksize = (uint32_t)strtoul(tok + 10, &end, 0);
+            if (!end || *end) {
+                snprintf(msgbuf, sizeof msgbuf, "bad blocksize '%s'", tok + 10);
+                *errmsg = msgbuf;
+                free(s);
+                return -1;
+            }
+        } else if (!strncmp(tok, "freemap=", 8)) {
+            if (!strcmp(tok + 8, "list"))       g->freemap = FILSYS_FREEMAP_LIST;
+            else if (!strcmp(tok + 8, "bitmap")) g->freemap = FILSYS_FREEMAP_BITMAP;
+            else if (!strcmp(tok + 8, "bigmap")) g->freemap = FILSYS_FREEMAP_BIGMAP;
+            else {
+                snprintf(msgbuf, sizeof msgbuf, "bad freemap '%s'", tok + 8);
+                *errmsg = msgbuf;
+                free(s);
+                return -1;
+            }
+        } else if (!strncmp(tok, "byteorder=", 10)) {
+            g->byteorder = strdup(tok + 10);
+        } else {
+            snprintf(msgbuf, sizeof msgbuf, "unknown geometry '%s'", tok);
+            *errmsg = msgbuf;
+            free(s);
+            return -1;
+        }
+    }
+    free(s);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path;
@@ -680,9 +731,10 @@ int main(int argc, char **argv)
     const char *packing = NULL;   /* PDP-7 word container codec */
     const char *arch = NULL;      /* CPU arch: overrides the edition's byte order */
     uint32_t user_bsize = 0;      /* -B: System V logical block size (512/1024/2048) */
+    const char *geom_spec = NULL; /* -g: V8-family blocksize/freemap/byteorder */
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:b:m:n:P:a:B:")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:b:m:n:P:a:B:g:")) != -1) {
         switch (c) {
         case 'v':
             edition = filsys_parse_edition("mkfs.filsys", optarg);
@@ -696,14 +748,15 @@ int main(int argc, char **argv)
         case 'P': packing = optarg; break;
         case 'a': arch = optarg; break;
         case 'B': user_bsize = (uint32_t)strtoul(optarg, NULL, 0); break;
+        case 'g': geom_spec = optarg; break;
         default:
-            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-B bsize] [-b boot] [-m m] [-n n] image [blocks]\n"
+            fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-B bsize] [-g geom] [-b boot] [-m m] [-n n] image [blocks]\n"
                             "  editions: %s\n", filsys_editions_usage());
             return 1;
         }
     }
     if (optind >= argc) {
-        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-B bsize] [-b boot] [-m m] [-n n] image [blocks]\n"
+        fprintf(stderr, "usage: mkfs.filsys -v <edition> [-o block] [-P packing] [-a arch] [-B bsize] [-g geom] [-b boot] [-m m] [-n n] image [blocks]\n"
                         "  editions: %s\n", filsys_editions_usage());
         return 1;
     }
@@ -737,6 +790,18 @@ int main(int argc, char **argv)
             return 1;
         }
         fs.bo = bo;
+    }
+    if (geom_spec) {
+        filsys_geom_t geom = {0, -1, NULL};
+        const char *errmsg = NULL;
+        if (parse_geom(geom_spec, &geom, &errmsg)) {
+            fprintf(stderr, "mkfs.filsys: %s\n", errmsg ? errmsg : "bad geometry");
+            return 1;
+        }
+        if (filsys_apply_geom(&fs, edition, &geom, &errmsg)) {
+            fprintf(stderr, "mkfs.filsys: %s\n", errmsg ? errmsg : "bad geometry");
+            return 1;
+        }
     }
     if (user_bsize) {
         if (!fs.dyn_bsize) {

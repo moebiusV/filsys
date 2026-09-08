@@ -51,6 +51,48 @@
 #include "v7fs.h"
 #include "pdp7fs.h"
 
+/* Parse a -g geometry spec ("blocksize=4096,freemap=bitmap,byteorder=be") into a
+ * filsys_geom_t.  Returns 0, or -1 with *errmsg set. */
+static int parse_geom(const char *spec, filsys_geom_t *g, const char **errmsg)
+{
+    static char msgbuf[128];
+    *errmsg = NULL;
+    char *s = strdup(spec);
+    if (!s)
+        return -1;
+    for (char *tok = strtok(s, ","); tok; tok = strtok(NULL, ",")) {
+        if (!strncmp(tok, "blocksize=", 10)) {
+            char *end = NULL;
+            g->blocksize = (uint32_t)strtoul(tok + 10, &end, 0);
+            if (!end || *end) {
+                snprintf(msgbuf, sizeof msgbuf, "bad blocksize '%s'", tok + 10);
+                *errmsg = msgbuf;
+                free(s);
+                return -1;
+            }
+        } else if (!strncmp(tok, "freemap=", 8)) {
+            if (!strcmp(tok + 8, "list"))       g->freemap = FILSYS_FREEMAP_LIST;
+            else if (!strcmp(tok + 8, "bitmap")) g->freemap = FILSYS_FREEMAP_BITMAP;
+            else if (!strcmp(tok + 8, "bigmap")) g->freemap = FILSYS_FREEMAP_BIGMAP;
+            else {
+                snprintf(msgbuf, sizeof msgbuf, "bad freemap '%s'", tok + 8);
+                *errmsg = msgbuf;
+                free(s);
+                return -1;
+            }
+        } else if (!strncmp(tok, "byteorder=", 10)) {
+            g->byteorder = strdup(tok + 10);
+        } else {
+            snprintf(msgbuf, sizeof msgbuf, "unknown geometry '%s'", tok);
+            *errmsg = msgbuf;
+            free(s);
+            return -1;
+        }
+    }
+    free(s);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     const char *path;
@@ -61,9 +103,10 @@ int main(int argc, char **argv)
     uint32_t ino = 0;
     const char *packing = NULL;   /* PDP-7 word container codec */
     const char *arch = NULL;      /* CPU arch: overrides the edition's byte order */
+    const char *geom_spec = NULL; /* -g: V8-family blocksize/freemap/byteorder */
     int c;
 
-    while ((c = getopt(argc, argv, "v:o:srpfinN:C:yP:a:F")) != -1) {
+    while ((c = getopt(argc, argv, "v:o:srpfinN:C:yP:a:Fg:")) != -1) {
         switch (c) {
         case 'v':
             edition = filsys_parse_edition("fsck.filsys", optarg);
@@ -108,9 +151,12 @@ int main(int argc, char **argv)
         case 'F':
             force_arch = 1;   /* open despite a bad superblock magic */
             break;
+        case 'g':
+            geom_spec = optarg;
+            break;
         default:
             fprintf(stderr,
-                "usage: fsck.filsys -v <edition> [-o block] [-P packing] [-a arch] [-s] [-r] [-p] [-i] [-y] [-f] [-F] [-n] image\n"
+                "usage: fsck.filsys -v <edition> [-o block] [-P packing] [-a arch] [-g geom] [-s] [-r] [-p] [-i] [-y] [-f] [-F] [-n] image\n"
                 "       fsck.filsys -v <edition> [-o block] -N ino image\n"
                 "       fsck.filsys -v <edition> [-o block] -C ino image\n"
                 "  editions: %s\n", filsys_editions_usage());
@@ -228,6 +274,17 @@ int main(int argc, char **argv)
     int readonly = !(salvage || resolve || clri || preen || yes || ask);
     filsys_edition_t fs = filsys_getformat(edition);
     const char *errmsg = NULL;
+    if (geom_spec) {
+        filsys_geom_t geom = {0, -1, NULL};
+        if (parse_geom(geom_spec, &geom, &errmsg)) {
+            fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
+            return 2;
+        }
+        if (filsys_apply_geom(&fs, edition, &geom, &errmsg)) {
+            fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
+            return 2;
+        }
+    }
     int rc = filsys_resolve_byteorder(&fs, path, offblock * fs.bsize, arch,
                                       force_arch, &errmsg);
     if (rc < 0) {
