@@ -36,7 +36,6 @@ Home: <https://github.com/moebiusV/filsys>
 | NetBSD ≥ 10 | fuse3 (librefuse) | **built + tested** |
 | OpenBSD | fuse2 (base libfuse, 2.6-era) | **built + tested** |
 | macOS | fuse3 (macFUSE ≥ 5.2) / fuse2 (macFUSE 4.x, FUSE-T) | builds, untested (runner pending) |
-| NetBSD 9 | fuse2 (librefuse) | builds, untested |
 
 "Built + tested" means the platform has mounted a real V7 image and passed
 `test.sh` — read/write/mkdir/rename/truncate/persistence — in addition to

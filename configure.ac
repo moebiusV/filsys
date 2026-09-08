@@ -121,31 +121,12 @@ AS_IF([test "x$with_fuse" = xfuse2 || test "x$have_fuse3" = xno], [
     AS_IF([test "x$have_fuse2" = xno], [
         AC_CHECK_HEADER([fuse.h],
             [save_LIBS=$LIBS
-             fuse2_libs=""
              AS_UNSET([ac_cv_search_fuse_main])
              AC_SEARCH_LIBS([fuse_main], [fuse refuse],
                  [have_fuse2=yes], [have_fuse2=no])
              AS_IF([test "x$have_fuse2" = xyes], [
                  AS_IF([test "x$ac_cv_search_fuse_main" = "xnone required"],
-                     [fuse2_libs=""], [fuse2_libs="$ac_cv_search_fuse_main"])
-             ])
-             AS_IF([test "x$have_fuse2" = xno], [
-                 # NetBSD 9's librefuse defines fuse_main as a macro over
-                 # fuse_main_real, so the symbol fuse_main is absent; librefuse
-                 # needs -lpuffs.  Link a real fuse_main() call through the
-                 # header, the way a user would.
-                 LIBS="$save_LIBS -lrefuse -lpuffs"
-                 AC_LINK_IFELSE(
-                     [AC_LANG_PROGRAM(
-                         [#define FUSE_USE_VERSION 26
-#include <fuse.h>],
-                         [return fuse_main(0, (char **)0,
-                              (const struct fuse_operations *)0, (void *)0);])],
-                     [have_fuse2=yes; fuse2_libs="-lrefuse -lpuffs"],
-                     [have_fuse2=no])
-             ])
-             AS_IF([test "x$have_fuse2" = xyes], [
-                 FUSE2_LIBS="$fuse2_libs"
+                     [FUSE2_LIBS=""], [FUSE2_LIBS="$ac_cv_search_fuse_main"])
                  FUSE2_CFLAGS=""
              ])
              LIBS=$save_LIBS],
