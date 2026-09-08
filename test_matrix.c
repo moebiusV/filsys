@@ -707,11 +707,21 @@ static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
 }
 
 static void crash_prefix_test(void) {
+    /* mkdir is deliberately absent: its crash prefixes orphan the new directory
+     * (the inode and . / .. are written before the parent entry, per rule 1),
+     * and fsck cannot auto-repair an orphan *directory* without a lost+found
+     * phase.  That is a limit of the format -- V7 mkdir is non-atomic, and the
+     * original relied on `sync` before halt -- not an aliasing defect: dup==0
+     * still holds at every prefix.  mkdir's *error* path (where the rollback
+     * runs) is covered by fault_test below. */
     static const mutator_t mut[] = {
         { "create",   setup_none, op_create },
         { "write",    setup_file, op_write },
         { "truncate", setup_file, op_truncate },
         { "unlink",   setup_file, op_unlink },
+        { "rmdir",    setup_dir,  op_rmdir },
+        { "link",     setup_file, op_link },
+        { "rename",   setup_file, op_rename },
     };
     for (size_t i = 0; ; i++) {
         struct fmt f;
@@ -722,6 +732,128 @@ static void crash_prefix_test(void) {
             continue;
         for (size_t m = 0; m < sizeof mut / sizeof mut[0]; m++)
             crash_mutator(&f, &mut[m]);
+    }
+}
+
+/* ---- property-based operation sequences ----------------------------------
+ *
+ * The matrix above is hand-written, which by construction only finds bugs
+ * someone thought to write a case for.  This drives *random* operation
+ * histories against the library and a tiny in-memory model, then checks two
+ * invariants after the dust settles: the image is fsck-clean, and every file
+ * the model thinks exists has the size it should.  A deterministic PRNG keeps
+ * the whole thing reproducible. */
+
+static uint64_t g_prng;
+static uint32_t prng_next(void) {
+    g_prng ^= g_prng >> 12;
+    g_prng ^= g_prng << 25;
+    g_prng ^= g_prng >> 27;
+    return (uint32_t)((g_prng * 0x2545F4914F6CDD1DULL) >> 32);
+}
+
+enum { NMODEL = 8, PROP_STEPS = 128 };
+static uint64_t g_model[NMODEL];   /* file size; ~0ULL = absent */
+
+static void property_sequences(void) {
+    static const char *names[] = { "a", "b", "c", "d", "e", "f", "g", "h" };
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        int frc = fmt_at(i, &f);
+        if (!frc)
+            break;
+        if (frc < 0)
+            continue;
+        char img[64], cmd[512], what[128];
+        snprintf(img, sizeof img, "test_matrix_%s_prop.img", f.name);
+        unlink(img);
+        if (f.edition == FILSYS_PDP7)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                     f.name, img, f.blocks);
+        if (system(cmd) != 0) { ok("prop mkfs", 0); unlink(img); continue; }
+        filsys_t *fs;
+        if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
+            ok("prop open", 0); unlink(img); continue;
+        }
+        for (int j = 0; j < NMODEL; j++)
+            g_model[j] = ~0ULL;
+        g_prng = 0x9e3779b97f4a7c15ULL;
+
+        for (int step = 0; step < PROP_STEPS; step++) {
+            int slot = (int)(prng_next() % NMODEL);
+            const char *nm = names[slot];
+            int op = (int)(prng_next() % 5);
+            uint64_t sz = (uint64_t)(prng_next() % 6) * 512;   /* 0..2560 */
+            int rc = 0;
+            uint8_t buf[512];
+            memset(buf, 'a' + slot, sizeof buf);
+
+            switch (op) {
+            case 0:  /* create if absent, else overwrite block 0 */
+                if (g_model[slot] == ~0ULL) {
+                    rc = filsys_create(fs, nm, 0644, 0, 0);
+                    if (rc == 0) g_model[slot] = 0;
+                } else {
+                    rc = filsys_write(fs, nm, buf, sizeof buf, 0);
+                    if (g_model[slot] == 0 && rc == (int)sizeof buf)
+                        g_model[slot] = sizeof buf;
+                }
+                break;
+            case 1:  /* truncate to a new size */
+                if (g_model[slot] != ~0ULL) {
+                    rc = filsys_truncate(fs, nm, (off_t)sz);
+                    if (rc == 0) g_model[slot] = sz;
+                }
+                break;
+            case 2:  /* unlink */
+                if (g_model[slot] != ~0ULL) {
+                    rc = filsys_unlink(fs, nm);
+                    if (rc == 0) g_model[slot] = ~0ULL;
+                }
+                break;
+            case 3:  /* append one block past the current size */
+                if (g_model[slot] != ~0ULL) {
+                    rc = filsys_write(fs, nm, buf, sizeof buf, (off_t)g_model[slot]);
+                    if (rc == (int)sizeof buf) g_model[slot] += sizeof buf;
+                }
+                break;
+            case 4:  /* overwrite the whole current size */
+                if (g_model[slot] != ~0ULL && g_model[slot] > 0) {
+                    size_t n = (size_t)(g_model[slot] < 4096 ? g_model[slot] : 4096);
+                    uint8_t *big = malloc(n ? n : 1);
+                    memset(big, 'a' + slot, n);
+                    rc = filsys_write(fs, nm, big, n, 0);
+                    free(big);
+                }
+                break;
+            }
+            (void)rc;
+        }
+        filsys_close(fs);   /* flush the superblock, then check */
+
+        int clean = fsck_is_clean(f.name, img);
+        /* every surviving file must read back at the modelled size */
+        int sizes_ok = 1;
+        filsys_t *r;
+        if (filsys_open(&r, f.edition, img, 1, 0, 0, 0, NULL) == 0) {
+            for (int j = 0; j < NMODEL && sizes_ok; j++) {
+                filsys_inode_t ip;
+                uint32_t ino;
+                if (g_model[j] == ~0ULL)
+                    continue;
+                if (filsys_lookup(r, names[j], &ino, &ip) != 0 ||
+                    (uint64_t)ip.size != g_model[j])
+                    sizes_ok = 0;
+            }
+            filsys_close(r);
+        } else
+            sizes_ok = 0;
+
+        snprintf(what, sizeof what, "%s property-sequences", f.name);
+        ok(what, clean && sizes_ok);
+        unlink(img);
     }
 }
 
@@ -1086,6 +1218,7 @@ int main(void) {
     findfs_self_detect();
     fault_test();
     crash_prefix_test();
+    property_sequences();
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;
