@@ -178,10 +178,16 @@ static int split_path(const char *path, char *dir, size_t dirsz,
 
 int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly,
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
-                     const char *arch, int force, const char **errmsg) {
+                     const char *arch, int force, const filsys_geom_t *geom,
+                     const char **errmsg) {
     filsys_edition_t fmt = filsys_getformat(edition);
     if (!fmt.ops)
         return -EINVAL;
+    if (geom && (edition == FILSYS_V8 || edition == FILSYS_V9 || edition == FILSYS_V10)) {
+        int rc = filsys_apply_geom(&fmt, edition, geom, errmsg);
+        if (rc)
+            return rc;
+    }
     int rc = filsys_resolve_byteorder(&fmt, path, offset, arch, force, errmsg);
     if (rc)
         return rc;
@@ -231,7 +237,7 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
 
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
                 uint64_t offset, uid_t uid, gid_t gid, const char *packing) {
-    return filsys_open_arch(out, edition, path, readonly, offset, uid, gid, packing, NULL, 0, NULL);
+    return filsys_open_arch(out, edition, path, readonly, offset, uid, gid, packing, NULL, 0, NULL, NULL);
 }
 
 void filsys_close(filsys_t *fs) {

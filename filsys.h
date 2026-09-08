@@ -108,6 +108,21 @@ typedef struct {
 
 typedef struct filsys filsys_t;  /* opaque */
 
+/* Geometry overrides (the V8-family's `-o` options).  All zero/-1/NULL means
+ * "use the edition's default".  Applies only to the V8/V9/V10 editions. */
+typedef struct {
+    uint32_t    blocksize;      /* 0 = edition default (1024/4096/8192) */
+    int         freemap;        /* -1 = derive; else a FILSYS_FREEMAP_* value */
+    const char *byteorder;      /* "le"/"be", or NULL = edition default */
+} filsys_geom_t;
+
+/* filsys_geom_t.freemap values: the V8-family free-space representation. */
+enum {
+    FILSYS_FREEMAP_LIST   = 0,  /* free list */
+    FILSYS_FREEMAP_BITMAP = 1,  /* in-superblock bitmap */
+    FILSYS_FREEMAP_BIGMAP = 2,  /* out-of-superblock bitmap (V10 only) */
+};
+
 /* Open an image.  Returns 0 and *out, or -errno.  uid/gid are the ownership
  * reported by filsys_fill_stat (the "mounting user").  packing selects the
  * PDP-7 word container codec ("rb09", "packed18", "rim"); NULL = the edition's
@@ -122,7 +137,8 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
  * non-NULL) receives a static description of a byte-order problem, else NULL. */
 int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly,
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
-                     const char *arch, int force, const char **errmsg);
+                     const char *arch, int force, const filsys_geom_t *geom,
+                     const char **errmsg);
 /* Flush the superblock (and pending metadata) and close. */
 void filsys_close(filsys_t *fs);
 /* Flush the superblock (and pending metadata) without closing. */
