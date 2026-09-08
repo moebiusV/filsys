@@ -1,0 +1,27 @@
+name: macos
+
+# Runs on a native runner (there is no macos-vm action).  Uses macFUSE (>= 5.2
+# ships libfuse3), the primary macOS backend, matching the Homebrew formula.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: macOS — fuse3 (macFUSE)
+        run: |
+          eval "$(brew shellenv)"
+          brew install pkg-config
+          brew install --cask macfuse
+          ./configure --with-fuse=fuse3
+          make
+          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+          curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
+          gunzip rp06-0.disk.gz
+          ./configure --with-fuse=fuse3 --enable-image-tests
+          make
+          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc

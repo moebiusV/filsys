@@ -32,9 +32,9 @@ Home: <https://github.com/moebiusV/filsys>
 |---|---|---|
 | Linux | fuse3 (default) / fuse2 | **built + tested** (`make check`, `test.sh`) |
 | Windows (WSL2) | fuse3 (Linux kernel under WSL2) | works |
-| FreeBSD | fuse3 (`fusefs-libs3`) | **built + tested** (CI: `make check` + live `test.sh`) |
-| NetBSD ≥ 10 | fuse3 (librefuse) | **built + tested** (CI: `make check` + live `test.sh`) |
-| OpenBSD | fuse2 (base libfuse, 2.6-era) | **built + tested** (CI: `make check` + live `test.sh`) |
+| FreeBSD | fuse3 (`fusefs-libs3`) | **built + tested** |
+| NetBSD ≥ 10 | fuse3 (librefuse) | **built + tested** |
+| OpenBSD | fuse2 (base libfuse, 2.6-era) | **built + tested** |
 | macOS | fuse3 (macFUSE ≥ 5.2) / fuse2 (macFUSE 4.x, FUSE-T) | builds, untested (runner pending) |
 | NetBSD 9 | fuse2 (librefuse) | builds, untested |
 
