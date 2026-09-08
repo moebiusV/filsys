@@ -171,10 +171,10 @@ int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents,
 
 /* ---- file data ----------------------------------------------------------- */
 
-int filsys_read(filsys_t *fs, const char *path, void *buf, size_t size,
-                off_t off);
-int filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size,
-                 off_t off);
+ssize_t filsys_read(filsys_t *fs, const char *path, void *buf, size_t size,
+                    off_t off);
+ssize_t filsys_write(filsys_t *fs, const char *path, const void *buf, size_t size,
+                     off_t off);
 /* Read a symlink's target (no trailing NUL) into buf; returns the byte count.
  * -ENOSYS if the edition predates symlinks, -EINVAL if path is not a symlink. */
 ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size);

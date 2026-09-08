@@ -274,6 +274,11 @@ static void run(const struct fmt *f) {
         }
     }
 
+    /* Ownership that doesn't fit the 16-bit field must be rejected, not
+     * silently truncated (a uid of 70000 would wrap to 4464). */
+    ok("create rejects oversized uid",
+       filsys_create(fs, "/biguid", 0644, 70000, 0) == -EINVAL);
+
     filsys_close(fs);
     ok("fsck clean", fsck_is_clean(f->name, img));
     unlink(img);
