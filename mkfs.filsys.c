@@ -366,7 +366,8 @@ static void mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
 
     /* makefree resets the free-inode total; restore it here. */
     fs->fl.tinode = v7_maxinode(fs) - used;
-    fs->ops->sync(fs);
+    if (fs->ops->sync(fs))
+        die("%s: final flush failed\n", path);
 
     printf("%s: %u blocks, %u inodes written\n",
            path, fs->fsize, v7_maxinode(fs));

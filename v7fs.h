@@ -421,7 +421,7 @@ int filsys_resolve_byteorder(filsys_edition_t *fmt, const char *path,
 int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
               const filsys_edition_t *proto, uint64_t offset);
 /* Flush the superblock and close. */
-void v7fs_close(filsys_edition_t *fs);
+int v7fs_close(filsys_edition_t *fs);
 /* Flush the superblock (and pending metadata) to the image without closing. */
 int v7fs_sync(filsys_edition_t *fs);
 /* Mark the filesystem dirty (s_fmod) and flush: a read-write mount is dirty

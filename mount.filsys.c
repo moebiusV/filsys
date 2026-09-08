@@ -159,8 +159,10 @@ int main(int argc, char *argv[]) {
 
     if (check) {
         int crc = filsys_check(k);
-        filsys_close(k);
-        return crc == 0 ? 0 : 1;
+        int cl = filsys_close(k);
+        if (cl)
+            fprintf(stderr, "filsys: final flush failed: %s\n", strerror(-cl));
+        return (crc == 0 && cl == 0) ? 0 : 1;
     }
 
     if (readonly) {
@@ -187,6 +189,11 @@ int main(int argc, char *argv[]) {
 
     rc = fuse_run(&ctx, &mopts);
 
-    filsys_close(k);
+    int cl = filsys_close(k);
+    if (cl) {
+        fprintf(stderr, "filsys: final flush failed: %s\n", strerror(-cl));
+        if (rc == 0)
+            rc = 1;
+    }
     return rc;
 }

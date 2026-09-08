@@ -128,7 +128,7 @@ struct filsys_ops {
     /* lifecycle */
     int  (*open)(filsys_edition_t *fs, const char *path, int readonly,
                  const filsys_edition_t *proto, uint64_t offset);
-    void (*close)(filsys_edition_t *fs);
+    int  (*close)(filsys_edition_t *fs);   /* final flush; returns the sync result */
     int  (*sync)(filsys_edition_t *fs);
     /* Mark the superblock dirty (s_fmod) and flush.  Optional: only the V6/V7
      * formats carry an s_fmod byte; other backends leave it NULL. */

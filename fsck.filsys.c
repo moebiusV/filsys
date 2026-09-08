@@ -217,8 +217,10 @@ int main(int argc, char **argv)
             v7_check_t rep;
             err = v6_check(&fs, &rep, mode);
         }
-        fs.ops->close(&fs);
-        return err ? 1 : 0;
+        int cl = fs.ops->close(&fs);
+        if (cl)
+            fprintf(stderr, "%s: final flush failed: %s\n", path, strerror(-cl));
+        return (err || cl) ? 1 : 0;
     }
 
     if (edition == FILSYS_V1) {
@@ -240,8 +242,10 @@ int main(int argc, char **argv)
             v1_check_t rep;
             err = v1fs_check(&fs, &rep, mode);
         }
-        v1fs_close(&fs);
-        return err ? 1 : 0;
+        int cl = v1fs_close(&fs);
+        if (cl)
+            fprintf(stderr, "%s: final flush failed: %s\n", path, strerror(-cl));
+        return (err || cl) ? 1 : 0;
     }
 
     if (edition == FILSYS_PDP7) {
@@ -267,8 +271,10 @@ int main(int argc, char **argv)
             p7_check_t rep;
             err = p7fs_check(&fs, &rep, mode);
         }
-        p7fs_close(&fs);
-        return err ? 1 : 0;
+        int cl = p7fs_close(&fs);
+        if (cl)
+            fprintf(stderr, "%s: final flush failed: %s\n", path, strerror(-cl));
+        return (err || cl) ? 1 : 0;
     }
 
     int readonly = !(salvage || resolve || clri || preen || yes || ask);
@@ -314,6 +320,8 @@ int main(int argc, char **argv)
         v7_check_t rep;
         err = v7fs_check(&fs, &rep, mode);
     }
-    v7fs_close(&fs);
-    return err ? 1 : 0;
+    int cl = v7fs_close(&fs);
+    if (cl)
+        fprintf(stderr, "%s: final flush failed: %s\n", path, strerror(-cl));
+    return (err || cl) ? 1 : 0;
 }

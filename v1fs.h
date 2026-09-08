@@ -67,7 +67,7 @@ typedef filsys_edition_t v1fs_t;
 
 int v1fs_open(v1fs_t *fs, const char *path, int readonly,
               const filsys_edition_t *proto, uint64_t offset);
-void v1fs_close(v1fs_t *fs);
+int v1fs_close(v1fs_t *fs);
 int v1fs_sync(v1fs_t *fs);
 
 /* ---- block / inode io -------------------------------------------------- */
