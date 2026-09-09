@@ -1,3 +1,10 @@
+filsys (1.9.2-1) unstable; urgency=medium
+
+  * Correct the stale "V0-V7, 32V" coverage in the package descriptions; note
+    that packaging/ and README.distributions are source-only, not in the tarball.
+
+ -- David Walther <david@clearbrookdistillery.com>  Wed, 09 Sep 2026 00:00:00 +0000
+
 filsys (1.9.1-1) unstable; urgency=medium
 
   * Fix the stale "v6fs/v7fs backends" header comment; make test_matrix build

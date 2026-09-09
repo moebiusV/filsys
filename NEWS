@@ -1,3 +1,14 @@
+filsys 1.9.2 (2026-09-09)
+=========================
+
+A housekeeping release; no on-disk or API change.
+
+- packaging: correct the stale "V0-V7, 32V" coverage in every distro template's
+  description to the actual coverage (PDP-7 through V10, plus 32V, Coherent,
+  Xenix, 2.9/2.11BSD, System III, and System V).
+- README: note that packaging/ (preliminary distro templates) and
+  README.distributions live in the source repository, not the release tarball.
+
 filsys 1.9.1 (2026-09-09)
 =========================
 
