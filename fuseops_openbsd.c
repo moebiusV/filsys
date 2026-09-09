@@ -193,9 +193,9 @@ static int fuse_fsync(const char *path, int isdatasync, struct fuse_file_info *f
 
 static int fuse_release(const char *path, struct fuse_file_info *fi)
 {
-    (void)path; (void)fi;
+    (void)path;
     fuse_ctx_t c = C();
-    return fuse_op_release(&c);
+    return fuse_op_release(&c, fi->fh);
 }
 
 /* FUSE2 init has no struct fuse_config *: the mount options are injected in
@@ -251,12 +251,14 @@ int fuse_run(fuse_ctx_t *ctx, const fuse_mount_opts_t *opts)
     if (opts->foreground) fuse_opt_add_arg(&args, "-f");
     if (opts->debug)      fuse_opt_add_arg(&args, "-d");
     /* FUSE2: no fuse_config in init, so use_ino (honour the stable st_ino our
-     * fill_stat reports) is a mount option injected before fuse_main.  Note the
-     * OpenBSD option parser is the one cgofuse flags as not fully compatible;
-     * if it rejects this on target, drop it (the kernel then synthesises node
-     * numbers, which are still stable) — see docs/fuse-ports3.md. */
+     * fill_stat reports) and hard_remove (unlink the name directly, deferring
+     * the free to release — see filsys_open_ino) are mount options injected
+     * before fuse_main.  Note the OpenBSD option parser is the one cgofuse
+     * flags as not fully compatible; if it rejects these on target, drop them
+     * (the kernel then synthesises node numbers, which are still stable, and
+     * falls back to silly-rename) — see docs/fuse-ports3.md. */
     fuse_opt_add_arg(&args, "-o");
-    fuse_opt_add_arg(&args, "use_ino");
+    fuse_opt_add_arg(&args, "use_ino,hard_remove");
     if (opts->fuse_opts && opts->fuse_opts[0]) {
         fuse_opt_add_arg(&args, "-o");
         fuse_opt_add_arg(&args, opts->fuse_opts);

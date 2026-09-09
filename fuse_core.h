@@ -49,7 +49,7 @@ int fuse_op_statfs(fuse_ctx_t *c, struct statvfs *st);
 int fuse_op_access(fuse_ctx_t *c, const char *path, int mask);
 int fuse_op_flush(fuse_ctx_t *c);
 int fuse_op_fsync(fuse_ctx_t *c);
-int fuse_op_release(fuse_ctx_t *c);
+int fuse_op_release(fuse_ctx_t *c, uint64_t fh);
 
 /* Mount options collected by main() and handed to the adapter's fuse_run().
  * Nothing FUSE-typed leaks into the shared main(). */

@@ -30,6 +30,18 @@
 #include <sys/sysmacros.h>
 #endif
 
+/* Open-handle tracking for hard_remove: with hard_remove the kernel unlinks an
+ * open file's name directly (no silly-rename to a hidden name), so the inode and
+ * its blocks must outlive the name until the last handle closes.  Each open
+ * inode carries a refcount; an unlink that drops nlink to 0 marks it pending and
+ * defers the block/inode free to the final release. */
+enum { FILSYS_OPEN_MAX = 1024 };
+struct open_handle {
+    uint32_t ino;
+    int      refs;
+    int      pending;   /* nlink hit 0 while still open: free on last close */
+};
+
 struct filsys {
     const struct filsys_ops *ops;
     filsys_edition_t            fmt;      /* the format (by value) */
@@ -38,6 +50,8 @@ struct filsys {
     uid_t uid;                 /* reported ownership (default: the mounting user) */
     gid_t gid;
     int readonly;
+    struct open_handle opens[FILSYS_OPEN_MAX];
+    int nopen;
 };
 
 /* ---- mode conversion ----------------------------------------------------- */
@@ -301,6 +315,49 @@ int filsys_close(filsys_t *fs) {
     free(fs->fs);
     free(fs);
     return rc;
+}
+
+int filsys_open_ino(filsys_t *fs, uint32_t ino) {
+    for (int i = 0; i < fs->nopen; i++)
+        if (fs->opens[i].ino == ino) {
+            fs->opens[i].refs++;
+            return 0;
+        }
+    if (fs->nopen >= FILSYS_OPEN_MAX)
+        return -ENFILE;
+    fs->opens[fs->nopen].ino = ino;
+    fs->opens[fs->nopen].refs = 1;
+    fs->opens[fs->nopen].pending = 0;
+    fs->nopen++;
+    return 0;
+}
+
+int filsys_close_ino(filsys_t *fs, uint32_t ino) {
+    for (int i = 0; i < fs->nopen; i++) {
+        if (fs->opens[i].ino != ino)
+            continue;
+        if (--fs->opens[i].refs > 0)
+            return 0;
+        int pending = fs->opens[i].pending;
+        fs->opens[i] = fs->opens[fs->nopen - 1];   /* drop the entry */
+        fs->nopen--;
+        if (!pending)
+            return 0;
+        /* Unlinked while open: free the inode and its blocks now. */
+        filsys_inode_t ip;
+        if (read_inode(fs, ino, &ip))
+            return -EIO;
+        filsys_blklist_t *bl = NULL;
+        int rc = itrunc(fs, &ip, &bl);
+        if (rc) { filsys_blklist_discard(bl); return rc; }
+        ip.mode = 0;
+        rc = write_inode(fs, ino, &ip);
+        if (rc) { filsys_blklist_discard(bl); return rc; }
+        filsys_blklist_drain(fs->fs, bl);
+        ifree(fs, ino);
+        return 0;
+    }
+    return 0;   /* not tracked: nothing to release */
 }
 
 /* Test hook: swap the byte-slice transport (fault injection).  Internal, used
@@ -597,6 +654,18 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     return rc;
 }
 
+static int open_refs(filsys_t *fs, uint32_t ino) {
+    for (int i = 0; i < fs->nopen; i++)
+        if (fs->opens[i].ino == ino)
+            return fs->opens[i].refs;
+    return 0;
+}
+static void mark_pending(filsys_t *fs, uint32_t ino) {
+    for (int i = 0; i < fs->nopen; i++)
+        if (fs->opens[i].ino == ino)
+            fs->opens[i].pending = 1;
+}
+
 static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
     filsys_inode_t ddir;
     uint32_t dino;
@@ -612,7 +681,10 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
     ip.nlink--;
     filsys_blklist_t *bl = NULL;
     int unlinked = ip.nlink <= 0;
-    if (unlinked) {
+    /* hard_remove: the name is gone but an open handle still holds the inode;
+     * keep its blocks and defer the free to the final close. */
+    int deferred = unlinked && open_refs(fs, ino) > 0;
+    if (unlinked && !deferred) {
         rc = itrunc(fs, &ip, &bl);
         if (rc) {
             filsys_blklist_discard(bl);
@@ -626,8 +698,10 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
         return rc;
     }
     filsys_blklist_drain(fs->fs, bl);
-    if (unlinked)
+    if (unlinked && !deferred)
         ifree(fs, ino);                 /* only after the cleared inode is durable */
+    else if (deferred)
+        mark_pending(fs, ino);
     return 0;
 }
 
