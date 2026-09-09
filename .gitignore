@@ -60,6 +60,7 @@ test-suite.log
 conformance/fuse-conformance
 conformance/conformance-client
 conformance/mnt/
+conformance/log.txt
 
 # --- local notes (never pushed to the remote) ---
 docs/
