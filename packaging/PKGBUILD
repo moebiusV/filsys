@@ -1,6 +1,6 @@
 # Maintainer: David Walther <david@clearbrookdistillery.com>
 pkgname=filsys
-pkgver=1.9.2
+pkgver=1.9.3
 pkgrel=1
 pkgdesc="FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images"
 arch=('x86_64')

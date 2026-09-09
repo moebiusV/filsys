@@ -1,3 +1,30 @@
+filsys 1.9.3 (2026-09-09)
+=========================
+
+Fixes four hard_remove (unlink/rename-while-open) lifecycle bugs — one
+data-destroying — plus the tests and CI coverage that would have caught them.
+
+- rename over an open file no longer frees the replaced inode.  Previously the
+  next create() could reuse the number while the old handle was still open,
+  destroying data.  The free is deferred to the last close.
+- fsck now reports (and preen reconnects) an allocated regular file or symlink
+  with no directory entry, instead of passing it over; the bad-block inode is
+  excluded (2.11BSD's descriptor was missing badino).
+- pending hard_remove frees are drained on close, so a forced unmount or SIGKILL
+  no longer drops them.
+- fstat/ftruncate on an unlinked-but-still-open descriptor now work (they took
+  the path instead of the open handle and returned ENOENT).
+
+Also:
+
+- the fixed 1024-entry open-handle table is documented as safe: measured on
+  OpenBSD 7.9, FUSE release fires at last close (not vnode reclaim), so there
+  is no -ENFILE overflow and no statfs under-report (filsys.c,
+  test-openbsd-release.sh).
+- test.sh is portable to the BSDs (truncate/gtruncate/perl fallback, best-effort
+  unmount), and the BSD CI now actually runs the image test (it was previously
+  short-circuited by an early exit in the run block).
+
 filsys 1.9.2 (2026-09-09)
 =========================
 

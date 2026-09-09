@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        1.9.2
+Version:        1.9.3
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
 
@@ -49,6 +49,11 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Wed Sep 09 2026 David Walther <david@clearbrookdistillery.com> - 1.9.3-1
+- Fix hard_remove lifecycle bugs (rename-over-open inode free, fsck orphan
+  report, pending free drain, fstat/ftruncate on unlinked-open fd); make
+  test.sh BSD-portable and the BSD CI actually run the image test.
+
 * Wed Sep 09 2026 David Walther <david@clearbrookdistillery.com> - 1.9.2-1
 - Correct the stale "V0-V7, 32V" coverage in the package descriptions; note
   that packaging/ and README.distributions are source-only, not in the tarball.

@@ -1,3 +1,14 @@
+filsys (1.9.3-1) unstable; urgency=medium
+
+  * Fix hard_remove lifecycle bugs: rename-over-open no longer frees the
+    replaced inode, fsck reports (and preen reconnects) deferred orphans,
+    pending frees drain on close, and fstat/ftruncate work on unlinked-open
+    descriptors.
+  * Document that OpenBSD FUSE release fires at last close (no -ENFILE / statfs
+    under-report); make test.sh portable to the BSDs.
+
+ -- David Walther <david@clearbrookdistillery.com>  Wed, 09 Sep 2026 00:00:00 +0000
+
 filsys (1.9.2-1) unstable; urgency=medium
 
   * Correct the stale "V0-V7, 32V" coverage in the package descriptions; note
