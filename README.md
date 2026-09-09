@@ -746,6 +746,15 @@ against corrupting an image the emulator has open.
   and a small in-memory model, then requires the image to be fsck-clean and every
   surviving file to read back at its modelled size.  A hand-written matrix only
   finds bugs someone thought to write a case for; this finds a different class.
+- **`tmpfile(3)` does not work on a filsys mount on Linux.**  With
+  `hard_remove` the kernel answers `fstat(2)` on an unlinked-but-still-open
+  descriptor with `-ESTALE` *before* `getattr` is ever dispatched, so there is
+  nothing filsys can route.  `tmpfile(3)` relies on exactly that (unlink at
+  open, then work through the fd), so it fails with `ESTALE`.  `ftruncate(2)`
+  on the same descriptor *does* work — the FUSE3 `truncate` callback carries
+  `fi->fh`, which reaches the inode without the (gone) name — and `fstat`
+  succeeds again once `ftruncate` has refreshed the inode.  This is pinned by
+  `test_fuse_unlink_open` (see `test.sh`).
 - The `-c` integrity check walks the free list and the inode table and
   reports out-of-range block numbers, cycles, and unreadable inodes.
 - The triple-indirect path is exercised by `v7_triple_indirect` in

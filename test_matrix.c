@@ -457,6 +457,55 @@ static void mkfs_cleanliness(void) {
     }
 }
 
+/* The badino invariant.  A descriptor whose mkfs reserves a nameless inode as
+ * the bad-block file (v7 and its 32V/Coherent/Xenix/2.9BSD/SysIII/SysV
+ * derivatives, plus 2.11BSD: inode 1, seeded with a regular-file mode and no
+ * directory entry) is allocated yet unreferenced by construction.  check.c's
+ * orphan report must exclude fmt->badino, or fsck flags every freshly-mkfs'd
+ * image of those editions as having an unreferenced inode.  Pin both halves:
+ * the reserved inode really is allocated (and only where the descriptor says
+ * so), and fsck still reports the image clean (so it is not misread as an
+ * orphan).  Editions whose descriptor leaves badino == 0 assert only the latter,
+ * which fails if any nameless inode is seeded without the matching exclusion. */
+static void badino_consistency(void) {
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        int frc = fmt_at(i, &f);
+        if (!frc)
+            break;
+        if (frc < 0)
+            continue;
+
+        char img[64], cmd[512], what[96];
+        snprintf(img, sizeof img, "test_matrix_%s_badino.img", f.name);
+        unlink(img);
+        if (f.blocks)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
+                     f.name, img, f.blocks);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
+                     f.name, img);
+        if (system(cmd) != 0) { ok("badino mkfs", 0); unlink(img); continue; }
+
+        filsys_edition_t desc = filsys_getformat(f.edition);
+        if (desc.badino) {
+            filsys_t *fs;
+            if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
+                ok("badino open", 0); unlink(img); continue;
+            }
+            filsys_inode_t ip;
+            int rd = filsys_read_inode(fs, desc.badino, &ip);
+            snprintf(what, sizeof what, "%s reserved badino %u allocated",
+                     f.name, desc.badino);
+            ok(what, rd == 0 && (ip.mode & desc.ifmt) == desc.ifreg);
+            filsys_close(fs);
+        }
+        snprintf(what, sizeof what, "%s fsck-clean w/ nameless badino", f.name);
+        ok(what, fsck_is_clean(f.name, img));
+        unlink(img);
+    }
+}
+
 /* V6 large files: a write past the seven single-indirect slots (7 * 256 = 1792
  * blocks) forces slot 7, the double-indirect slot.  Before the shared
  * block-tree walk, V6's checker walked slot 7 single-level, so the second-level
@@ -1450,6 +1499,7 @@ int main(void) {
         }
         mkfs_validation();
         mkfs_cleanliness();
+        badino_consistency();
         namelength();
         v6_large_file();
         v7_triple_indirect();

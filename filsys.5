@@ -553,6 +553,33 @@ comes up with a broken free list until
 .B "fsck.filsys \-s"
 is run; see
 .BR fsck.filsys (1).
+.SH NOTES
+.BR tmpfile (3)
+does not work on a filsys mount under Linux.  With
+.I hard_remove
+the kernel answers
+.BR fstat (2)
+on an unlinked-but-still-open descriptor with
+.B ESTALE
+before
+.B getattr
+is ever dispatched, so nothing filsys does can route it;
+.BR tmpfile (3)
+depends on exactly that sequence (unlink at open, then work through the
+descriptor) and fails.
+.BR ftruncate (2)
+on the same descriptor does work \-\- the FUSE3
+.B truncate
+callback carries
+.IR fi\->fh ,
+which reaches the inode without the (now gone) name \-\- and
+.B fstat
+succeeds again once
+.B ftruncate
+has refreshed the inode.  This is exercised by
+.B test_fuse_unlink_open
+under
+.BR test.sh .
 .SH LICENSE
 This manpage is derived from the ancient UNIX
 .IR fs (5)

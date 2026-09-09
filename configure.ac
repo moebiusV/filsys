@@ -229,6 +229,14 @@ AS_IF([test "x$enable_slow_tests" = xyes],
     [SLOW_TESTS_ENV=''])
 AC_SUBST([SLOW_TESTS_ENV])
 
+# test_fuse_unlink_open needs to know whether it is on a FUSE3 build (where an
+# ENOENT from ftruncate on an unlinked-open fd is the regression it guards) or a
+# FUSE2 build (where truncate has no fi and ENOENT is the expected skip).
+AS_IF([test "x$have_fuse3" = xyes],
+    [FUSE_TEST_ENV='FILSYS_FUSE3=1; export FILSYS_FUSE3;'],
+    [FUSE_TEST_ENV=''])
+AC_SUBST([FUSE_TEST_ENV])
+
 AC_CONFIG_FILES([Makefile
                  filsys.pc])
 AC_OUTPUT
