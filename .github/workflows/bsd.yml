@@ -39,7 +39,9 @@ jobs:
             gunzip -f rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
             gmake
-            gmake check; rc=$?
+            set +e
+            gmake check
+            rc=$?
             cat test.sh.log test-suite.log 2>/dev/null
             exit $rc
 
@@ -59,7 +61,9 @@ jobs:
             gunzip -f rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse2 --enable-image-tests
             gmake
-            gmake check; rc=$?
+            set +e
+            gmake check
+            rc=$?
             cat test.sh.log test-suite.log 2>/dev/null
             sh ./test-openbsd-release.sh
             exit $rc
@@ -80,6 +84,8 @@ jobs:
             gunzip -f rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
             gmake
-            gmake check; rc=$?
+            set +e
+            gmake check
+            rc=$?
             cat test.sh.log test-suite.log 2>/dev/null
             exit $rc
