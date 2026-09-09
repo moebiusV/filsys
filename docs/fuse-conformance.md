@@ -71,16 +71,23 @@ matching `RELEASE`, nothing deferred to unmount), **4** no dedup (distinct
 
 ## Platform table
 
-| Platform | getattr fi | truncate fi | release timing | open dedup | 2-proc fh | unlink-of-open |
-|----------|------------|-------------|----------------|------------|-----------|----------------|
-| Linux (fuse3) | yes | yes | close | no | distinct | hard_remove |
-| FreeBSD 15.1 (fuse3) | no | yes | close | no | distinct | hard_remove |
-| DragonFly 6.4.2 (fuse3) | no | **no** | close | no | distinct | hard_remove |
-| OpenBSD (fuse2) | —* | —* | close† | — | — | hard_remove |
-| NetBSD (fuse3) | — | — | — | — | — | — |
-| HardenedBSD | — | — | — | — | — | — |
-| MidnightBSD | — | — | — | — | — | — |
-| illumos (libfuse 2.7.6) | — | — | — | — | — | — |
+The probe's question 2 measures `truncate fi` on a **linked** open fd.  The
+lifecycle's actual requirement is narrower: `fi->fh` must reach `truncate` on an
+**unlinked** fd, or `ftruncate(2)` after unlink falls through to the (gone) path
+and returns `ENOENT`.  That column is measured by `test_fuse_unlink_open` on the
+filsys mount, not the standalone probe, because only filsys knows the inode is
+still allocated.  `getattr fi` likewise means "on the open (fstat) fd".
+
+| Platform | getattr fi | truncate fi (linked) | truncate fi (unlinked) | release | unlink-of-open |
+|----------|------------|----------------------|------------------------|---------|----------------|
+| Linux (fuse3) | yes | yes | yes | close | hard_remove |
+| FreeBSD 15.1 | yes | yes | yes | close | hard_remove |
+| HardenedBSD | yes | yes | yes | close | hard_remove |
+| MidnightBSD | yes | yes | yes | close | hard_remove |
+| DragonFly 6.4.2 | no | **no** | **no** | close | hard_remove |
+| NetBSD 11.0 (librefuse) | no | yes | **no** | close | hard_remove |
+| OpenBSD 7.9 (fuse2) | no* | no* | **no** | close† | hard_remove |
+| illumos (libfuse 2.7.6) | — | — | — | — | — |
 
 `—` means not yet measured.  `*` FUSE2 declares `getattr`/`truncate` without a
 `fi` parameter, so those two answers are structural rather than measured.  `†`
@@ -88,31 +95,40 @@ from the `finding-a` test (2000 files created and re-opened, zero `ENFILE`,
 `statfs` recovered): release fires at last close on OpenBSD, not at vnode
 reclaim.
 
+The deferred-free lifecycle itself (unlink-while-open keeps the inode until
+`release`, then frees it) holds on **every** platform: `open`/`release` balance
+one-to-one, `release` fires at close, and unlink-of-open is a plain `UNLINK`
+(hard_remove) everywhere.  The `truncate fi (unlinked)` column is only the
+`ftruncate`-on-an-unlinked-fd path — the `tmpfile(3)` shape — which works on
+Linux, FreeBSD, HardenedBSD and MidnightBSD, and does not on DragonFly, NetBSD
+or OpenBSD.
+
 ## DragonFly: `truncate` gets no `fi`
 
-DragonFly 6.4.2's fusefs does **not** pass `fi` to `truncate`
+DragonFly 6.4.2's fusefs does **not** pass `fi` to `truncate` at all
 (`TRUNCATE /f size=100 fi=0`), even though FreeBSD 15.1 — its ancestor — does
-(`fi=1 fh=1`).  This is the same shape as FUSE2: without `fi` there is no
-`fi->fh` to reach the inode by, so `ftruncate(2)` on an unlinked-but-still-open
-descriptor cannot be routed by the handle and returns `ENOENT` there, exactly as
-on OpenBSD.  (On Linux and FreeBSD it works; see `test_fuse_unlink_open`.)  The
-rest of the deferred-free lifecycle is unaffected: `release` fires at close, and
-`open`/`release` balance one-to-one, so hard_remove frees still land correctly.
+(`fi=1 fh=1`).  Without `fi` there is no `fi->fh` to reach the inode by, so
+`ftruncate(2)` on an unlinked-but-still-open descriptor returns `ENOENT`.
 
-## CI results (run 34415278140)
+## NetBSD (librefuse): `fi` on linked, dropped on unlink
 
-Probe transcripts recorded 2026-09-09:
+NetBSD 11.0's librefuse (PUFFS) **does** pass `fi->fh` to `truncate` on a
+linked fd (`TRUNCATE /f size=100 fi=1 fh=1`) — unlike DragonFly — but drops the
+handle once the name is unlinked, so `ftruncate` after unlink falls through to
+the path and returns `ENOENT`.  This is why `configure` treats librefuse
+separately from real fuse3 when it decides whether `test_fuse_unlink_open`
+should skip (`FILSYS_TRUNC_FI` is set for real fuse3 only).
 
-- **FreeBSD 15.1** — `getattr` carries no `fi` (`fi=0`), but `truncate` does
-  (`fi=1 fh=1`); release at close; no dedup; two-process `fh` distinct;
-  unlink-of-open is a plain `UNLINK` (hard_remove).
-- **DragonFly 6.4.2** — as FreeBSD except `truncate` has `fi=0` (see above).
-- **OpenBSD 7.9** — the probe binary did not compile under the first CI
-  (a bare `cc -lfuse` cannot see base `fuse.h`; fixed to `pkg-config --cflags
-  --libs fuse`).  The `finding-a` end-to-end test still passed.
-- **NetBSD / MidnightBSD / HardenedBSD** — the job failed in `prepare`, before
-  the probe ran: NetBSD's package mirror returned "no pkg found for curl";
-  MidnightBSD's VM had no `pkg` tool (`sh: pkg: not found`); HardenedBSD's
-  integrity hardening refused to run the freshly installed binaries (`Tainted
-  process refusing to run binary`).  All three are VM-image/package-manager
-  issues, not filsys.
+## CI results
+
+All six roadmap BSDs are green.  The three that initially failed in `prepare`
+were VM-image/package-manager issues, fixed as follows:
+
+- **NetBSD** — the on-boot package-mirror probe timed out ("no pkg found for
+  curl"); fixed by using the canonical `/usr/sbin/pkg_add -u`.  The conformance
+  probe links `-lrefuse -lpuffs` (no `fuse3.pc`).
+- **MidnightBSD** — its package manager is `mport`, not `pkg`; fixed to
+  `mport install`.
+- **HardenedBSD** — `hardening.harden_rtld=1` refused to run the freshly
+  installed binaries (`Tainted process refusing to run binary`); fixed by
+  `sysctl hardening.harden_rtld=0` first.

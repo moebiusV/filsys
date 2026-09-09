@@ -40,10 +40,11 @@ int main(int argc, char **argv)
     if (unlink(path) != 0) { perror("unlink"); close(fd); return 1; }
 
     /* The handle must reach the inode without the (now gone) path.  Where the
-     * backend drops fi from truncate (FUSE2, and NetBSD's librefuse) ENOENT is
-     * the expected skip; where truncate carries fi->fh (real fuse3) an ENOENT
-     * is exactly the path-based regression this test guards.  FILSYS_TRUNC_FI
-     * is exported by configure/AM_TESTS_ENVIRONMENT. */
+     * backend cannot route truncate by handle on an unlinked fd (FUSE2 has no fi
+     * in truncate; NetBSD's librefuse drops fi->fh once the name is unlinked)
+     * ENOENT is the expected skip; where truncate carries fi->fh through the
+     * handle (real fuse3) an ENOENT is exactly the path-based regression this
+     * test guards.  FILSYS_TRUNC_FI is exported by configure/AM_TESTS_ENVIRONMENT. */
     int trunc_fi = getenv("FILSYS_TRUNC_FI") != NULL;
     if (ftruncate(fd, 5) != 0) {
         if (errno == ENOENT && !trunc_fi) { close(fd); return 77; }
