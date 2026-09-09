@@ -24,6 +24,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <setjmp.h>
+#include <sys/wait.h>
 
 static int failures;
 
@@ -188,11 +189,24 @@ static void run(const struct fmt *f) {
     }
 
     /* A second read-write open of the same image must be refused by the
-     * advisory lock (the two allocators would hand out the same block). */
+     * advisory lock (two allocators would hand out the same block).  The lock
+     * guards against a second *process* -- OFD locks (Linux) are
+     * per-open-description, but POSIX record locks (the BSDs/macOS) are
+     * per-process, so a same-process double-open cannot be detected there.
+     * Fork a child to exercise the cross-process guarantee, which every host's
+     * lock model enforces. */
     {
-        filsys_t *fs2 = NULL;
+        pid_t pid = fork();
+        if (pid == 0) {
+            filsys_t *fs2 = NULL;
+            _exit(filsys_open(&fs2, f->edition, img, 0, 0, 0, 0, NULL) == -EBUSY
+                  ? 0 : 1);
+        }
+        int st = 0;
+        if (pid > 0)
+            waitpid(pid, &st, 0);
         ok("second RW open rejected (lock)",
-           filsys_open(&fs2, f->edition, img, 0, 0, 0, 0, NULL) == -EBUSY);
+           pid > 0 && WIFEXITED(st) && WEXITSTATUS(st) == 0);
     }
 
     /* The sizes that bit us: odd bytes (a half-full trailing word), the exact
