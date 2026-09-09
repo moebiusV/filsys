@@ -1004,7 +1004,13 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
 
     if (isdir) {
         /* Moving a directory: fix the two parents' link counts and rewrite the
-         * moved directory's '..' entry to point at its new parent. */
+         * moved directory's '..' entry to point at its new parent.  Unlike the
+         * link/unlink steps above, these fixups are deliberately *not* unwound
+         * on failure: a failure here leaves only a link-count / ".."
+         * inconsistency that fsck repairs (a recoverable leak, not block
+         * aliasing), and unwinding them would itself be a multi-step best-effort
+         * that can fail the same way.  The crash-prefix test confirms every
+         * prefix here stays alias-free (dup==0) and salvage-recoverable. */
         if (strcmp(fdir, tdir) != 0) {
             filsys_inode_t fddir;
             uint32_t fdino;
