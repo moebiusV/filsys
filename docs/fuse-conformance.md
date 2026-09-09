@@ -74,13 +74,45 @@ matching `RELEASE`, nothing deferred to unmount), **4** no dedup (distinct
 | Platform | getattr fi | truncate fi | release timing | open dedup | 2-proc fh | unlink-of-open |
 |----------|------------|-------------|----------------|------------|-----------|----------------|
 | Linux (fuse3) | yes | yes | close | no | distinct | hard_remove |
-| OpenBSD (fuse2) | — | — | — | — | — | — |
+| FreeBSD 15.1 (fuse3) | no | yes | close | no | distinct | hard_remove |
+| DragonFly 6.4.2 (fuse3) | no | **no** | close | no | distinct | hard_remove |
+| OpenBSD (fuse2) | —* | —* | close† | — | — | hard_remove |
 | NetBSD (fuse3) | — | — | — | — | — | — |
-| FreeBSD (fuse3) | — | — | — | — | — | — |
 | HardenedBSD | — | — | — | — | — | — |
-| DragonFly BSD | — | — | — | — | — | — |
 | MidnightBSD | — | — | — | — | — | — |
 | illumos (libfuse 2.7.6) | — | — | — | — | — | — |
 
-`—` means not yet measured.  Fill a row by running `sh conformance/run.sh` on
-that platform and recording the six answers here.
+`—` means not yet measured.  `*` FUSE2 declares `getattr`/`truncate` without a
+`fi` parameter, so those two answers are structural rather than measured.  `†`
+from the `finding-a` test (2000 files created and re-opened, zero `ENFILE`,
+`statfs` recovered): release fires at last close on OpenBSD, not at vnode
+reclaim.
+
+## DragonFly: `truncate` gets no `fi`
+
+DragonFly 6.4.2's fusefs does **not** pass `fi` to `truncate`
+(`TRUNCATE /f size=100 fi=0`), even though FreeBSD 15.1 — its ancestor — does
+(`fi=1 fh=1`).  This is the same shape as FUSE2: without `fi` there is no
+`fi->fh` to reach the inode by, so `ftruncate(2)` on an unlinked-but-still-open
+descriptor cannot be routed by the handle and returns `ENOENT` there, exactly as
+on OpenBSD.  (On Linux and FreeBSD it works; see `test_fuse_unlink_open`.)  The
+rest of the deferred-free lifecycle is unaffected: `release` fires at close, and
+`open`/`release` balance one-to-one, so hard_remove frees still land correctly.
+
+## CI results (run 34415278140)
+
+Probe transcripts recorded 2026-09-09:
+
+- **FreeBSD 15.1** — `getattr` carries no `fi` (`fi=0`), but `truncate` does
+  (`fi=1 fh=1`); release at close; no dedup; two-process `fh` distinct;
+  unlink-of-open is a plain `UNLINK` (hard_remove).
+- **DragonFly 6.4.2** — as FreeBSD except `truncate` has `fi=0` (see above).
+- **OpenBSD 7.9** — the probe binary did not compile under the first CI
+  (a bare `cc -lfuse` cannot see base `fuse.h`; fixed to `pkg-config --cflags
+  --libs fuse`).  The `finding-a` end-to-end test still passed.
+- **NetBSD / MidnightBSD / HardenedBSD** — the job failed in `prepare`, before
+  the probe ran: NetBSD's package mirror returned "no pkg found for curl";
+  MidnightBSD's VM had no `pkg` tool (`sh: pkg: not found`); HardenedBSD's
+  integrity hardening refused to run the freshly installed binaries (`Tainted
+  process refusing to run binary`).  All three are VM-image/package-manager
+  issues, not filsys.
