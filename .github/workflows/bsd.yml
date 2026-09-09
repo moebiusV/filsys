@@ -1,15 +1,18 @@
 name: bsd
 
 # Build and test on real FreeBSD, OpenBSD and NetBSD kernels via the vmactions
-# -vm actions (a QEMU-accelerated BSD VM per job).  Two tiers:
+# -vm actions (a QEMU-accelerated BSD VM per job).  Each job downloads a real
+# V7 disk image, configures with --enable-image-tests, and runs `gmake check`
+# once.  That single check runs both tests:
 #
-#   1. `gmake check` runs test_matrix, the FUSE-free core test that creates,
-#      writes, reads, truncates and deletes files on every edition through the
-#      library.  It proves the code builds and the library is correct on a real
-#      BSD kernel with no FUSE in the picture.
-#   2. `test.sh` (enabled with --enable-image-tests) mounts a real V7 image
-#      through FUSE and exercises read/write/mkdir/rename/truncate/persistence.
-#      This is what exercises the FUSE2/FUSE3 adapters on each platform.
+#   - test_matrix, the FUSE-free core test that creates, writes, reads,
+#     truncates and deletes files on every edition through the library, and
+#   - test.sh, which mounts the V7 image through FUSE and exercises
+#     read/write/mkdir/rename/truncate/persistence on the FUSE2/FUSE3 adapter.
+#
+# A job is one configure + one check (not two): running test.sh twice in the
+# same VM can collide on the FUSE mount, and a second configure invites stale
+# config state from the vmactions cache.
 #
 # The BSDs use GNU make (gmake) for autotools-generated Makefiles, so `gmake`,
 # not `make`.  FUSE is fuse3 on FreeBSD (fusefs-libs3) and NetBSD >= 10
@@ -32,14 +35,13 @@ jobs:
             pkg install -y gmake pkgconf fusefs-libs3 curl
             kldload fusefs
           run: |
-            MAKE=gmake ./configure --with-fuse=fuse3
-            gmake
-            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
-            gunzip rp06-0.disk.gz
+            gunzip -f rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
             gmake
-            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+            gmake check; rc=$?
+            cat test.sh.log test-suite.log 2>/dev/null
+            exit $rc
 
   openbsd:
     runs-on: ubuntu-latest
@@ -53,15 +55,11 @@ jobs:
             pkg_add gmake curl
             pkg_add pkgconf || pkg_add pkg-config
           run: |
-            MAKE=gmake ./configure --with-fuse=fuse2
-            gmake
-            gmake check; rc=$?
-            cat test.sh.log test-suite.log 2>/dev/null
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
-            gunzip rp06-0.disk.gz
+            gunzip -f rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse2 --enable-image-tests
             gmake
-            gmake check; rc=$((rc + $?))
+            gmake check; rc=$?
             cat test.sh.log test-suite.log 2>/dev/null
             sh ./test-openbsd-release.sh
             exit $rc
@@ -78,11 +76,10 @@ jobs:
             pkg_add gmake curl
             pkg_add pkgconf || pkg_add pkg-config
           run: |
-            MAKE=gmake ./configure --with-fuse=fuse3
-            gmake
-            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
-            gunzip rp06-0.disk.gz
+            gunzip -f rp06-0.disk.gz
             MAKE=gmake ./configure --with-fuse=fuse3 --enable-image-tests
             gmake
-            gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+            gmake check; rc=$?
+            cat test.sh.log test-suite.log 2>/dev/null
+            exit $rc
