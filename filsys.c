@@ -198,13 +198,21 @@ static int lock_image(filsys_t *fs, const char *path, uint64_t offset) {
     struct flock lk = { .l_type = F_WRLCK, .l_whence = SEEK_SET,
                         .l_start = (off_t)offset, .l_len = (off_t)len };
     int fd = fs->fs->fd;
+    /* OFD locks (Linux) are per-open-file-description; POSIX record locks (the
+     * BSDs/macOS) are per-process and drop on any close of the file -- the best
+     * those hosts offer. */
+#if HAVE_DECL_F_OFD_SETLK
+    int setlk = F_OFD_SETLK, getlk = F_OFD_GETLK;
+#else
+    int setlk = F_SETLK, getlk = F_GETLK;
+#endif
     if (fs->readonly) {
-        if (fcntl(fd, F_OFD_GETLK, &lk) == 0 && lk.l_type == F_WRLCK)
+        if (fcntl(fd, getlk, &lk) == 0 && lk.l_type == F_WRLCK)
             fprintf(stderr, "filsys: warning: %s is open read-write elsewhere; "
                     "this mount won't see those writes\n", path);
         return 0;
     }
-    if (fcntl(fd, F_OFD_SETLK, &lk) == 0)
+    if (fcntl(fd, setlk, &lk) == 0)
         return 0;
     fprintf(stderr, "filsys: %s is already open read-write (use -o no_lock to override)\n",
             path);
@@ -350,7 +358,10 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     st->st_gid   = fs->gid;
     st->st_size  = ip->size;
     if (mode_is_device(&fs->fmt, ip))
-        st->st_rdev = ip->addr[0];
+        /* V7 packs 8-bit major + 8-bit minor into one word; makedev() re-encodes
+         * into the host's dev_t layout (Linux's is the same, the BSDs'/macOS's
+         * differ). */
+        st->st_rdev = makedev(ip->addr[0] >> 8, ip->addr[0] & 0xff);
     st->st_atime   = ip->atime;
     st->st_mtime   = ip->mtime;
     st->st_ctime   = ip->ctime;

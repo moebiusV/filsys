@@ -176,6 +176,10 @@ AC_SUBST([FUSE_CPPFLAGS])
 # <sys/sysmacros.h>; the BSDs and macOS still declare them in <sys/types.h>.
 AC_CHECK_HEADERS([sys/sysmacros.h])
 
+# OFD locks (F_OFD_SETLK/F_OFD_GETLK) are Linux-only; the BSDs and macOS have
+# only POSIX record locks (F_SETLK/F_GETLK).  lock_image() picks the commands.
+AC_CHECK_DECLS([F_OFD_SETLK], [], [], [[#include <fcntl.h>]])
+
 # Which struct stat time field does this host use?  macOS has st_atimespec,
 # not st_atim; the accessor objects are selected by these results, not by OS
 # name.  st_birthtime is macOS-only and likewise value-level.
