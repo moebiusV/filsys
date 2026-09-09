@@ -290,6 +290,28 @@ static void run(const struct fmt *f) {
             ssize_t n = filsys_readlink(fs, "/lnk", buf, sizeof buf);
             ok("readlink target", n == (ssize_t)strlen(tgt) &&
                memcmp(buf, tgt, strlen(tgt)) == 0);
+
+            /* readlink truncation is silent (POSIX: no trailing NUL, returns
+             * min(target, bufsiz)).  Pin the equal / one-over / far-over
+             * boundaries so a wrong-by-one in the clamp can't hide. */
+            char tgt2[256], b[64];
+            size_t lens[] = { sizeof b, sizeof b + 1, sizeof tgt2 - 1 };
+            for (size_t i = 0; i < sizeof lens / sizeof lens[0]; i++) {
+                size_t L = lens[i];
+                for (size_t j = 0; j < L; j++)
+                    tgt2[j] = (char)('a' + (j % 26));
+                tgt2[L] = 0;
+                char what[96];
+                snprintf(what, sizeof what, "readlink truncate @%zu", L);
+                if (filsys_symlink(fs, tgt2, "/lnk2") != 0) {
+                    ok(what, 0);
+                    continue;
+                }
+                ssize_t m = filsys_readlink(fs, "/lnk2", b, sizeof b);
+                size_t want = L < sizeof b ? L : sizeof b;
+                ok(what, m == (ssize_t)want && memcmp(b, tgt2, want) == 0);
+                filsys_unlink(fs, "/lnk2");
+            }
         } else {
             ok("symlink rejected (predates IFLNK)",
                filsys_symlink(fs, tgt, "/lnk") == -ENOSYS);
@@ -318,6 +340,24 @@ static void run(const struct fmt *f) {
            filsys_rename(fs, "/ino", "/ino2", 1) == -EEXIST);
         ok("rename NOREPLACE fresh",
            filsys_rename(fs, "/ino", "/ino3", 1) == 0);
+    }
+
+    /* open -> unlink -> read (hard_remove): an inode survives its name until
+     * the last open handle closes -- the data must stay readable after the
+     * unlink and be freed on the final release, not before. */
+    {
+        uint8_t wbuf[32], rbuf[32] = {0};
+        for (int i = 0; i < 32; i++) wbuf[i] = (uint8_t)(i + 1);
+        filsys_create(fs, "/open", 0644, 0, 0);
+        filsys_write(fs, "/open", wbuf, sizeof wbuf, 0);
+        uint32_t ino; filsys_inode_t ip;
+        filsys_lookup(fs, "/open", &ino, &ip);
+        ok("open_ino tracks", filsys_open_ino(fs, ino) == 0);
+        ok("unlink while open", filsys_unlink(fs, "/open") == 0);
+        ok("read after unlink",
+           filsys_read_ino(fs, ino, rbuf, sizeof rbuf, 0) == (ssize_t)sizeof rbuf &&
+           memcmp(wbuf, rbuf, sizeof wbuf) == 0);
+        ok("close_ino frees", filsys_close_ino(fs, ino) == 0);
     }
 
     filsys_close(fs);
@@ -620,6 +660,7 @@ static int op_truncate(filsys_t *fs) { return filsys_truncate(fs, "/f", 0); }
 static int op_unlink(filsys_t *fs)   { return filsys_unlink(fs, "/f"); }
 static int op_rmdir(filsys_t *fs)    { return filsys_rmdir(fs, "/d"); }
 static int op_link(filsys_t *fs)     { return filsys_link(fs, "/f", "/g"); }
+static int op_symlink(filsys_t *fs)  { return filsys_symlink(fs, "/t", "/lnk"); }
 static int op_rename(filsys_t *fs)   { return filsys_rename(fs, "/f", "/g", 0); }
 
 /* rename with a replaced target, and a directory rename -- these exercise the
@@ -696,6 +737,7 @@ static void fault_test(void) {
         { "unlink",   setup_file, op_unlink },
         { "rmdir",    setup_dir,  op_rmdir },
         { "link",     setup_file, op_link },
+        { "symlink",  setup_none, op_symlink },
         { "rename",   setup_file, op_rename },
         { "rename_over",     setup_file2, op_rename_over },
         { "rename_dir",      setup_dir,   op_rename_dir },
@@ -831,6 +873,7 @@ static void crash_prefix_test(void) {
         { "unlink",   setup_file, op_unlink },
         { "rmdir",    setup_dir,  op_rmdir },
         { "link",     setup_file, op_link },
+        { "symlink",  setup_none, op_symlink },
         { "rename",   setup_file, op_rename },
     };
     for (size_t i = 0; ; i++) {
