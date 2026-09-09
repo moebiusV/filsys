@@ -1,6 +1,6 @@
 # Maintainer: maintainer <email>
 pkgname=filsys
-pkgver=1.9.0
+pkgver=1.9.1
 pkgrel=0
 pkgdesc="FUSE driver for Research Unix (V0-V7, 32V) filesystem images"
 url="https://github.com/moebiusV/filsys"

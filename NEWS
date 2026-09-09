@@ -1,3 +1,14 @@
+filsys 1.9.1 (2026-09-09)
+=========================
+
+A housekeeping release; no on-disk or API change.
+
+- filsys.c: fix the stale "v6fs/v7fs backends" header comment (the v6fs.c
+  backend was folded into v7fs.c in 1.5.2).
+- test_matrix: build mkfs.filsys/fsck.filsys/findfs.filsys before the test runs,
+  so a bare `make test_matrix` (the fast developer-iteration path) no longer
+  fails for a missing tool.
+
 filsys 1.9.0 (2026-09-09)
 =========================
 

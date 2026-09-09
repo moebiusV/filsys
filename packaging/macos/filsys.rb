@@ -7,7 +7,7 @@
 class Filsys < Formula
   desc "FUSE driver for Research Unix (PDP-7 through V7, 32V) filesystem images"
   homepage "https://github.com/moebiusV/filsys"
-  url "https://github.com/moebiusV/filsys/releases/download/v1.9.0/filsys-1.9.0.tar.gz"
+  url "https://github.com/moebiusV/filsys/releases/download/v1.9.1/filsys-1.9.1.tar.gz"
   sha256 "de181a3faed8772a86112a290d1b754eb527623c9bf850e7c314ad6126ea4dea"
   # The code is ISC; filsys.5 additionally carries the Caldera Ancient UNIX
   # License (see COPYING).  Homebrew records the code licence here.
