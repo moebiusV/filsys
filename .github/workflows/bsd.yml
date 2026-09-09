@@ -1,22 +1,21 @@
 name: bsd
 
-# Build and test on real FreeBSD, OpenBSD and NetBSD kernels via the vmactions
-# -vm actions (a QEMU-accelerated BSD VM per job).  Each job downloads a real
-# V7 disk image, configures with --enable-image-tests, and runs `gmake check`
-# once.  That single check runs both tests:
+# Build and test on real BSD kernels via the vmactions -vm actions (a
+# QEMU-accelerated VM per job).  Two layers:
 #
-#   - test_matrix, the FUSE-free core test that creates, writes, reads,
-#     truncates and deletes files on every edition through the library, and
-#   - test.sh, which mounts the V7 image through FUSE and exercises
-#     read/write/mkdir/rename/truncate/persistence on the FUSE2/FUSE3 adapter.
+#   - the existing jobs (FreeBSD/OpenBSD/NetBSD) download a real V7 image,
+#     configure with --enable-image-tests and run gmake check once (test_matrix
+#     + test.sh), then run the handle-fidelity conformance probe.
+#   - the roadmap jobs (HardenedBSD/DragonFly/MidnightBSD) do the T1 gate
+#     (configure + gmake + gmake check, no image tests yet) plus the
+#     conformance probe -- that probe is the Phase 1 go/no-go that measures
+#     whether each platform's FUSE delivers a stable fi->fh and fires release
+#     at close, the assumption the 1.9.3 deferred-free lifecycle rests on.
 #
-# A job is one configure + one check (not two): running test.sh twice in the
-# same VM can collide on the FUSE mount, and a second configure invites stale
-# config state from the vmactions cache.
-#
-# The BSDs use GNU make (gmake) for autotools-generated Makefiles, so `gmake`,
-# not `make`.  FUSE is fuse3 on FreeBSD (fusefs-libs3) and NetBSD >= 10
-# (librefuse), fuse2 on OpenBSD (base libfuse, 2.6-era).
+# The BSDs use GNU make (gmake) for autotools-generated Makefiles.  FUSE is
+# fuse3 on FreeBSD (fusefs-libs3) and NetBSD >= 10 (librefuse), fuse2 on
+# OpenBSD (base libfuse, 2.6-era).  The three roadmap BSDs are FreeBSD-derived
+# and expected to be fuse3.
 
 on:
   push:
@@ -43,6 +42,10 @@ jobs:
             gmake check
             rc=$?
             cat test.sh.log test-suite.log 2>/dev/null
+            echo "=== handle-fidelity conformance probe ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c $(pkg-config --cflags --libs fuse3) -o conformance/fuse-conformance && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh
             exit $rc
 
   openbsd:
@@ -67,6 +70,10 @@ jobs:
             rc=$?
             cat test.sh.log test-suite.log 2>/dev/null
             sh ./test-openbsd-release.sh
+            echo "=== handle-fidelity conformance probe (fuse2) ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance-fuse2.c -lfuse -o conformance/fuse-conformance-fuse2 && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh ./fuse-conformance-fuse2 fuse2
             exit $rc
 
   netbsd:
@@ -90,4 +97,80 @@ jobs:
             gmake check
             rc=$?
             cat test.sh.log test-suite.log 2>/dev/null
+            echo "=== handle-fidelity conformance probe ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c $(pkg-config --cflags --libs fuse3) -o conformance/fuse-conformance && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh
+            exit $rc
+
+  hardenedbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: HardenedBSD — fuse3
+        uses: vmactions/hardenedbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y gmake pkgconf fusefs-libs3 curl
+            kldload fusefs
+          run: |
+            MAKE=gmake ./configure --with-fuse=fuse3
+            gmake
+            set +e
+            gmake check
+            rc=$?
+            cat test-suite.log 2>/dev/null
+            echo "=== handle-fidelity conformance probe ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c $(pkg-config --cflags --libs fuse3) -o conformance/fuse-conformance && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh
+            exit $rc
+
+  dragonflybsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: DragonFly BSD — fuse3
+        uses: vmactions/dragonflybsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y gmake pkgconf fusefs-libs curl
+            kldload fuse || true
+          run: |
+            MAKE=gmake ./configure --with-fuse=fuse3
+            gmake
+            set +e
+            gmake check
+            rc=$?
+            cat test-suite.log 2>/dev/null
+            echo "=== handle-fidelity conformance probe ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c $(pkg-config --cflags --libs fuse3) -o conformance/fuse-conformance && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh
+            exit $rc
+
+  midnightbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: MidnightBSD — fuse3
+        uses: vmactions/midnightbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y gmake pkgconf fusefs-libs3 curl
+            kldload fusefs
+          run: |
+            MAKE=gmake ./configure --with-fuse=fuse3
+            gmake
+            set +e
+            gmake check
+            rc=$?
+            cat test-suite.log 2>/dev/null
+            echo "=== handle-fidelity conformance probe ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c $(pkg-config --cflags --libs fuse3) -o conformance/fuse-conformance && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh
             exit $rc

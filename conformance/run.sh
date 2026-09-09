@@ -1,19 +1,25 @@
 #!/bin/sh
 # Run the FUSE handle-fidelity conformance probe on this platform.
 #
-# Mounts the minimal fuse-conformance filesystem (which logs every callback's
+# Mounts a minimal fuse-conformance filesystem (which logs every callback's
 # fi/fh to its stderr), runs conformance-client's torture sequence, then
 # unmounts.  The client correlates each step with the callbacks it produced, so
 # the output is the transcript to diff against the checked-in expected one
 # (docs/fuse-conformance.md).
 #
-# Usage: sh run.sh   (run from this directory)
+# Usage: sh run.sh [probe-binary] [fuse2]
+#   probe-binary  default ./fuse-conformance (FUSE3); use ./fuse-conformance-fuse2
+#                 on OpenBSD's 2.6 base libfuse.
+#   fuse2         non-empty => pass -o hard_remove (FUSE2 has no config in init)
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 
-[ -x ./fuse-conformance ] || { echo "build fuse-conformance first"; exit 2; }
+PROBE="${1:-./fuse-conformance}"
+FUSE2="${2:-}"
+
+[ -x "$PROBE" ] || { echo "build $PROBE first"; exit 2; }
 [ -x ./conformance-client ] || { echo "build conformance-client first"; exit 2; }
 
 MNT=./mnt
@@ -21,7 +27,11 @@ LOG=./log.txt
 mkdir -p "$MNT"
 rm -f "$LOG"
 
-./fuse-conformance -f "$MNT" 2>"$LOG" &
+if [ -n "$FUSE2" ]; then
+    "$PROBE" -f -o hard_remove "$MNT" 2>"$LOG" &
+else
+    "$PROBE" -f "$MNT" 2>"$LOG" &
+fi
 FSPID=$!
 sleep 1
 
