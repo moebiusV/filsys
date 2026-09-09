@@ -1,5 +1,5 @@
 /* filsys.c - version-agnostic access layer for Research Unix filesystem
- * images.  Dispatches to the internal v6fs/v7fs backends; this is the library
+ * images.  Dispatches through the per-edition filsys_ops vtable; this is the
  * behind both mount.filsys (FUSE) and the standalone tools.
  *
  * An edition is described by a filsys_edition_t (constants + mode conversion,
