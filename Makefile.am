@@ -109,6 +109,11 @@ TESTS = test_matrix
 check_PROGRAMS = test_matrix
 test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
+# test_matrix shells out to ./mkfs.filsys, ./fsck.filsys and ./findfs.filsys, so
+# building the test must also build those tools.  `make check` already gets them
+# via check-am: all-am, but a bare `make test_matrix && ./test_matrix` (the fast
+# developer-iteration path) would otherwise fail for a missing mkfs/fsck/findfs.
+test_matrix_DEPENDENCIES = libfilsys.a mkfs.filsys fsck.filsys findfs.filsys
 test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
 # The slow soak (fault injection, crash-prefix enumeration, property sequences)
