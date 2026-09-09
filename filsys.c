@@ -41,7 +41,18 @@
  * directory-rename cannot reach the deferred-free path.  That is the reason
  * filsys_rmdir can free an inode unconditionally.  If opendir is ever added
  * (e.g. for a readdir-offset cache), that invariant has to be re-established,
- * or a directory can strand its blocks the same way. */
+ * or a directory can strand its blocks the same way.
+ *
+ * Why the table is a fixed 1024 entries (rather than grown on demand): a
+ * hypothesis worth recording and NOT re-chasing.  On some platforms the FUSE
+ * `release` callback can fire at vnode *reclaim* instead of at last close,
+ * which would leave entries live long after close and let 1024 distinct inodes
+ * overflow the table as -ENFILE (and defer hard_remove frees so statfs
+ * under-reports).  Measured on OpenBSD 7.9 (base libfuse 2.6) through a live
+ * FUSE2 mount -- test-openbsd-release.sh, "finding A" -- 2000 distinct files
+ * were created and re-opened with zero -ENFILE failures and statfs recovered
+ * to baseline.  So release fires at last close there and the fixed 1024 table
+ * is not the binding limit; no reclaim-time-release workaround is needed. */
 enum { FILSYS_OPEN_MAX = 1024 };
 struct open_handle {
     uint32_t ino;
