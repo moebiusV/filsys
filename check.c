@@ -210,7 +210,8 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
 static int is_regular(const filsys_edition_t *fs, const filsys_inode_t *ip) {
     if (fs->is_dir)
         return !fs->is_dir(fs, ip) && !fs->is_device(fs, ip);
-    return (ip->mode & fs->ifmt) == fs->ifreg;
+    uint32_t t = ip->mode & fs->ifmt;
+    return t == fs->ifreg || (fs->iflnk && t == fs->iflnk);   /* symlinks carry data too */
 }
 
 /* True if the inode is a device (char/block/multiplexed), whose addr[0] is a
