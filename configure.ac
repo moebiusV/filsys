@@ -230,11 +230,14 @@ AS_IF([test "x$enable_slow_tests" = xyes],
     [SLOW_TESTS_ENV=''])
 AC_SUBST([SLOW_TESTS_ENV])
 
-# test_fuse_unlink_open needs to know whether truncate carries fi->fh (real
-# fuse3: Linux/FreeBSD/macFUSE) so an ENOENT from ftruncate on an unlinked-open
-# fd is the path-based regression it guards -- or whether truncate has no fi
-# (FUSE2, and NetBSD's librefuse, whose PUFFS driver drops fi from truncate),
-# where ENOENT is the expected skip.
+# test_fuse_unlink_open needs to know whether truncate reaches an unlinked-open
+# fd through fi->fh (real fuse3: Linux/FreeBSD/macFUSE), so an ENOENT from
+# ftruncate after unlink is the path-based regression it guards -- or whether
+# that handle path is unavailable, where ENOENT is the expected skip.  The
+# unavailable cases differ: FUSE2 has no fi in truncate at all; NetBSD's
+# librefuse delivers fi->fh to truncate on a *linked* fd (the conformance probe
+# sees fi=1) but drops it once the name is unlinked, so ftruncate there returns
+# ENOENT through the path fallback.
 AS_IF([test "x$have_fuse3" = xyes && test "x$have_refuse" = xno],
     [FUSE_TEST_ENV='FILSYS_TRUNC_FI=1; export FILSYS_TRUNC_FI;'],
     [FUSE_TEST_ENV=''])
