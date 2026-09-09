@@ -97,9 +97,13 @@ POST_UNINSTALL = :
 bin_PROGRAMS = findfs.filsys$(EXEEXT) mkfs.filsys$(EXEEXT) \
 	fsck.filsys$(EXEEXT)
 @HAVE_FUSE_TRUE@sbin_PROGRAMS = mount.filsys$(EXEEXT)
-TESTS = test_matrix$(EXEEXT) $(am__append_1) $(am__EXEEXT_1)
-check_PROGRAMS = test_matrix$(EXEEXT) $(am__EXEEXT_1)
+TESTS = test_matrix$(EXEEXT) $(am__append_1) $(am__EXEEXT_2)
+check_PROGRAMS = test_matrix$(EXEEXT) $(am__EXEEXT_1) $(am__EXEEXT_2)
 @ENABLE_IMAGE_TESTS_TRUE@am__append_1 = test.sh
+# test.sh's fstat/ftruncate-on-unlinked-open probe.  It exercises the FUSE
+# boundary (the layer where that bug lived) through a live mount, so it is built
+# only with the image tests; test.sh runs it while the copy is mounted.
+@ENABLE_IMAGE_TESTS_TRUE@am__append_2 = test_fuse_unlink_open
 
 # The external-oracle test (test_oracle) writes a hard-linked directory into a
 # V7 image and validates it with the *historical* icheck/dcheck under simh, via
@@ -107,8 +111,8 @@ check_PROGRAMS = test_matrix$(EXEEXT) $(am__EXEEXT_1)
 # rp06-0.disk, prebsd, and the `pdp11` simh binary, so it is a separate opt-in
 # (--enable-oracle-tests); when enabled it *fails* rather than skips on a
 # missing prerequisite, so an explicitly-enabled run cannot pass silently.
-@ENABLE_ORACLE_TESTS_TRUE@am__append_2 = test_oracle
 @ENABLE_ORACLE_TESTS_TRUE@am__append_3 = test_oracle
+@ENABLE_ORACLE_TESTS_TRUE@am__append_4 = test_oracle
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -127,7 +131,9 @@ am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" \
 	"$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" \
 	"$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)" \
 	"$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(filsysincludedir)"
-@ENABLE_ORACLE_TESTS_TRUE@am__EXEEXT_1 = test_oracle$(EXEEXT)
+@ENABLE_IMAGE_TESTS_TRUE@am__EXEEXT_1 =  \
+@ENABLE_IMAGE_TESTS_TRUE@	test_fuse_unlink_open$(EXEEXT)
+@ENABLE_ORACLE_TESTS_TRUE@am__EXEEXT_2 = test_oracle$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS) $(sbin_PROGRAMS)
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
@@ -204,6 +210,12 @@ am__DEPENDENCIES_1 =
 mount_filsys_DEPENDENCIES = $(am__DEPENDENCIES_1) libfilsys.a
 mount_filsys_LINK = $(CCLD) $(mount_filsys_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
+am__test_fuse_unlink_open_SOURCES_DIST = test_fuse_unlink_open.c
+@ENABLE_IMAGE_TESTS_TRUE@am_test_fuse_unlink_open_OBJECTS = test_fuse_unlink_open-test_fuse_unlink_open.$(OBJEXT)
+test_fuse_unlink_open_OBJECTS = $(am_test_fuse_unlink_open_OBJECTS)
+test_fuse_unlink_open_LDADD = $(LDADD)
+test_fuse_unlink_open_LINK = $(CCLD) $(test_fuse_unlink_open_CFLAGS) \
+	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_test_matrix_OBJECTS = test_matrix-test_matrix.$(OBJEXT)
 test_matrix_OBJECTS = $(am_test_matrix_OBJECTS)
 test_matrix_LINK = $(CCLD) $(test_matrix_CFLAGS) $(CFLAGS) \
@@ -247,6 +259,7 @@ am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po \
 	./$(DEPDIR)/mount_filsys-fuseops_macos.Po \
 	./$(DEPDIR)/mount_filsys-fuseops_openbsd.Po \
 	./$(DEPDIR)/mount_filsys-mount.filsys.Po \
+	./$(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po \
 	./$(DEPDIR)/test_matrix-test_matrix.Po \
 	./$(DEPDIR)/test_oracle-test_oracle.Po
 am__mv = mv -f
@@ -268,12 +281,13 @@ am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libfilsys_a_SOURCES) $(findfs_filsys_SOURCES) \
 	$(fsck_filsys_SOURCES) $(mkfs_filsys_SOURCES) \
-	$(mount_filsys_SOURCES) $(test_matrix_SOURCES) \
-	$(test_oracle_SOURCES)
+	$(mount_filsys_SOURCES) $(test_fuse_unlink_open_SOURCES) \
+	$(test_matrix_SOURCES) $(test_oracle_SOURCES)
 DIST_SOURCES = $(libfilsys_a_SOURCES) $(findfs_filsys_SOURCES) \
 	$(fsck_filsys_SOURCES) $(mkfs_filsys_SOURCES) \
-	$(am__mount_filsys_SOURCES_DIST) $(test_matrix_SOURCES) \
-	$(am__test_oracle_SOURCES_DIST)
+	$(am__mount_filsys_SOURCES_DIST) \
+	$(am__test_fuse_unlink_open_SOURCES_DIST) \
+	$(test_matrix_SOURCES) $(am__test_oracle_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -695,6 +709,8 @@ test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 # is gated by FILSYS_SLOW_TESTS inside test_matrix; configure sets -- or clears
 # -- the var via --enable-slow-tests, so `make check` is a fast gate by default.
 AM_TESTS_ENVIRONMENT = $(SLOW_TESTS_ENV)
+@ENABLE_IMAGE_TESTS_TRUE@test_fuse_unlink_open_SOURCES = test_fuse_unlink_open.c
+@ENABLE_IMAGE_TESTS_TRUE@test_fuse_unlink_open_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_SOURCES = test_oracle.c
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_LDADD = libfilsys.a
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
@@ -893,6 +909,10 @@ mount.filsys$(EXEEXT): $(mount_filsys_OBJECTS) $(mount_filsys_DEPENDENCIES) $(EX
 	@rm -f mount.filsys$(EXEEXT)
 	$(AM_V_CCLD)$(mount_filsys_LINK) $(mount_filsys_OBJECTS) $(mount_filsys_LDADD) $(LIBS)
 
+test_fuse_unlink_open$(EXEEXT): $(test_fuse_unlink_open_OBJECTS) $(test_fuse_unlink_open_DEPENDENCIES) $(EXTRA_test_fuse_unlink_open_DEPENDENCIES) 
+	@rm -f test_fuse_unlink_open$(EXEEXT)
+	$(AM_V_CCLD)$(test_fuse_unlink_open_LINK) $(test_fuse_unlink_open_OBJECTS) $(test_fuse_unlink_open_LDADD) $(LIBS)
+
 test_matrix$(EXEEXT): $(test_matrix_OBJECTS) $(test_matrix_DEPENDENCIES) $(EXTRA_test_matrix_DEPENDENCIES) 
 	@rm -f test_matrix$(EXEEXT)
 	$(AM_V_CCLD)$(test_matrix_LINK) $(test_matrix_OBJECTS) $(test_matrix_LDADD) $(LIBS)
@@ -924,6 +944,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-fuseops_macos.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-fuseops_openbsd.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mount_filsys-mount.filsys.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_matrix-test_matrix.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_oracle-test_oracle.Po@am__quote@ # am--include-marker
 
@@ -1184,6 +1205,20 @@ mount_filsys-fuseops_openbsd.obj: fuseops_openbsd.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='fuseops_openbsd.c' object='mount_filsys-fuseops_openbsd.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mount_filsys_CPPFLAGS) $(CPPFLAGS) $(mount_filsys_CFLAGS) $(CFLAGS) -c -o mount_filsys-fuseops_openbsd.obj `if test -f 'fuseops_openbsd.c'; then $(CYGPATH_W) 'fuseops_openbsd.c'; else $(CYGPATH_W) '$(srcdir)/fuseops_openbsd.c'; fi`
+
+test_fuse_unlink_open-test_fuse_unlink_open.o: test_fuse_unlink_open.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_fuse_unlink_open_CFLAGS) $(CFLAGS) -MT test_fuse_unlink_open-test_fuse_unlink_open.o -MD -MP -MF $(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Tpo -c -o test_fuse_unlink_open-test_fuse_unlink_open.o `test -f 'test_fuse_unlink_open.c' || echo '$(srcdir)/'`test_fuse_unlink_open.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Tpo $(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_fuse_unlink_open.c' object='test_fuse_unlink_open-test_fuse_unlink_open.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_fuse_unlink_open_CFLAGS) $(CFLAGS) -c -o test_fuse_unlink_open-test_fuse_unlink_open.o `test -f 'test_fuse_unlink_open.c' || echo '$(srcdir)/'`test_fuse_unlink_open.c
+
+test_fuse_unlink_open-test_fuse_unlink_open.obj: test_fuse_unlink_open.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_fuse_unlink_open_CFLAGS) $(CFLAGS) -MT test_fuse_unlink_open-test_fuse_unlink_open.obj -MD -MP -MF $(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Tpo -c -o test_fuse_unlink_open-test_fuse_unlink_open.obj `if test -f 'test_fuse_unlink_open.c'; then $(CYGPATH_W) 'test_fuse_unlink_open.c'; else $(CYGPATH_W) '$(srcdir)/test_fuse_unlink_open.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Tpo $(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_fuse_unlink_open.c' object='test_fuse_unlink_open-test_fuse_unlink_open.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_fuse_unlink_open_CFLAGS) $(CFLAGS) -c -o test_fuse_unlink_open-test_fuse_unlink_open.obj `if test -f 'test_fuse_unlink_open.c'; then $(CYGPATH_W) 'test_fuse_unlink_open.c'; else $(CYGPATH_W) '$(srcdir)/test_fuse_unlink_open.c'; fi`
 
 test_matrix-test_matrix.o: test_matrix.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -MT test_matrix-test_matrix.o -MD -MP -MF $(DEPDIR)/test_matrix-test_matrix.Tpo -c -o test_matrix-test_matrix.o `test -f 'test_matrix.c' || echo '$(srcdir)/'`test_matrix.c
@@ -1871,6 +1906,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/mount_filsys-fuseops_macos.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-fuseops_openbsd.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
+	-rm -f ./$(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
 	-rm -f ./$(DEPDIR)/test_oracle-test_oracle.Po
 	-rm -f Makefile
@@ -1939,6 +1975,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/mount_filsys-fuseops_macos.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-fuseops_openbsd.Po
 	-rm -f ./$(DEPDIR)/mount_filsys-mount.filsys.Po
+	-rm -f ./$(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
 	-rm -f ./$(DEPDIR)/test_oracle-test_oracle.Po
 	-rm -f Makefile

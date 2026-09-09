@@ -77,6 +77,16 @@ rmdir "$MNT/tmp/subdir" && echo "  ok: rmdir"
 # copy a binary off
 cp "$MNT/bin/ls" ./ls-off
 [ -s ./ls-off ] && echo "  ok: copy binary off"
+# ftruncate on an unlinked-but-open fd: the FUSE adapter must reach the inode
+# through the open handle, not the (now gone) path.  FUSE3/macFUSE pass; FUSE2
+# (OpenBSD) has no fi in truncate and reports skip.  (fstat immediately after
+# unlink is not tested: the Linux FUSE kernel answers it with ESTALE up front.)
+./test_fuse_unlink_open "$MNT/tmp/truncfd"
+case $? in
+    0) echo "  ok: ftruncate on unlinked-open fd" ;;
+    77) echo "  skip: FUSE2 truncate has no fi (unlinked-open ftruncate unsupported)" ;;
+    *) echo "  FAIL: ftruncate on unlinked-open fd"; exit 1 ;;
+esac
 
 fs_umount "$MNT"; sleep 1
 
