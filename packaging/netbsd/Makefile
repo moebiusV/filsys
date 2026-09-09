@@ -1,6 +1,6 @@
-DISTNAME=	filsys-3.0.2
+DISTNAME=	filsys-3.1.0
 CATEGORIES=	sysutils
-MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v3.0.2/
+MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v3.1.0/
 EXTRACT_SUFX=	.tar.gz
 
 MAINTAINER=	maintainer@example.com

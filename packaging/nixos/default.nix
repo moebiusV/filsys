@@ -2,7 +2,7 @@
 
 stdenv.mkDerivation rec {
   pname = "filsys";
-  version = "3.0.2";
+  version = "3.1.0";
 
   src = fetchurl {
     url = "https://github.com/moebiusV/filsys/releases/download/v${version}/filsys-${version}.tar.gz";
