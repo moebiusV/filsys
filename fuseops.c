@@ -94,9 +94,13 @@ static int fuse_readlink(const char *path, char *buf, size_t size)
 
 static int fuse_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
-    (void)fi;
     fuse_ctx_t c = C();
-    return fuse_op_create(&c, path, mode);
+    uint64_t fh = 0;
+    int rc = fuse_op_create(&c, path, mode, &fh);
+    if (rc)
+        return rc;
+    fi->fh = fh;   /* the write that follows create() must reach the new inode */
+    return 0;
 }
 
 static int fuse_mkdir(const char *path, mode_t mode)

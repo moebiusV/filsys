@@ -82,9 +82,20 @@ int fuse_op_readlink(fuse_ctx_t *c, const char *path, char *buf, size_t size)
     return 0;
 }
 
-int fuse_op_create(fuse_ctx_t *c, const char *path, mode_t mode)
+int fuse_op_create(fuse_ctx_t *c, const char *path, mode_t mode, uint64_t *fh)
 {
-    return filsys_create(c->fs, path, mode, c->uid, c->gid);
+    int rc = filsys_create(c->fs, path, mode, c->uid, c->gid);
+    if (rc)
+        return rc;
+    /* The kernel's create is a combined open: return the new inode so the
+     * adapter can stash it in fi->fh for the read/write that follow. */
+    filsys_inode_t ip;
+    uint32_t ino;
+    rc = filsys_lookup(c->fs, path, &ino, &ip);
+    if (rc)
+        return rc;
+    *fh = ino;
+    return 0;
 }
 
 int fuse_op_mkdir(fuse_ctx_t *c, const char *path, mode_t mode)
