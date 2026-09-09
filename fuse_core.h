@@ -25,6 +25,8 @@ typedef int (*fuse_emit_t)(void *arg, const char *name, const struct stat *st,
                            size_t index);
 
 int fuse_op_getattr(fuse_ctx_t *c, const char *path, struct stat *st);
+/* Stat an open handle (fi->fh = ino): an unlinked-open fd has no path. */
+int fuse_op_getattr_ino(fuse_ctx_t *c, uint64_t fh, struct stat *st);
 int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit, void *arg);
 int fuse_op_open(fuse_ctx_t *c, const char *path, int flags, uint64_t *fh);
 int fuse_op_read(fuse_ctx_t *c, uint64_t fh, char *buf, size_t size,
@@ -44,6 +46,7 @@ int fuse_op_rename(fuse_ctx_t *c, const char *from, const char *to,
 int fuse_op_chmod(fuse_ctx_t *c, const char *path, mode_t mode);
 int fuse_op_chown(fuse_ctx_t *c, const char *path, uid_t uid, gid_t gid);
 int fuse_op_truncate(fuse_ctx_t *c, const char *path, off_t size);
+int fuse_op_truncate_ino(fuse_ctx_t *c, uint64_t fh, off_t size);
 int fuse_op_utimens(fuse_ctx_t *c, const char *path, const struct timespec tv[2]);
 int fuse_op_statfs(fuse_ctx_t *c, struct statvfs *st);
 int fuse_op_access(fuse_ctx_t *c, const char *path, int mask);

@@ -346,6 +346,8 @@ static void run(const struct fmt *f) {
      * the last open handle closes -- the data must stay readable after the
      * unlink and be freed on the final release, not before. */
     {
+        struct statvfs st0;
+        filsys_statfs(fs, &st0);   /* free blocks before (for the leak check) */
         uint8_t wbuf[32], rbuf[32] = {0};
         for (int i = 0; i < 32; i++) wbuf[i] = (uint8_t)(i + 1);
         filsys_create(fs, "/open", 0644, 0, 0);
@@ -358,6 +360,34 @@ static void run(const struct fmt *f) {
            filsys_read_ino(fs, ino, rbuf, sizeof rbuf, 0) == (ssize_t)sizeof rbuf &&
            memcmp(wbuf, rbuf, sizeof wbuf) == 0);
         ok("close_ino frees", filsys_close_ino(fs, ino) == 0);
+        struct statvfs st1;
+        filsys_statfs(fs, &st1);
+        ok("unlink-open blocks freed", st1.f_bfree == st0.f_bfree);
+    }
+
+    /* open -> rename-over -> read (hard_remove): renaming /b over the open /a
+     * must not free /a's inode -- that would strand the handle and let the next
+     * create() reuse the number (the data-destroying bug).  The replaced inode
+     * survives until close_ino. */
+    {
+        uint8_t ab[32], bb[32], rb[32] = {0};
+        for (int i = 0; i < 32; i++) { ab[i] = 0x55; bb[i] = 0x2a; }   /* 7-bit: survives PDP-7 packing */
+        filsys_create(fs, "/a", 0644, 0, 0);
+        filsys_write(fs, "/a", ab, sizeof ab, 0);
+        filsys_create(fs, "/b", 0644, 0, 0);
+        filsys_write(fs, "/b", bb, sizeof bb, 0);
+        uint32_t ino; filsys_inode_t ip;
+        filsys_lookup(fs, "/a", &ino, &ip);
+        ok("rename-over: open_ino", filsys_open_ino(fs, ino) == 0);
+        ok("rename-over: rename", filsys_rename(fs, "/b", "/a", 0) == 0);
+        ok("rename-over: read survives",
+           filsys_read_ino(fs, ino, rb, sizeof rb, 0) == (ssize_t)sizeof rb &&
+           memcmp(ab, rb, sizeof ab) == 0);
+        uint32_t cino; filsys_inode_t cip;
+        filsys_create(fs, "/c", 0644, 0, 0);
+        filsys_lookup(fs, "/c", &cino, &cip);
+        ok("rename-over: inode not reused", cino != ino);
+        ok("rename-over: close frees", filsys_close_ino(fs, ino) == 0);
     }
 
     filsys_close(fs);
@@ -682,6 +712,23 @@ static int op_rename_over(filsys_t *fs)     { return filsys_rename(fs, "/f", "/g
 static int op_rename_dir(filsys_t *fs)      { return filsys_rename(fs, "/d", "/e", 0); }
 static int op_rename_dir_over(filsys_t *fs) { return filsys_rename(fs, "/d1", "/d2", 0); }
 
+/* Deferred free (hard_remove close): /f is created, opened, then unlinked, so it
+ * is pending; the op closes the last handle, driving free_deferred_ino's itrunc
+ * / write_inode / ifree sequence through the fault and crash injectors. */
+static uint32_t g_open_ino;
+static void setup_open_unlink(filsys_t *fs) {
+    uint8_t buf[512];
+    memset(buf, 'a', sizeof buf);
+    filsys_create(fs, "/f", 0644, 0, 0);
+    filsys_write(fs, "/f", buf, sizeof buf, 0);
+    filsys_inode_t ip;
+    if (filsys_lookup(fs, "/f", &g_open_ino, &ip) == 0) {
+        filsys_open_ino(fs, g_open_ino);
+        filsys_unlink(fs, "/f");
+    }
+}
+static int op_close_ino(filsys_t *fs) { return filsys_close_ino(fs, g_open_ino); }
+
 /* Fail the 1st, 2nd, ... read/write of a single mutator and require, after every
  * injected failure: no aliasing (dup==0) and a salvage-recoverable filesystem
  * (fsck -s then errors==0).  The loop stops once an injection point does fewer
@@ -742,6 +789,7 @@ static void fault_test(void) {
         { "rename_over",     setup_file2, op_rename_over },
         { "rename_dir",      setup_dir,   op_rename_dir },
         { "rename_dir_over", setup_dir2,  op_rename_dir_over },
+        { "close_ino",       setup_open_unlink, op_close_ino },
     };
     static const struct { fail_mode_e mode; const char *label; } modes[] = {
         { FAIL_WRITE, "write" },
@@ -875,6 +923,7 @@ static void crash_prefix_test(void) {
         { "link",     setup_file, op_link },
         { "symlink",  setup_none, op_symlink },
         { "rename",   setup_file, op_rename },
+        { "close_ino", setup_open_unlink, op_close_ino },
     };
     for (size_t i = 0; ; i++) {
         struct fmt f;

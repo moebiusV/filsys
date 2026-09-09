@@ -21,6 +21,11 @@ int fuse_op_getattr(fuse_ctx_t *c, const char *path, struct stat *st)
     return 0;
 }
 
+int fuse_op_getattr_ino(fuse_ctx_t *c, uint64_t fh, struct stat *st)
+{
+    return filsys_stat_ino(c->fs, (uint32_t)fh, st);
+}
+
 int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit,
                       void *arg)
 {
@@ -147,6 +152,11 @@ int fuse_op_chown(fuse_ctx_t *c, const char *path, uid_t uid, gid_t gid)
 int fuse_op_truncate(fuse_ctx_t *c, const char *path, off_t size)
 {
     return filsys_truncate(c->fs, path, size);
+}
+
+int fuse_op_truncate_ino(fuse_ctx_t *c, uint64_t fh, off_t size)
+{
+    return filsys_truncate_ino(c->fs, (uint32_t)fh, size);
 }
 
 int fuse_op_utimens(fuse_ctx_t *c, const char *path,

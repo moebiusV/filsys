@@ -26,8 +26,9 @@ static fuse_ctx_t C(void)
 
 static int fuse_getattr(const char *path, struct stat *st, struct fuse_file_info *fi)
 {
-    (void)fi;
     fuse_ctx_t c = C();
+    if (fi && fi->fh)   /* open (possibly unlinked) fd: stat the inode, not the path */
+        return fuse_op_getattr_ino(&c, fi->fh, st);
     return fuse_op_getattr(&c, path, st);
 }
 
@@ -147,8 +148,9 @@ static int fuse_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_i
 
 static int fuse_truncate(const char *path, off_t size, struct fuse_file_info *fi)
 {
-    (void)fi;
     fuse_ctx_t c = C();
+    if (fi && fi->fh)
+        return fuse_op_truncate_ino(&c, fi->fh, size);
     return fuse_op_truncate(&c, path, size);
 }
 
@@ -199,7 +201,11 @@ static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
     (void)conn;
     cfg->kernel_cache = 0;   /* backing store is a plain file; don't cache pages */
     cfg->use_ino = 1;        /* stable inode numbers are reported (see fill_stat) */
-    cfg->hard_remove = 1;    /* unlink the name directly; the inode survives until release */
+    cfg->hard_remove = 1;    /* no silly-rename: libfuse's fallback writes a 28-char
+                              * ".fuse_hidden" name, which cannot fit a V7 14-byte (or
+                              * V1/PDP-7 8-byte) dirent -- every hidden file would
+                              * truncate to the same name and collide.  hard_remove is
+                              * therefore forced, not chosen. */
     /* Return the handle we were given; private_data in later callbacks comes
      * from this, and fuse_get_context()->private_data already holds it. */
     return fuse_get_context()->private_data;

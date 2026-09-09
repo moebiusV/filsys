@@ -174,6 +174,18 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
             if (o->inode->read_inode(fs, ino, &ip))
                 continue;
             int cnt = ecount[ino] & 0377;
+            /* A regular file (or symlink) with no directory entry is an orphan
+             * whatever its nlink claims -- hard_remove leaves unlink-while-open
+             * files here (allocated, nlink == 0) until the last close.  The nlink
+             * equality below would pass (0 == 0) and hide it.  Directories and
+             * devices are excluded: their unreferenced states are the preen
+             * reconnect paths, not this free-deferred state. */
+            if (state[ino] == FILSYS_IN_IREG && cnt == 0 && ino != fmt->rootino &&
+                ino != fmt->badino) {
+                printf("%u entries=0 link=%d (unreferenced)\n", ino, ip.nlink);
+                rep->errors++;
+                continue;
+            }
             if (cnt == ip.nlink)
                 continue;
             if (state[ino] == FILSYS_IN_UNALLOC && cnt == 0)
@@ -369,10 +381,14 @@ void filsys_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *st
             }
             continue;
         }
-        if (cnt == ip.nlink)
+        /* An allocated inode with no directory entry is an orphan (hard_remove's
+         * unlink-while-open leaves nlink == 0 here); don't let the nlink-equality
+         * shortcut (0 == 0) skip it before the reconnect below. */
+        if (cnt == ip.nlink && cnt != 0)
             continue;
-        if (ino == fs->rootino || ino == lf_ino)
-            continue;   /* nlink just set by lost+found creation; ecount is stale */
+        if (ino == fs->rootino || ino == lf_ino || ino == fs->badino)
+            continue;   /* root/lost+found: nlink just set, ecount stale; the
+                         * bad-block inode is nameless by design (nlink 0, no entry) */
         if (cnt == 0) {
             if (lf_ino == 0)
                 continue;

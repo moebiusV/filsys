@@ -34,7 +34,14 @@
  * open file's name directly (no silly-rename to a hidden name), so the inode and
  * its blocks must outlive the name until the last handle closes.  Each open
  * inode carries a refcount; an unlink that drops nlink to 0 marks it pending and
- * defers the block/inode free to the final release. */
+ * defers the block/inode free to the final release.
+ *
+ * Only regular files (and symlinks) ever enter this table: the FUSE adapters
+ * define no opendir/releasedir, so a directory is never "open" and rmdir /
+ * directory-rename cannot reach the deferred-free path.  That is the reason
+ * filsys_rmdir can free an inode unconditionally.  If opendir is ever added
+ * (e.g. for a readdir-offset cache), that invariant has to be re-established,
+ * or a directory can strand its blocks the same way. */
 enum { FILSYS_OPEN_MAX = 1024 };
 struct open_handle {
     uint32_t ino;
@@ -173,6 +180,25 @@ static uint64_t maxfile(const filsys_t *fs) {
     return fs->ops->max_file(fs->fs);
 }
 
+/* Free a deferred (unlink/rename-while-open) inode: its name is gone and nlink
+ * is 0, but an open handle still pins its blocks.  Re-read it by number, drop
+ * its blocks, clear it, and return it to the free list -- only after the clear
+ * is durable, so a crash never leaves a free inode still referenced. */
+static int free_deferred_ino(filsys_t *fs, uint32_t ino) {
+    filsys_inode_t ip;
+    if (read_inode(fs, ino, &ip))
+        return -EIO;
+    filsys_blklist_t *bl = NULL;
+    int rc = itrunc(fs, &ip, &bl);
+    if (rc) { filsys_blklist_discard(bl); return rc; }
+    ip.mode = 0;
+    rc = write_inode(fs, ino, &ip);
+    if (rc) { filsys_blklist_discard(bl); return rc; }
+    filsys_blklist_drain(fs->fs, bl);
+    ifree(fs, ino);
+    return 0;
+}
+
 /* ---- helpers ------------------------------------------------------------- */
 
 static int split_path(const char *path, char *dir, size_t dirsz,
@@ -309,7 +335,18 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
 int filsys_close(filsys_t *fs) {
     if (!fs)
         return 0;
+    /* Drain any deferred (unlink-while-open) frees before the final flush.  A
+     * forced unmount, a SIGKILL, or the OpenBSD ifuse_try_unmount fork may not
+     * send release for every open fd; without this the orphan -- invisible to
+     * fsck, see check.c -- leaks permanently. */
     int rc = 0;
+    for (int i = 0; i < fs->nopen; i++) {
+        if (fs->opens[i].pending) {
+            int r = free_deferred_ino(fs, fs->opens[i].ino);
+            if (r && !rc)
+                rc = r;
+        }
+    }
     if (fs->fs)
         rc = fs->ops->close(fs->fs);   /* final flush; return its result */
     free(fs->fs);
@@ -338,24 +375,21 @@ int filsys_close_ino(filsys_t *fs, uint32_t ino) {
             continue;
         if (--fs->opens[i].refs > 0)
             return 0;
-        int pending = fs->opens[i].pending;
-        fs->opens[i] = fs->opens[fs->nopen - 1];   /* drop the entry */
-        fs->nopen--;
-        if (!pending)
+        if (!fs->opens[i].pending) {
+            fs->opens[i] = fs->opens[fs->nopen - 1];   /* drop the entry */
+            fs->nopen--;
             return 0;
-        /* Unlinked while open: free the inode and its blocks now. */
-        filsys_inode_t ip;
-        if (read_inode(fs, ino, &ip))
-            return -EIO;
-        filsys_blklist_t *bl = NULL;
-        int rc = itrunc(fs, &ip, &bl);
-        if (rc) { filsys_blklist_discard(bl); return rc; }
-        ip.mode = 0;
-        rc = write_inode(fs, ino, &ip);
-        if (rc) { filsys_blklist_discard(bl); return rc; }
-        filsys_blklist_drain(fs->fs, bl);
-        ifree(fs, ino);
-        return 0;
+        }
+        /* Unlinked while open: free the inode and its blocks now.  Keep the
+         * entry until the free commits -- if a fault-injected I/O fails midway,
+         * the pending marker survives so filsys_close can retry, rather than
+         * stranding a half-truncated inode nothing can find. */
+        int rc = free_deferred_ino(fs, ino);
+        if (rc == 0) {
+            fs->opens[i] = fs->opens[fs->nopen - 1];
+            fs->nopen--;
+        }
+        return rc;
     }
     return 0;   /* not tracked: nothing to release */
 }
@@ -977,37 +1011,44 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
      * the replaced target we orphaned above (tip_saved still holds its blocks).
      * On a failure here it stays an orphan -- a recoverable leak, not aliasing. */
     if (free_target) {
-        filsys_blklist_t *bl = NULL;
-        if (itrunc(fs, &tip_saved, &bl) == 0) {
-            tip_saved.mode = 0;
-            if (write_inode(fs, tino, &tip_saved) == 0) {
-                filsys_blklist_drain(fs->fs, bl);
-                ifree(fs, tino);
+        if (open_refs(fs, tino) > 0) {
+            /* hard_remove: the replaced target is still open.  Its nlink is
+             * already persisted at 0 (for a file), so keep its mode non-zero --
+             * mode != 0 is the on-disk invariant that stops ialloc from handing
+             * the number back out -- and defer the block/inode free to the last
+             * close.  Clearing mode here would let the next create() alias the
+             * still-open handle. */
+            mark_pending(fs, tino);
+        } else {
+            filsys_blklist_t *bl = NULL;
+            if (itrunc(fs, &tip_saved, &bl) == 0) {
+                tip_saved.mode = 0;
+                if (write_inode(fs, tino, &tip_saved) == 0) {
+                    filsys_blklist_drain(fs->fs, bl);
+                    ifree(fs, tino);
+                } else {
+                    filsys_blklist_discard(bl);
+                }
             } else {
                 filsys_blklist_discard(bl);
             }
-        } else {
-            filsys_blklist_discard(bl);
         }
     }
     return 0;
 }
 
-int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
-    filsys_inode_t ip;
-    uint32_t ino;
-    int rc = lookup(fs, path, &ino, &ip);
-    if (rc) return rc;
+/* Shared truncate body: shrink or extend inode `ino` (whose decoded state is
+ * `ip`) to `size` bytes.  Extension is a no-op (holes read back as zero). */
+static int truncate_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip, off_t size) {
     /* Reject sizes the format cannot address, rather than wrap a 5 GiB request
      * to 1 GiB via the uint32_t cast below (V7's ceiling is ~1.08 GB). */
     if (size < 0 || (uint64_t)size > maxfile(fs))
         return -EFBIG;
-    uint32_t newsize = (uint32_t)size, oldsize = ip.size;
+    uint32_t newsize = (uint32_t)size, oldsize = ip->size;
     if (newsize == oldsize) return 0;
 
     /* Shrink in place: zero the partial tail of the last surviving block, free
-     * the blocks strictly past the new end, and leave everything else alone.
-     * (Extension is a no-op: holes read back as zero.) */
+     * the blocks strictly past the new end, and leave everything else alone. */
     if (newsize < oldsize) {
         uint32_t bsize = fs->ops->blocksize(fs->fs);
         uint32_t last  = newsize ? (newsize - 1) / bsize : 0;
@@ -1019,20 +1060,20 @@ int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
          * already reads as zero and file_write would only allocate it. */
         if (newsize < tail) {
             uint32_t bno;
-            if (bmap(fs, &ip, last, 0, &bno) == 0 && bno != 0) {
+            if (bmap(fs, ip, last, 0, &bno) == 0 && bno != 0) {
                 uint8_t zeros[V7_MAXBSIZE] = {0};  /* up to the largest block size */
-                ssize_t w = file_write(fs, &ip, zeros, tail - newsize, newsize);
+                ssize_t w = file_write(fs, ip, zeros, tail - newsize, newsize);
                 if (w < 0) return (int)w;
             }
         }
         filsys_blklist_t *bl = NULL;
-        rc = itrunc_from(fs, &ip, newsize ? last + 1 : 0, &bl);
+        int rc = itrunc_from(fs, ip, newsize ? last + 1 : 0, &bl);
         if (rc) {
             filsys_blklist_discard(bl);
             return rc;
         }
-        ip.size = newsize;
-        rc = write_inode(fs, ino, &ip);
+        ip->size = newsize;
+        rc = write_inode(fs, ino, ip);
         if (rc) {
             filsys_blklist_discard(bl);
             return rc;
@@ -1041,8 +1082,31 @@ int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
         return 0;
     }
 
-    ip.size = newsize;
-    return write_inode(fs, ino, &ip);
+    ip->size = newsize;
+    return write_inode(fs, ino, ip);
+}
+
+int filsys_truncate(filsys_t *fs, const char *path, off_t size) {
+    filsys_inode_t ip;
+    uint32_t ino;
+    int rc = lookup(fs, path, &ino, &ip);
+    if (rc) return rc;
+    return truncate_inode(fs, ino, &ip, size);
+}
+
+int filsys_truncate_ino(filsys_t *fs, uint32_t ino, off_t size) {
+    filsys_inode_t ip;
+    int rc = read_inode(fs, ino, &ip);
+    if (rc) return rc;
+    return truncate_inode(fs, ino, &ip, size);
+}
+
+int filsys_stat_ino(filsys_t *fs, uint32_t ino, struct stat *st) {
+    filsys_inode_t ip;
+    int rc = read_inode(fs, ino, &ip);
+    if (rc) return rc;
+    filsys_fill_stat(fs, &ip, st);
+    return 0;
 }
 
 ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) {
