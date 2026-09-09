@@ -573,6 +573,7 @@ PKG_CONFIG_PATH = @PKG_CONFIG_PATH@
 RANLIB = @RANLIB@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
+SLOW_TESTS_ENV = @SLOW_TESTS_ENV@
 STRIP = @STRIP@
 VERSION = @VERSION@
 abs_builddir = @abs_builddir@
@@ -685,6 +686,11 @@ dist_boot_DATA = boot/hpuboot boot/rpuboot
 test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
+
+# The slow soak (fault injection, crash-prefix enumeration, property sequences)
+# is gated by FILSYS_SLOW_TESTS inside test_matrix; configure sets -- or clears
+# -- the var via --enable-slow-tests, so `make check` is a fast gate by default.
+AM_TESTS_ENVIRONMENT = $(SLOW_TESTS_ENV)
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_SOURCES = test_oracle.c
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_LDADD = libfilsys.a
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_CFLAGS = -std=c17 -Wall -Wextra -Wshadow

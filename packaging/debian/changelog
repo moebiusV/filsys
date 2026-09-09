@@ -1,3 +1,12 @@
+filsys (1.9.0-1) unstable; urgency=medium
+
+  * New upstream release: V8/V9/V10 and System III/System V editions, a
+    FUSE-free core, symlink support, open-unlink (hard_remove), the advisory
+    image lock (-o no_lock), st_blocks, the durability work, and a
+    BSD/macOS/distro CI matrix.
+
+ -- David Walther <david@clearbrookdistillery.com>  Wed, 09 Sep 2026 00:00:00 +0000
+
 filsys (1.4.0-1) unstable; urgency=medium
 
   * Fold the V6 and 2.11BSD backends into the V7 engine; add the byte-order

@@ -1349,6 +1349,12 @@ static void bitmap_roundtrip(void) {
 }
 
 int main(void) {
+    /* The slow soak (fault injection x editions, exhaustive crash-prefix
+     * enumeration, property-based op sequences) runs only when
+     * FILSYS_SLOW_TESTS is set: `make check` is a fast gate by default, and
+     * `./configure --enable-slow-tests` opts the soak back in. */
+    const char *slow_env = getenv("FILSYS_SLOW_TESTS");
+    int slow = slow_env && slow_env[0] && strcmp(slow_env, "0") != 0;
     for (size_t i = 0; ; i++) {
         struct fmt f;
         int frc = fmt_at(i, &f);
@@ -1369,9 +1375,15 @@ int main(void) {
     rename_semantics();
     dir_link_semantics();
     findfs_self_detect();
-    fault_test();
-    crash_prefix_test();
-    property_sequences();
+    if (slow) {
+        fault_test();
+        crash_prefix_test();
+        property_sequences();
+    } else {
+        printf("slow tests skipped (set FILSYS_SLOW_TESTS, or configure with "
+               "--enable-slow-tests, to run the fault-injection / crash-prefix / "
+               "property-sequences soak)\n");
+    }
     if (failures) {
         printf("%d failure(s)\n", failures);
         return 1;

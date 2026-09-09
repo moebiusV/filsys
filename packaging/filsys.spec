@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        1.4.0
+Version:        1.9.0
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (V0-V7, 32V) filesystem images
 
@@ -48,6 +48,11 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Wed Sep 09 2026 David Walther <david@clearbrookdistillery.com> - 1.9.0-1
+- V8/V9/V10 and System III/System V editions; FUSE-free core; symlink support;
+  open-unlink (hard_remove); the advisory image lock (-o no_lock); st_blocks;
+  the durability work; and a BSD/macOS/distro CI matrix.
+
 * Sun Sep 06 2026 David Walther <david@clearbrookdistillery.com> - 1.4.0-1
 - Fold the V6 and 2.11BSD backends into the V7 engine; add the byte-order
   ops table (byteorder.c) and the per-edition format descriptor

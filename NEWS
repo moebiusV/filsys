@@ -1,3 +1,51 @@
+filsys 1.9.0 (2026-09-09)
+=========================
+
+A coverage + hardening release: the V8/V9/V10 and System III/System V editions,
+a FUSE-free core, the durability work, symlinks, and the image lock.  The API
+grows (readlink/symlink, open_ino/close_ino, no_lock, geometry overrides) rather
+than changing existing callers.
+
+- Format coverage: V8/V9/V10 (rearranged superblock, 1K/4K/8K blocks, free list
+  or bitmap, the V10 tail-blocks bigmap) and System III + System V R2/R4 (s5fs,
+  512/1024/2048-byte blocks) join the matrix.  V8/V9/V10 are source-derived and
+  synthetic-only (no original media survives); System V is validated against the
+  AT&T source and SIMH.  Byte order is detected from the superblock magic
+  (including middle-endian), and `-o arch=` / `-a arch` separate CPU byte order
+  from the format.
+- FUSE-free core: mount.filsys splits into a FUSE-free callback core
+  (fuse_core.c) plus one adapter per API -- FUSE3, OpenBSD base libfuse 2.6, and
+  macFUSE's darwin-attr API -- selected by a `--with-fuse` probe.  The library,
+  mkfs, fsck, findfs, and `make check` build and run without libfuse.
+- Symlinks: readlink/symlink for the IFLNK editions; fsck reconnects orphaned
+  symlinks (is_regular missed IFLNK).
+- open-unlink: hard_remove plus an inode-keyed open table and open count, so a
+  file unlinked while open keeps its inode and blocks until the last handle
+  closes.  `fi->fh` is set in create() so the write after open(O_CREAT) lands.
+- Image locking: a read-write mount takes an advisory byte-range lock over the
+  filesystem's extent (OFD on Linux, POSIX record on BSD/macOS); a second
+  read-write mount of the same extent fails with EBUSY, `-o no_lock` opts out,
+  and disjoint partitions of one disk still coexist.
+- Durability: filsys_sync fsyncs the backing fd, so a completed sync survives
+  host crash.  The matrix gains exhaustive crash-prefix enumeration (every write
+  prefix of a bounded op, not a sample), property-based op sequences, and a
+  fault-injection suite; the allocator orders state-before-reference and
+  truncate-before-free, and close() returns the final flush result.
+- API: read/write return ssize_t and reject oversized uid/gid; st_blocks reports
+  allocated 512-byte units; makedev for st_rdev; device images sized via lseek
+  and skipped by ftruncate.
+- Ops split: the dir and inode axes split into sub-vtables (dir_ops/inode_ops),
+  and check/is_clean/max_file fold into descriptor-driven shared ops; mkfs/fsck
+  link libfilsys.a like findfs and mount.
+- fsck: reconnect orphaned directories, recount root/lost+found links, enable
+  preen/salvage for 2.11BSD.
+- findfs: walk the free-list chain, cross-check the root inode, report
+  near-misses, detect V1/PDP-7 and the V8 family, print a cut-and-paste mount
+  command.
+- CI: native Linux (five distro families), FreeBSD/OpenBSD/NetBSD, and macOS
+  (FUSE-T) runners, plus Arch Linux; the SIMH V7 oracle test (icheck/dcheck via
+  prebsd) is opt-in.
+
 filsys 1.8.0 (2026-09-06)
 =========================
 

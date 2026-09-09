@@ -4,7 +4,7 @@
 # `./configure && make && make install`.
 
 AC_PREREQ([2.69])
-AC_INIT([filsys], [1.8.0], [david@clearbrookdistillery.com])
+AC_INIT([filsys], [1.9.0], [david@clearbrookdistillery.com])
 AC_CONFIG_SRCDIR([mount.filsys.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR([build-aux])
@@ -213,6 +213,21 @@ AC_ARG_ENABLE([oracle-tests],
                     [run the simh V7 oracle test (icheck/dcheck) in `make check'])],
     [enable_oracle_tests=$enableval], [enable_oracle_tests=no])
 AM_CONDITIONAL([ENABLE_ORACLE_TESTS], [test "x$enable_oracle_tests" = xyes])
+
+# ---------------------------------------------------------------------------
+# The slow soak (fault injection across editions, exhaustive crash-prefix
+# enumeration, property-based op sequences) is opt-in: `make check` defaults to
+# a fast gate, and --enable-slow-tests sets FILSYS_SLOW_TESTS so the soak runs.
+# The tests themselves live in test_matrix; the env var just selects them.
+# ---------------------------------------------------------------------------
+AC_ARG_ENABLE([slow-tests],
+    [AS_HELP_STRING([--enable-slow-tests],
+                    [run the slow fault-injection / crash-prefix / property soak in `make check`])],
+    [enable_slow_tests=$enableval], [enable_slow_tests=no])
+AS_IF([test "x$enable_slow_tests" = xyes],
+    [SLOW_TESTS_ENV='FILSYS_SLOW_TESTS=1; export FILSYS_SLOW_TESTS;'],
+    [SLOW_TESTS_ENV=''])
+AC_SUBST([SLOW_TESTS_ENV])
 
 AC_CONFIG_FILES([Makefile
                  filsys.pc])

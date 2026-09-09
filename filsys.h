@@ -1,10 +1,10 @@
 /* filsys.h - public API for the filsys library.
  *
- * A version-agnostic access layer for Research Unix (V4/V5/V6/V7/32V)
- * filesystem images.  The on-disk backends (v6fs/v7fs) are internal; this
- * header is the stable surface.  Edition-specific details live behind the
- * opaque `filsys_t`, so a future vtable/parameter unification of the backends
- * won't change this API.
+ * A version-agnostic access layer for Research Unix filesystem images (PDP-7
+ * through V10, plus 32V, Coherent, Xenix, 2.9/2.11BSD, System III and System V
+ * R2/R4).  The on-disk backends are internal; this header is the stable surface.
+ * Edition-specific details live behind the opaque `filsys_t` and the per-edition
+ * ops vtable, so a backend change never reaches this API.
  *
  * SPDX-License-Identifier: ISC
  */

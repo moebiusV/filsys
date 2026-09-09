@@ -4,10 +4,11 @@
  * every operation through it rather than a per-edition switch, so a new format
  * is one more ops table instead of a third arm of every ternary.
  *
- * The first parameter of every op is a `void *` pointing at the backend's own (filsys_edition_t)
- * state struct; the decoded types (filsys_inode_t / filsys_dirent_t) are the
- * public structs from filsys.h.  Backends may expose their functions with
- * layout-identical private typedefs and cast at the ops-table definition.
+ * The first parameter of every op is a `filsys_edition_t *` pointing at the
+ * backend's own state struct; the decoded types (filsys_inode_t /
+ * filsys_dirent_t) are the public structs from filsys.h.  The ops tables point
+ * at the per-backend functions directly (the 1.6.0 fold deleted the void*-to-
+ * typed adapters).
  *
  * SPDX-License-Identifier: ISC
  */

@@ -111,6 +111,11 @@ test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
+# The slow soak (fault injection, crash-prefix enumeration, property sequences)
+# is gated by FILSYS_SLOW_TESTS inside test_matrix; configure sets -- or clears
+# -- the var via --enable-slow-tests, so `make check` is a fast gate by default.
+AM_TESTS_ENVIRONMENT = $(SLOW_TESTS_ENV)
+
 if ENABLE_IMAGE_TESTS
 TESTS += test.sh
 endif

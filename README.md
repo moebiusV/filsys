@@ -660,12 +660,19 @@ boot 32V, and install it from a tape image.
 > is to stage files while the system is *not* running, then boot it fresh.
 > (`sync` inside before halting flushes its buffers.)
 
-mount.filsys deliberately takes **no lock** on the image: a V7 disk is a set of
-partitions in one file, and mounting the root and `/usr` at two mount points
-from the same file at once requires both mounts to share it read-only.  The
-"don't edit a disk under a running kernel" rule above is the real protection;
-the file is never locked, so it is on you not to mount read-write while the
-emulator is running.
+mount.filsys takes an **advisory byte-range lock** over the filesystem's own
+extent: a read-write mount holds an exclusive lock (an OFD lock on Linux, a
+POSIX record lock on the BSDs/macOS) from `offset` to `offset + fsize*bsize`, so
+a second read-write mount of the *same* filesystem fails with `already open
+read-write (use -o no_lock to override)`.  Because the lock spans only the
+filesystem's range, mounting the root and `/usr` partitions of one V7 disk at
+two mount points is still fine: the extents are disjoint.  A read-only mount
+takes no lock at all, but warns if a read-write mount already holds its range.
+Pass `-o no_lock` to skip the lock (e.g. when the image is open read-write
+through another handle you do not control); the lock is advisory, so it does not
+stop a running emulator, which does not participate.  The rule above — do not
+let the simulator run while the disk is mounted — remains the real protection
+against corrupting an image the emulator has open.
 
 ## Layout
 
