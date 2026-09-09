@@ -5466,6 +5466,7 @@ fi
 have_fuse3=no
 have_fuse2=no
 have_fuse_darwin=no
+have_refuse=no
 
 # fuse3 (explicit, or the first choice under auto).
 
@@ -5833,7 +5834,7 @@ return fuse_main(0, (char **)0,
 _ACEOF
 if ac_fn_c_try_link "$LINENO"
 then :
-  have_fuse3=yes; fuse3_libs="-lrefuse -lpuffs"
+  have_fuse3=yes; have_refuse=yes; fuse3_libs="-lrefuse -lpuffs"
 else case e in #(
   e) have_fuse3=no ;;
 esac
@@ -6351,12 +6352,14 @@ esac
 fi
 
 
-# test_fuse_unlink_open needs to know whether it is on a FUSE3 build (where an
-# ENOENT from ftruncate on an unlinked-open fd is the regression it guards) or a
-# FUSE2 build (where truncate has no fi and ENOENT is the expected skip).
-if test "x$have_fuse3" = xyes
+# test_fuse_unlink_open needs to know whether truncate carries fi->fh (real
+# fuse3: Linux/FreeBSD/macFUSE) so an ENOENT from ftruncate on an unlinked-open
+# fd is the path-based regression it guards -- or whether truncate has no fi
+# (FUSE2, and NetBSD's librefuse, whose PUFFS driver drops fi from truncate),
+# where ENOENT is the expected skip.
+if test "x$have_fuse3" = xyes && test "x$have_refuse" = xno
 then :
-  FUSE_TEST_ENV='FILSYS_FUSE3=1; export FILSYS_FUSE3;'
+  FUSE_TEST_ENV='FILSYS_TRUNC_FI=1; export FILSYS_TRUNC_FI;'
 else case e in #(
   e) FUSE_TEST_ENV='' ;;
 esac

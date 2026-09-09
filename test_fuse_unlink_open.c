@@ -39,13 +39,14 @@ int main(int argc, char **argv)
     if (write(fd, payload, plen) != (ssize_t)plen) { perror("write"); close(fd); return 1; }
     if (unlink(path) != 0) { perror("unlink"); close(fd); return 1; }
 
-    /* The handle must reach the inode without the (now gone) path.  FUSE2's
-     * truncate callback has no fi, so ENOENT there is the expected skip; on
-     * FUSE3 an ENOENT is exactly the path-based regression this test guards
-     * (FILSYS_FUSE3 is exported by configure/AM_TESTS_ENVIRONMENT). */
-    int fuse3 = getenv("FILSYS_FUSE3") != NULL;
+    /* The handle must reach the inode without the (now gone) path.  Where the
+     * backend drops fi from truncate (FUSE2, and NetBSD's librefuse) ENOENT is
+     * the expected skip; where truncate carries fi->fh (real fuse3) an ENOENT
+     * is exactly the path-based regression this test guards.  FILSYS_TRUNC_FI
+     * is exported by configure/AM_TESTS_ENVIRONMENT. */
+    int trunc_fi = getenv("FILSYS_TRUNC_FI") != NULL;
     if (ftruncate(fd, 5) != 0) {
-        if (errno == ENOENT && !fuse3) { close(fd); return 77; }
+        if (errno == ENOENT && !trunc_fi) { close(fd); return 77; }
         perror("ftruncate"); close(fd); return 1;
     }
 
