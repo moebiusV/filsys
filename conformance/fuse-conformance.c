@@ -17,6 +17,8 @@
  *   5. do two processes holding one file get distinct fh values?
  *   6. does unlink of an open file reach the FS (hard_remove), or is it
  *      silly-renamed by libfuse?
+ *   7. does truncate carry fi->fh to an *unlinked* open fd (the tmpfile shape
+ *      the deferred-free lifecycle needs for ftruncate)?
  *
  * Build: cc -D_FILE_OFFSET_BITS=64 fuse-conformance.c $(pkg-config --cflags --libs fuse3)
  *        (or fuse2 where that is the base libfuse).
@@ -60,12 +62,13 @@ static int c_getattr(const char *path, struct stat *st,
 {
     char f[64];
     fi_str(fi, f, sizeof f);
-    L("GETATTR %s %s", path, f);
+    L("GETATTR %s %s", path ? path : "(null)", f);
     memset(st, 0, sizeof *st);
-    if (strcmp(path, "/") == 0) {
+    if (path && strcmp(path, "/") == 0) {
         st->st_mode = S_IFDIR | 0755;
         st->st_nlink = 2;
-    } else if (strcmp(path, "/f") == 0) {
+    } else if (!path || strcmp(path, "/f") == 0) {
+        /* NULL path: getattr on an unlinked-but-open fd (the Q7 shape). */
         st->st_mode = S_IFREG | 0644;
         st->st_nlink = 1;
         st->st_size = 0;

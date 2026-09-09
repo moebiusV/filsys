@@ -14,7 +14,7 @@ counter so the transcript shows whether the kernel echoed back the exact value
 and correlates each step with the callbacks it produced.  `conformance/run.sh`
 mounts, drives, unmounts, and reports.
 
-Run it with `sh conformance/run.sh`.  The six questions:
+Run it with `sh conformance/run.sh`.  The seven questions:
 
 1. does `getattr` receive `fi`, and is `fi->fh` what `open` returned?
 2. same for `truncate`?
@@ -23,6 +23,8 @@ Run it with `sh conformance/run.sh`.  The six questions:
 5. do two processes holding one file get distinct `fh` values?
 6. does `unlink` of an open file reach the filesystem (hard_remove), or is it
    silly-renamed by libfuse?
+7. does `truncate` carry `fi->fh` to an **unlinked** open fd (the `tmpfile`
+   shape the lifecycle needs for `ftruncate`)?
 
 ## Reference transcript — Linux (fuse3)
 
@@ -71,12 +73,13 @@ matching `RELEASE`, nothing deferred to unmount), **4** no dedup (distinct
 
 ## Platform table
 
-The probe's question 2 measures `truncate fi` on a **linked** open fd.  The
-lifecycle's actual requirement is narrower: `fi->fh` must reach `truncate` on an
-**unlinked** fd, or `ftruncate(2)` after unlink falls through to the (gone) path
-and returns `ENOENT`.  That column is measured by `test_fuse_unlink_open` on the
-filsys mount, not the standalone probe, because only filsys knows the inode is
-still allocated.  `getattr fi` likewise means "on the open (fstat) fd".
+Question 2 measures `truncate fi` on a **linked** open fd; question 7 measures
+the same on an **unlinked** fd.  The lifecycle's actual requirement is Q7:
+`fi->fh` must reach `truncate` on an unlinked fd, or `ftruncate(2)` after unlink
+falls through to the (gone) path and returns `ENOENT`.  `test_fuse_unlink_open`
+cross-checks the same thing on the real filsys mount (where only filsys knows
+the inode is still allocated).  `getattr fi` likewise means "on the open
+(fstat) fd".
 
 | Platform | getattr fi | truncate fi (linked) | truncate fi (unlinked) | release | unlink-of-open |
 |----------|------------|----------------------|------------------------|---------|----------------|
