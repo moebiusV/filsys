@@ -646,6 +646,7 @@ ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
+FUSE_TEST_ENV
 SLOW_TESTS_ENV
 ENABLE_ORACLE_TESTS_FALSE
 ENABLE_ORACLE_TESTS_TRUE
@@ -6346,6 +6347,18 @@ then :
   SLOW_TESTS_ENV='FILSYS_SLOW_TESTS=1; export FILSYS_SLOW_TESTS;'
 else case e in #(
   e) SLOW_TESTS_ENV='' ;;
+esac
+fi
+
+
+# test_fuse_unlink_open needs to know whether it is on a FUSE3 build (where an
+# ENOENT from ftruncate on an unlinked-open fd is the regression it guards) or a
+# FUSE2 build (where truncate has no fi and ENOENT is the expected skip).
+if test "x$have_fuse3" = xyes
+then :
+  FUSE_TEST_ENV='FILSYS_FUSE3=1; export FILSYS_FUSE3;'
+else case e in #(
+  e) FUSE_TEST_ENV='' ;;
 esac
 fi
 

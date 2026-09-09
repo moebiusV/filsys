@@ -205,7 +205,15 @@ static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
                               * ".fuse_hidden" name, which cannot fit a V7 14-byte (or
                               * V1/PDP-7 8-byte) dirent -- every hidden file would
                               * truncate to the same name and collide.  hard_remove is
-                              * therefore forced, not chosen. */
+                              * therefore forced, not chosen.
+                              *
+                              * (2.11BSD's 63-byte names *could* hold the silly-rename
+                              * name, so the length argument doesn't bind there; hard_remove
+                              * is forced uniformly anyway.  The deferred-free lifecycle
+                              * filsys_open_ino/free_deferred_ino is built around hard_remove
+                              * semantics -- the name is gone and nlink drops to 0 on the
+                              * first unlink -- and letting one edition fall back to a
+                              * hidden rename would leave an untested path.) */
     /* Return the handle we were given; private_data in later callbacks comes
      * from this, and fuse_get_context()->private_data already holds it. */
     return fuse_get_context()->private_data;
