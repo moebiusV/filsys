@@ -703,6 +703,11 @@ against corrupting an image the emulator has open.
   `fsck.filsys.1`: the format and tool manpages.
 - `configure.ac`, `Makefile.am`: GNU autotools build.
 - `test.sh`, `fetch.sh`.
+- `packaging/`: preliminary distro packaging templates (Debian, RPM, Arch,
+  Alpine, FreeBSD, NetBSD, OpenBSD, Slackware, NixOS, Gentoo, Homebrew) — a
+  starting point for any distro that wants to package filsys natively.  These
+  templates, and `README.distributions`, live in the source repository but are
+  not shipped in the release tarball.
 
 ## Notes
 
@@ -874,8 +879,9 @@ carrying a 23-year-old locking bug, and had no way to create one or check one.
 
 Mainline ever handled **one** edition — V7 — guessed at it, couldn't create it,
 couldn't check it, and dropped it in 6.15.  filsys handles the PDP-7
-through 32V, has `findfs` for locating a superblock on a raw image, and has
-both `mkfs` and `fsck`.  That is not an incremental improvement on what the
+through V10 (plus 32V, Coherent, Xenix, 2.9/2.11BSD, System III, and System V),
+has `findfs` for locating a superblock on a raw image, and has both `mkfs` and
+`fsck`.  That is not an incremental improvement on what the
 kernel had — it is the only implementation that exists.
 
 On the one thing that decides whether a large file reads back, the block mapping,

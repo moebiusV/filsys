@@ -1,8 +1,9 @@
       |-----handy-ruler------------------------------------------------------|
 filsys: filsys (FUSE driver for Research Unix filesystem images)
 filsys:
-filsys: A FUSE driver and set of disk utilities for Research Unix (V4
-filsys: through V7, and 32V) filesystem images on a modern host.  Ships
+filsys: A FUSE driver and set of disk utilities for Research Unix (PDP-7
+filsys: through V10, plus 32V, Coherent, Xenix, 2.9/2.11BSD, System III,
+filsys: and System V) filesystem images on a modern host.  Ships
 filsys: mount.filsys (the FUSE mount), findfs.filsys (superblock/partition
 filsys: location), mkfs.filsys (create a filesystem), and fsck.filsys
 filsys: (check one).

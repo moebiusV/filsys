@@ -1,7 +1,7 @@
 Name:           filsys
 Version:        1.9.1
 Release:        1%{?dist}
-Summary:        FUSE driver for Research Unix (V0-V7, 32V) filesystem images
+Summary:        FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
 
 License:        ISC AND Caldera
 URL:            https://github.com/moebiusV/filsys
@@ -16,9 +16,10 @@ Recommends:     v7unix-toolchain
 Recommends:     prebsd
 
 %description
-filsys mounts a Research Unix filesystem image (PDP-7 through 32V, as used by
-a PDP-11) as a FUSE filesystem, so files can be copied on and off the image for
-use with a simulator such as SIMH pdp11.
+filsys mounts a Research Unix filesystem image (PDP-7 through V10, plus 32V,
+Coherent, Xenix, 2.9/2.11BSD, System III, and System V) as a FUSE filesystem,
+so files can be copied on and off the image for use with a simulator such as
+SIMH pdp11.
 
 It understands each edition's on-disk format exactly - middle-endian byte order
 and the kernel's own free-list allocation discipline - so files staged with it

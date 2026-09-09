@@ -4,7 +4,7 @@ CATEGORIES=	sysutils
 MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v${PORTVERSION}/
 
 MAINTAINER=	maintainer@example.com
-COMMENT=	FUSE driver for Research Unix (V0-V7, 32V) filesystem images
+COMMENT=	FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
 WWW=		https://github.com/moebiusV/filsys
 
 LICENSE=	ISCL CALDERA

@@ -9,8 +9,9 @@ fills in maintainer details, changelog, and distro-specific adjustments.
 What filsys Is
 --------------
 
-filsys is a FUSE driver and set of disk utilities for Research Unix (the
-PDP-7 through V7, 32V, and Coherent) filesystem images on a modern host.  It
+filsys is a FUSE driver and set of disk utilities for Research Unix
+filesystem images (PDP-7 through V10, plus 32V, Coherent, Xenix, 2.9/2.11BSD,
+System III, and System V) on a modern host.  It
 ships four tools: `mount.filsys` (the FUSE mount), `findfs.filsys` (locate
 filesystem superblocks/partitions on a raw disk image), `mkfs.filsys` (create
 a filesystem), and `fsck.filsys` (check one).
@@ -121,7 +122,7 @@ Gentoo
   Files:  packaging/gentoo/
 
   Customize: metadata.xml maintainer, ebuild SRC_URI, KEYWORDS.
-  Build:  ebuild packaging/gentoo/filsys-1.0.0.ebuild manifest && emerge
+  Build:  ebuild packaging/gentoo/filsys-1.9.1.ebuild manifest && emerge
   Submit: bug at bugs.gentoo.org (category "Ebuild") or the GURU overlay.
 
 NixOS

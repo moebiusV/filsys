@@ -3,7 +3,7 @@
 
 EAPI=8
 
-DESCRIPTION="FUSE driver for Research Unix (V0-V7, 32V) filesystem images"
+DESCRIPTION="FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images"
 HOMEPAGE="https://github.com/moebiusV/filsys"
 SRC_URI="https://github.com/moebiusV/filsys/releases/download/v${PV}/${P}.tar.gz"
 LICENSE="ISC Caldera"

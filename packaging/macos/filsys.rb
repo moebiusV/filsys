@@ -5,7 +5,7 @@
 # mount: it creates and checks a V7 image with the standalone tools.
 
 class Filsys < Formula
-  desc "FUSE driver for Research Unix (PDP-7 through V7, 32V) filesystem images"
+  desc "FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images"
   homepage "https://github.com/moebiusV/filsys"
   url "https://github.com/moebiusV/filsys/releases/download/v1.9.1/filsys-1.9.1.tar.gz"
   sha256 "8517f6043f18341378aa1174acd117f526659f8abd0522817415021e2978f6d7"
