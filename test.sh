@@ -20,11 +20,28 @@ MNT=mnt
 # through it too; the BSDs and macOS mount directly and use plain umount.
 fs_umount() {
     if command -v fusermount3 >/dev/null 2>&1; then
-        fusermount3 -uz "$1" 2>/dev/null
+        fusermount3 -uz "$1" 2>/dev/null || true
     elif command -v fusermount >/dev/null 2>&1; then
-        fusermount -uz "$1" 2>/dev/null
+        fusermount -uz "$1" 2>/dev/null || true
     else
-        umount "$1" 2>/dev/null
+        umount "$1" 2>/dev/null || umount -f "$1" 2>/dev/null || true
+    fi
+}
+
+# truncate(1) is GNU coreutils + FreeBSD base + macOS; OpenBSD and NetBSD base
+# lack it.  Prefer the native tool, then coreutils' g-prefixed build, then perl
+# (OpenBSD base).  The test needs an actual truncate(2) so it exercises the FUSE
+# truncate callback, not a rewrite.
+truncate_to() {
+    if command -v truncate >/dev/null 2>&1; then
+        truncate -s "$2" "$1"
+    elif command -v gtruncate >/dev/null 2>&1; then
+        gtruncate -s "$2" "$1"
+    elif command -v perl >/dev/null 2>&1; then
+        perl -e 'truncate($ARGV[0], $ARGV[1]) or die "truncate: $!"' "$1" "$2"
+    else
+        echo "FAIL: no truncate(1), gtruncate, or perl available" >&2
+        exit 1
     fi
 }
 
@@ -68,7 +85,7 @@ echo "== truncate must not produce duplicate block references =="
 sleep 2
 dd if=/dev/urandom of="$MNT/tmp/trunctest" bs=1024 count=64 2>/dev/null
 for sz in 60000 30000 45000 1000 40000; do
-    truncate -s "$sz" "$MNT/tmp/trunctest"
+    truncate_to "$MNT/tmp/trunctest" "$sz"
 done
 sync
 fs_umount "$MNT"; sleep 1
