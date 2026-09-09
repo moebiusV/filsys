@@ -61,6 +61,7 @@ jobs:
             MAKE=gmake ./configure --with-fuse=fuse2 --enable-image-tests
             gmake
             gmake check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+            sh ./test-openbsd-release.sh
 
   netbsd:
     runs-on: ubuntu-latest
