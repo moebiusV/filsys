@@ -1,5 +1,9 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
+/* Define to 1 if you have the declaration of 'F_OFD_SETLK', and to 0 if you
+   don't. */
+#undef HAVE_DECL_F_OFD_SETLK
+
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
