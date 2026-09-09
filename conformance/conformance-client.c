@@ -106,6 +106,18 @@ int main(int argc, char **argv)
     close(fd);
     dump_log();
 
+    /* Q7: does truncate carry fi->fh to an *unlinked* open fd?  This is the
+     * column the deferred-free lifecycle actually needs: ftruncate(2) after
+     * unlink must reach the inode by handle, or it falls through to the (gone)
+     * path and returns ENOENT. */
+    step("open(O_RDWR|CREAT), unlink(path) while open, ftruncate(fd, 100), close(fd)");
+    fd = open(path, O_RDWR | O_CREAT, 0644);
+    if (fd < 0) { perror("open"); return 1; }
+    if (unlink(path) != 0) perror("unlink");
+    if (ftruncate(fd, 100) != 0) perror("ftruncate (unlinked)");
+    close(fd);
+    dump_log();
+
     fclose(g_log);
     return 0;
 }

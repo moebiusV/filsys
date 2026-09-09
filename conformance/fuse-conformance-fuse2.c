@@ -3,9 +3,10 @@
  *
  * Identical to fuse-conformance.c except for the callbacks that FUSE2 declares
  * without a struct fuse_file_info *: getattr and truncate have no fi, so those
- * two questions are answered structurally ("no fi in the signature") rather
- * than by measurement.  open/flush/release/unlink still carry fi, so the
- * release-timing, dedup, two-process and hard_remove questions are unchanged.
+ * two questions (and Q7, the unlinked-truncate case) are answered structurally
+ * ("no fi in the signature") rather than by measurement.  open/flush/release/
+ * unlink still carry fi, so the release-timing, dedup, two-process and
+ * hard_remove questions are unchanged.
  *
  * Build: cc -D_FILE_OFFSET_BITS=64 fuse-conformance-fuse2.c \
  *            $(pkg-config --cflags --libs fuse)
@@ -47,12 +48,13 @@ static void fi_str(const struct fuse_file_info *fi, char *out, size_t n)
 
 static int c_getattr(const char *path, struct stat *st)
 {
-    L("GETATTR %s (fuse2: no fi in signature)", path);
+    L("GETATTR %s (fuse2: no fi in signature)", path ? path : "(null)");
     memset(st, 0, sizeof *st);
-    if (strcmp(path, "/") == 0) {
+    if (path && strcmp(path, "/") == 0) {
         st->st_mode = S_IFDIR | 0755;
         st->st_nlink = 2;
-    } else if (strcmp(path, "/f") == 0) {
+    } else if (!path || strcmp(path, "/f") == 0) {
+        /* NULL path: getattr on an unlinked-but-open fd (the Q7 shape). */
         st->st_mode = S_IFREG | 0644;
         st->st_nlink = 1;
         st->st_size = 0;
