@@ -56,6 +56,11 @@ test-suite.log
 *.log
 *.trs
 
+# --- conformance probe build/runtime artifacts ---
+conformance/fuse-conformance
+conformance/conformance-client
+conformance/mnt/
+
 # --- local notes (never pushed to the remote) ---
 docs/
 qemu-images/
