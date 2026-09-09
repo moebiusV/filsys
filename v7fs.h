@@ -340,7 +340,9 @@ typedef struct filsys_edition {
     uint32_t    ilarg_mask;         /* mode bit marking a "large" file (0 = none) */
     uint8_t     large_single;       /* single-indirect slots in the large layout */
     uint8_t     large_double;       /* double-indirect slots in the large layout (0/1) */
-    uint8_t     badino;             /* bad-block inode (records bad i-list blocks; 0 = none) */
+    uint8_t     badino;             /* bad-block inode (records bad i-list blocks; 0 = none).
+                                     * A descriptor whose mkfs reserves a nameless inode must
+                                     * set this, or fsck reports it as an unreferenced orphan. */
     uint32_t (*ind_get)(const struct filsys_edition *, const uint8_t *buf, uint32_t i);
     void     (*ind_put)(const struct filsys_edition *, uint8_t *buf, uint32_t i, uint32_t v);
     const struct word_codec *word;  /* PDP-7 word container codec (NULL = byte-addressed) */

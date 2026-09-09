@@ -22,6 +22,7 @@
  * blocks are walked, how the allocator is walked, how a mode maps to a
  * checker state, and the salvage/repair actions) are vtable seams, so every
  * edition's *_check is a one-line call into this. */
+static int is_regular(const filsys_edition_t *fs, const filsys_inode_t *ip);
 int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
                         filsys_check_t *rep, int mode)
 {
@@ -181,13 +182,13 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
              * devices are excluded: their unreferenced states are the preen
              * reconnect paths, not this free-deferred state.
              *
-             * "Regular" includes symlinks even though there is no FILSYS_IN_ILNK:
-             * inode_state maps iflnk to FILSYS_IN_IREG (v7_inode_state /
-             * bsd211_inode_state), so this matches preen's is_regular(), which
-             * tests iflnk directly.  Keep the two in agreement if a backend ever
-             * classifies symlinks differently. */
-            if (state[ino] == FILSYS_IN_IREG && cnt == 0 && ino != fmt->rootino &&
-                ino != fmt->badino) {
+             * Classified by is_regular(), the same predicate preen uses, so the
+             * report and reconnect paths cannot disagree about a symlink (there
+             * is no FILSYS_IN_ILNK; is_regular folds iflnk in explicitly).  The
+             * allocated guard matters: is_regular alone is true for a mode-0
+             * (free) inode on V6-family formats, where regular files are type 0. */
+            if (filsys_in_allocated(state[ino]) && is_regular(fmt, &ip) &&
+                cnt == 0 && ino != fmt->rootino && ino != fmt->badino) {
                 printf("%u entries=0 link=%d (unreferenced)\n", ino, ip.nlink);
                 rep->errors++;
                 continue;
