@@ -40,6 +40,9 @@ jobs:
           - name: opensuse
             image: opensuse/leap:latest
             prepare: zypper --non-interactive install gcc make pkg-config fuse3-devel
+          - name: arch
+            image: archlinux:latest
+            prepare: pacman -Syu --noconfirm --needed gcc make pkgconf fuse3
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
