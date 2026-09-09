@@ -56,6 +56,7 @@ jobs:
           prepare: |
             pkg_add gmake curl
             pkg_add pkgconf || pkg_add pkg-config
+            pkg_add coreutils || true
           run: |
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip -f rp06-0.disk.gz
@@ -79,6 +80,7 @@ jobs:
           prepare: |
             pkg_add gmake curl
             pkg_add pkgconf || pkg_add pkg-config
+            pkg_add coreutils || true
           run: |
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip -f rp06-0.disk.gz
