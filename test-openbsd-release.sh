@@ -40,6 +40,14 @@ trap cleanup EXIT
 ./mount.filsys -v v7 -f "$IMG" "$MNT" >mount.log 2>&1 &
 sleep 2
 
+# Verify the mount actually took.  Without this, a failed mount leaves $MNT a
+# plain directory and the create loop would write 2000 host files, faking a
+# clean "no ENFILE" result.
+if ! mount 2>/dev/null | grep -qF "mnt-release"; then
+    echo "finding-a: SKIP mount failed ($(sed -n '1p' mount.log 2>/dev/null))"
+    exit 0
+fi
+
 dfavail() { df -k "$MNT" 2>/dev/null | awk 'END{print $4}'; }
 free0=$(dfavail)
 
