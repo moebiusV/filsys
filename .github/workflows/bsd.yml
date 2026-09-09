@@ -85,9 +85,9 @@ jobs:
         with:
           usesh: true
           prepare: |
-            pkg_add gmake curl
-            pkg_add pkgconf || pkg_add pkg-config
-            pkg_add coreutils || true
+            /usr/sbin/pkg_add -u gmake curl
+            /usr/sbin/pkg_add pkgconf || /usr/sbin/pkg_add pkg-config
+            /usr/sbin/pkg_add coreutils || true
           run: |
             curl -L -o rp06-0.disk.gz https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
             gunzip -f rp06-0.disk.gz
@@ -112,8 +112,9 @@ jobs:
         with:
           usesh: true
           prepare: |
+            sysctl hardening.harden_rtld=0
             pkg install -y gmake pkgconf fusefs-libs3 curl
-            kldload fusefs
+            kldload fusefs || true
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
             gmake
@@ -160,8 +161,9 @@ jobs:
         with:
           usesh: true
           prepare: |
-            pkg install -y gmake pkgconf fusefs-libs3 curl
-            kldload fusefs
+            mport install gmake pkgconf
+            mport install fusefs-libs3 || true
+            kldload fusefs || true
           run: |
             MAKE=gmake ./configure --with-fuse=fuse3
             gmake
