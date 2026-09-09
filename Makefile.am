@@ -123,6 +123,12 @@ AM_TESTS_ENVIRONMENT = $(SLOW_TESTS_ENV)
 
 if ENABLE_IMAGE_TESTS
 TESTS += test.sh
+# test.sh's fstat/ftruncate-on-unlinked-open probe.  It exercises the FUSE
+# boundary (the layer where that bug lived) through a live mount, so it is built
+# only with the image tests; test.sh runs it while the copy is mounted.
+check_PROGRAMS += test_fuse_unlink_open
+test_fuse_unlink_open_SOURCES = test_fuse_unlink_open.c
+test_fuse_unlink_open_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 endif
 
 # The external-oracle test (test_oracle) writes a hard-linked directory into a
