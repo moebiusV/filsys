@@ -247,9 +247,9 @@ static int fuse_fsync(const char *path, int isdatasync, struct fuse_file_info *f
 
 static int fuse_release(const char *path, struct fuse_file_info *fi)
 {
-    (void)path; (void)fi;
+    (void)path;
     fuse_ctx_t c = C();
-    return fuse_op_release(&c);
+    return fuse_op_release(&c, fi->fh);
 }
 
 static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
@@ -257,6 +257,7 @@ static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
     (void)conn;
     cfg->kernel_cache = 0;   /* backing store is a plain file; don't cache pages */
     cfg->use_ino = 1;        /* stable inode numbers are reported (see fill_stat) */
+    cfg->hard_remove = 1;    /* unlink the name directly; the inode survives until release */
     return fuse_get_context()->private_data;
 }
 

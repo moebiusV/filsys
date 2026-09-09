@@ -144,6 +144,12 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
  * non-zero exit status -- the final write is the one a silent failure loses
  * the most. */
 int filsys_close(filsys_t *fs);
+/* Track an open handle on an inode (hard_remove): the kernel unlinks an open
+ * file's name directly, so the inode and its blocks must outlive the name until
+ * the last handle closes.  filsys_open_ino bumps the refcount; filsys_close_ino
+ * drops it and, if the inode was unlinked while open, frees it then. */
+int filsys_open_ino(filsys_t *fs, uint32_t ino);
+int filsys_close_ino(filsys_t *fs, uint32_t ino);
 /* Flush the superblock (and pending metadata) without closing. */
 int filsys_sync(filsys_t *fs);
 int filsys_is_readonly(const filsys_t *fs);

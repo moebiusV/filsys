@@ -57,7 +57,7 @@ int fuse_op_open(fuse_ctx_t *c, const char *path, int flags, uint64_t *fh)
     if ((flags & O_ACCMODE) != O_RDONLY && filsys_is_readonly(c->fs))
         return -EROFS;
     *fh = ino;   /* read/write use the ino, so the fd outlives the directory entry */
-    return 0;
+    return filsys_open_ino(c->fs, ino);   /* track the handle for hard_remove */
 }
 
 int fuse_op_read(fuse_ctx_t *c, uint64_t fh, char *buf, size_t size,
@@ -95,7 +95,7 @@ int fuse_op_create(fuse_ctx_t *c, const char *path, mode_t mode, uint64_t *fh)
     if (rc)
         return rc;
     *fh = ino;
-    return 0;
+    return filsys_open_ino(c->fs, ino);   /* track the handle for hard_remove */
 }
 
 int fuse_op_mkdir(fuse_ctx_t *c, const char *path, mode_t mode)
@@ -201,8 +201,7 @@ int fuse_op_fsync(fuse_ctx_t *c)
     return filsys_sync(c->fs);
 }
 
-int fuse_op_release(fuse_ctx_t *c)
+int fuse_op_release(fuse_ctx_t *c, uint64_t fh)
 {
-    (void)c;
-    return 0;   /* no per-open state to release */
+    return filsys_close_ino(c->fs, (uint32_t)fh);
 }
