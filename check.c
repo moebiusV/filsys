@@ -179,7 +179,13 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
              * files here (allocated, nlink == 0) until the last close.  The nlink
              * equality below would pass (0 == 0) and hide it.  Directories and
              * devices are excluded: their unreferenced states are the preen
-             * reconnect paths, not this free-deferred state. */
+             * reconnect paths, not this free-deferred state.
+             *
+             * "Regular" includes symlinks even though there is no FILSYS_IN_ILNK:
+             * inode_state maps iflnk to FILSYS_IN_IREG (v7_inode_state /
+             * bsd211_inode_state), so this matches preen's is_regular(), which
+             * tests iflnk directly.  Keep the two in agreement if a backend ever
+             * classifies symlinks differently. */
             if (state[ino] == FILSYS_IN_IREG && cnt == 0 && ino != fmt->rootino &&
                 ino != fmt->badino) {
                 printf("%u entries=0 link=%d (unreferenced)\n", ino, ip.nlink);

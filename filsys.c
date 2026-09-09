@@ -346,20 +346,33 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
 int filsys_close(filsys_t *fs) {
     if (!fs)
         return 0;
-    /* Drain any deferred (unlink-while-open) frees before the final flush.  A
-     * forced unmount, a SIGKILL, or the OpenBSD ifuse_try_unmount fork may not
-     * send release for every open fd; without this the orphan -- invisible to
-     * fsck, see check.c -- leaks permanently. */
+    /* Drain any deferred (unlink-while-open) frees *before* the final flush, so
+     * they land inside that flush rather than after it.  A forced unmount (or
+     * the OpenBSD ifuse_try_unmount fork) may not send release for every open
+     * fd; draining here is the only path that frees those orphans.
+     *
+     * A process killed by SIGKILL never reaches filsys_close, so its in-memory
+     * open table is simply gone and the nlink==0 inode stays on disk; such
+     * persistent orphans must therefore remain detectable and recoverable by
+     * fsck (check.c) -- this drain cannot address them.
+     *
+     * Error contract: filsys_close must never return 0 if any step failed.  The
+     * final flush's error wins over a deferred-free error, because a failed
+     * flush can leave the whole image inconsistent whereas a failed deferred
+     * free is a single recoverable orphan. */
     int rc = 0;
     for (int i = 0; i < fs->nopen; i++) {
         if (fs->opens[i].pending) {
             int r = free_deferred_ino(fs, fs->opens[i].ino);
             if (r && !rc)
-                rc = r;
+                rc = r;                 /* first deferred-free failure */
         }
     }
-    if (fs->fs)
-        rc = fs->ops->close(fs->fs);   /* final flush; return its result */
+    if (fs->fs) {
+        int r = fs->ops->close(fs->fs);
+        if (r)
+            rc = r;                     /* flush failure dominates */
+    }
     free(fs->fs);
     free(fs);
     return rc;

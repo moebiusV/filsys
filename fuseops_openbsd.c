@@ -35,7 +35,10 @@ static fuse_ctx_t C(void)
     return c;
 }
 
-/* FUSE2 getattr carries no struct fuse_file_info *. */
+/* FUSE2 getattr carries no struct fuse_file_info *.  Consequence: unlike the
+ * FUSE3/macFUSE adapters, fstat() on an unlinked-but-still-open descriptor
+ * cannot be routed through the handle and returns ENOENT on OpenBSD -- a
+ * limitation of the 2.6 callback surface, not a filsys bug. */
 static int fuse_getattr(const char *path, struct stat *st)
 {
     fuse_ctx_t c = C();
