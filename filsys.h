@@ -185,6 +185,11 @@ ssize_t filsys_write(filsys_t *fs, const char *path, const void *buf, size_t siz
  * independent of the directory entry (unlink/rename of the path don't move it). */
 ssize_t filsys_read_ino(filsys_t *fs, uint32_t ino, void *buf, size_t size, off_t off);
 ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t size, off_t off);
+/* Stat / truncate an open inode by number, for a handle whose name was unlinked
+ * while open (hard_remove): the directory entry is gone but the handle still
+ * names the inode, so these bypass the path lookup that would return ENOENT. */
+int filsys_stat_ino(filsys_t *fs, uint32_t ino, struct stat *st);
+int filsys_truncate_ino(filsys_t *fs, uint32_t ino, off_t size);
 /* Read a symlink's target (no trailing NUL) into buf; returns the byte count.
  * -ENOSYS if the edition predates symlinks, -EINVAL if path is not a symlink. */
 ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size);

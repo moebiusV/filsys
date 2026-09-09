@@ -201,7 +201,7 @@ static const filsys_edition_t bsd211 = {
     .nicfree = BSD211_NICFREE, .nicinod = BSD211_NICINOD,
     .inode_size = BSD211_INODESZ, .ndaddr = BSD211_NDADDR, .niaddr = BSD211_NIADDR,
     .addr_width = 4, .daddr_wid = 4, .df_nfree_wid = 2, .nindir = BSD211_NINDIR, .fmod_back = 3, .has_fmod = 0,
-    .rootino = BSD211_ROOTINO,
+    .rootino = BSD211_ROOTINO, .badino = V7_BADFIN,
     .max_namlen = BSD211_MAXNAMLEN, .dirent_size = 0,
     .ifmt = BSD211_IFMT, .ifdir = BSD211_IFDIR, .ifreg = BSD211_IFREG,
     .ifchr = BSD211_IFCHR, .ifblk = BSD211_IFBLK,
