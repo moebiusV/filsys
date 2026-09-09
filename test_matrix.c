@@ -774,6 +774,25 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
     }
 }
 
+/* ---- test selection (developer iteration) --------------------------------
+ *
+ * The full soak (fault injection + crash-prefix enumeration + property
+ * sequences) is minutes across every edition; iterating on one mutator is
+ * painful.  Two env vars narrow it without a rebuild:
+ *
+ *   FILSYS_ONLY=crash|fault|property   run just that slow phase (skip the fast
+ *                                      gate and the other phases)
+ *   FILSYS_MUT=<substring>             within fault/crash, keep only mutators
+ *                                      whose name contains the substring
+ *
+ * e.g. FILSYS_ONLY=crash FILSYS_MUT=rename runs only the crash-prefix
+ * enumeration of the rename family. */
+static const char *g_only;      /* FILSYS_ONLY */
+static const char *g_mut;       /* FILSYS_MUT */
+static int mut_selected(const char *name) {
+    return !g_mut || strstr(name, g_mut) != NULL;
+}
+
 static void fault_test(void) {
     static const mutator_t mut[] = {
         { "create",   setup_none, op_create },
@@ -804,8 +823,9 @@ static void fault_test(void) {
         if (frc < 0)
             continue;
         for (size_t m = 0; m < sizeof mut / sizeof mut[0]; m++)
-            for (size_t mo = 0; mo < sizeof modes / sizeof modes[0]; mo++)
-                fault_mutator(&f, &mut[m], modes[mo].mode, modes[mo].label);
+            if (mut_selected(mut[m].name))
+                for (size_t mo = 0; mo < sizeof modes / sizeof modes[0]; mo++)
+                    fault_mutator(&f, &mut[m], modes[mo].mode, modes[mo].label);
     }
 }
 
@@ -923,6 +943,9 @@ static void crash_prefix_test(void) {
         { "link",     setup_file, op_link },
         { "symlink",  setup_none, op_symlink },
         { "rename",   setup_file, op_rename },
+        { "rename_over",     setup_file2, op_rename_over },
+        { "rename_dir",      setup_dir,   op_rename_dir },
+        { "rename_dir_over", setup_dir2,  op_rename_dir_over },
         { "close_ino", setup_open_unlink, op_close_ino },
     };
     for (size_t i = 0; ; i++) {
@@ -933,7 +956,8 @@ static void crash_prefix_test(void) {
         if (frc < 0)
             continue;
         for (size_t m = 0; m < sizeof mut / sizeof mut[0]; m++)
-            crash_mutator(&f, &mut[m]);
+            if (mut_selected(mut[m].name))
+                crash_mutator(&f, &mut[m]);
     }
 }
 
@@ -1401,34 +1425,45 @@ int main(void) {
     /* The slow soak (fault injection x editions, exhaustive crash-prefix
      * enumeration, property-based op sequences) runs only when
      * FILSYS_SLOW_TESTS is set: `make check` is a fast gate by default, and
-     * `./configure --enable-slow-tests` opts the soak back in. */
+     * `./configure --enable-slow-tests` opts the soak back in.  FILSYS_ONLY
+     * narrows that to a single phase (see the comment above fault_test). */
     const char *slow_env = getenv("FILSYS_SLOW_TESTS");
     int slow = slow_env && slow_env[0] && strcmp(slow_env, "0") != 0;
-    for (size_t i = 0; ; i++) {
-        struct fmt f;
-        int frc = fmt_at(i, &f);
-        if (!frc)
-            break;
-        if (frc < 0)
-            continue;
-        run(&f);
+    g_only = getenv("FILSYS_ONLY");
+    g_mut  = getenv("FILSYS_MUT");
+
+    int phase = g_only && g_only[0];
+    int want_fast  = !phase;
+    int want_fault = phase ? !strcmp(g_only, "fault")     : slow;
+    int want_crash = phase ? !strcmp(g_only, "crash")     : slow;
+    int want_prop  = phase ? !strcmp(g_only, "property")  : slow;
+
+    if (want_fast) {
+        for (size_t i = 0; ; i++) {
+            struct fmt f;
+            int frc = fmt_at(i, &f);
+            if (!frc)
+                break;
+            if (frc < 0)
+                continue;
+            run(&f);
+        }
+        mkfs_validation();
+        mkfs_cleanliness();
+        namelength();
+        v6_large_file();
+        v7_triple_indirect();
+        bitmap_roundtrip();
+        crash_consistency();
+        durability_test();
+        rename_semantics();
+        dir_link_semantics();
+        findfs_self_detect();
     }
-    mkfs_validation();
-    mkfs_cleanliness();
-    namelength();
-    v6_large_file();
-    v7_triple_indirect();
-    bitmap_roundtrip();
-    crash_consistency();
-    durability_test();
-    rename_semantics();
-    dir_link_semantics();
-    findfs_self_detect();
-    if (slow) {
-        fault_test();
-        crash_prefix_test();
-        property_sequences();
-    } else {
+    if (want_fault) fault_test();
+    if (want_crash) crash_prefix_test();
+    if (want_prop)  property_sequences();
+    if (!phase && !slow) {
         printf("slow tests skipped (set FILSYS_SLOW_TESTS, or configure with "
                "--enable-slow-tests, to run the fault-injection / crash-prefix / "
                "property-sequences soak)\n");
