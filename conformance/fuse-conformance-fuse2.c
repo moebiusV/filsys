@@ -7,8 +7,10 @@
  * than by measurement.  open/flush/release/unlink still carry fi, so the
  * release-timing, dedup, two-process and hard_remove questions are unchanged.
  *
- * Build: cc -D_FILE_OFFSET_BITS=64 fuse-conformance-fuse2.c -lfuse
- *        (OpenBSD has no fuse .pc; the header and -lfuse are in base.)
+ * Build: cc -D_FILE_OFFSET_BITS=64 fuse-conformance-fuse2.c \
+ *            $(pkg-config --cflags --libs fuse)
+ *        (OpenBSD's base libfuse ships fuse.pc, so the header is found through
+ *        pkg-config; a bare -lfuse cannot see fuse.h.)
  *
  * SPDX-License-Identifier: ISC */
 #define FUSE_USE_VERSION 26
