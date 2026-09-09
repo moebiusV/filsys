@@ -48,6 +48,7 @@ AC_ARG_WITH([fuse],
 have_fuse3=no
 have_fuse2=no
 have_fuse_darwin=no
+have_refuse=no
 
 # fuse3 (explicit, or the first choice under auto).
 AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
@@ -92,7 +93,7 @@ AS_IF([test "x$with_fuse" = xauto || test "x$with_fuse" = xfuse3], [
 #include <fuse.h>],
                         [return fuse_main(0, (char **)0,
                              (const struct fuse_operations *)0, (void *)0);])],
-                    [have_fuse3=yes; fuse3_libs="-lrefuse -lpuffs"],
+                    [have_fuse3=yes; have_refuse=yes; fuse3_libs="-lrefuse -lpuffs"],
                     [have_fuse3=no])
             ])
             AS_IF([test "x$have_fuse3" = xyes], [
@@ -229,11 +230,13 @@ AS_IF([test "x$enable_slow_tests" = xyes],
     [SLOW_TESTS_ENV=''])
 AC_SUBST([SLOW_TESTS_ENV])
 
-# test_fuse_unlink_open needs to know whether it is on a FUSE3 build (where an
-# ENOENT from ftruncate on an unlinked-open fd is the regression it guards) or a
-# FUSE2 build (where truncate has no fi and ENOENT is the expected skip).
-AS_IF([test "x$have_fuse3" = xyes],
-    [FUSE_TEST_ENV='FILSYS_FUSE3=1; export FILSYS_FUSE3;'],
+# test_fuse_unlink_open needs to know whether truncate carries fi->fh (real
+# fuse3: Linux/FreeBSD/macFUSE) so an ENOENT from ftruncate on an unlinked-open
+# fd is the path-based regression it guards -- or whether truncate has no fi
+# (FUSE2, and NetBSD's librefuse, whose PUFFS driver drops fi from truncate),
+# where ENOENT is the expected skip.
+AS_IF([test "x$have_fuse3" = xyes && test "x$have_refuse" = xno],
+    [FUSE_TEST_ENV='FILSYS_TRUNC_FI=1; export FILSYS_TRUNC_FI;'],
     [FUSE_TEST_ENV=''])
 AC_SUBST([FUSE_TEST_ENV])
 

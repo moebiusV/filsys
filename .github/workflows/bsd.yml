@@ -97,8 +97,8 @@ jobs:
             gmake check
             rc=$?
             cat test.sh.log test-suite.log 2>/dev/null
-            echo "=== handle-fidelity conformance probe ==="
-            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c $(pkg-config --cflags --libs fuse3) -o conformance/fuse-conformance && \
+            echo "=== handle-fidelity conformance probe (librefuse) ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c -lrefuse -lpuffs -o conformance/fuse-conformance && \
               cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
               sh conformance/run.sh
             exit $rc
