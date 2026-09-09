@@ -1,3 +1,23 @@
+filsys 1.9.4 (2026-09-09)
+=========================
+
+A bugfix and test-hardening release; no on-disk or API change.
+
+- filsys_close no longer reports success when a deferred (hard_remove) free or
+  the final flush failed: a failed flush dominates, else the first deferred-free
+  error is returned.  This restores the contract (ada8fd5) that mount.filsys
+  relies on to exit 1 on a failed final write.
+- rename: clarify that the directory link-count / ".." fixups are deliberately
+  not unwound on failure (a recoverable inconsistency, not aliasing), and add
+  rename_over / rename_dir / rename_dir_over to the exhaustive crash-prefix
+  test.
+- add a FUSE-boundary regression test for ftruncate on an unlinked-open
+  descriptor; it documents that fstat on such an fd is answered by the Linux
+  FUSE kernel with ESTALE (not fixable in filsys), while ftruncate works through
+  the file handle.
+- test_matrix: FILSYS_ONLY / FILSYS_MUT select one slow phase or mutator, so the
+  fault/crash soak can be iterated without a full run.
+
 filsys 1.9.3 (2026-09-09)
 =========================
 

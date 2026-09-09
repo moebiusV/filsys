@@ -1,5 +1,5 @@
 COMMENT =	FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
-V =		1.9.3
+V =		1.9.4
 DISTNAME =	filsys-${V}
 CATEGORIES =	sysutils
 MASTER_SITES =	https://github.com/moebiusV/filsys/releases/download/v${V}/

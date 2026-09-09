@@ -1,3 +1,11 @@
+filsys (1.9.4-1) unstable; urgency=medium
+
+  * filsys_close no longer reports success when a deferred free or the final
+    flush failed; add FUSE-boundary ftruncate-on-unlinked-open and rename
+    crash-prefix tests, and the FILSYS_ONLY/FILSYS_MUT test selectors.
+
+ -- David Walther <david@clearbrookdistillery.com>  Wed, 09 Sep 2026 00:00:00 +0000
+
 filsys (1.9.3-1) unstable; urgency=medium
 
   * Fix hard_remove lifecycle bugs: rename-over-open no longer frees the

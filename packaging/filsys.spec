@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        1.9.3
+Version:        1.9.4
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
 
@@ -49,6 +49,11 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Wed Sep 09 2026 David Walther <david@clearbrookdistillery.com> - 1.9.4-1
+- filsys_close no longer reports success on a failed deferred free or flush;
+  add FUSE-boundary ftruncate-on-unlinked-open and rename crash-prefix tests,
+  and the FILSYS_ONLY/FILSYS_MUT test selectors.
+
 * Wed Sep 09 2026 David Walther <david@clearbrookdistillery.com> - 1.9.3-1
 - Fix hard_remove lifecycle bugs (rename-over-open inode free, fsck orphan
   report, pending free drain, fstat/ftruncate on unlinked-open fd); make
