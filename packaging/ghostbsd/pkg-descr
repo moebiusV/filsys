@@ -1,0 +1,5 @@
+A FUSE driver and set of disk utilities for Research Unix (PDP-7 through
+V10, plus 32V, Coherent, Xenix, 2.9/2.11BSD, System III, and System V)
+filesystem images on a modern host.  Ships mount.filsys
+(the FUSE mount), findfs.filsys (superblock/partition location),
+mkfs.filsys (create a filesystem), and fsck.filsys (check one).
