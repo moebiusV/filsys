@@ -77,7 +77,9 @@ jobs:
             # "pkg-config not found" error) but finds no fuse3/fuse, so configure
             # builds the FUSE-free core (test_matrix + mkfs/fsck/findfs).
             CC="$tri-gcc" PKG_CONFIG_LIBDIR=/nonexistent ./configure --host="$tri"
-            make -j4
+            # test_matrix is a check_PROGRAM, so plain `make` (the `all` target)
+            # does not build it; build it and its mkfs/fsck/findfs deps explicitly.
+            make -j4 test_matrix
             echo "=== $tgt test_matrix (via qemu-user) ==="
             ./test_matrix || { echo "$tgt FAILED"; exit 1; }
           done
