@@ -225,3 +225,27 @@ jobs:
               cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
               sh conformance/run.sh ./fuse-conformance-fuse2 fuse2
             exit $rc
+
+  ghostbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GhostBSD — fuse3
+        uses: vmactions/ghostbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y gmake pkgconf fusefs-libs3
+            kldload fusefs || true
+          run: |
+            MAKE=gmake ./configure --with-fuse=fuse3
+            gmake
+            set +e
+            gmake check
+            rc=$?
+            cat test-suite.log 2>/dev/null
+            echo "=== handle-fidelity conformance probe ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c $(pkg-config --cflags --libs fuse3) -o conformance/fuse-conformance && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh
+            exit $rc

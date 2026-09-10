@@ -74,3 +74,12 @@ jobs:
           ./configure --with-fuse=fuse3 --enable-image-tests
           make
           make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+      - name: Big-endian smoke test (s390x via qemu-user)
+        run: |
+          sudo apt-get install -y gcc-s390x-linux-gnu qemu-user-static
+          make distclean 2>/dev/null || true
+          CC=s390x-linux-gnu-gcc ./configure --host=s390x-linux-gnu
+          make -j4
+          # s390x is big-endian; test_matrix + its mkfs/fsck/findfs subprocesses
+          # exec under qemu-s390x via the binfmt qemu-user-static registers.
+          ./test_matrix
