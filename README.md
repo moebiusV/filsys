@@ -2,7 +2,7 @@
 
 Mount a **Research Unix** filesystem image — the PDP-7 through Tenth Edition,
 plus 32V, Coherent, early Xenix, 2.9/2.11BSD and System III/V — as a FUSE
-filesystem on Linux, macOS, FreeBSD, NetBSD, or OpenBSD, so files can be copied
+filesystem on Linux, macOS, the BSDs, or illumos, so files can be copied
 on and off the disk for use with a simulator (SIMH `pdp11`/`vax780`).  Linux's
 own `sysv`/`v7` kernel driver was removed in 6.15 (2025) and never handled the
 PDP-7 through V6, 32V, or the V8 family to begin with, so this is now the only
@@ -34,24 +34,62 @@ Home: <https://github.com/moebiusV/filsys>
 
 | platform | FUSE | status |
 |---|---|---|
-| Linux | fuse3 (default) / fuse2 | **built + tested** (`make check`, `test.sh`) |
+| Linux | fuse3 (default) / fuse2 | **mounted + tested** (`make check`, `test.sh`) |
 | Windows (WSL2) | fuse3 (Linux kernel under WSL2) | works |
-| FreeBSD | fuse3 (`fusefs-libs3`) | **built + tested** |
-| NetBSD ≥ 10 | fuse3 (librefuse) | **built + tested** |
-| OpenBSD | fuse2 (base libfuse, 2.6-era) | **built + tested** |
+| FreeBSD | fuse3 (`fusefs-libs3`) | **mounted + tested** |
+| NetBSD ≥ 10 | fuse3 (librefuse) | **mounted + tested** |
+| OpenBSD | fuse2 (base libfuse, 2.6-era) | **mounted + tested** |
+| OpenIndiana (illumos) | fuse2 (libfuse 2.7) | **built + core tested** |
+| HardenedBSD | fuse3 (`fusefs-libs3`) | **built + core tested** |
+| DragonFly BSD | fuse3 (`fusefs-libs`) | **built + core tested** |
+| MidnightBSD | fuse3 (`fusefs-libs3`) | **built + core tested** |
+| GhostBSD | fuse3 (`fusefs-libs3`) | **built + core tested** |
 | macOS | fuse3 (macFUSE ≥ 5.2) / fuse2 (macFUSE 4.x, FUSE-T) | **built + core tested** (CI); mount is local-only (macFUSE kext) |
 
-"Built + tested" means the platform has mounted a real V7 image and passed
+**"Mounted + tested"** means the platform has mounted a real V7 image and passed
 `test.sh` — read/write/mkdir/rename/truncate/persistence — in addition to
-`make check` (the FUSE-free core).  Linux runs this locally; FreeBSD, NetBSD
-11, and OpenBSD run it in CI (vmactions VMs on a real kernel) on every push.
+`make check` (the FUSE-free core).  Linux runs this locally and in CI; FreeBSD,
+NetBSD, and OpenBSD run it in CI on every push (vmactions VMs on a real kernel).
+**"Built + core tested"** means the platform compiles and links, `make check`
+passes, and the handle-fidelity conformance probe (a stable `fi->fh`, `release`
+fired at close) runs on a real kernel — but no live image has been mounted on
+that platform in CI yet.
+
 Windows is supported through WSL2, which runs a real Linux kernel and so takes
 the Linux fuse3 path.  macOS builds against macFUSE's fuse3 (via the
 `fuseops_macos.c` adapter) and runs `make check` in CI, but a live mount needs
 macFUSE's kernel extension, which requires a System Settings approval and
 reboot that no CI runner can grant — so macOS mounts are a local-only step.
-"Builds, untested" means the adapters and the configure probe compile and link,
-but no live mount has been run on that platform yet.
+
+Exactly one FUSE adapter is compiled per platform.  `fuseops.c` is the plain
+FUSE3 adapter and serves Linux, the BSDs, and GhostBSD; `fuseops_macos.c` is
+macFUSE's fuse3, whose darwin attribute types differ from Linux's; and
+`fuseops_openbsd.c` is the FUSE2 adapter, serving OpenBSD's base libfuse 2.6,
+**illumos** (libfuse 2.7 — illumos has no fuse3), and legacy macFUSE 4.x /
+FUSE-T.  The Linux port additionally builds against a six-distro container
+matrix (Alpine/musl, Debian, Ubuntu, Fedora, openSUSE, Arch) so libc and
+pkg-config drift across Linux families is caught too.
+
+### Word size and byte order
+
+The format codecs are written against an explicit byte-order vtable (`bo_le` /
+`bo_be` / `bo_me`) rather than the host's, and the engine is compiled and run
+under every corner of the word-size × byte-order matrix — a 64-bit and a 32-bit
+build in each byte order — so a little-endian 64-bit host is no more "the"
+platform than a big-endian 32-bit one:
+
+| host | word size | byte order | how it is exercised |
+|---|---|---|---|
+| amd64 (x86-64) | 64-bit | little-endian | native build |
+| s390x | 64-bit | big-endian | cross-compile, run under qemu-user |
+| m68k | 32-bit | big-endian | cross-compile, run under qemu-user |
+| armhf | 32-bit | little-endian | cross-compile, run under qemu-user |
+
+Each cross target compiles the FUSE-free core (`test_matrix` plus its `mkfs` /
+`fsck` / `findfs` subprocesses) with that architecture's `gcc` and runs it under
+`qemu-<arch>` via binfmt, so the format round-trips in `make check` execute on a
+real big-endian and a real 32-bit ABI, not just the native little-endian 64-bit
+one.
 
 ## Dependencies
 
