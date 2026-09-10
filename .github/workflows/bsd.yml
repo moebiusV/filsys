@@ -1,21 +1,21 @@
 name: bsd
 
-# Build and test on real BSD kernels via the vmactions -vm actions (a
-# QEMU-accelerated VM per job).  Two layers:
+# Build and test on real BSD (and illumos/Solaris) kernels via the vmactions
+# -vm actions (a QEMU-accelerated VM per job).  Two layers:
 #
 #   - the existing jobs (FreeBSD/OpenBSD/NetBSD) download a real V7 image,
 #     configure with --enable-image-tests and run gmake check once (test_matrix
 #     + test.sh), then run the handle-fidelity conformance probe.
-#   - the roadmap jobs (HardenedBSD/DragonFly/MidnightBSD) do the T1 gate
-#     (configure + gmake + gmake check, no image tests yet) plus the
-#     conformance probe -- that probe is the Phase 1 go/no-go that measures
+#   - the roadmap jobs (HardenedBSD/DragonFly/MidnightBSD/OpenIndiana/Solaris)
+#     do the T1 gate (configure + gmake + gmake check, no image tests yet) plus
+#     the conformance probe -- that probe is the Phase 1 go/no-go that measures
 #     whether each platform's FUSE delivers a stable fi->fh and fires release
 #     at close, the assumption the 1.9.3 deferred-free lifecycle rests on.
 #
 # The BSDs use GNU make (gmake) for autotools-generated Makefiles.  FUSE is
 # fuse3 on FreeBSD (fusefs-libs3) and NetBSD >= 10 (librefuse), fuse2 on
-# OpenBSD (base libfuse, 2.6-era).  The three roadmap BSDs are FreeBSD-derived
-# and expected to be fuse3.
+# OpenBSD (base libfuse, 2.6-era) and illumos/Solaris (libfuse 2.7).  The
+# FreeBSD-derived roadmap BSDs (HardenedBSD/DragonFly/MidnightBSD) are fuse3.
 
 on:
   push:
@@ -175,4 +175,53 @@ jobs:
             cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance.c $(pkg-config --cflags --libs fuse3) -o conformance/fuse-conformance && \
               cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
               sh conformance/run.sh
+            exit $rc
+
+  openindiana:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: OpenIndiana (illumos) — fuse2 (libfuse 2.7)
+        uses: vmactions/openindiana-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install build-essential pkg-config
+            pkg install fuse || true
+          run: |
+            MAKE=gmake ./configure --with-fuse=fuse2
+            gmake
+            set +e
+            gmake check
+            rc=$?
+            cat test-suite.log 2>/dev/null
+            echo "=== handle-fidelity conformance probe (fuse2) ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance-fuse2.c -lfuse -o conformance/fuse-conformance-fuse2 && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh ./fuse-conformance-fuse2 fuse2
+            exit $rc
+
+  solaris:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Solaris 11.4 — fuse2 (libfuse 2.7)
+        uses: vmactions/solaris-vm@v1
+        with:
+          usesh: true
+          release: '11.4-gcc'
+          prepare: |
+            pkg install gnu-make pkg-config
+            pkg install fuse || true
+          run: |
+            MAKE=gmake ./configure --with-fuse=fuse2
+            gmake
+            set +e
+            gmake check
+            rc=$?
+            cat test-suite.log 2>/dev/null
+            echo "=== handle-fidelity conformance probe (fuse2) ==="
+            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance-fuse2.c -lfuse -o conformance/fuse-conformance-fuse2 && \
+              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
+              sh conformance/run.sh ./fuse-conformance-fuse2 fuse2
             exit $rc
