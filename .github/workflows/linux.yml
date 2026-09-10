@@ -61,19 +61,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libfuse3-dev pkg-config
-      - name: Build and run the FUSE-free core + slow soak (make check)
-        run: |
-          ./configure --with-fuse=fuse3 --enable-slow-tests
-          make
-          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
-      - name: Mount a real V7 image through FUSE (test.sh)
-        run: |
-          curl -L -o rp06-0.disk.gz \
-            https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
-          gunzip rp06-0.disk.gz
-          ./configure --with-fuse=fuse3 --enable-image-tests
-          make
-          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
       - name: Endianness smoke test (s390x + m68k + armhf via qemu-user)
         run: |
           sudo apt-get install -y gcc-s390x-linux-gnu gcc-m68k-linux-gnu gcc-arm-linux-gnueabihf qemu-user-static
@@ -89,3 +76,18 @@ jobs:
             echo "=== $tgt test_matrix (via qemu-user) ==="
             ./test_matrix || { echo "$tgt FAILED"; exit 1; }
           done
+      - name: Build and run the FUSE-free core + slow soak (make check)
+        run: |
+          make distclean 2>/dev/null || true
+          ./configure --with-fuse=fuse3 --enable-slow-tests
+          make
+          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+      - name: Mount a real V7 image through FUSE (test.sh)
+        run: |
+          curl -L -o rp06-0.disk.gz \
+            https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
+          gunzip rp06-0.disk.gz
+          make distclean 2>/dev/null || true
+          ./configure --with-fuse=fuse3 --enable-image-tests
+          make
+          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
