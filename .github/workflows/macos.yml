@@ -23,4 +23,14 @@ jobs:
           brew install --cask macfuse
           ./configure --with-fuse=fuse3
           make
-          make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+          # `make check` here runs only test_matrix (no --enable-image-tests, so
+          # test.sh is not in TESTS and test.sh.log is never written).  The
+          # default `bash -e` shell would let the trailing `cat test.sh.log ...`
+          # (a missing file) flip the step to exit 1 despite PASS, so drop `-e`
+          # first and let `exit $rc` carry make's real status -- same idiom the
+          # bsd.yml jobs use.
+          set +e
+          make check
+          rc=$?
+          cat test.sh.log test-suite.log 2>/dev/null
+          exit $rc
