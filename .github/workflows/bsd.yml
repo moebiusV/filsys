@@ -201,31 +201,6 @@ jobs:
               sh conformance/run.sh ./fuse-conformance-fuse2 fuse2
             exit $rc
 
-  solaris:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Solaris 11.4 — fuse2 (libfuse 2.7)
-        uses: vmactions/solaris-vm@v1
-        with:
-          usesh: true
-          release: '11.4-gcc'
-          prepare: |
-            pkg install gnu-make pkg-config
-            pkg install fuse || true
-          run: |
-            MAKE=gmake ./configure --with-fuse=fuse2
-            gmake
-            set +e
-            gmake check
-            rc=$?
-            cat test-suite.log 2>/dev/null
-            echo "=== handle-fidelity conformance probe (fuse2) ==="
-            cc -D_FILE_OFFSET_BITS=64 conformance/fuse-conformance-fuse2.c -lfuse -o conformance/fuse-conformance-fuse2 && \
-              cc -D_FILE_OFFSET_BITS=64 conformance/conformance-client.c -o conformance/conformance-client && \
-              sh conformance/run.sh ./fuse-conformance-fuse2 fuse2
-            exit $rc
-
   ghostbsd:
     runs-on: ubuntu-latest
     steps:

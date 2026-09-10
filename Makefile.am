@@ -171,11 +171,15 @@ release-check: dist
 	nb_sz=$$(awk '/^Size \(/{print $$4}' packaging/netbsd/distinfo); \
 	al_sha=$$(sed -n 's/.*sha512sums="\([0-9a-f]*\).*/\1/p' packaging/alpine/APKBUILD); \
 	pk_sha=$$(sed -n "s/.*sha256sums=('\([0-9a-f]*\)'.*/\1/p" packaging/PKGBUILD); \
+	gh_sha=$$(awk '/^SHA256 \(/{print $$4}' packaging/ghostbsd/distinfo); \
+	gh_sz=$$(awk '/^SIZE \(/{print $$4}' packaging/ghostbsd/distinfo); \
 	for pair in \
-	  "$$sha256:$$fb_sha:sha256/freebsd" "$$sha256:$$pk_sha:sha256/arch" \
+	  "$$sha256:$$fb_sha:sha256/freebsd" "$$sha256:$$gh_sha:sha256/ghostbsd" \
+	  "$$sha256:$$pk_sha:sha256/arch" \
 	  "$$sha512:$$nb_sha:sha512/netbsd" "$$sha512:$$al_sha:sha512/alpine" \
 	  "$$blake2s:$$nb_b2:blake2s/netbsd" \
-	  "$$size:$$fb_sz:size/freebsd" "$$size:$$nb_sz:size/netbsd"; do \
+	  "$$size:$$fb_sz:size/freebsd" "$$size:$$gh_sz:size/ghostbsd" \
+	  "$$size:$$nb_sz:size/netbsd"; do \
 	  want=$${pair%%:*}; rest=$${pair#*:}; got=$${rest%%:*}; name=$${rest#*:}; \
 	  if [ "$$want" = "$$got" ]; then echo "  ok    $$name"; \
 	  else echo "  FAIL  $$name (want $$want, got $$got)" >&2; fail=1; fi; \

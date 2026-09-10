@@ -71,7 +71,10 @@ jobs:
             set -- $spec
             tgt=$1; tri=$2
             make distclean 2>/dev/null || true
-            CC="$tri-gcc" ./configure --host="$tri"
+            # PKG_CONFIG=/bin/false: the host pkg-config would find the host's
+            # x86_64 fuse3, and the cross-linker can't use it.  With no FUSE the
+            # configure builds the FUSE-free core (test_matrix + mkfs/fsck/findfs).
+            CC="$tri-gcc" PKG_CONFIG=/bin/false ./configure --host="$tri"
             make -j4
             echo "=== $tgt test_matrix (via qemu-user) ==="
             ./test_matrix || { echo "$tgt FAILED"; exit 1; }
