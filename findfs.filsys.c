@@ -143,7 +143,7 @@ static const char *canonical_token(const char *class) {
     if (!strncmp(class, "v8 or v10", 9))   return "v8";
     if (!strncmp(class, "v10,", 4))        return "v10";
     if (!strncmp(class, "sysvr2", 6))      return "sysvr2";
-    if (!strcmp(class, "32V"))             return "vax32";
+    if (!strncmp(class, "32V", 3))         return "vax32";
     if (!strcmp(class, "Coherent"))        return "coherent";
     if (!strcmp(class, "Xenix"))           return "xenix";
     if (!strcmp(class, "2.9BSD"))          return "bsd29";
@@ -168,7 +168,7 @@ static int matches(int filter, const char *class) {
  * Lists are NULL-terminated with -1.  (PDP-7 is word-addressed, probed apart.) */
 static const int fam_v1[]    = { FILSYS_V1, -1 };
 static const int fam_v6[]    = { FILSYS_V6, -1 };
-static const int fam_v7[]    = { FILSYS_V7, FILSYS_32V, FILSYS_COHERENT, -1 };
+static const int fam_v7[]    = { FILSYS_V7, FILSYS_32V, FILSYS_COHERENT, FILSYS_SYSIII, -1 };
 static const int fam_sysv[]  = { FILSYS_SVR2, FILSYS_SVR4, -1 };
 static const int fam_v8[]    = { FILSYS_V8, FILSYS_V10, -1 };
 static const int fam_v9[]    = { FILSYS_V9, -1 };
@@ -205,8 +205,8 @@ static int super_v7(int fd, const uint8_t *b, uint32_t bno, uint32_t nblocks,
         const char *name;
         int nicfree;
     } L[] = {
-        { 0, 0, "v7, sysiii or sysvr1", V7_NICFREE },
-        { 1, 0, "32V",      V7_NICFREE },
+        { 0, 0, "v7 or sysvr1", V7_NICFREE },
+        { 1, 0, "32V or sysiii", V7_NICFREE },
         { 0, 1, "Coherent", V7_COH_NICFREE },
     };
     for (int k = 0; k < 3; k++) {

@@ -274,11 +274,13 @@ filsys_edition_t filsys_getformat(int edition) {
         return f;
     }
     case FILSYS_SYSIII: {
-        /* System III kept V7's superblock (no magic, 512-byte blocks); its
-         * on-disk format is V7.  A distinct name so the edition table lists it
-         * as its own entry rather than an alias. */
+        /* System III's s5fs is the 32V (VAX) layout, not the PDP-11 V7 packing:
+         * daddr_t/time_t are 4-byte aligned (s_fsize @4, s_free @12, s_ninode
+         * @212, s_time @420) and little-endian, with no magic and no s_state.
+         * The sysIII_vax_root.img distribution image reads as 32V (findfs
+         * reports it), so sysiii is the 32V/V7 shape with a distinct name. */
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
-        f.name = "sysiii";
+        f.name = "sysiii"; f.bo = &bo_le; f.pack4 = 1;
         return f;
     }
     case FILSYS_SVR2: {
