@@ -218,6 +218,12 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
     printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
            rep->used_blocks, rep->free_blocks, rep->missing_blocks,
            rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
+    if (rep->missing_blocks > 0)
+        printf("missing=%u: the free-block list is incomplete -- the dump(8)/restor(8) tape\n"
+               "signature (dump writes the i-list and data blocks but NOT the free list, so a\n"
+               "restored image comes up with s_tfree correct and its free-block chain short).\n"
+               "Rebuild the free list from the block map with `-s` (icheck -s).\n",
+               rep->missing_blocks);
     return rep->errors ? -1 : 0;
 }
 
