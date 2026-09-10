@@ -74,16 +74,18 @@ jobs:
           ./configure --with-fuse=fuse3 --enable-image-tests
           make
           make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
-      - name: Big-endian smoke test (s390x + m68k via qemu-user)
+      - name: Endianness smoke test (s390x + m68k + armhf via qemu-user)
         run: |
-          sudo apt-get install -y gcc-s390x-linux-gnu gcc-m68k-linux-gnu qemu-user-static
-          for tgt in s390x m68k; do
+          sudo apt-get install -y gcc-s390x-linux-gnu gcc-m68k-linux-gnu gcc-arm-linux-gnueabihf qemu-user-static
+          # s390x = 64-bit BE, m68k = 32-bit BE, armhf = 32-bit LE (unsigned char,
+          # different alignment).  test_matrix + its mkfs/fsck/findfs subprocesses
+          # exec under qemu-<arch> via the binfmt qemu-user-static registers.
+          for spec in "s390x s390x-linux-gnu" "m68k m68k-linux-gnu" "armhf arm-linux-gnueabihf"; do
+            set -- $spec
+            tgt=$1; tri=$2
             make distclean 2>/dev/null || true
-            CC="$tgt-linux-gnu-gcc" ./configure --host="$tgt-linux-gnu"
+            CC="$tri-gcc" ./configure --host="$tri"
             make -j4
-            # big-endian (s390x 64-bit, m68k 32-bit); test_matrix and its
-            # mkfs/fsck/findfs subprocesses exec under qemu-<tgt> via the
-            # binfmt qemu-user-static registers.
             echo "=== $tgt test_matrix (via qemu-user) ==="
             ./test_matrix || { echo "$tgt FAILED"; exit 1; }
           done
