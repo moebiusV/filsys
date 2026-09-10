@@ -249,10 +249,12 @@ static int lock_image(filsys_t *fs, const char *path, uint64_t offset) {
     struct flock lk = { .l_type = F_WRLCK, .l_whence = SEEK_SET,
                         .l_start = (off_t)offset, .l_len = (off_t)len };
     int fd = fs->fs->fd;
-    /* OFD locks (Linux) are per-open-file-description; POSIX record locks (the
-     * BSDs/macOS) are per-process and drop on any close of the file -- the best
-     * those hosts offer. */
-#if HAVE_DECL_F_OFD_SETLK
+    /* OFD locks are a Linux-only feature (per-open-file-description); POSIX
+     * record locks (the BSDs/macOS/illumos) are per-process and drop on any
+     * close of the file -- the best those hosts offer.  Solaris/illumos declare
+     * F_OFD_SETLK for Linux binary compatibility but its kernel rejects it with
+     * EINVAL, so the OFD path is gated on __linux__, not just the decl. */
+#if defined(__linux__) && HAVE_DECL_F_OFD_SETLK
     int setlk = F_OFD_SETLK, getlk = F_OFD_GETLK;
 #else
     int setlk = F_SETLK, getlk = F_GETLK;
@@ -265,8 +267,8 @@ static int lock_image(filsys_t *fs, const char *path, uint64_t offset) {
     }
     if (fcntl(fd, setlk, &lk) == 0)
         return 0;
-    fprintf(stderr, "filsys: %s is already open read-write (use -o no_lock to override)\n",
-            path);
+    fprintf(stderr, "filsys: %s is already open read-write (lock: %s; "
+            "use -o no_lock to override)\n", path, strerror(errno));
     return -EBUSY;
 }
 
