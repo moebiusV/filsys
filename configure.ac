@@ -8,7 +8,7 @@ AC_INIT([filsys], [1.9.4], [david@clearbrookdistillery.com])
 AC_CONFIG_SRCDIR([mount.filsys.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR([build-aux])
-AM_INIT_AUTOMAKE([-Wall])
+AM_INIT_AUTOMAKE([-Wall subdir-objects])
 # Don't try to regenerate Makefile.in from Makefile.am unless a maintainer
 # explicitly asks; otherwise `git clone && ./configure && make` fails on a
 # host without (the exact) automake installed.
@@ -229,6 +229,38 @@ AS_IF([test "x$enable_slow_tests" = xyes],
     [SLOW_TESTS_ENV='FILSYS_SLOW_TESTS=1; export FILSYS_SLOW_TESTS;'],
     [SLOW_TESTS_ENV=''])
 AC_SUBST([SLOW_TESTS_ENV])
+
+# ---------------------------------------------------------------------------
+# Optional libFuzzer harness (fuzz/filsys-fuzz.c).  --enable-fuzzing builds the
+# read-path fuzz target with clang's -fsanitize=fuzzer (libFuzzer provides
+# main); it is a development/corpus tool, not a shipped program, so it is off
+# by default.  libFuzzer is clang-only; refuse the flag without clang rather
+# than fail at compile time.  The *library* should be built with the address/
+# undefined sanitizers too (via CFLAGS), so a whole-sanitizer build is:
+#   ./configure CC=clang CFLAGS="-O1 -g -fsanitize=address,undefined" \
+#               --enable-fuzzing && make filsys-fuzz
+# ---------------------------------------------------------------------------
+AC_ARG_ENABLE([fuzzing],
+    [AS_HELP_STRING([--enable-fuzzing],
+                    [build the libFuzzer read-path harness (requires clang)])],
+    [enable_fuzzing=$enableval], [enable_fuzzing=no])
+# libFuzzer is clang-only (-fsanitize=fuzzer is unrecognised by gcc), so probe
+# the *configured* compiler rather than assume.  The whole build must then use
+# that compiler (`CC=clang`); the harness is a compile-only target, so a
+# compile test is the right check (a link test would collide with libFuzzer's
+# own main()).
+AS_IF([test "x$enable_fuzzing" = xyes], [
+    AC_LANG_PUSH([C])
+    save_CFLAGS=$CFLAGS
+    CFLAGS="$CFLAGS -fsanitize=fuzzer"
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[return 0;]])],
+        [have_fuzzer=yes], [have_fuzzer=no])
+    CFLAGS=$save_CFLAGS
+    AC_LANG_POP([C])
+    AS_IF([test "x$have_fuzzer" = xno],
+          [AC_MSG_ERROR([--enable-fuzzing needs a compiler with -fsanitize=fuzzer (use CC=clang)])])
+])
+AM_CONDITIONAL([ENABLE_FUZZING], [test "x$enable_fuzzing" = xyes])
 
 # test_fuse_unlink_open needs to know whether truncate reaches an unlinked-open
 # fd through fi->fh (real fuse3: Linux/FreeBSD/macFUSE), so an ENOENT from
