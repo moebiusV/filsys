@@ -282,7 +282,7 @@ filsys_edition_t filsys_getformat(int edition) {
          * The PDP-11 form is the same struct packed (V7 packing): -o arch=pdp11
          * clears pack4 and switches to middle-endian. */
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
-        f.name = "sysiii"; f.bo = &bo_le; f.pack4 = 1;
+        f.name = "sysiii"; f.bo = &bo_le; f.pack4 = 1; f.has_dinfo = 1;
         return f;
     }
     case FILSYS_SVR2: {
@@ -295,6 +295,7 @@ filsys_edition_t filsys_getformat(int edition) {
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
         f.name = "sysvr2"; f.bo = &bo_le; f.pack4 = 1;
         f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
+        f.has_dinfo = 1;
         return f;
     }
     case FILSYS_SVR4: {
@@ -306,6 +307,7 @@ filsys_edition_t filsys_getformat(int edition) {
         f.pack4 = 1;
         f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
         f.has_state = 1;
+        f.has_dinfo = 1;
         return f;
     }
     default: {

@@ -150,7 +150,7 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
     else if (fs->isize_count)
         v6_count_free(fs, &fs->fl.tfree, &fs->fl.tinode);
     else if (!fs->pack4 || fs->magic) {
-        int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->dyn_bsize);
+        int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->has_dinfo);
         fs->fl.tfree  = fs->bo->get32(sb + toff);
         fs->fl.tinode = fs->bo->get16(sb + toff + 4);
     } else {
@@ -198,11 +198,12 @@ int v7fs_close(filsys_edition_t *fs) {
         /* The superblock is flushed once here, not per alloc/free: V7's kernel
          * syncs the superblock periodically rather than on every block handoff,
          * and batching avoids one 512-byte pwrite per freed block on truncate.
-         * A clean close clears s_fmod: the image is now consistent. */
-        if (!fs->readonly) {
-            fs->fmod = 0;
+         * The clean/dirty s_fmod transition is mark_dirty/mark_clean's job, not
+         * the close's: a fsck repair opens read-write and must be able to close
+         * without clearing s_fmod (a partial repair leaves the image inconsistent
+         * and a clean flag would make the next check skip it). */
+        if (!fs->readonly)
             rc = flush_fs(fs);
-        }
         close(fs->fd);
         fs->fd = -1;
     }
@@ -221,6 +222,13 @@ int v7fs_mark_dirty(filsys_edition_t *fs) {
     if (fs->readonly)
         return 0;
     fs->fmod = 1;
+    return flush_fs(fs);
+}
+
+int v7fs_mark_clean(filsys_edition_t *fs) {
+    if (fs->readonly)
+        return 0;
+    fs->fmod = 0;
     return flush_fs(fs);
 }
 
@@ -294,7 +302,7 @@ static int super_write(filsys_edition_t *fs) {
             fs->bo->put32(sb + V7_SYSV_STATE_OFF,
                           fs->fmod ? V7_SYSV_STATE_ACTIVE : V7_SYSV_STATE_CLEAN); /* s_state (R4 only) */
         if (!fs->pack4 || fs->magic) {
-            int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->dyn_bsize);
+            int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->has_dinfo);
             fs->bo->put32(sb + toff, fs->fl.tfree);        /* s_tfree */
             fs->bo->put16(sb + toff + 4, (uint16_t)fs->fl.tinode);   /* s_tinode */
         }
@@ -1093,7 +1101,6 @@ static void v8_walk_free_bitmap(filsys_edition_t *fs, filsys_chkctx_t *cx,
         uint32_t blk = f->v8_base + i;
         if (blk < v7_data_first(f) || blk >= f->fsize)
             continue;   /* boot/superblock/i-list: reserved, never free */
-        rep->free_blocks++;
         uint32_t off = blk - v7_data_first(f);
         uint8_t m = (uint8_t)(1u << (off & 7));
         if (cx->bmap[off >> 3] & m) {
@@ -1102,6 +1109,7 @@ static void v8_walk_free_bitmap(filsys_edition_t *fs, filsys_chkctx_t *cx,
             rep->errors++;
         } else {
             cx->bmap[off >> 3] |= m;
+            rep->free_blocks++;   /* a duplicate is used, not free */
         }
     }
 }
@@ -1154,7 +1162,17 @@ static uint32_t v7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
             nfree++;
         }
     }
-    super_write(f);   /* writes f->fl.tfree (= nfree) and f->fl.tinode (= 0) */
+    /* The free-inode total is s_tinode, not the 50-entry cache: rebuild it from
+     * the i-list so a salvage writes the true count rather than 0 (System III's
+     * fsck reports a wrong s_tinode otherwise). */
+    uint32_t maxino = v7_maxinode(f), used = 0;
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        v7_inode_t ip;
+        if (v7fs_read_inode(f, ino, &ip) == 0 && ip.mode != 0)
+            used++;
+    }
+    f->fl.tinode = maxino - used;
+    super_write(f);   /* writes f->fl.tfree (= nfree) and f->fl.tinode */
     return nfree;
 }
 
@@ -1211,7 +1229,6 @@ static void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check
             break;
         }
         seen[bno] = 1;
-        rep->free_blocks++;
         uint32_t off = bno - v7_data_first(f);
         uint8_t m = (uint8_t)(1u << (off & 7));
         if (cx->bmap[off >> 3] & m) {
@@ -1220,6 +1237,7 @@ static void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check
             rep->errors++;
         } else {
             cx->bmap[off >> 3] |= m;
+            rep->free_blocks++;   /* a duplicate is used, not free */
         }
         if (++guard > f->fsize + f->nicfree) {
             printf("free list does not terminate\n");
@@ -1878,6 +1896,7 @@ const struct filsys_ops v7fs_ops = {
     .close       = v7fs_close,
     .sync        = v7fs_sync,
     .mark_dirty  = v7fs_mark_dirty,
+    .mark_clean  = v7fs_mark_clean,
     .read_block  = v7fs_read_block,
     .write_block = v7fs_write_block,
     .blk_get     = v7fs_read_block,
@@ -2054,6 +2073,7 @@ const struct filsys_ops bsd211fs_ops = {
     .close       = v7fs_close,
     .sync        = v7fs_sync,
     .mark_dirty  = v7fs_mark_dirty,
+    .mark_clean  = v7fs_mark_clean,
     .read_block  = v7fs_read_block,
     .write_block = v7fs_write_block,
     .blk_get     = v7fs_read_block,
@@ -2423,6 +2443,7 @@ const struct filsys_ops v6fs_ops = {
     .close       = v7fs_close,
     .sync        = v7fs_sync,
     .mark_dirty  = v7fs_mark_dirty,
+    .mark_clean  = v7fs_mark_clean,
     .read_block  = v7fs_read_block,
     .write_block = v7fs_write_block,
     .blk_get     = v7fs_read_block,
