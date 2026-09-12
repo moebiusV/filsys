@@ -82,6 +82,17 @@ jobs:
             make -j4 test_matrix
             echo "=== $tgt test_matrix (via qemu-user) ==="
             ./test_matrix || { echo "$tgt FAILED"; exit 1; }
+            # The crash-prefix and property phases are the tests most likely to
+            # catch a byte-order bug in the allocator or free-list encoding, so run
+            # them on the 64-bit big-endian s390x too (they otherwise execute only
+            # little-endian).  The fault phase is skipped on qemu-user: it shells
+            # out to fsck ~20k times (several minutes even natively) and balloons
+            # under emulation; it still runs natively in the "slow soak" job below.
+            if [ "$tgt" = "s390x" ]; then
+              echo "=== $tgt slow soak (crash-prefix + property) ==="
+              FILSYS_SLOW_TESTS=1 FILSYS_ONLY=crash    ./test_matrix || { echo "$tgt crash FAILED";    exit 1; }
+              FILSYS_SLOW_TESTS=1 FILSYS_ONLY=property ./test_matrix || { echo "$tgt property FAILED"; exit 1; }
+            fi
           done
       - name: Build and run the FUSE-free core + slow soak (make check)
         run: |
@@ -98,3 +109,30 @@ jobs:
           ./configure --with-fuse=fuse3 --enable-image-tests
           make
           make check; rc=$?; cat test.sh.log test-suite.log 2>/dev/null; exit $rc
+
+  # UBSan/ASan on the FUSE-free core, plus a short libFuzzer run over the read
+  # path.  The hand-rolled offset arithmetic in the format codecs and allocators
+  # is exactly where alignment and shift-width UB hides, and the read path is the
+  # untrusted-input surface -- a sanitizer build of the suite plus a 60 s fuzz is
+  # the cheapest way to keep both honest.
+  sanitize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+      - name: UBSan + ASan on test_matrix
+        run: |
+          ./configure CC=clang CFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+          make -j4 test_matrix
+          ASAN_OPTIONS=detect_leaks=1 ./test_matrix
+      - name: libFuzzer read-path fuzz (60 s)
+        run: |
+          make distclean 2>/dev/null || true
+          # -fsanitize=fuzzer-no-link instruments the *library* with coverage
+          # counters but leaves main() to the harness's own -fsanitize=fuzzer.
+          ./configure CC=clang \
+            CFLAGS="-O1 -g -fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer" \
+            --enable-fuzzing
+          make -j4 filsys-fuzz
+          ./filsys-fuzz -max_total_time=60 -print_final_stats=1

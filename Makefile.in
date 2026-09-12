@@ -113,6 +113,7 @@ check_PROGRAMS = test_matrix$(EXEEXT) $(am__EXEEXT_1) $(am__EXEEXT_2)
 # missing prerequisite, so an explicitly-enabled run cannot pass silently.
 @ENABLE_ORACLE_TESTS_TRUE@am__append_3 = test_oracle
 @ENABLE_ORACLE_TESTS_TRUE@am__append_4 = test_oracle
+@ENABLE_FUZZING_TRUE@noinst_PROGRAMS = filsys-fuzz$(EXEEXT)
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/configure.ac
@@ -134,7 +135,7 @@ am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" \
 @ENABLE_IMAGE_TESTS_TRUE@am__EXEEXT_1 =  \
 @ENABLE_IMAGE_TESTS_TRUE@	test_fuse_unlink_open$(EXEEXT)
 @ENABLE_ORACLE_TESTS_TRUE@am__EXEEXT_2 = test_oracle$(EXEEXT)
-PROGRAMS = $(bin_PROGRAMS) $(sbin_PROGRAMS)
+PROGRAMS = $(bin_PROGRAMS) $(noinst_PROGRAMS) $(sbin_PROGRAMS)
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
     $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
@@ -180,6 +181,14 @@ am_libfilsys_a_OBJECTS = libfilsys_a-filsys.$(OBJEXT) \
 	libfilsys_a-v1fs.$(OBJEXT) libfilsys_a-v7fs.$(OBJEXT) \
 	libfilsys_a-pdp7fs.$(OBJEXT)
 libfilsys_a_OBJECTS = $(am_libfilsys_a_OBJECTS)
+am__filsys_fuzz_SOURCES_DIST = fuzz/filsys-fuzz.c
+am__dirstamp = $(am__leading_dot)dirstamp
+@ENABLE_FUZZING_TRUE@am_filsys_fuzz_OBJECTS =  \
+@ENABLE_FUZZING_TRUE@	fuzz/filsys_fuzz-filsys-fuzz.$(OBJEXT)
+filsys_fuzz_OBJECTS = $(am_filsys_fuzz_OBJECTS)
+@ENABLE_FUZZING_TRUE@filsys_fuzz_DEPENDENCIES = libfilsys.a
+filsys_fuzz_LINK = $(CCLD) $(filsys_fuzz_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_findfs_filsys_OBJECTS = findfs_filsys-findfs.filsys.$(OBJEXT)
 findfs_filsys_OBJECTS = $(am_findfs_filsys_OBJECTS)
 findfs_filsys_DEPENDENCIES = libfilsys.a
@@ -270,7 +279,8 @@ am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po \
 	./$(DEPDIR)/mount_filsys-mount.filsys.Po \
 	./$(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po \
 	./$(DEPDIR)/test_matrix-test_matrix.Po \
-	./$(DEPDIR)/test_oracle-test_oracle.Po
+	./$(DEPDIR)/test_oracle-test_oracle.Po \
+	fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -288,13 +298,14 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(libfilsys_a_SOURCES) $(findfs_filsys_SOURCES) \
-	$(fsck_filsys_SOURCES) $(mkfs_filsys_SOURCES) \
-	$(mount_filsys_SOURCES) $(test_fuse_unlink_open_SOURCES) \
-	$(test_matrix_SOURCES) $(test_oracle_SOURCES)
-DIST_SOURCES = $(libfilsys_a_SOURCES) $(findfs_filsys_SOURCES) \
-	$(fsck_filsys_SOURCES) $(mkfs_filsys_SOURCES) \
-	$(am__mount_filsys_SOURCES_DIST) \
+SOURCES = $(libfilsys_a_SOURCES) $(filsys_fuzz_SOURCES) \
+	$(findfs_filsys_SOURCES) $(fsck_filsys_SOURCES) \
+	$(mkfs_filsys_SOURCES) $(mount_filsys_SOURCES) \
+	$(test_fuse_unlink_open_SOURCES) $(test_matrix_SOURCES) \
+	$(test_oracle_SOURCES)
+DIST_SOURCES = $(libfilsys_a_SOURCES) $(am__filsys_fuzz_SOURCES_DIST) \
+	$(findfs_filsys_SOURCES) $(fsck_filsys_SOURCES) \
+	$(mkfs_filsys_SOURCES) $(am__mount_filsys_SOURCES_DIST) \
 	$(am__test_fuse_unlink_open_SOURCES_DIST) \
 	$(test_matrix_SOURCES) $(am__test_oracle_SOURCES_DIST)
 am__can_run_installinfo = \
@@ -696,7 +707,7 @@ dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsy
 EXTRA_DIST = test.sh fetch.sh conformance/fuse-conformance.c \
 	conformance/fuse-conformance-fuse2.c \
 	conformance/conformance-client.c conformance/run.sh \
-	boot/hpuboot.s boot/rpuboot.s
+	fuzz/filsys-fuzz.c boot/hpuboot.s boot/rpuboot.s
 
 # --- PDP-11 boot blocks -----------------------------------------------------
 # filsys ships two block-0 bootstraps assembled from the V7 /usr/mdec sources:
@@ -727,6 +738,11 @@ AM_TESTS_ENVIRONMENT = $(SLOW_TESTS_ENV) $(FUSE_TEST_ENV)
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_SOURCES = test_oracle.c
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_LDADD = libfilsys.a
 @ENABLE_ORACLE_TESTS_TRUE@test_oracle_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
+@ENABLE_FUZZING_TRUE@filsys_fuzz_SOURCES = fuzz/filsys-fuzz.c
+@ENABLE_FUZZING_TRUE@filsys_fuzz_LDADD = libfilsys.a
+@ENABLE_FUZZING_TRUE@filsys_fuzz_CFLAGS = -std=c17 -Wall -Wextra -Wshadow \
+@ENABLE_FUZZING_TRUE@	-O1 -g -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer
+
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -827,6 +843,9 @@ clean-binPROGRAMS:
 
 clean-checkPROGRAMS:
 	-$(am__rm_f) $(check_PROGRAMS)
+
+clean-noinstPROGRAMS:
+	-$(am__rm_f) $(noinst_PROGRAMS)
 install-sbinPROGRAMS: $(sbin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	@list='$(sbin_PROGRAMS)'; test -n "$(sbindir)" || list=; \
@@ -905,6 +924,18 @@ libfilsys.a: $(libfilsys_a_OBJECTS) $(libfilsys_a_DEPENDENCIES) $(EXTRA_libfilsy
 	$(AM_V_at)-rm -f libfilsys.a
 	$(AM_V_AR)$(libfilsys_a_AR) libfilsys.a $(libfilsys_a_OBJECTS) $(libfilsys_a_LIBADD)
 	$(AM_V_at)$(libfilsys_a_RANLIB) libfilsys.a
+fuzz/$(am__dirstamp):
+	@$(MKDIR_P) fuzz
+	@: >>fuzz/$(am__dirstamp)
+fuzz/$(DEPDIR)/$(am__dirstamp):
+	@$(MKDIR_P) fuzz/$(DEPDIR)
+	@: >>fuzz/$(DEPDIR)/$(am__dirstamp)
+fuzz/filsys_fuzz-filsys-fuzz.$(OBJEXT): fuzz/$(am__dirstamp) \
+	fuzz/$(DEPDIR)/$(am__dirstamp)
+
+filsys-fuzz$(EXEEXT): $(filsys_fuzz_OBJECTS) $(filsys_fuzz_DEPENDENCIES) $(EXTRA_filsys_fuzz_DEPENDENCIES) 
+	@rm -f filsys-fuzz$(EXEEXT)
+	$(AM_V_CCLD)$(filsys_fuzz_LINK) $(filsys_fuzz_OBJECTS) $(filsys_fuzz_LDADD) $(LIBS)
 
 findfs.filsys$(EXEEXT): $(findfs_filsys_OBJECTS) $(findfs_filsys_DEPENDENCIES) $(EXTRA_findfs_filsys_DEPENDENCIES) 
 	@rm -f findfs.filsys$(EXEEXT)
@@ -936,6 +967,7 @@ test_oracle$(EXEEXT): $(test_oracle_OBJECTS) $(test_oracle_DEPENDENCIES) $(EXTRA
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
+	-rm -f fuzz/*.$(OBJEXT)
 
 distclean-compile:
 	-rm -f *.tab.c
@@ -963,6 +995,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_matrix-test_matrix.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/test_oracle-test_oracle.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -971,15 +1004,17 @@ $(am__depfiles_remade):
 am--depfiles: $(am__depfiles_remade)
 
 .c.o:
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ $<
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+@am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.o$$||'`;\
+@am__fastdepCC_TRUE@	$(COMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ $< &&\
+@am__fastdepCC_TRUE@	$(am__mv) $$depbase.Tpo $$depbase.Po
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(COMPILE) -c -o $@ $<
 
 .c.obj:
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(COMPILE) -MT $@ -MD -MP -MF $(DEPDIR)/$*.Tpo -c -o $@ `$(CYGPATH_W) '$<'`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/$*.Tpo $(DEPDIR)/$*.Po
+@am__fastdepCC_TRUE@	$(AM_V_CC)depbase=`echo $@ | sed 's|[^/]*$$|$(DEPDIR)/&|;s|\.obj$$||'`;\
+@am__fastdepCC_TRUE@	$(COMPILE) -MT $@ -MD -MP -MF $$depbase.Tpo -c -o $@ `$(CYGPATH_W) '$<'` &&\
+@am__fastdepCC_TRUE@	$(am__mv) $$depbase.Tpo $$depbase.Po
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(COMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
@@ -1137,6 +1172,20 @@ libfilsys_a-pdp7fs.obj: pdp7fs.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pdp7fs.c' object='libfilsys_a-pdp7fs.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-pdp7fs.obj `if test -f 'pdp7fs.c'; then $(CYGPATH_W) 'pdp7fs.c'; else $(CYGPATH_W) '$(srcdir)/pdp7fs.c'; fi`
+
+fuzz/filsys_fuzz-filsys-fuzz.o: fuzz/filsys-fuzz.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsys_fuzz_CFLAGS) $(CFLAGS) -MT fuzz/filsys_fuzz-filsys-fuzz.o -MD -MP -MF fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Tpo -c -o fuzz/filsys_fuzz-filsys-fuzz.o `test -f 'fuzz/filsys-fuzz.c' || echo '$(srcdir)/'`fuzz/filsys-fuzz.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Tpo fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='fuzz/filsys-fuzz.c' object='fuzz/filsys_fuzz-filsys-fuzz.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsys_fuzz_CFLAGS) $(CFLAGS) -c -o fuzz/filsys_fuzz-filsys-fuzz.o `test -f 'fuzz/filsys-fuzz.c' || echo '$(srcdir)/'`fuzz/filsys-fuzz.c
+
+fuzz/filsys_fuzz-filsys-fuzz.obj: fuzz/filsys-fuzz.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsys_fuzz_CFLAGS) $(CFLAGS) -MT fuzz/filsys_fuzz-filsys-fuzz.obj -MD -MP -MF fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Tpo -c -o fuzz/filsys_fuzz-filsys-fuzz.obj `if test -f 'fuzz/filsys-fuzz.c'; then $(CYGPATH_W) 'fuzz/filsys-fuzz.c'; else $(CYGPATH_W) '$(srcdir)/fuzz/filsys-fuzz.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Tpo fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='fuzz/filsys-fuzz.c' object='fuzz/filsys_fuzz-filsys-fuzz.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsys_fuzz_CFLAGS) $(CFLAGS) -c -o fuzz/filsys_fuzz-filsys-fuzz.obj `if test -f 'fuzz/filsys-fuzz.c'; then $(CYGPATH_W) 'fuzz/filsys-fuzz.c'; else $(CYGPATH_W) '$(srcdir)/fuzz/filsys-fuzz.c'; fi`
 
 findfs_filsys-findfs.filsys.o: findfs.filsys.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(findfs_filsys_CFLAGS) $(CFLAGS) -MT findfs_filsys-findfs.filsys.o -MD -MP -MF $(DEPDIR)/findfs_filsys-findfs.filsys.Tpo -c -o findfs_filsys-findfs.filsys.o `test -f 'findfs.filsys.c' || echo '$(srcdir)/'`findfs.filsys.c
@@ -1936,6 +1985,8 @@ clean-generic:
 distclean-generic:
 	-$(am__rm_f) $(CONFIG_CLEAN_FILES)
 	-test . = "$(srcdir)" || $(am__rm_f) $(CONFIG_CLEAN_VPATH_FILES)
+	-$(am__rm_f) fuzz/$(DEPDIR)/$(am__dirstamp)
+	-$(am__rm_f) fuzz/$(am__dirstamp)
 
 maintainer-clean-generic:
 	@echo "This command is intended for maintainers to use"
@@ -1943,7 +1994,8 @@ maintainer-clean-generic:
 clean: clean-am
 
 clean-am: clean-binPROGRAMS clean-checkPROGRAMS clean-generic \
-	clean-libLIBRARIES clean-sbinPROGRAMS mostlyclean-am
+	clean-libLIBRARIES clean-noinstPROGRAMS clean-sbinPROGRAMS \
+	mostlyclean-am
 
 distclean: distclean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
@@ -1970,6 +2022,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
 	-rm -f ./$(DEPDIR)/test_oracle-test_oracle.Po
+	-rm -f fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-hdr distclean-tags
@@ -2042,6 +2095,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/test_fuse_unlink_open-test_fuse_unlink_open.Po
 	-rm -f ./$(DEPDIR)/test_matrix-test_matrix.Po
 	-rm -f ./$(DEPDIR)/test_oracle-test_oracle.Po
+	-rm -f fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
@@ -2068,20 +2122,20 @@ uninstall-man: uninstall-man1 uninstall-man5
 .PHONY: CTAGS GTAGS TAGS all all-am am--depfiles am--refresh check \
 	check-TESTS check-am clean clean-binPROGRAMS \
 	clean-checkPROGRAMS clean-cscope clean-generic \
-	clean-libLIBRARIES clean-sbinPROGRAMS cscope cscopelist-am \
-	ctags ctags-am dist dist-all dist-bzip2 dist-bzip3 dist-gzip \
-	dist-hook dist-lzip dist-shar dist-tarZ dist-xz dist-zip \
-	dist-zstd distcheck distclean distclean-compile \
-	distclean-generic distclean-hdr distclean-tags distcleancheck \
-	distdir distuninstallcheck dvi dvi-am html html-am info \
-	info-am install install-am install-binPROGRAMS install-data \
-	install-data-am install-dist_bootDATA install-dvi \
-	install-dvi-am install-exec install-exec-am \
-	install-filsysincludeHEADERS install-html install-html-am \
-	install-info install-info-am install-libLIBRARIES install-man \
-	install-man1 install-man5 install-pdf install-pdf-am \
-	install-pkgconfigDATA install-ps install-ps-am \
-	install-sbinPROGRAMS install-strip installcheck \
+	clean-libLIBRARIES clean-noinstPROGRAMS clean-sbinPROGRAMS \
+	cscope cscopelist-am ctags ctags-am dist dist-all dist-bzip2 \
+	dist-bzip3 dist-gzip dist-hook dist-lzip dist-shar dist-tarZ \
+	dist-xz dist-zip dist-zstd distcheck distclean \
+	distclean-compile distclean-generic distclean-hdr \
+	distclean-tags distcleancheck distdir distuninstallcheck dvi \
+	dvi-am html html-am info info-am install install-am \
+	install-binPROGRAMS install-data install-data-am \
+	install-dist_bootDATA install-dvi install-dvi-am install-exec \
+	install-exec-am install-filsysincludeHEADERS install-html \
+	install-html-am install-info install-info-am \
+	install-libLIBRARIES install-man install-man1 install-man5 \
+	install-pdf install-pdf-am install-pkgconfigDATA install-ps \
+	install-ps-am install-sbinPROGRAMS install-strip installcheck \
 	installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic pdf pdf-am ps ps-am recheck tags tags-am \
@@ -2103,6 +2157,12 @@ boot:
 	$(V7AS) -o boot/hpuboot boot/hpuboot.s
 	$(V7AS) -o boot/rpuboot boot/rpuboot.s
 	chmod 644 boot/hpuboot boot/rpuboot
+
+# Convenience target: run the harness for 60 s.  `make fuzz` needs the
+# sanitizer-instrumented library (configure CFLAGS) for full coverage.
+.PHONY: fuzz
+fuzz: filsys-fuzz
+	./filsys-fuzz -max_total_time=60 -print_final_stats=1
 
 # Rebuild the dist tarball and check every checksum the packaging pins (sha256,
 # sha512, blake2s, size) against it.  This is the mechanical guard against the

@@ -75,7 +75,8 @@ dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsy
 
 EXTRA_DIST = test.sh fetch.sh \
 	conformance/fuse-conformance.c conformance/fuse-conformance-fuse2.c \
-	conformance/conformance-client.c conformance/run.sh
+	conformance/conformance-client.c conformance/run.sh \
+	fuzz/filsys-fuzz.c
 
 # --- PDP-11 boot blocks -----------------------------------------------------
 # filsys ships two block-0 bootstraps assembled from the V7 /usr/mdec sources:
@@ -146,6 +147,25 @@ test_oracle_SOURCES = test_oracle.c
 test_oracle_LDADD = libfilsys.a
 test_oracle_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 endif
+
+# The libFuzzer read-path harness (fuzz/filsys-fuzz.c).  Built only with
+# --enable-fuzzing, and never installed.  The per-target CFLAGS *replace* the
+# global CFLAGS, so they carry -fsanitize=fuzzer plus the address/undefined
+# sanitizers; the library is instrumented by the same sanitizers passed in the
+# global CFLAGS at configure time (see configure.ac).
+if ENABLE_FUZZING
+noinst_PROGRAMS = filsys-fuzz
+filsys_fuzz_SOURCES = fuzz/filsys-fuzz.c
+filsys_fuzz_LDADD = libfilsys.a
+filsys_fuzz_CFLAGS = -std=c17 -Wall -Wextra -Wshadow \
+	-O1 -g -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer
+endif
+
+# Convenience target: run the harness for 60 s.  `make fuzz` needs the
+# sanitizer-instrumented library (configure CFLAGS) for full coverage.
+.PHONY: fuzz
+fuzz: filsys-fuzz
+	./filsys-fuzz -max_total_time=60 -print_final_stats=1
 
 # Rebuild the dist tarball and check every checksum the packaging pins (sha256,
 # sha512, blake2s, size) against it.  This is the mechanical guard against the

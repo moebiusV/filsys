@@ -647,6 +647,8 @@ am__EXEEXT_TRUE
 LTLIBOBJS
 LIBOBJS
 FUSE_TEST_ENV
+ENABLE_FUZZING_FALSE
+ENABLE_FUZZING_TRUE
 SLOW_TESTS_ENV
 ENABLE_ORACLE_TESTS_FALSE
 ENABLE_ORACLE_TESTS_TRUE
@@ -773,6 +775,7 @@ with_fuse
 enable_image_tests
 enable_oracle_tests
 enable_slow_tests
+enable_fuzzing
 enable_year2038
 '
       ac_precious_vars='build_alias
@@ -1428,6 +1431,8 @@ Optional Features:
                           check'
   --enable-slow-tests     run the slow fault-injection / crash-prefix /
                           property soak in `make check`
+  --enable-fuzzing        build the libFuzzer read-path harness (requires
+                          clang)
   --enable-year2038       support timestamps after 2038
 
 Optional Packages:
@@ -6352,6 +6357,82 @@ esac
 fi
 
 
+# ---------------------------------------------------------------------------
+# Optional libFuzzer harness (fuzz/filsys-fuzz.c).  --enable-fuzzing builds the
+# read-path fuzz target with clang's -fsanitize=fuzzer (libFuzzer provides
+# main); it is a development/corpus tool, not a shipped program, so it is off
+# by default.  libFuzzer is clang-only; refuse the flag without clang rather
+# than fail at compile time.  The *library* should be built with the address/
+# undefined sanitizers too (via CFLAGS), so a whole-sanitizer build is:
+#   ./configure CC=clang CFLAGS="-O1 -g -fsanitize=address,undefined" \
+#               --enable-fuzzing && make filsys-fuzz
+# ---------------------------------------------------------------------------
+# Check whether --enable-fuzzing was given.
+if test ${enable_fuzzing+y}
+then :
+  enableval=$enable_fuzzing; enable_fuzzing=$enableval
+else case e in #(
+  e) enable_fuzzing=no ;;
+esac
+fi
+
+# libFuzzer is clang-only (-fsanitize=fuzzer is unrecognised by gcc), so probe
+# the *configured* compiler rather than assume.  The whole build must then use
+# that compiler (`CC=clang`); the harness is a compile-only target, so a
+# compile test is the right check (a link test would collide with libFuzzer's
+# own main()).
+if test "x$enable_fuzzing" = xyes
+then :
+
+    ac_ext=c
+ac_cpp='$CPP $CPPFLAGS'
+ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
+ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
+ac_compiler_gnu=$ac_cv_c_compiler_gnu
+
+    save_CFLAGS=$CFLAGS
+    CFLAGS="$CFLAGS -fsanitize=fuzzer"
+    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+int
+main (void)
+{
+return 0;
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_compile "$LINENO"
+then :
+  have_fuzzer=yes
+else case e in #(
+  e) have_fuzzer=no ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
+    CFLAGS=$save_CFLAGS
+    ac_ext=c
+ac_cpp='$CPP $CPPFLAGS'
+ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
+ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
+ac_compiler_gnu=$ac_cv_c_compiler_gnu
+
+    if test "x$have_fuzzer" = xno
+then :
+  as_fn_error $? "--enable-fuzzing needs a compiler with -fsanitize=fuzzer (use CC=clang)" "$LINENO" 5
+fi
+
+fi
+ if test "x$enable_fuzzing" = xyes; then
+  ENABLE_FUZZING_TRUE=
+  ENABLE_FUZZING_FALSE='#'
+else
+  ENABLE_FUZZING_TRUE='#'
+  ENABLE_FUZZING_FALSE=
+fi
+
+
 # test_fuse_unlink_open needs to know whether truncate reaches an unlinked-open
 # fd through fi->fh (real fuse3: Linux/FreeBSD/macFUSE), so an ENOENT from
 # ftruncate after unlink is the path-based regression it guards -- or whether
@@ -6544,6 +6625,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${ENABLE_ORACLE_TESTS_TRUE}" && test -z "${ENABLE_ORACLE_TESTS_FALSE}"; then
   as_fn_error $? "conditional \"ENABLE_ORACLE_TESTS\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${ENABLE_FUZZING_TRUE}" && test -z "${ENABLE_FUZZING_FALSE}"; then
+  as_fn_error $? "conditional \"ENABLE_FUZZING\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 
