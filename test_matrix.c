@@ -1535,6 +1535,71 @@ static void statfs_fsck_agreement(void) {
     }
 }
 
+/* Count occurrences of a non-empty substring in `hay`. */
+static int count_str(const char *hay, const char *needle) {
+    int n = 0;
+    size_t len = strlen(needle);
+    if (!len)
+        return 0;
+    for (const char *p = hay; (p = strstr(p, needle)) != NULL; p += len)
+        n++;
+    return n;
+}
+
+/* The System III (PDP-11) oracle fixtures: two bootable roots committed in the
+ * source tree (built by hand from the "vax780" tape -- there is no download
+ * source for them).  filsys's fsck must detect what System III's own fsck
+ * reports on the original (one duplicate block, five orphaned FIFOs, a stale
+ * s_tinode) and agree that the cleaned root is error-free.  Skips -- rather
+ * than fails -- if the fixtures are absent (e.g. an out-of-tree build whose
+ * source tree was never unpacked next to it). */
+static void oracle_fixtures(void) {
+    static const char *cands[] = {
+        "sysiii-pdp11-original.root.gz", "../sysiii-pdp11-original.root.gz", NULL
+    };
+    const char *orig = NULL;
+    for (int i = 0; cands[i]; i++)
+        if (access(cands[i], R_OK) == 0) { orig = cands[i]; break; }
+    if (!orig) {
+        ok("sysiii oracle fixtures present", 0);
+        return;
+    }
+    char cleaned[512];
+    {
+        const char *m = strstr(orig, "-original.root.gz");
+        if (!m)
+            return;
+        snprintf(cleaned, sizeof cleaned, "%.*s-cleaned.root.gz", (int)(m - orig), orig);
+    }
+
+    char cmd[1024], out[1 << 20];
+    snprintf(cmd, sizeof cmd,
+             "gunzip -c %s > /tmp/filsys-oracle-orig.img 2>/dev/null && "
+             "./fsck.filsys -v sysiii -a pdp11 /tmp/filsys-oracle-orig.img 2>&1",
+             orig);
+    FILE *pf = popen(cmd, "r");
+    size_t n = pf ? fread(out, 1, sizeof out - 1, pf) : 0;
+    if (pf) pclose(pf);
+    out[n] = '\0';
+    ok("oracle corrupt: duplicate block", strstr(out, "dup=1") != NULL);
+    ok("oracle corrupt: 5 unreferenced FIFOs", count_str(out, "unreferenced") == 5);
+    ok("oracle corrupt: free-inode count wrong",
+       strstr(out, "free inode count wrong") != NULL);
+
+    snprintf(cmd, sizeof cmd,
+             "gunzip -c %s > /tmp/filsys-oracle-clean.img 2>/dev/null && "
+             "./fsck.filsys -v sysiii -a pdp11 /tmp/filsys-oracle-clean.img 2>&1",
+             cleaned);
+    pf = popen(cmd, "r");
+    n = pf ? fread(out, 1, sizeof out - 1, pf) : 0;
+    if (pf) pclose(pf);
+    out[n] = '\0';
+    ok("oracle cleaned: errors=0", strstr(out, "errors=0") != NULL);
+
+    unlink("/tmp/filsys-oracle-orig.img");
+    unlink("/tmp/filsys-oracle-clean.img");
+}
+
 int main(void) {
     /* The slow soak (fault injection x editions, exhaustive crash-prefix
      * enumeration, property-based op sequences) runs only when
@@ -1575,6 +1640,7 @@ int main(void) {
         rename_semantics();
         dir_link_semantics();
         findfs_self_detect();
+        oracle_fixtures();
     }
     if (want_fault) fault_test();
     if (want_crash) crash_prefix_test();
