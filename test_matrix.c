@@ -903,7 +903,7 @@ static void fault_test(void) {
         { "rmdir",    setup_dir,  op_rmdir,    FILSYS_CK_B },
         { "link",     setup_file, op_link,     FILSYS_CK_C },
         { "symlink",  setup_none, op_symlink,  FILSYS_CK_B },
-        { "rename",   setup_file, op_rename,   FILSYS_CK_C },
+        { "rename",   setup_file, op_rename,   FILSYS_CK_B },  /* rollback may orphan the source */
         { "rename_over",     setup_file2, op_rename_over,     FILSYS_CK_B },
         { "rename_dir",      setup_dir,   op_rename_dir,      FILSYS_CK_C },
         { "rename_dir_over", setup_dir2,  op_rename_dir_over, FILSYS_CK_B },
@@ -1035,7 +1035,7 @@ static void crash_prefix_test(void) {
         { "rmdir",    setup_dir,  op_rmdir,    FILSYS_CK_B },
         { "link",     setup_file, op_link,     FILSYS_CK_C },
         { "symlink",  setup_none, op_symlink,  FILSYS_CK_B },
-        { "rename",   setup_file, op_rename,   FILSYS_CK_C },
+        { "rename",   setup_file, op_rename,   FILSYS_CK_B },  /* rollback may orphan the source */
         { "rename_over",     setup_file2, op_rename_over,     FILSYS_CK_B },
         { "rename_dir",      setup_dir,   op_rename_dir,      FILSYS_CK_C },
         { "rename_dir_over", setup_dir2,  op_rename_dir_over, FILSYS_CK_B },
