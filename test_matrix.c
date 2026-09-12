@@ -1067,6 +1067,7 @@ static void property_sequences(void) {
         for (int j = 0; j < NMODEL; j++)
             g_model[j] = ~0ULL;
         g_prng = 0x9e3779b97f4a7c15ULL;
+        int first_bad_step = -1;
 
         for (int step = 0; step < PROP_STEPS; step++) {
             int slot = (int)(prng_next() % NMODEL);
@@ -1117,10 +1118,17 @@ static void property_sequences(void) {
                 break;
             }
             (void)rc;
+            /* Invariant after every step: the integrity walk must find no
+             * aliasing (dup==0), no missing block, and every inode's link count
+             * equal to its directory reference count.  Checking here attributes
+             * a defect to `step` instead of burying it under 127 more ops. */
+            filsys_check_t rep;
+            if (filsys_invariants(fs, &rep) != 0 && first_bad_step < 0)
+                first_bad_step = step;
         }
         filsys_close(fs);   /* flush the superblock, then check */
 
-        int clean = fsck_is_clean(f.name, img);
+        int clean = first_bad_step < 0;
         /* every surviving file must read back at the modelled size */
         int sizes_ok = 1;
         filsys_t *r;

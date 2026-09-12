@@ -32,6 +32,7 @@ enum {
     FILSYS_CK_FORCE   = 4,  /* check even if the superblock is marked clean */
     FILSYS_CK_YES     = 8,  /* assume yes: auto-apply each repair (-y) */
     FILSYS_CK_ASK     = 16, /* interactive: prompt on stdin before a repair (-i) */
+    FILSYS_CK_QUIET   = 32, /* suppress the always-on "clean"/summary lines */
     FILSYS_MAXBADOK   = 10  /* bad blocks tolerated before a check aborts */
 };
 
@@ -97,6 +98,16 @@ static inline int filsys_in_allocated(uint8_t st) {
 /* Test hook: swap the byte-slice transport on an open filesystem (fault
  * injection).  Internal, not part of the public filsys.h API. */
 void filsys_set_io(filsys_t *fs, const filsys_io_t *io);
+
+/* Invariant cross-check: run the full integrity walk (block accounting, dup
+ * rescan, missing-block and link-count) with the clean-flag short-circuit
+ * bypassed (FILSYS_CK_FORCE) and the always-on summary chatter suppressed
+ * (FILSYS_CK_QUIET).  Returns 0 if every invariant holds, -1 otherwise; the
+ * report's fields (dup_blocks, missing_blocks, errors, ...) describe the
+ * violations regardless.  Read-only: no salvage/preen, so it is safe on a
+ * read-only open.  Internal, like filsys_set_io -- the test driver calls it
+ * after each crash-prefix / property step. */
+int filsys_invariants(filsys_t *fs, filsys_check_t *rep);
 
 /* ---- image creation ------------------------------------------------------ */
 

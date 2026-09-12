@@ -458,6 +458,14 @@ int filsys_check(filsys_t *fs) {
     return fs->ops->check(fs->fs);
 }
 
+int filsys_invariants(filsys_t *fs, filsys_check_t *rep) {
+    /* Every backend state is a filsys_edition_t (v1fs_t and p7fs_t alias it),
+     * so passing the state as its own format descriptor is correct here -- the
+     * same `fs, fs` pairing filsys_check_op uses.  FORCE bypasses the
+     * is_clean short-circuit; QUIET drops the always-on chatter. */
+    return filsys_check_common(fs->fs, fs->fs, rep, FILSYS_CK_FORCE | FILSYS_CK_QUIET);
+}
+
 int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip) {
     return lookup(fs, path, ino, ip);
 }
