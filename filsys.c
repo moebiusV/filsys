@@ -191,23 +191,39 @@ static uint64_t maxfile(const filsys_t *fs) {
     return fs->ops->max_file(fs->fs);
 }
 
+/* Tear an inode down in the one safe order: truncate its blocks, persist the
+ * cleared inode, release the collected blocks, and return the number to the
+ * allocator.  The block free is gated on the clear persisting, so a crash never
+ * leaves a free inode still referenced (class D); a failed truncate or clear
+ * leaves the inode allocated and its blocks referenced -- a recoverable leak
+ * (B), not aliasing.  `ip` is the inode's decoded state and is left cleared on
+ * success. */
+static int inode_destroy(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
+    filsys_blklist_t *bl = NULL;
+    int rc = itrunc(fs, ip, &bl);
+    if (rc) {
+        filsys_blklist_discard(bl);
+        return rc;
+    }
+    ip->mode = 0;
+    rc = write_inode(fs, ino, ip);
+    if (rc) {
+        filsys_blklist_discard(bl);   /* inode not persisted: blocks stay referenced */
+        return rc;
+    }
+    filsys_blklist_drain(fs->fs, bl);
+    ifree(fs, ino);
+    return 0;
+}
+
 /* Free a deferred (unlink/rename-while-open) inode: its name is gone and nlink
- * is 0, but an open handle still pins its blocks.  Re-read it by number, drop
- * its blocks, clear it, and return it to the free list -- only after the clear
- * is durable, so a crash never leaves a free inode still referenced. */
+ * is 0, but an open handle still pins its blocks.  Re-read it by number and
+ * tear it down. */
 static int free_deferred_ino(filsys_t *fs, uint32_t ino) {
     filsys_inode_t ip;
     if (read_inode(fs, ino, &ip))
         return -EIO;
-    filsys_blklist_t *bl = NULL;
-    int rc = itrunc(fs, &ip, &bl);
-    if (rc) { filsys_blklist_discard(bl); return rc; }
-    ip.mode = 0;
-    rc = write_inode(fs, ino, &ip);
-    if (rc) { filsys_blklist_discard(bl); return rc; }
-    filsys_blklist_drain(fs->fs, bl);
-    ifree(fs, ino);
-    return 0;
+    return inode_destroy(fs, ino, &ip);
 }
 
 /* ---- helpers ------------------------------------------------------------- */
@@ -574,6 +590,88 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
     return n;
 }
 
+/* ---- mutation primitives --------------------------------------------------
+ *
+ * Named folds behind the mutation ops below.  Each gives one ordering rule or
+ * decision a single definition rather than a per-op copy:
+ *
+ *   resolve_parent -- split a path into parent + name, then resolve the parent
+ *   inode_create   -- ialloc + initialise + persist a fresh inode
+ *   inode_destroy  -- truncate + clear + free an inode (defined above)
+ *   remove_name    -- dir_remove + link-count decrement + orphan/defer decision */
+
+/* Split `path` into a parent directory and a final name, then resolve the
+ * parent.  On success `dino`/`ddir` hold the parent and `name` the basename.
+ * `name` must hold at least max_namlen + 1 bytes (the callers use char[64];
+ * max_namlen is at most 63). */
+static int resolve_parent(filsys_t *fs, const char *path,
+                          uint32_t *dino, filsys_inode_t *ddir, char *name) {
+    char dir[PATH_MAX];
+    int rc = split_path(path, dir, sizeof dir, name, fs->fmt.max_namlen + 1);
+    if (rc) return rc;
+    return lookup(fs, dir, dino, ddir);
+}
+
+/* Allocate a fresh inode of `type`, initialise its mode/ownership/timestamps,
+ * and persist it.  nlink is 2 for a directory (its own "." plus the parent
+ * entry), 1 otherwise; a device carries its packed (major<<8)|minor number in
+ * addr[0] -- a non-block address that inode_destroy's truncate leaves alone.
+ * On success `ino`/`ip` hold the number and the written state; the caller links
+ * it into the namespace and, if that fails, tears it down with inode_destroy. */
+static int inode_create(filsys_t *fs, mode_t mode, uid_t uid, gid_t gid,
+                        int type, uint32_t rdev, uint32_t *ino, filsys_inode_t *ip) {
+    int rc = ialloc(fs, ino);
+    if (rc) return rc;
+    memset(ip, 0, sizeof *ip);
+    ip->ino = *ino;
+    ip->mode = mode_to_disk(&fs->fmt, mode, type);
+    ip->nlink = (type == FILSYS_FT_DIR) ? 2 : 1;
+    ip->uid = (int16_t)uid;
+    ip->gid = (int16_t)gid;
+    ip->atime = ip->mtime = ip->ctime = (uint32_t)time(NULL);
+    if (rdev)
+        ip->addr[0] = rdev;
+    rc = write_inode(fs, *ino, ip);
+    if (rc) {
+        ifree(fs, *ino);
+        return rc;
+    }
+    return 0;
+}
+
+/* Is `ino` currently held open (hard_remove: an open handle pins the inode past
+ * its last unlink, so the free is deferred to the final close)? */
+static int open_refs(filsys_t *fs, uint32_t ino) {
+    for (int i = 0; i < fs->nopen; i++)
+        if (fs->opens[i].ino == ino)
+            return fs->opens[i].refs;
+    return 0;
+}
+static void mark_pending(filsys_t *fs, uint32_t ino) {
+    for (int i = 0; i < fs->nopen; i++)
+        if (fs->opens[i].ino == ino)
+            fs->opens[i].pending = 1;
+}
+
+/* Remove `name` from parent `ddir` and decrement the named inode's link count.
+ * Reports in *d whether the inode is now orphaned and whether it is pinned by
+ * an open handle (hard_remove defers the free).  The caller persists the link
+ * count and then either destroys (inode_destroy) or defers (mark_pending). */
+typedef struct {
+    int orphaned;   /* nlink dropped to 0: no names remain */
+    int deferred;   /* orphaned and still open */
+} rm_desc_t;
+
+static int remove_name(filsys_t *fs, filsys_inode_t *ddir, const char *name,
+                       uint32_t ino, filsys_inode_t *ip, rm_desc_t *d) {
+    int rc = dir_remove(fs, ddir, name);
+    if (rc) return rc;
+    ip->nlink--;
+    d->orphaned = ip->nlink <= 0;
+    d->deferred = d->orphaned && open_refs(fs, ino) > 0;
+    return 0;
+}
+
 /* ---- mutation ops and the rollback policy --------------------------------
  *
  * Every function below that changes on-disk state splits into a read-only
@@ -603,40 +701,23 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
 int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
     int rc = uidgid_fit(uid, gid);
     if (rc) return rc;
-    char dir[PATH_MAX], name[64];
-    rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
-    if (rc) return rc;
+    char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    rc = lookup(fs, dir, &dino, &ddir);
+    rc = resolve_parent(fs, path, &dino, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
-    rc = ialloc(fs, &nino);
-    if (rc) return rc;
     filsys_inode_t nip;
-    memset(&nip, 0, sizeof(nip));
-    nip.ino = nino;
-    nip.mode = mode_to_disk(&fs->fmt, mode, FILSYS_FT_REG);
-    nip.nlink = 1;
-    nip.uid = (int16_t)uid;
-    nip.gid = (int16_t)gid;
-    nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
-    rc = write_inode(fs, nino, &nip);
-    if (rc) {
-        ifree(fs, nino);
-        return rc;
-    }
+    rc = inode_create(fs, mode, uid, gid, FILSYS_FT_REG, 0, &nino, &nip);
+    if (rc) return rc;
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
-        /* rollback: the name never landed, so clear the inode and return it to
-         * the free list -- but only once the clear has persisted.  write_inode's
-         * result is checked: freeing an inode whose clear did not persist would
-         * hand live on-disk state to the allocator (class D).  A failed clear
-         * leaves the inode allocated -- a recoverable leak (B), not aliasing. */
-        nip.mode = 0;
-        if (write_inode(fs, nino, &nip) == 0)
-            ifree(fs, nino);
+        /* rollback: the name never landed -- tear the inode down.  inode_destroy
+         * frees it only once the clear has persisted; a failed teardown leaves
+         * it allocated -- a recoverable leak (B), not live state returned to the
+         * allocator (D). */
+        (void)inode_destroy(fs, nino, &nip);
     }
     return rc;
 }
@@ -644,27 +725,16 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
 int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
     int rc = uidgid_fit(uid, gid);
     if (rc) return rc;
-    char dir[PATH_MAX], name[64];
-    rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
-    if (rc) return rc;
+    char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    rc = lookup(fs, dir, &dino, &ddir);
+    rc = resolve_parent(fs, path, &dino, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
-    rc = ialloc(fs, &nino);
-    if (rc) return rc;
     filsys_inode_t nip;
-    memset(&nip, 0, sizeof(nip));
-    nip.ino = nino;
-    nip.mode = mode_to_disk(&fs->fmt, mode, FILSYS_FT_DIR);
-    nip.nlink = 2;
-    nip.uid = (int16_t)uid;
-    nip.gid = (int16_t)gid;
-    nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
-    rc = write_inode(fs, nino, &nip);
-    if (rc) { ifree(fs, nino); return rc; }
+    rc = inode_create(fs, mode, uid, gid, FILSYS_FT_DIR, 0, &nino, &nip);
+    if (rc) return rc;
     rc = dir_add(fs, &nip, nino, ".");
     if (rc) goto fail;
     rc = dir_add(fs, &nip, dino, "..");
@@ -739,52 +809,26 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     if (major(rdev) > 255 || minor(rdev) > 255)
         return -EINVAL;
 
-    char dir[PATH_MAX], name[64];
-    int rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
-    if (rc) return rc;
+    char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    rc = lookup(fs, dir, &dino, &ddir);
+    int rc = resolve_parent(fs, path, &dino, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
-    rc = ialloc(fs, &nino);
-    if (rc) return rc;
     filsys_inode_t nip;
-    memset(&nip, 0, sizeof(nip));
-    nip.ino = nino;
-    nip.mode = mode_to_disk(&fs->fmt, mode, isblk ? FILSYS_FT_BLK : FILSYS_FT_CHR);
-    nip.nlink = 1;
-    nip.uid = (int16_t)uid;
-    nip.gid = (int16_t)gid;
-    nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
-    /* Device number: (major<<8)|minor, stored in di_addr[0]. */
-    nip.addr[0] = (uint32_t)((major(rdev) << 8) | minor(rdev));
-    rc = write_inode(fs, nino, &nip);
-    if (rc) { ifree(fs, nino); return rc; }
+    uint32_t dev = (uint32_t)((major(rdev) << 8) | minor(rdev));
+    rc = inode_create(fs, mode, uid, gid, isblk ? FILSYS_FT_BLK : FILSYS_FT_CHR,
+                      dev, &nino, &nip);
+    if (rc) return rc;
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
-        /* rollback: the name never landed (same shape as filsys_create).  Clear
-         * the inode and free it only once the clear persisted; a failed clear
-         * leaves a recoverable leak (B), never state returned live to the free
-         * list (D). */
-        nip.mode = 0;
-        if (write_inode(fs, nino, &nip) == 0)
-            ifree(fs, nino);
+        /* rollback: the name never landed -- tear the inode down (see
+         * filsys_create).  A failed teardown leaves a recoverable leak (B),
+         * never state returned live to the free list (D). */
+        (void)inode_destroy(fs, nino, &nip);
     }
     return rc;
-}
-
-static int open_refs(filsys_t *fs, uint32_t ino) {
-    for (int i = 0; i < fs->nopen; i++)
-        if (fs->opens[i].ino == ino)
-            return fs->opens[i].refs;
-    return 0;
-}
-static void mark_pending(filsys_t *fs, uint32_t ino) {
-    for (int i = 0; i < fs->nopen; i++)
-        if (fs->opens[i].ino == ino)
-            fs->opens[i].pending = 1;
 }
 
 static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
@@ -798,31 +842,16 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
     filsys_inode_t ip;
     if (read_inode(fs, ino, &ip)) return -EIO;
     /* ---- validation/mutation line: no persistent write above ---- */
-    rc = dir_remove(fs, &ddir, name);
+    rm_desc_t d;
+    rc = remove_name(fs, &ddir, name, ino, &ip, &d);
     if (rc) return rc;
-    ip.nlink--;
-    filsys_blklist_t *bl = NULL;
-    int unlinked = ip.nlink <= 0;
-    /* hard_remove: the name is gone but an open handle still holds the inode;
-     * keep its blocks and defer the free to the final close. */
-    int deferred = unlinked && open_refs(fs, ino) > 0;
-    if (unlinked && !deferred) {
-        rc = itrunc(fs, &ip, &bl);
-        if (rc) {
-            filsys_blklist_discard(bl);
-            return rc;
-        }
-        ip.mode = 0;
-    }
+    if (d.orphaned && !d.deferred)
+        return inode_destroy(fs, ino, &ip);   /* last name gone, not open */
+    /* Still linked, or open (hard_remove): persist the decremented link count
+     * and, for the deferred case, mark the inode to be freed on last close. */
     rc = write_inode(fs, ino, &ip);
-    if (rc) {
-        filsys_blklist_discard(bl);     /* inode not persisted: blocks stay referenced */
-        return rc;
-    }
-    filsys_blklist_drain(fs->fs, bl);
-    if (unlinked && !deferred)
-        ifree(fs, ino);                 /* only after the cleared inode is durable */
-    else if (deferred)
+    if (rc) return rc;
+    if (d.deferred)
         mark_pending(fs, ino);
     return 0;
 }
@@ -840,12 +869,10 @@ int filsys_unlink(filsys_t *fs, const char *path) {
 }
 
 int filsys_rmdir(filsys_t *fs, const char *path) {
-    char dir[PATH_MAX], name[64];
-    int rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
-    if (rc) return rc;
+    char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    rc = lookup(fs, dir, &dino, &ddir);
+    int rc = resolve_parent(fs, path, &dino, &ddir, name);
     if (rc) return rc;
     uint32_t ino;
     rc = dir_lookup(fs, &ddir, name, &ino);
@@ -882,21 +909,7 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
         ddir.nlink++;
         return rc;
     }
-    filsys_blklist_t *bl = NULL;
-    rc = itrunc(fs, &tip, &bl);
-    if (rc) {
-        filsys_blklist_discard(bl);
-        return rc;
-    }
-    tip.mode = 0;
-    rc = write_inode(fs, ino, &tip);
-    if (rc) {
-        filsys_blklist_discard(bl);     /* inode not persisted: blocks stay referenced */
-        return rc;
-    }
-    filsys_blklist_drain(fs->fs, bl);
-    ifree(fs, ino);                     /* only after the cleared inode is durable */
-    return 0;
+    return inode_destroy(fs, ino, &tip);   /* orphaned: truncate, clear, free */
 }
 
 /* Is `anc_ino` an ancestor of directory `dir_ino` (does dir_ino sit in
@@ -928,12 +941,10 @@ static int dir_ancestor(filsys_t *fs, uint32_t anc_ino, uint32_t dir_ino) {
 }
 
 static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
-    char dir[PATH_MAX], name[64];
-    int rc = split_path(dst, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
-    if (rc) return rc;
+    char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    rc = lookup(fs, dir, &dino, &ddir);
+    int rc = resolve_parent(fs, dst, &dino, &ddir, name);
     if (rc) return rc;
     filsys_inode_t ip;
     if (read_inode(fs, src_ino, &ip)) return -EIO;
@@ -1138,18 +1149,9 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
              * still-open handle. */
             mark_pending(fs, tino);
         } else {
-            filsys_blklist_t *bl = NULL;
-            if (itrunc(fs, &tip_saved, &bl) == 0) {
-                tip_saved.mode = 0;
-                if (write_inode(fs, tino, &tip_saved) == 0) {
-                    filsys_blklist_drain(fs->fs, bl);
-                    ifree(fs, tino);
-                } else {
-                    filsys_blklist_discard(bl);
-                }
-            } else {
-                filsys_blklist_discard(bl);
-            }
+            /* commit: tear the orphaned target down.  On failure it stays an
+             * orphan -- a recoverable leak (B), not aliasing. */
+            (void)inode_destroy(fs, tino, &tip_saved);
         }
     }
     return 0;
