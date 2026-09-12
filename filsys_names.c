@@ -34,7 +34,7 @@ static const char *const coherent_alias[] = { "coh", "33", NULL };
 static const char *const xenix_alias[]    = { "34", NULL };
 static const char *const bsd29_alias[]    = { "35", NULL };
 static const char *const bsd211_alias[]   = { "36", NULL };
-static const char *const sysiii_alias[]   = { "sys3", "sysiii-pdp11", NULL };
+static const char *const sysiii_alias[]   = { "sys3", NULL };
 static const char *const sysvr2_alias[]   = { "sys5", "s5", "sysv2", "sysv", "sysvax", "sysv386", NULL };
 static const char *const sysvr4_alias[]   = { "svr4", "sysv4", "s5r4", NULL };
 

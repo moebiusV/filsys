@@ -58,7 +58,7 @@ enum {
     FILSYS_XENIX = 34,   /* Xenix (SCO): V7-family, little-endian 2-byte, NICFREE=100 */
     FILSYS_BSD29 = 35,   /* 2.9BSD: V7 inode, 1024-byte blocks, 4 direct + 3 indirect */
     FILSYS_BSD211 = 36,   /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
-    FILSYS_SYSIII = 37,   /* System III: V7 superblock (no magic), middle-endian */
+    FILSYS_SYSIII = 37,   /* System III s5fs: VAX (little-endian, 4-byte-aligned) by default; -o arch=pdp11 for the packed PDP-11 form */
     FILSYS_SVR2   = 38,   /* System V Release 2 s5fs: 2-byte-aligned; byte order from -o arch */
     FILSYS_SVR4   = 39,   /* System V Release 4 s5fs: 4-byte-aligned + s_pad2; byte order from -o arch */
     FILSYS_UNIX   = 40    /* not a format: autodetect across every edition (a -v mode) */
