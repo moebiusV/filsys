@@ -428,7 +428,8 @@ static int mkfs_v1(filsys_edition_t *fs, uint32_t blocks)
             return -1;
 
     /* root directory: inode 41, "." and ".." (10-byte entries) */
-    uint32_t rb;
+    uint32_t rb = 0;   /* set by v1_balloc; the init defeats a -Wmaybe-uninitialized
+                         * false positive when mkfs_v1 is inlined into filsys_mkfs */
     if (v1_balloc(&rb))
         return -1;
     uint8_t db[V1_BSIZE] = {0};

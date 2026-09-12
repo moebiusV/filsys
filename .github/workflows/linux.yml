@@ -49,7 +49,7 @@ jobs:
         run: ${{ matrix.prepare }}
       - name: Build and run make check
         run: |
-          ./configure
+          ./configure CFLAGS="-g -O2 -Werror"
           make
           make check; rc=$?; cat test-suite.log 2>/dev/null; exit $rc
 
