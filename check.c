@@ -33,7 +33,8 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
         /* No "(use -f to force)" here: -f means force only on fsck.filsys; on
          * mount.filsys -f is "stay in foreground", so the hint would lie.  The
          * fsck manpage/README document -f. */
-        printf("filesystem clean; skipped\n");
+        if (!(mode & FILSYS_CK_QUIET))
+            printf("filesystem clean; skipped\n");
         return 0;
     }
 
@@ -215,9 +216,10 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
     free(cx.owner);
     free(cx.bmap);
 
-    printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
-           rep->used_blocks, rep->free_blocks, rep->missing_blocks,
-           rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
+    if (!(mode & FILSYS_CK_QUIET))
+        printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
+               rep->used_blocks, rep->free_blocks, rep->missing_blocks,
+               rep->dup_blocks, rep->used_inodes, rep->inodes, rep->errors);
     if (rep->missing_blocks > 0)
         printf("missing=%u: the free-block list is incomplete -- the dump(8)/restor(8) tape\n"
                "signature (dump writes the i-list and data blocks but NOT the free list, so a\n"
