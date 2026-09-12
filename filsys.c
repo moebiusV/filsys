@@ -552,10 +552,11 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
     uint32_t oldsize = ip.size;
     ssize_t n = file_write(fs, &ip, (const uint8_t *)buf, size, off);
     if (n < 0) {
-        /* A legal-sized write can still fail partway (ENOSPC, EIO): collect the
-         * blocks it allocated past the original size, reset the inode, then free
-         * the collected blocks.  The reset is persisted before the free, so a
-         * failed write leaves leaks (recoverable) rather than aliasing. */
+        /* rollback: a legal-sized write can still fail partway (ENOSPC, EIO) --
+         * collect the blocks it allocated past the original size, reset the
+         * inode, then free the collected blocks.  The reset is persisted before
+         * the free, so a failed write leaves leaks (B, recoverable) rather than
+         * aliasing (D). */
         uint32_t bsize = fs->ops->blocksize(fs->fs);
         uint32_t first_blk = oldsize ? (oldsize - 1) / bsize + 1 : 0;
         filsys_blklist_t *bl = NULL;
@@ -573,6 +574,32 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
     return n;
 }
 
+/* ---- mutation ops and the rollback policy --------------------------------
+ *
+ * Every function below that changes on-disk state splits into a read-only
+ * preflight (lookup, split_path, ancestor/type/emptiness checks) and a mutation
+ * sequence (ialloc, write_inode, dir_add, dir_remove).  Each mutation op marks
+ * the boundary with the one-line marker "validation/mutation line": nothing
+ * above that line writes, so nothing above it can fail partway through a
+ * mutation.
+ *
+ * Below the line, a multi-step operation that fails partway must undo the steps
+ * already taken.  This file has no journal, so every undo is a plain
+ * compensating call, best-effort.  The rollback rule, applied at every such
+ * call site (each tagged with a `rollback:` comment, so `grep rollback:` lists
+ * them all):
+ *
+ *   * check the undo's result and return it on failure; or
+ *   * if the failure is unrepresentable -- no recovery cheaper than the state
+ *     it would leave -- say so and name the failure class the leftover falls
+ *     into: A clean, B leak (orphaned inode / missing block), C inconsistency
+ *     (link count), or D aliasing.
+ *
+ * The invariant this file defends: a rollback must never turn a recoverable
+ * failure into class D (a block or inode claimed twice).  When an undo cannot
+ * be made safe, leave a leak (B) or an inconsistency (C) -- fsck repairs both
+ * -- rather than free state that is still reachable. */
+
 int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
     int rc = uidgid_fit(uid, gid);
     if (rc) return rc;
@@ -583,6 +610,7 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
     uint32_t dino;
     rc = lookup(fs, dir, &dino, &ddir);
     if (rc) return rc;
+    /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
     rc = ialloc(fs, &nino);
     if (rc) return rc;
@@ -601,10 +629,11 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
     }
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
-        /* The directory entry never landed: clear the inode, then return it to
-         * the free list -- and only if the clear persisted.  If the clear write
-         * fails, leave the inode allocated: a recoverable leak beats freeing
-         * live on-disk state into the allocator. */
+        /* rollback: the name never landed, so clear the inode and return it to
+         * the free list -- but only once the clear has persisted.  write_inode's
+         * result is checked: freeing an inode whose clear did not persist would
+         * hand live on-disk state to the allocator (class D).  A failed clear
+         * leaves the inode allocated -- a recoverable leak (B), not aliasing. */
         nip.mode = 0;
         if (write_inode(fs, nino, &nip) == 0)
             ifree(fs, nino);
@@ -622,6 +651,7 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     uint32_t dino;
     rc = lookup(fs, dir, &dino, &ddir);
     if (rc) return rc;
+    /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
     rc = ialloc(fs, &nino);
     if (rc) return rc;
@@ -644,23 +674,34 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     ddir.nlink++;
     rc = write_inode(fs, dino, &ddir);
     if (rc) {
-        /* The bump didn't persist, but dir_remove rewrites the parent's inode
-         * from the in-memory ddir (whose nlink is now bumped).  Undo the bump
-         * first so the parent doesn't count a child that's about to be freed. */
+        /* rollback: the nlink bump didn't persist, but dir_remove rewrites the
+         * parent from the in-memory ddir (whose nlink is now bumped), so undo
+         * the bump first.  Check dir_remove's result: if the name cannot be
+         * withdrawn, the new directory is still reachable through it, and
+         * freeing the inode below would leave the parent pointing at a free
+         * inode -- a dangling entry a later ialloc could silently hand to an
+         * unrelated file (class C, "references free inode").  So leave the
+         * directory live and return: the leftover state is a parent link count
+         * one short (C, fsck repairs). */
         ddir.nlink--;
-        dir_remove(fs, &ddir, name);
+        rc = dir_remove(fs, &ddir, name);
+        if (rc)
+            return rc;
         goto fail;
     }
     return 0;
 fail:
-    /* The parent entry never landed (or its update failed): free the new
-     * directory's "." and ".." blocks, then its inode, so it isn't orphaned.
+    /* rollback: the parent entry never landed (or its update failed).  Free the
+     * new directory's "." and ".." blocks, then its inode, so it isn't orphaned.
      * Only free the inode once the cleared state has persisted; otherwise leave
-     * it allocated -- a recoverable leak, not live state returned to the free
-     * list. */
+     * it allocated -- a recoverable leak (B), not live state returned to the
+     * free list. */
     {
         filsys_blklist_t *bl = NULL;
-        itrunc(fs, &nip, &bl);          /* best-effort; the dir is freshly made */
+        /* rollback (best-effort): free the freshly-made dir's "." and ".."
+         * blocks.  Unchecked: if the free fails, the blocks leak (B) rather than
+         * alias -- the cleared inode simply leaves them unreferenced. */
+        itrunc(fs, &nip, &bl);
         nip.mode = 0;
         if (write_inode(fs, nino, &nip) == 0) {
             filsys_blklist_drain(fs->fs, bl);
@@ -705,6 +746,7 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     uint32_t dino;
     rc = lookup(fs, dir, &dino, &ddir);
     if (rc) return rc;
+    /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
     rc = ialloc(fs, &nino);
     if (rc) return rc;
@@ -722,8 +764,10 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     if (rc) { ifree(fs, nino); return rc; }
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
-        /* The directory entry never landed: clear the inode, then return it to
-         * the free list -- and only if the clear persisted (see filsys_create). */
+        /* rollback: the name never landed (same shape as filsys_create).  Clear
+         * the inode and free it only once the clear persisted; a failed clear
+         * leaves a recoverable leak (B), never state returned live to the free
+         * list (D). */
         nip.mode = 0;
         if (write_inode(fs, nino, &nip) == 0)
             ifree(fs, nino);
@@ -753,6 +797,7 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
     if (rc) return rc;
     filsys_inode_t ip;
     if (read_inode(fs, ino, &ip)) return -EIO;
+    /* ---- validation/mutation line: no persistent write above ---- */
     rc = dir_remove(fs, &ddir, name);
     if (rc) return rc;
     ip.nlink--;
@@ -814,6 +859,7 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     for (size_t i = 0; i < count; i++)
         if (strcmp(ents[i].name, ".") && strcmp(ents[i].name, "..")) { free(ents); return -ENOTEMPTY; }
     free(ents);
+    /* ---- validation/mutation line: no persistent write above ---- */
     /* One fewer name points at the directory now.  Its nlink counts its own "."
      * plus each parent entry (a historical directory may be hard-linked); it is
      * orphaned -- and freed -- only when "." alone remains (nlink <= 1). */
@@ -830,7 +876,10 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     ddir.nlink--;
     rc = dir_remove(fs, &ddir, name);
     if (rc) {
-        ddir.nlink++;   /* the entry wasn't removed: undo the decrement */
+        /* rollback: the entry wasn't removed, so undo the in-memory decrement.
+         * This undo is a plain field write -- there is no persistent change to
+         * undo and no failure to represent. */
+        ddir.nlink++;
         return rc;
     }
     filsys_blklist_t *bl = NULL;
@@ -899,8 +948,15 @@ static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
     if (rc) return rc;
     ip.nlink++;
     rc = write_inode(fs, src_ino, &ip);
-    if (rc)
-        dir_remove(fs, &ddir, name);   /* the link count didn't persist */
+    if (rc) {
+        /* rollback: the link count didn't persist, so withdraw the name.  Check
+         * dir_remove's result and return it: if the withdrawal also fails, the
+         * name survives with a link count one short -- a C-class inconsistency
+         * fsck repairs, never aliasing. */
+        int rr = dir_remove(fs, &ddir, name);
+        if (rr)
+            return rr;
+    }
     return rc;
 }
 
@@ -977,6 +1033,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         }
         tip_saved = tip;
         had_target = 1;
+        /* ---- validation/mutation line: no persistent write above ---- */
         /* Drop the target's name now, but defer freeing its blocks and inode
          * until the rename is committed below.  A replaced file loses its link
          * count and is freed only if it reaches zero; a replaced directory is
@@ -990,7 +1047,12 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
             tip.nlink--;
             rc = write_inode(fs, tino, &tip);
             if (rc) {
-                dir_add(fs, &tdirip, tino, tname);   /* withdraw the removal */
+                /* rollback: the link-count decrement didn't persist, so re-add
+                 * the name.  The re-add's result is unchecked: if it fails, the
+                 * target's name is gone but its on-disk link count is unchanged,
+                 * leaving an orphaned inode (B); there is no cheaper recovery,
+                 * and a full unwind is the deferred transaction object. */
+                dir_add(fs, &tdirip, tino, tname);
                 return rc;
             }
             free_target = tip.nlink == 0;
@@ -998,13 +1060,19 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     }
 
     /* The mutations that follow are not transactional (a non-journaled
-     * filesystem has no atomic rename), so each is checked and the preceding
-     * ones unwound best-effort on failure.  The replaced target is only freed at
-     * the end (its blocks are still referenced until then), so a rollback that
-     * re-adds its name and inode leaves no aliasing. */
+     * filesystem has no atomic rename): each is checked, and the preceding
+     * steps are unwound best-effort on failure.  Every rollback below leaves at
+     * worst an orphaned inode (B) or a link-count mismatch (C) -- never
+     * aliasing, because the replaced target is freed only at the end (its
+     * blocks are still referenced until then).  The unwind calls' results are
+     * deliberately unchecked: each failure is unrepresentable -- there is no
+     * recovery cheaper than the recoverable state it leaves, and a full unwind
+     * is the deferred transaction object. */
     rc = do_link(fs, to, sino);
     if (rc) {
         if (had_target) {
+            /* rollback: re-add the removed target's name and inode (B/C at
+             * worst; unchecked, per the policy above). */
             dir_add(fs, &tdirip, tino, tname);
             write_inode(fs, tino, &tip_saved);
         }
@@ -1013,8 +1081,9 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
 
     rc = do_unlink(fs, fdir, fname);
     if (rc) {
-        do_unlink(fs, tdir, tname);   /* withdraw the link just added */
+        do_unlink(fs, tdir, tname);   /* rollback: withdraw the link just added */
         if (had_target) {
+            /* rollback: restore the removed target's name and inode (B/C). */
             dir_add(fs, &tdirip, tino, tname);
             write_inode(fs, tino, &tip_saved);
         }
@@ -1026,8 +1095,8 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
          * moved directory's '..' entry to point at its new parent.  Unlike the
          * link/unlink steps above, these fixups are deliberately *not* unwound
          * on failure: a failure here leaves only a link-count / ".."
-         * inconsistency that fsck repairs (a recoverable leak, not block
-         * aliasing), and unwinding them would itself be a multi-step best-effort
+         * inconsistency (class C) that fsck repairs -- never block aliasing
+         * (D) -- and unwinding them would itself be a multi-step best-effort
          * that can fail the same way.  The crash-prefix test confirms every
          * prefix here stays alias-free (dup==0) and salvage-recoverable. */
         if (strcmp(fdir, tdir) != 0) {
