@@ -78,6 +78,17 @@ EXTRA_DIST = test.sh fetch.sh \
 	conformance/conformance-client.c conformance/run.sh \
 	fuzz/filsys-fuzz.c
 
+# --- System III (PDP-11) oracle fixtures ------------------------------------
+# Two bootable 6000-block root filesystems built from the System III "vax780"
+# tape (there is no download source for these -- they are built by hand and so
+# shipped, unlike rp06-0.disk which ./fetch.sh downloads).  Both boot under simh
+# to single-user; gunzip and boot to run System III's own /etc/fsck as the oracle
+# for fsck.filsys -v sysiii -a pdp11:
+#   sysiii-pdp11-original.root.gz  right after the tape install: 1 dup block,
+#                                  5 orphaned FIFOs, stale s_tinode
+#   sysiii-pdp11-cleaned.root.gz   the same root after fsck.filsys -p -f -s
+EXTRA_DIST += sysiii-pdp11-original.root.gz sysiii-pdp11-cleaned.root.gz
+
 # --- PDP-11 boot blocks -----------------------------------------------------
 # filsys ships two block-0 bootstraps assembled from the V7 /usr/mdec sources:
 # hpuboot (RP06/HP disk) and rpuboot (RP03/04/05/06 disk).  The prebuilt a.out
