@@ -278,7 +278,9 @@ filsys_edition_t filsys_getformat(int edition) {
          * daddr_t/time_t are 4-byte aligned (s_fsize @4, s_free @12, s_ninode
          * @212, s_time @420) and little-endian, with no magic and no s_state.
          * The sysIII_vax_root.img distribution image reads as 32V (findfs
-         * reports it), so sysiii is the 32V/V7 shape with a distinct name. */
+         * reports it), so sysiii is the 32V/V7 shape with a distinct name.
+         * The PDP-11 form is the same struct packed (V7 packing): -o arch=pdp11
+         * clears pack4 and switches to middle-endian. */
         filsys_edition_t f; memcpy(&f, &v7, sizeof f);
         f.name = "sysiii"; f.bo = &bo_le; f.pack4 = 1;
         return f;
@@ -459,6 +461,11 @@ int filsys_resolve_byteorder(filsys_edition_t *fmt, const char *path,
             if (errmsg) *errmsg = msgbuf;
             return -EINVAL;
         }
+        /* The PDP-11 packs its s5fs superblock (no 4-byte alignment for 32-bit
+         * fields), unlike the VAX/x86/68k ports.  middle-endian is the PDP-11
+         * marker, so the packing follows the arch's byte order. */
+        if (arch_bo == &bo_me)
+            fmt->pack4 = 0;
     }
 
     /* No magic word: nothing to detect; the arch (if any) simply wins. */

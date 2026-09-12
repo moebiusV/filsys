@@ -588,6 +588,8 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
         if (!bo)
             return fail("bad arch '%s'\n", opts->arch);
         fs.bo = bo;
+        if (bo == &bo_me)
+            fs.pack4 = 0;   /* PDP-11 packs the s5fs; no 4-byte alignment */
     }
     if (opts->geom) {
         const char *gerr = NULL;
