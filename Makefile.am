@@ -29,7 +29,7 @@ endif
 # internal per-format layer and stays uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c filsys_names.c filsys_detect.c blocktree.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
@@ -42,12 +42,12 @@ pkgconfig_DATA = filsys.pc
 # fuseops_macos.c (macFUSE's fuse3, whose darwin attr types differ from Linux),
 # or fuseops.c (plain FUSE3).
 if HAVE_FUSE2
-mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_openbsd.c
+mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_common.c fuseops_common.h fuseops_openbsd.c
 else
 if HAVE_FUSE_DARWIN
-mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_macos.c
+mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_common.c fuseops_common.h fuseops_macos.c
 else
-mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops.c
+mount_filsys_SOURCES = mount.filsys.c fuse_core.c fuse_core.h fuseops_common.c fuseops_common.h fuseops.c
 endif
 endif
 # C17, not C23: Microsoft's toolchain tops out at C17, so we match.

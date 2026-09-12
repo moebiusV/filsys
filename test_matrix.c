@@ -18,11 +18,13 @@
 #include "filsys.h"
 #include "v7fs.h"
 #include "filsys_ops.h"
+#include "pdp7fs.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <setjmp.h>
 #include <sys/wait.h>
 
@@ -32,6 +34,38 @@ static void ok(const char *what, int cond) {
     printf("%s %s\n", cond ? "ok  " : "FAIL", what);
     if (!cond)
         failures++;
+}
+
+/* Create a fresh filesystem image through the library (filsys_mkfs), replacing
+ * the old shell-out to ./mkfs.filsys.  `blocks` is the volume size (0 = PDP-7's
+ * fixed RB09 geometry); `geom` is an optional V8-family geometry override.
+ * Returns 0 on success, -1 on failure (including a mkfs that rejects its
+ * arguments).  The image is created (or truncated) to the final written size. */
+static int mkfs_image(int edition, const char *img, int blocks,
+                      const filsys_geom_t *geom) {
+    filsys_edition_t desc = filsys_getformat(edition);
+    int fd = open(img, O_RDWR | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0)
+        return -1;
+
+    uint64_t size = (edition == FILSYS_PDP7)
+        ? (uint64_t)P7_NBLOCKS * desc.word->block_bytes
+        : (uint64_t)blocks * desc.bsize;
+    if (ftruncate(fd, (off_t)size) < 0) {
+        close(fd);
+        return -1;
+    }
+
+    filsys_mkfs_opts_t opts = {0};
+    opts.blocks = blocks;
+    opts.geom = geom;
+    uint64_t written = 0;
+    const char *err = NULL;
+    int rc = filsys_mkfs(edition, &filsys_io_file, fd, 0, &opts, &written, &err);
+    if (written)
+        rc |= ftruncate(fd, (off_t)written) < 0;
+    close(fd);
+    return rc;
 }
 
 /* Run fsck -f and return whether it reports a clean filesystem (no errors, no
@@ -190,17 +224,11 @@ static long stat_blocks(filsys_t *fs, const char *path) {
 }
 
 static void run(const struct fmt *f) {
-    char img[64], cmd[512];
+    char img[64];
     snprintf(img, sizeof img, "test_matrix_%s.img", f->name);
     unlink(img);
 
-    if (f->blocks)
-        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                 f->name, img, f->blocks);
-    else
-        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
-                 f->name, img);
-    if (system(cmd) != 0) {
+    if (mkfs_image(f->edition, img, f->blocks, NULL) != 0) {
         ok(f->name, 0);
         fprintf(stderr, "  mkfs failed\n");
         return;
@@ -426,13 +454,13 @@ static void run(const struct fmt *f) {
 static void mkfs_validation(void) {
     /* V1: 7000 blocks overflows the superblock bitmaps (max is 6528). */
     unlink("test_matrix_v1big.img");
-    int rc = system("./mkfs.filsys -v 1 test_matrix_v1big.img 7000 >/dev/null 2>&1");
+    int rc = mkfs_image(FILSYS_V1, "test_matrix_v1big.img", 7000, NULL);
     ok("v1 mkfs rejects oversized volume", rc != 0);
     unlink("test_matrix_v1big.img");
 
     /* PDP-7: any size argument is rejected (the RB09 geometry is fixed). */
     unlink("test_matrix_p7sized.img");
-    rc = system("./mkfs.filsys -v 0 test_matrix_p7sized.img 500 >/dev/null 2>&1");
+    rc = mkfs_image(FILSYS_PDP7, "test_matrix_p7sized.img", 500, NULL);
     ok("v0 mkfs rejects size argument", rc != 0);
     unlink("test_matrix_p7sized.img");
 }
@@ -453,24 +481,20 @@ static void mkfs_cleanliness(void) {
             continue;
 
         if (f.edition == FILSYS_PDP7) {
-            char img[64], cmd[512];
+            char img[64];
             snprintf(img, sizeof img, "test_matrix_%s_fixed.img", f.name);
             unlink(img);
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
-                     f.name, img);
-            if (system(cmd) != 0) { ok("v0 mkfs", 0); unlink(img); continue; }
+            if (mkfs_image(f.edition, img, 0, NULL) != 0) { ok("v0 mkfs", 0); unlink(img); continue; }
             ok("v0 fsck-clean (fixed size)", fsck_is_clean(f.name, img));
             unlink(img);
             continue;
         }
 
         for (size_t s = 0; s < sizeof sizes / sizeof sizes[0]; s++) {
-            char img[64], cmd[512], what[96];
+            char img[64], what[96];
             snprintf(img, sizeof img, "test_matrix_%s_%d.img", f.name, sizes[s]);
             unlink(img);
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f.name, img, sizes[s]);
-            if (system(cmd) != 0) {
+            if (mkfs_image(f.edition, img, sizes[s], NULL) != 0) {
                 snprintf(what, sizeof what, "%s mkfs @ %d blocks", f.name, sizes[s]);
                 ok(what, 0);
                 unlink(img);
@@ -502,16 +526,10 @@ static void badino_consistency(void) {
         if (frc < 0)
             continue;
 
-        char img[64], cmd[512], what[96];
+        char img[64], what[96];
         snprintf(img, sizeof img, "test_matrix_%s_badino.img", f.name);
         unlink(img);
-        if (f.blocks)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f.name, img, f.blocks);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
-                     f.name, img);
-        if (system(cmd) != 0) { ok("badino mkfs", 0); unlink(img); continue; }
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("badino mkfs", 0); unlink(img); continue; }
 
         filsys_edition_t desc = filsys_getformat(f.edition);
         if (desc.badino) {
@@ -538,11 +556,10 @@ static void badino_consistency(void) {
  * data blocks went unmarked and fsck reported them missing.  This pins the fix:
  * the walk must descend slot 7 as a double-indirect block. */
 static void v6_large_file(void) {
-    char img[64], cmd[256];
+    char img[64];
     snprintf(img, sizeof img, "test_matrix_v6big.img");
     unlink(img);
-    snprintf(cmd, sizeof cmd, "./mkfs.filsys -v v6 %s 4000 >/dev/null 2>&1", img);
-    if (system(cmd) != 0) { ok("v6 large mkfs", 0); unlink(img); return; }
+    if (mkfs_image(FILSYS_V6, img, 4000, NULL) != 0) { ok("v6 large mkfs", 0); unlink(img); return; }
 
     filsys_t *fs;
     if (filsys_open(&fs, FILSYS_V6, img, 0, 0, 0, 0, NULL)) {
@@ -577,11 +594,10 @@ static void v6_large_file(void) {
  * largest write (200000 bytes) stops in double-indirect, so this pins the third
  * level: write 9 MiB, read it back, and require fsck to still be clean. */
 static void v7_triple_indirect(void) {
-    char img[64], cmd[256];
+    char img[64];
     snprintf(img, sizeof img, "test_matrix_v7triple.img");
     unlink(img);
-    snprintf(cmd, sizeof cmd, "./mkfs.filsys -v v7 %s 22000 >/dev/null 2>&1", img);
-    if (system(cmd) != 0) { ok("v7 triple mkfs", 0); unlink(img); return; }
+    if (mkfs_image(FILSYS_V7, img, 22000, NULL) != 0) { ok("v7 triple mkfs", 0); unlink(img); return; }
 
     filsys_t *fs;
     if (filsys_open(&fs, FILSYS_V7, img, 0, 0, 0, 0, NULL)) {
@@ -631,16 +647,12 @@ static void namelength(void) {
             continue;
         size_t max = desc.max_namlen;
 
-        char img[64], cmd[256];
+        char img[64];
         snprintf(img, sizeof img, "test_matrix_nl_%s.img", f->name);
         unlink(img);
-        if (f->edition == FILSYS_PDP7)   /* fixed RB09 geometry: no size arg */
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
-                     f->name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s 100 >/dev/null 2>&1",
-                     f->name, img);
-        if (system(cmd) != 0) { ok("namelength mkfs", 0); continue; }
+        if (mkfs_image(f->edition, img, f->edition == FILSYS_PDP7 ? 0 : 100, NULL) != 0) {
+            ok("namelength mkfs", 0); continue;
+        }
         filsys_t *fs;
         if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
             ok("namelength open", 0); unlink(img); continue;
@@ -678,15 +690,10 @@ static void crash_consistency(void) {
             break;
         if (frc < 0)
             continue;
-        char img[64], cmd[512], what[96];
+        char img[64], what[96];
         snprintf(img, sizeof img, "test_matrix_%s_crash.img", f.name);
         unlink(img);
-        if (f.edition == FILSYS_PDP7)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f.name, img, f.blocks);
-        if (system(cmd) != 0) { ok("crash mkfs", 0); unlink(img); continue; }
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("crash mkfs", 0); unlink(img); continue; }
 
         filsys_t *fs;
         if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
@@ -811,16 +818,10 @@ static int op_close_ino(filsys_t *fs) { return filsys_close_ino(fs, g_open_ino);
 static void fault_mutator(const struct fmt *f, const mutator_t *mut,
                           fail_mode_e mode, const char *label) {
     for (int n = 1; ; n++) {
-        char img[64], cmd[512], what[128];
+        char img[64], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_fault.img", f->name);
         unlink(img);
-        if (f->edition == FILSYS_PDP7)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1",
-                     f->name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f->name, img, f->blocks);
-        if (system(cmd) != 0) { ok("fault mkfs", 0); unlink(img); return; }
+        if (mkfs_image(f->edition, img, f->blocks, NULL) != 0) { ok("fault mkfs", 0); unlink(img); return; }
 
         filsys_t *fs;
         if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
@@ -944,18 +945,13 @@ static int discard_write(filsys_edition_t *fs, const void *buf, size_t n, off_t 
 static const filsys_io_t discard_io = { crash_read, discard_write };
 
 static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
-    char img[64], cmd[512], what[128];
+    char img[64], what[128];
     filsys_t *fs;
 
     /* learn the op's write count W on a clean run */
     snprintf(img, sizeof img, "test_matrix_%s_crash.img", f->name);
     unlink(img);
-    if (f->edition == FILSYS_PDP7)
-        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f->name, img);
-    else
-        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                 f->name, img, f->blocks);
-    if (system(cmd) != 0) { ok("crash mkfs", 0); unlink(img); return; }
+    if (mkfs_image(f->edition, img, f->blocks, NULL) != 0) { ok("crash mkfs", 0); unlink(img); return; }
     if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
         ok("crash open", 0); unlink(img); return;
     }
@@ -973,12 +969,7 @@ static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
     /* enumerate every prefix k = 0..W */
     for (int k = 0; k <= W; k++) {
         unlink(img);
-        if (f->edition == FILSYS_PDP7)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f->name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f->name, img, f->blocks);
-        if (system(cmd) != 0) { ok("crash mkfs", 0); unlink(img); return; }
+        if (mkfs_image(f->edition, img, f->blocks, NULL) != 0) { ok("crash mkfs", 0); unlink(img); return; }
         if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
             ok("crash open", 0); unlink(img); return;
         }
@@ -1065,15 +1056,10 @@ static void property_sequences(void) {
             break;
         if (frc < 0)
             continue;
-        char img[64], cmd[512], what[128];
+        char img[64], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_prop.img", f.name);
         unlink(img);
-        if (f.edition == FILSYS_PDP7)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f.name, img, f.blocks);
-        if (system(cmd) != 0) { ok("prop mkfs", 0); unlink(img); continue; }
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("prop mkfs", 0); unlink(img); continue; }
         filsys_t *fs;
         if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
             ok("prop open", 0); unlink(img); continue;
@@ -1171,15 +1157,10 @@ static void rename_semantics(void) {
             break;
         if (frc < 0)
             continue;
-        char img[64], cmd[512], what[128];
+        char img[64], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_ren.img", f.name);
         unlink(img);
-        if (f.edition == FILSYS_PDP7)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f.name, img, f.blocks);
-        if (system(cmd) != 0) { ok("rename mkfs", 0); unlink(img); continue; }
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("rename mkfs", 0); unlink(img); continue; }
 
         filsys_t *fs;
         if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
@@ -1230,15 +1211,10 @@ static void dir_link_semantics(void) {
             continue;
         if (f.edition == FILSYS_PDP7)
             continue;
-        char img[64], cmd[512], what[128];
+        char img[64], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_dirlink.img", f.name);
         unlink(img);
-        if (f.edition == FILSYS_PDP7)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f.name, img, f.blocks);
-        if (system(cmd) != 0) { ok("dirlink mkfs", 0); unlink(img); continue; }
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("dirlink mkfs", 0); unlink(img); continue; }
 
         filsys_t *fs;
         if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
@@ -1300,9 +1276,7 @@ static void durability_test(void) {
         snprintf(img, sizeof img, "test_matrix_%s_dur.img", f.name);
         snprintf(sb,  sizeof sb,  "test_matrix_%s_dur.sb",  f.name);
         unlink(img); unlink(sb);
-        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                 f.name, img, f.blocks);
-        if (system(cmd) != 0) { ok("dur mkfs", 0); unlink(img); continue; }
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("dur mkfs", 0); unlink(img); continue; }
 
         filsys_t *fs;
         if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
@@ -1394,12 +1368,7 @@ static void findfs_self_detect(void) {
         char img[64], cmd[512], line[256], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_find.img", f.name);
         unlink(img);
-        if (f.edition == FILSYS_PDP7)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s %d >/dev/null 2>&1",
-                     f.name, img, f.blocks);
-        if (system(cmd) != 0) { ok("findfs mkfs", 0); unlink(img); continue; }
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("findfs mkfs", 0); unlink(img); continue; }
 
         snprintf(cmd, sizeof cmd, "./findfs.filsys %s 2>&1", img);
         FILE *p = popen(cmd, "r");
@@ -1436,21 +1405,18 @@ static void bitmap_roundtrip(void) {
         { "v10", FILSYS_V10, 4096, FILSYS_FREEMAP_BIGMAP },
     };
     for (size_t i = 0; i < sizeof forms / sizeof forms[0]; i++) {
-        char img[64], gspec[64], cmd[512], what[96];
+        char img[64], gspec[64], what[96];
         const char *fm = forms[i].freemap == FILSYS_FREEMAP_BITMAP ? "bitmap" : "bigmap";
         snprintf(gspec, sizeof gspec, "blocksize=%u,freemap=%s", forms[i].blocksize, fm);
         snprintf(img, sizeof img, "test_matrix_%s_%s.img", forms[i].name, fm);
         unlink(img);
-        snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s -g %s %s 1000 >/dev/null 2>&1",
-                 forms[i].name, gspec, img);
-        if (system(cmd) != 0) {
+        filsys_geom_t geom = { forms[i].blocksize, forms[i].freemap, NULL };
+        if (mkfs_image(forms[i].edition, img, 1000, &geom) != 0) {
             snprintf(what, sizeof what, "%s %s mkfs", forms[i].name, fm);
             ok(what, 0);
             unlink(img);
             continue;
         }
-
-        filsys_geom_t geom = { forms[i].blocksize, forms[i].freemap, NULL };
         filsys_t *fs;
         if (filsys_open_arch(&fs, forms[i].edition, img, 0, 0, 0, 0, NULL,
                              NULL, 0, &geom, 0, NULL)) {
@@ -1510,14 +1476,10 @@ static void statfs_fsck_agreement(void) {
         if (frc < 0)
             continue;
 
-        char img[64], cmd[512], what[128];
+        char img[64], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_statfs.img", f.name);
         unlink(img);
-        if (f.edition == FILSYS_PDP7)
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
-        else
-            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s 1000 >/dev/null 2>&1", f.name, img);
-        if (system(cmd) != 0) {
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) {
             snprintf(what, sizeof what, "%s statfs mkfs", f.name);
             ok(what, 0);
             unlink(img);
