@@ -6,12 +6,13 @@
  * `struct statfs` instead of `struct statvfs`.  The `FUSE_DARWIN_EXTEND_OPERATION`
  * macro in macFUSE's <fuse.h> swaps those three signatures under __APPLE__ while
  * keeping the op-table field names (getattr/readdir/statfs) unchanged.  Everything
- * else is byte-identical to fuseops.c, so this file is fuseops.c with those three
- * callbacks translated through two field-conversion helpers.
+ * else is the shared trampolines in fuseops_common.c plus the handful of divergent
+ * callbacks here, translated through two field-conversion helpers.
  *
  * SPDX-License-Identifier: ISC */
 #include <config.h>
 #include "fuse_core.h"
+#include "fuseops_common.h"
 
 #include <errno.h>
 #include <string.h>
@@ -19,19 +20,6 @@
 #include <sys/stat.h>
 
 #include <fuse.h>
-
-/* Build the per-call context: the mount-wide filesystem handle lives in
- * private_data (set by fuse_run and returned by init); uid/gid are the
- * requesting process. */
-static fuse_ctx_t C(void)
-{
-    const struct fuse_context *fc = fuse_get_context();
-    fuse_ctx_t c;
-    c.fs = (filsys_t *)fc->private_data;
-    c.uid = fc->uid;
-    c.gid = fc->gid;
-    return c;
-}
 
 /* struct stat -> struct fuse_darwin_attr.  The core fills st_atime/st_mtime/
  * st_ctime/st_birthtime (on macOS these are aliases for the st_*timespec.tv_sec
@@ -74,7 +62,7 @@ static int fuse_getattr(const char *path, struct fuse_darwin_attr *attr,
                         struct fuse_file_info *fi)
 {
     struct stat st;
-    fuse_ctx_t c = C();
+    fuse_ctx_t c = fuse_ctx();
     int rc = (fi && fi->fh)
         ? fuse_op_getattr_ino(&c, fi->fh, &st)
         : fuse_op_getattr(&c, path, &st);
@@ -109,99 +97,33 @@ static int fuse_readdir(const char *path, void *buf, fuse_darwin_fill_dir_t fill
     /* macFUSE calls readdir with non-zero offsets even for the first (and only)
      * pass, so the resume offset must be honoured rather than assumed zero. */
     struct rd_bridge b = { buf, filler, off < 0 ? 0 : (size_t)off };
-    fuse_ctx_t c = C();
+    fuse_ctx_t c = fuse_ctx();
     return fuse_op_readdir(&c, path, rd_emit, &b);
 }
 
-static int fuse_open(const char *path, struct fuse_file_info *fi)
-{
-    fuse_ctx_t c = C();
-    uint64_t fh = 0;
-    int rc = fuse_op_open(&c, path, fi->flags, &fh);
-    if (rc)
-        return rc;
-    fi->fh = fh;
-    return 0;
-}
-
-static int fuse_read(const char *path, char *buf, size_t size, off_t off,
-                     struct fuse_file_info *fi)
-{
-    (void)path;
-    fuse_ctx_t c = C();
-    return fuse_op_read(&c, fi->fh, buf, size, off);
-}
-
-static int fuse_write(const char *path, const char *buf, size_t size, off_t off,
-                      struct fuse_file_info *fi)
-{
-    (void)path;
-    fuse_ctx_t c = C();
-    return fuse_op_write(&c, fi->fh, buf, size, off);
-}
-
-static int fuse_readlink(const char *path, char *buf, size_t size)
-{
-    fuse_ctx_t c = C();
-    return fuse_op_readlink(&c, path, buf, size);
-}
-
-static int fuse_create(const char *path, mode_t mode, struct fuse_file_info *fi)
-{
-    fuse_ctx_t c = C();
-    uint64_t fh = 0;
-    int rc = fuse_op_create(&c, path, mode, &fh);
-    if (rc)
-        return rc;
-    fi->fh = fh;
-    return 0;
-}
-
-static int fuse_mkdir(const char *path, mode_t mode)
-{
-    fuse_ctx_t c = C();
-    return fuse_op_mkdir(&c, path, mode);
-}
-
-static int fuse_mknod(const char *path, mode_t mode, dev_t rdev)
-{
-    fuse_ctx_t c = C();
-    return fuse_op_mknod(&c, path, mode, rdev);
-}
-
-static int fuse_symlink(const char *target, const char *linkpath)
-{
-    fuse_ctx_t c = C();
-    return fuse_op_symlink(&c, target, linkpath);
-}
-
-static int fuse_unlink(const char *path) { fuse_ctx_t c = C(); return fuse_op_unlink(&c, path); }
-static int fuse_rmdir(const char *path)  { fuse_ctx_t c = C(); return fuse_op_rmdir(&c, path); }
-static int fuse_link(const char *from, const char *to) { fuse_ctx_t c = C(); return fuse_op_link(&c, from, to); }
-
 static int fuse_rename(const char *from, const char *to, unsigned int flags)
 {
-    fuse_ctx_t c = C();
+    fuse_ctx_t c = fuse_ctx();
     return fuse_op_rename(&c, from, to, flags);
 }
 
 static int fuse_chmod(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     (void)fi;
-    fuse_ctx_t c = C();
+    fuse_ctx_t c = fuse_ctx();
     return fuse_op_chmod(&c, path, mode);
 }
 
 static int fuse_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_info *fi)
 {
     (void)fi;
-    fuse_ctx_t c = C();
+    fuse_ctx_t c = fuse_ctx();
     return fuse_op_chown(&c, path, uid, gid);
 }
 
 static int fuse_truncate(const char *path, off_t size, struct fuse_file_info *fi)
 {
-    fuse_ctx_t c = C();
+    fuse_ctx_t c = fuse_ctx();
     if (fi && fi->fh)
         return fuse_op_truncate_ino(&c, fi->fh, size);
     return fuse_op_truncate(&c, path, size);
@@ -211,7 +133,7 @@ static int fuse_utimens(const char *path, const struct timespec tv[2],
                         struct fuse_file_info *fi)
 {
     (void)fi;
-    fuse_ctx_t c = C();
+    fuse_ctx_t c = fuse_ctx();
     return fuse_op_utimens(&c, path, tv);
 }
 
@@ -219,39 +141,12 @@ static int fuse_statfs(const char *path, struct statfs *st)
 {
     (void)path;
     struct statvfs sv;
-    fuse_ctx_t c = C();
+    fuse_ctx_t c = fuse_ctx();
     int rc = fuse_op_statfs(&c, &sv);
     if (rc)
         return rc;
     statvfs_to_statfs(st, &sv);
     return 0;
-}
-
-static int fuse_access(const char *path, int mask)
-{
-    fuse_ctx_t c = C();
-    return fuse_op_access(&c, path, mask);
-}
-
-static int fuse_flush(const char *path, struct fuse_file_info *fi)
-{
-    (void)path; (void)fi;
-    fuse_ctx_t c = C();
-    return fuse_op_flush(&c);
-}
-
-static int fuse_fsync(const char *path, int isdatasync, struct fuse_file_info *fi)
-{
-    (void)path; (void)isdatasync; (void)fi;
-    fuse_ctx_t c = C();
-    return fuse_op_fsync(&c);
-}
-
-static int fuse_release(const char *path, struct fuse_file_info *fi)
-{
-    (void)path;
-    fuse_ctx_t c = C();
-    return fuse_op_release(&c, fi->fh);
 }
 
 static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
@@ -273,11 +168,6 @@ static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
                               * first unlink -- and letting one edition fall back to a
                               * hidden rename would leave an untested path.) */
     return fuse_get_context()->private_data;
-}
-
-static void fuse_op_destroy(void *private_data)
-{
-    filsys_sync((filsys_t *)private_data);   /* flush on unmount; main() closes */
 }
 
 static struct fuse_operations fuse_ops = {

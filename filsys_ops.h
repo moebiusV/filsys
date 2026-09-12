@@ -98,6 +98,31 @@ static inline int filsys_in_allocated(uint8_t st) {
  * injection).  Internal, not part of the public filsys.h API. */
 void filsys_set_io(filsys_t *fs, const filsys_io_t *io);
 
+/* ---- image creation ------------------------------------------------------ */
+
+/* Options for filsys_mkfs().  Zero/NULL = the edition's default.  `boot` is a
+ * pointer to a full block (bsize bytes) written at block 0, or NULL. */
+typedef struct {
+    uint32_t      blocks;    /* filesystem size in blocks (caller resolves) */
+    uint32_t      bsize;     /* System V logical block size (0 = edition default) */
+    const char   *packing;   /* PDP-7 word container codec name, or NULL */
+    const char   *arch;      /* byte order override, or NULL */
+    const filsys_geom_t *geom;  /* V8-family geometry, or NULL */
+    uint16_t      m, n;      /* Coherent interleave (s_m/s_n) */
+    const void   *boot;      /* boot block bytes (one block), or NULL */
+} filsys_mkfs_opts_t;
+
+/* Create a fresh filesystem at byte offset `base`, writing through the byte-
+ * slice transport `io`.  `fd` is the backing descriptor for filsys_io_file (a
+ * fault-injecting transport may still delegate to it); `base + blocks*bsize`
+ * must already exist in the backing store (the caller sizes it).  Returns 0 and
+ * sets *written to the byte size actually written (V1 rounds the volume up to a
+ * whole word, PDP-7's RB09 geometry is fixed), or -1 with *errmsg describing the
+ * failure.  Internal: the io type is not part of the public filsys.h API. */
+int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
+                const filsys_mkfs_opts_t *opts, uint64_t *written,
+                const char **errmsg);
+
 /* Directory-format sub-vtable: the ops that differ with the on-disk directory
  * entry layout (fixed 16-byte V7 entries vs variable-length 2.11BSD entries vs
  * the 10-byte V1 entries).  The rest of the directory machinery (dir_lookup) is
