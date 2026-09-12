@@ -24,6 +24,7 @@
 static int super_write(filsys_edition_t *fs);
 static int v8_bitmap_sync(filsys_edition_t *fs);
 static void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino);
+static void v7_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino);
 
 /* Flush the allocator state: the free list rides super_write; the bitmap forms
  * write their bitmap (in-superblock via super_write, out-of-superblock via its
@@ -152,6 +153,12 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->dyn_bsize);
         fs->fl.tfree  = fs->bo->get32(sb + toff);
         fs->fl.tinode = fs->bo->get16(sb + toff + 4);
+    } else {
+        /* 32V and System III (pack4, no magic): the s_tfree/s_tinode words sit at
+         * the pack4 offset but are unmaintained on historical media, so recompute
+         * them from the free list and i-list -- exactly what the V6 branch above
+         * does for its layout. */
+        v7_count_free(fs, &fs->fl.tfree, &fs->fl.tinode);
     }
     if (fs->interleave) {
         fs->m      = fs->bo->get16(sb + sb_time_off(fs->pack4, fs->nicfree) + 10);
@@ -1278,6 +1285,576 @@ static void v7fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
     st->f_files = (v7->isize - 2) * v7_inopb(v7);
     st->f_ffree = v7->fl.tinode;
 }
+/* ---- read-only superblock probes (Fold 1) ---------------------------------
+ * Moved from findfs.filsys.c and reworked to read through `io` and to derive
+ * the layout from the edition descriptor (`fmt->pack4`/`magic`/`bsize`/`bo`/
+ * `nicfree`/`sb_decode`) and the shared sb_*_off() helpers, so the probe and
+ * the superblock reader in v7fs_open agree on every field offset by
+ * construction rather than by hand-copied constants.  Each probe returns 1
+ * (validated, res->class set), 2 (near-miss, res->why set) or 0 (not this
+ * format). */
+
+static int probe_walk_chain(filsys_edition_t *fmt, const filsys_io_t *io,
+                            uint32_t head, uint32_t isize, uint32_t fsize,
+                            uint64_t base, int bsize, int nicfree, int wid,
+                            uint16_t (*g16)(const uint8_t *),
+                            uint32_t (*g32)(const uint8_t *), int fb_free,
+                            uint32_t *segs, const char **why)
+{
+    uint32_t hops = 0, next = 0;
+    uint8_t *buf = malloc((size_t)bsize);
+    uint8_t *seen = calloc((size_t)((fsize + 7) / 8), 1);
+    *segs = 0;
+    *why = NULL;
+    if (!buf || !seen) {
+        *why = "out of memory";
+        free(buf); free(seen);
+        return -1;
+    }
+    while (head != 0) {
+        if (head < isize || head >= fsize)        { *why = "chain leaves fs"; break; }
+        if (hops++ > (uint32_t)(fsize / nicfree)) { *why = "chain too long"; break; }
+        if (seen[head >> 3] & (1u << (head & 7))) { *why = "chain cycles"; break; }
+        seen[head >> 3] |= (uint8_t)(1u << (head & 7));
+        if (io->read(fmt, buf, bsize, (off_t)(base + (uint64_t)head * bsize)) != 0) {
+            *why = "chain read error"; break;
+        }
+        uint32_t nfree = fb_free == 4 ? g32(buf + 0) : g16(buf + 0);
+        if (nfree < 1 || nfree > (uint32_t)nicfree) { *why = "bad segment nfree"; break; }
+        int bad = 0;
+        next = 0;
+        for (uint32_t i = 0; i < nfree; i++) {
+            uint32_t blk = wid == 2 ? g16(buf + fb_free + 2 * i)
+                                    : g32(buf + fb_free + 4 * i);
+            if (i == 0)
+                next = blk;
+            else if (blk != 0 && (blk < isize || blk >= fsize)) { bad = 1; break; }
+        }
+        if (bad) { *why = "chain entry out of range"; break; }
+        head = next;
+        (*segs)++;
+    }
+    int rc = *why ? -1 : 0;
+    free(buf);
+    free(seen);
+    return rc;
+}
+
+static int probe_root_ok(filsys_edition_t *fmt, const filsys_io_t *io,
+                         uint64_t base, int bsize,
+                         uint16_t (*g16)(const uint8_t *),
+                         uint32_t (*g32)(const uint8_t *), const char **why)
+{
+    uint8_t ib[128];
+    if (io->read(fmt, ib, sizeof ib, (off_t)(base + (uint64_t)2 * bsize)) != 0) {
+        *why = "cannot read i-list"; return -1;
+    }
+    const uint8_t *d = ib + 64;
+    uint16_t mode = g16(d + 0);
+    if ((mode & 0170000) != 0040000) { *why = "root inode is not a directory"; return -1; }
+    uint32_t size = g32(d + 8);
+    if (size == 0)                    { *why = "root inode size 0"; return -1; }
+    if (size % 16 != 0)               { *why = "root inode size not dirent-aligned"; return -1; }
+    return 0;
+}
+
+/* ---- V8-family traversal helpers (Eighth/Ninth/Tenth Edition) ------------- */
+
+static int probe_v8_ilist_ok(filsys_edition_t *fmt, const filsys_io_t *io,
+                             uint64_t base, int bsize, uint32_t isize,
+                             uint32_t fsize, int le, uint32_t maxino, const char **why)
+{
+    uint32_t inopb = (uint32_t)bsize / 64;
+    uint32_t niblk = (maxino + inopb - 1) / inopb;
+    uint8_t blk[V7_MAXBSIZE];
+    uint16_t (*g16)(const uint8_t *) = le ? bo_get16le : bo_get16be;
+    uint32_t (*g24)(const uint8_t *) = le ? bo_get24le : bo_get24be;
+    for (uint32_t b = 0; b < niblk; b++) {
+        if (io->read(fmt, blk, bsize, (off_t)(base + (uint64_t)(2 + b) * bsize)) != 0) {
+            *why = "cannot read i-list"; return -1;
+        }
+        for (uint32_t s = 0; s < inopb; s++) {
+            uint32_t ino = b * inopb + s + 1;
+            if (ino > maxino)
+                break;
+            const uint8_t *ib = blk + s * 64;
+            if (g16(ib + 0) == 0)
+                continue;
+            for (int i = 0; i < 13; i++) {
+                uint32_t a = g24(ib + 12 + 3 * i);
+                if (a != 0 && (a < isize || a >= fsize)) {
+                    *why = "inode block address out of range";
+                    return -1;
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+static int probe_v8_bitmap_count(filsys_edition_t *fmt, const filsys_io_t *io,
+                                 const uint8_t *sb, uint64_t base, int bsize,
+                                 uint32_t isize, uint32_t fsize, int le, int form,
+                                 const char **why)
+{
+    uint32_t (*g32)(const uint8_t *) = le ? bo_get32le : bo_get32be;
+    uint32_t nbits, count = 0;
+    if (form == V8_FREEMAP_BIGMAP) {
+        uint32_t bits_per_blk = (uint32_t)bsize * 8;
+        uint32_t nblks = (fsize + bits_per_blk - 1) / bits_per_blk;
+        nbits = fsize;
+        uint8_t blk[V7_MAXBSIZE];
+        for (uint32_t k = 0; k < nblks; k++) {
+            uint32_t dblk = fsize - nblks + k;
+            if (io->read(fmt, blk, bsize, (off_t)(base + (uint64_t)dblk * bsize)) != 0) {
+                *why = "bitmap block read error"; return -1;
+            }
+            uint32_t bytes = bsize;
+            if (k == nblks - 1)
+                bytes = (nbits - k * bits_per_blk + 7) / 8;
+            for (uint32_t j = 0; j < bytes; j++) {
+                uint8_t x = blk[j];
+                while (x) { count += (x & 1); x >>= 1; }
+            }
+        }
+    } else {
+        nbits = fsize - isize;
+        for (uint32_t w = 0; w < (nbits + 31) / 32; w++) {
+            uint32_t word = g32(sb + V8_SB_BFREE + 4 * w);
+            for (uint32_t bit = 0; bit < 32 && w * 32 + bit < nbits; bit++)
+                if (word & (1u << bit))
+                    count++;
+        }
+    }
+    return (int)count;
+}
+
+static int probe_v8_try(filsys_edition_t *fmt, const filsys_io_t *io,
+                        const uint8_t *b, uint64_t base, int bsize,
+                        uint64_t nbytes, int le, uint16_t *isize, uint32_t *fsize,
+                        int *form, uint32_t *segs, const char **why)
+{
+    uint16_t (*g16)(const uint8_t *) = le ? bo_get16le : bo_get16be;
+    uint32_t (*g32)(const uint8_t *) = le ? bo_get32le : bo_get32be;
+    uint32_t (*g24)(const uint8_t *) = le ? bo_get24le : bo_get24be;
+
+    uint16_t isz = g16(b + V8_SB_ISIZE);
+    if (isz < 3)
+        return 0;
+    uint32_t fsz = g32(b + V8_SB_FSIZE);
+    uint16_t ninode = g16(b + V8_SB_NINODE);
+    if (ninode > V7_NICINOD)
+        return 0;
+    uint32_t inopb = (uint32_t)bsize / 64;
+    uint32_t maxino = (uint32_t)(isz - 2) * inopb;
+    if (maxino == 0 || maxino > 65536)
+        return 0;
+    for (int i = 0; i < ninode; i++) {
+        uint16_t ino = g16(b + V8_SB_INODE + 2 * i);
+        if (ino != 0 && ino > maxino)
+            return 0;
+    }
+    if (b[V8_SB_FMOD] > 1)
+        return 0;
+    uint32_t tfree = g32(b + V8_SB_TFREE);
+    uint16_t tinode = g16(b + V8_SB_TINODE);
+    if (tfree > fsz - isz || tinode > maxino)
+        return 0;
+    for (int i = 0; i < 14; i++) {
+        uint8_t c = b[V8_SB_FSMNT + i];
+        if (c != 0 && (c < 0x20 || c > 0x7e))
+            return 0;
+    }
+
+    if (fsz <= isz || fsz > (1u << 24))
+        return 0;
+    if ((uint64_t)fsz * bsize > nbytes + (uint64_t)bsize)
+        return 0;
+
+    *isize = isz; *fsize = fsz;
+
+    uint8_t ib[128];
+    if (io->read(fmt, ib, sizeof ib, (off_t)(base + 2 * (uint64_t)bsize)) != 0) {
+        *why = "cannot read i-list"; return -1;
+    }
+    const uint8_t *d = ib + 64;
+    if ((g16(d + 0) & 0170000) != 0040000) { *why = "root inode is not a directory"; return -1; }
+    if (g16(d + 2) < 2)                     { *why = "root inode link count < 2"; return -1; }
+    uint32_t size = g32(d + 8);
+    if (size < 32 || size % 16 != 0)        { *why = "root inode size implausible"; return -1; }
+    uint32_t rootblk = g24(d + 12);
+    if (rootblk < isz || rootblk >= fsz)    { *why = "root directory block out of range"; return -1; }
+    uint8_t rd[64];
+    if (io->read(fmt, rd, sizeof rd, (off_t)(base + (uint64_t)rootblk * bsize)) != 0) {
+        *why = "cannot read root directory"; return -1;
+    }
+    if (g16(rd + 0) != 2 || rd[2] != '.' ||
+        g16(rd + 16) != 2 || rd[18] != '.' || rd[19] != '.') {
+        *why = "root directory entries wrong"; return -1;
+    }
+    if (probe_v8_ilist_ok(fmt, io, base, bsize, isz, fsz, le, maxino, why) < 0)
+        return -1;
+
+    int nicfree = (bsize == 8192) ? V8_NICFREE_LARGE : V8_NICFREE_SMALL;
+    uint16_t nfree = g16(b + V8_SB_NFREE);
+    uint32_t s = 0;
+    const char *why_list = NULL, *why_map = NULL;
+    if (nfree <= nicfree) {
+        int ok = 1;
+        for (int i = 0; i < nfree; i++) {
+            uint32_t fb = g32(b + V8_SB_FREE + 4 * i);
+            if (fb != 0 && (fb < isz || fb >= fsz)) { ok = 0; break; }
+        }
+        if (ok && probe_walk_chain(fmt, io, g32(b + V8_SB_FREE), isz, fsz, base, bsize,
+                                   nicfree, 4, g16, g32, 4, &s, &why_list) == 0) {
+            *form = V8_FREEMAP_LIST;
+            *isize = isz; *fsize = fsz; *segs = s;
+            return 1;
+        }
+    }
+    int fm = (b[V8_SB_FLAG] == 1 && bsize == 4096) ? V8_FREEMAP_BIGMAP : V8_FREEMAP_BITMAP;
+    int cnt = probe_v8_bitmap_count(fmt, io, b, base, bsize, isz, fsz, le, fm, &why_map);
+    if (cnt >= 0 && (uint32_t)cnt == tfree) {
+        *form = fm;
+        *isize = isz; *fsize = fsz; *segs = 0;
+        return 1;
+    }
+    *why = why_list ? why_list : (why_map ? why_map : "free space does not traverse");
+    return -1;
+}
+
+static int probe_bsd211_root_dir(filsys_edition_t *fmt, const filsys_io_t *io,
+                                 uint64_t base, int bsize)
+{
+    uint8_t ib[128];
+    if (io->read(fmt, ib, sizeof ib, (off_t)(base + 2 * (uint64_t)bsize)) != 0)
+        return 0;
+    const uint8_t *d = ib + 64;
+    uint32_t rootblk = bo_get32me(d + 12);
+    uint8_t rb[1024];
+    if (io->read(fmt, rb, sizeof rb, (off_t)(base + (uint64_t)rootblk * bsize)) != 0)
+        return 0;
+
+    uint32_t off = 0;
+    int dot = 0, dotdot = 0;
+    while (off + 6 <= sizeof rb) {
+        uint16_t reclen = bo_get16me(rb + off + 2);
+        uint16_t namlen = bo_get16me(rb + off + 4);
+        if (reclen < 6 || reclen % 4 != 0 || off + reclen > sizeof rb ||
+            namlen < 1 || namlen > 63)
+            return 0;
+        if (namlen == 1 && rb[off + 6] == '.')
+            dot = 1;
+        else if (namlen == 2 && rb[off + 6] == '.' && rb[off + 7] == '.')
+            dotdot = 1;
+        off += reclen;
+        if (dot && dotdot)
+            return 1;
+    }
+    return 0;
+}
+
+static const char *probe_sysv_class(const uint8_t *b, uint32_t (*g32)(const uint8_t *)) {
+    uint32_t st = g32(b + V7_SYSV_STATE_OFF);
+    return (st == V7_SYSV_STATE_CLEAN || st == V7_SYSV_STATE_ACTIVE)
+               ? "sysvr4" : "sysvr2 or sysvr3";
+}
+
+/* ---- family probes ------------------------------------------------------- */
+
+/* V7/32V/Coherent/System III (no magic, no sb_decode, 512-byte blocks): the
+ * layout is entirely `fmt` -- pack4 shifts the 4-byte fields, nicfree names the
+ * cache depth (50 vs Coherent's 64). */
+static int probe_v7_family(filsys_edition_t *fmt, const filsys_io_t *io,
+                           uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    uint8_t sb[V7_MAXBSIZE];
+    if (io->read(fmt, sb, bsize, (off_t)(base + (uint64_t)bsize)) != 0)
+        return 0;
+    uint16_t isz = fmt->bo->get16(sb);
+    if (isz < 3)
+        return 0;
+    int nfree_off  = sb_nfree_off(fmt->pack4);
+    int ninode_off = sb_ninode_off(fmt->pack4, fmt->nicfree);
+    int free_off   = sb_free_off(fmt->pack4);
+    uint16_t nfree  = fmt->bo->get16(sb + nfree_off);
+    uint16_t ninode = fmt->bo->get16(sb + ninode_off);
+    if (nfree > fmt->nicfree || ninode > V7_NICINOD)
+        return 0;
+    uint32_t fsz = fmt->bo->get32(sb + sb_fsize_off(fmt->pack4));
+    if (fsz <= isz || base + (uint64_t)fsz * bsize > nbytes)
+        return 0;
+    for (int i = 0; i < nfree; i++) {
+        uint32_t fb = fmt->bo->get32(sb + free_off + 4 * i);
+        if (fb != 0 && (fb < isz || fb >= fsz))
+            return 0;
+    }
+    uint32_t head = fmt->bo->get32(sb + free_off);
+    int fb_free = fmt->pack4 ? 4 : 2;
+    uint32_t s = 0;
+    const char *why = NULL;
+    if (probe_walk_chain(fmt, io, head, isz, fsz, base, bsize, fmt->nicfree, 4,
+                         fmt->bo->get16, fmt->bo->get32, fb_free, &s, &why) < 0) {
+        res->why = why; res->isize = isz; res->fsize = fsz; res->segs = s;
+        res->class = fmt->nicfree == V7_COH_NICFREE ? "Coherent"
+                   : fmt->pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
+        return 2;
+    }
+    if (probe_root_ok(fmt, io, base, bsize, fmt->bo->get16, fmt->bo->get32, &why) < 0) {
+        res->why = why; res->isize = isz; res->fsize = fsz; res->segs = s;
+        res->class = fmt->nicfree == V7_COH_NICFREE ? "Coherent"
+                   : fmt->pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
+        return 2;
+    }
+    res->class = fmt->nicfree == V7_COH_NICFREE ? "Coherent"
+               : fmt->pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
+    res->isize = isz; res->fsize = fsz; res->segs = s;
+    res->blocksize = bsize;
+    return 1;
+}
+
+/* System V s5fs (magic 0xfd187e20): byte order from the magic, s_type names the
+ * block size.  AFS signals itself with s_nfree == 0xffff. */
+static int probe_sysv(filsys_edition_t *fmt, const filsys_io_t *io,
+                      uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    (void)bsize;
+    uint8_t sb[V7_MAXBSIZE];
+    if (io->read(fmt, sb, 512, (off_t)(base + 512)) != 0)
+        return 0;
+    int le;
+    if (bo_get32le(sb + 504) == V7_SYSV_MAGIC)      le = 1;
+    else if (bo_get32be(sb + 504) == V7_SYSV_MAGIC) le = 0;
+    else return 0;
+
+    uint16_t (*g16)(const uint8_t *) = le ? bo_get16le : bo_get16be;
+    uint32_t (*g32)(const uint8_t *) = le ? bo_get32le : bo_get32be;
+
+    if (g16(sb + 8) == 0xffff) {
+        res->class = "AFS";
+        return 1;
+    }
+    uint32_t t = g32(sb + 508);
+    int bsz = t == 1 ? 512 : t == 2 ? 1024 : t == 3 ? 2048 : 0;
+    if (bsz == 0)
+        return 0;
+    uint16_t isz = g16(sb + 0);
+    uint16_t nfree = g16(sb + 8), ninode = g16(sb + 212);
+    if (nfree > V7_NICFREE || ninode > V7_NICINOD)
+        return 0;
+    uint32_t fsz = g32(sb + 4);
+    if (fsz <= isz || base + (uint64_t)fsz * bsz > nbytes)
+        return 0;
+    for (int i = 0; i < nfree; i++) {
+        uint32_t fb = g32(sb + 12 + 4 * i);
+        if (fb != 0 && (fb < isz || fb >= fsz))
+            return 0;
+    }
+    uint32_t s = 0;
+    const char *why = NULL;
+    if (probe_walk_chain(fmt, io, g32(sb + 12), isz, fsz, base, bsz, V7_NICFREE, 4,
+                         g16, g32, 4, &s, &why) < 0) {
+        res->class = probe_sysv_class(sb, g32); res->why = why;
+        res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = bsz;
+        return 2;
+    }
+    if (probe_root_ok(fmt, io, base, bsz, g16, g32, &why) < 0) {
+        res->class = probe_sysv_class(sb, g32); res->why = why;
+        res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = bsz;
+        return 2;
+    }
+    res->class = probe_sysv_class(sb, g32);
+    res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = bsz;
+    res->byteorder = le ? "le" : "be";
+    res->note = le ? "LE" : "BE";
+    return 1;
+}
+
+/* Xenix (magic 0x2b5544 at 1016, 1024-byte blocks). */
+static int probe_xenix(filsys_edition_t *fmt, const filsys_io_t *io,
+                       uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    (void)bsize;
+    uint8_t sb[V7_MAXBSIZE];
+    if (io->read(fmt, sb, 1024, (off_t)(base + 1024)) != 0)
+        return 0;
+    if (bo_get32le(sb + 0x3F8) != V7_XEN_MAGIC)
+        return 0;
+    uint16_t isz = bo_get16le(sb + 0);
+    uint32_t fsz = bo_get32le(sb + 2);
+    uint16_t nfree = bo_get16le(sb + 6);
+    uint16_t ninode = bo_get16le(sb + 0x198);
+    if (isz < 3 || fsz <= isz || nfree > V7_XEN_NICFREE || ninode > V7_NICINOD)
+        return 0;
+    if (base + (uint64_t)fsz * 1024 > nbytes)
+        return 0;
+    for (int i = 0; i < nfree; i++) {
+        uint32_t fb = bo_get32le(sb + 8 + 4 * i);
+        if (fb != 0 && (fb < isz || fb >= fsz))
+            return 0;
+    }
+    uint32_t s = 0;
+    const char *why = NULL;
+    if (probe_walk_chain(fmt, io, bo_get32le(sb + 8), isz, fsz, base, 1024,
+                         V7_XEN_NICFREE, 4, bo_get16le, bo_get32le, 2, &s, &why) < 0) {
+        res->class = "Xenix"; res->why = why;
+        res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 1024;
+        return 2;
+    }
+    if (probe_root_ok(fmt, io, base, 1024, bo_get16le, bo_get32le, &why) < 0) {
+        res->class = "Xenix"; res->why = why;
+        res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 1024;
+        return 2;
+    }
+    res->class = "Xenix";
+    res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 1024;
+    res->byteorder = "le";
+    return 1;
+}
+
+/* 2.9BSD / 2.11BSD (1024-byte blocks, V7-shaped, no magic): they share a
+ * superblock and differ only in directory format, so probe_bsd211_root_dir
+ * disambiguates. */
+static int probe_bsd29(filsys_edition_t *fmt, const filsys_io_t *io,
+                       uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    (void)bsize;
+    uint8_t sb[V7_MAXBSIZE];
+    if (io->read(fmt, sb, 1024, (off_t)(base + 1024)) != 0)
+        return 0;
+    uint16_t isz = bo_get16le(sb);
+    if (isz < 3)
+        return 0;
+    uint16_t nfree = bo_get16le(sb + 6);
+    uint16_t ninode = bo_get16le(sb + 208);
+    if (nfree > V7_NICFREE || ninode > V7_NICINOD)
+        return 0;
+    uint32_t fsz = bo_get32me(sb + 2);
+    if (fsz <= isz || base + (uint64_t)fsz * 1024 > nbytes)
+        return 0;
+    for (int i = 0; i < nfree; i++) {
+        uint32_t fb = bo_get32me(sb + 8 + 4 * i);
+        if (fb != 0 && (fb < isz || fb >= fsz))
+            return 0;
+    }
+    uint32_t s = 0;
+    const char *why = NULL;
+    if (probe_walk_chain(fmt, io, bo_get32me(sb + 8), isz, fsz, base, 1024,
+                         V7_NICFREE, 4, bo_get16le, bo_get32me, 2, &s, &why) < 0) {
+        res->class = "2.9BSD"; res->why = why;
+        res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 1024;
+        return 2;
+    }
+    if (probe_root_ok(fmt, io, base, 1024, bo_get16le, bo_get32me, &why) < 0) {
+        res->class = "2.9BSD"; res->why = why;
+        res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 1024;
+        return 2;
+    }
+    res->class = probe_bsd211_root_dir(fmt, io, base, 1024) ? "2.11BSD" : "2.9BSD";
+    res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 1024;
+    return 1;
+}
+
+/* V8/V9/V10 (rearranged superblock via v8_sb_decode). */
+static int probe_v8(filsys_edition_t *fmt, const filsys_io_t *io,
+                    uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    uint8_t sb[V7_MAXBSIZE];
+    if (io->read(fmt, sb, bsize, (off_t)(base + (uint64_t)bsize)) != 0)
+        return 0;
+    const char *miss_why = NULL;
+    uint16_t miss_isz = 0; uint32_t miss_fsz = 0;
+    for (int le = 1; le >= 0; le--) {
+        uint16_t isz; uint32_t fsz; int form; uint32_t s; const char *why_try = NULL;
+        int r = probe_v8_try(fmt, io, sb, base, bsize, nbytes, le, &isz, &fsz, &form, &s, &why_try);
+        if (r == 1) {
+            static char note_buf[64];
+            res->isize = isz; res->fsize = fsz; res->segs = s;
+            res->freemap = form;
+            res->blocksize = bsize;
+            res->byteorder = le ? "le" : "be";
+            res->bitmap = (form != V8_FREEMAP_LIST);
+            if (form == V8_FREEMAP_BIGMAP)
+                res->class = "v10, bs=4096, bigmap";
+            else if (bsize == 8192)
+                res->class = "v9";
+            else
+                res->class = (bsize == 4096) ? "v8 or v10, bs=4096, bitmap"
+                                             : "v8 or v10, bs=1024";
+            snprintf(note_buf, sizeof note_buf, "%d-byte blocks, %s, %s", bsize,
+                     form == V8_FREEMAP_LIST ? "free list" :
+                     form == V8_FREEMAP_BITMAP ? "in-superblock bitmap" :
+                     "out-of-superblock bitmap", le ? "LE" : "BE");
+            res->note = note_buf;
+            return 1;
+        }
+        if (r == -1 && !miss_why) {
+            miss_why = why_try; miss_isz = isz; miss_fsz = fsz;
+        }
+    }
+    if (miss_why) {
+        res->why = miss_why; res->isize = miss_isz; res->fsize = miss_fsz;
+        res->segs = 0; res->class = "v8";
+        return 2;
+    }
+    return 0;
+}
+
+/* V6 (16-bit fields; isize_count).  Root-inode cross-check is absent here: V6's
+ * root is inode 1 in a 32-byte inode, a different layout, so the chain walk is
+ * the structural test. */
+static int probe_v6(filsys_edition_t *fmt, const filsys_io_t *io,
+                    uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    (void)bsize;
+    uint8_t sb[V7_MAXBSIZE];
+    if (io->read(fmt, sb, 512, (off_t)(base + 512)) != 0)
+        return 0;
+    uint16_t isz = bo_get16le(sb);
+    if (isz < 3)
+        return 0;
+    uint16_t fsz = bo_get16le(sb + 2);
+    uint16_t nfree = bo_get16le(sb + 4);
+    uint16_t ninode = bo_get16le(sb + 206);
+    if (fsz <= isz || nfree > V6_NICFREE || ninode > V6_NICINOD ||
+        base + (uint64_t)fsz * 512 > nbytes)
+        return 0;
+    for (int i = 0; i < nfree; i++) {
+        uint16_t fb = bo_get16le(sb + 6 + 2 * i);
+        if (fb != 0 && (fb < isz || fb >= fsz))
+            return 0;
+    }
+    uint32_t s = 0;
+    const char *why = NULL;
+    if (probe_walk_chain(fmt, io, bo_get16le(sb + 6), isz, fsz, base, 512,
+                         V6_NICFREE, 2, bo_get16le, bo_get32le, 2, &s, &why) < 0) {
+        res->class = "v4, v5, v6 or usgpg3"; res->why = why;
+        res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 512;
+        return 2;
+    }
+    res->class = "v4, v5, v6 or usgpg3";
+    res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 512;
+    return 1;
+}
+
+/* The V7-family dispatcher: route on the descriptor's magic / sb_decode / block
+ * size.  One probe serves V7/32V/Coherent/Xenix/2.9BSD/SysIII/SysV/V8/V9/V10. */
+static int v7_probe(filsys_edition_t *fmt, const filsys_io_t *io,
+                    uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    memset(res, 0, sizeof *res);
+    res->freemap = -1;
+    if (fmt->sb_decode)
+        return probe_v8(fmt, io, base, bsize, nbytes, res);
+    if (fmt->magic == V7_XEN_MAGIC)
+        return probe_xenix(fmt, io, base, bsize, nbytes, res);
+    if (fmt->magic == V7_SYSV_MAGIC)
+        return probe_sysv(fmt, io, base, bsize, nbytes, res);
+    if (fmt->bsize == 1024)
+        return probe_bsd29(fmt, io, base, bsize, nbytes, res);
+    return probe_v7_family(fmt, io, base, bsize, nbytes, res);
+}
+
 const struct filsys_dir_ops dir_fixed = {
     .dir_read   = v7fs_dir_read,
     .dir_add    = v7fs_dir_add,
@@ -1296,6 +1873,7 @@ const struct filsys_ops v7fs_ops = {
     .dir         = &dir_fixed,
     .inode       = &inode_64,
     .blocksize   = v7fs_blocksize_op,
+    .probe       = v7_probe,
     .open        = v7fs_open,
     .close       = v7fs_close,
     .sync        = v7fs_sync,
@@ -1469,6 +2047,7 @@ static const struct filsys_inode_ops inode_64_32addr = {
 const struct filsys_ops bsd211fs_ops = {
     .name        = "bsd211",
     .dir         = &dir_variable,
+    .probe       = v7_probe,
     .inode       = &inode_64_32addr,
     .blocksize   = v7fs_blocksize_op,
     .open        = v7fs_open,
@@ -1506,6 +2085,44 @@ const struct filsys_ops bsd211fs_ops = {
 
 static int v6_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip);
 static int v6_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip);
+
+/* Recompute the V7-family free-space totals (free blocks + free inodes) by
+ * walking the free-list chain and the i-list.  Used for the pack4, magic-free
+ * editions (32V and System III), whose on-disk s_tfree/s_tinode are unmaintained
+ * and so unreliable on foreign media.  Read-only: never mutates the image. */
+static void v7_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
+    uint32_t n = fs->fl.nfree;
+    uint32_t cur[V8_NICFREE_LARGE];   /* the largest free-cache depth (V9) */
+    memcpy(cur, fs->fl.free, sizeof(cur));
+    uint32_t blocks = 0, guard = 0;
+    while (n > 0) {
+        uint32_t bno = cur[--n];
+        if (bno == 0)
+            break;                       /* sentinel: end of chain */
+        blocks++;
+        if (n == 0) {
+            uint8_t blk[V7_MAXBSIZE];
+            if (v7fs_read_block(fs, bno, blk))
+                break;
+            n = fs->df_nfree_wid == 4 ? fs->bo->get32(blk) : fs->bo->get16(blk);
+            if (n > fs->nicfree)
+                break;
+            for (int i = 0; i < fs->nicfree; i++)
+                cur[i] = v7_get_daddr(fs, blk + v7_chain_free_off(fs) + fs->daddr_wid * i);
+        }
+        if (++guard > fs->fsize + fs->nicfree)
+            break;
+    }
+    *nblk = blocks;
+
+    uint32_t maxino = v7_maxinode(fs), used = 0;
+    for (uint32_t ino = 1; ino <= maxino; ino++) {
+        v7_inode_t ip;
+        if (v7fs_read_inode(fs, ino, &ip) == 0 && ip.mode != 0)
+            used++;
+    }
+    *nino = maxino - used;
+}
 
 static void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
     uint32_t n = fs->fl.nfree;
@@ -1799,6 +2416,7 @@ static const struct filsys_inode_ops inode_32 = {
 const struct filsys_ops v6fs_ops = {
     .name        = "v6",
     .dir         = &dir_fixed,
+    .probe       = probe_v6,
     .inode       = &inode_32,
     .blocksize   = v7fs_blocksize_op,
     .open        = v7fs_open,

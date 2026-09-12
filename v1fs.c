@@ -450,11 +450,59 @@ static const struct filsys_inode_ops inode_v1 = {
     .allocated_blocks = v1fs_allocated_blocks,
 };
 
+/* V1 superblock probe (blocks 0+1, dual bitmaps): no boot block, so the
+ * filesystem starts AT `base`; the root inode 41 sits in block 4.  Returns 1
+ * (validated) or 0 (not a candidate). */
+static int v1_probe(filsys_edition_t *fmt, const filsys_io_t *io,
+                    uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    (void)bsize;
+    uint8_t sb[V1_BSIZE * 2];
+    if (io->read(fmt, sb, sizeof sb, (off_t)base) != 0)
+        return 0;
+    uint16_t freemap_bytes = fmt->bo->get16(sb + 0);
+    if (freemap_bytes == 0)
+        return 0;
+    uint32_t inodemap_bytes_off = 2 + freemap_bytes;
+    if (inodemap_bytes_off + 2 > V1_BSIZE * 2)
+        return 0;
+    uint16_t inodemap_bytes = fmt->bo->get16(sb + inodemap_bytes_off);
+    uint32_t inodemap_off = inodemap_bytes_off + 2;
+    if (inodemap_bytes == 0 || inodemap_off + inodemap_bytes > V1_BSIZE * 2)
+        return 0;
+    uint32_t fsz = (uint32_t)freemap_bytes * 8;
+    uint32_t maxino = (uint32_t)inodemap_bytes * 8;
+    uint32_t dstart = (maxino + 31) / 16 + 1;
+    if (fsz <= dstart || base + (uint64_t)fsz * V1_BSIZE > nbytes)
+        return 0;
+    uint8_t blk[V1_BSIZE];
+    if (io->read(fmt, blk, sizeof blk, (off_t)(base + 4 * V1_BSIZE)) != 0)
+        return 0;
+    const uint8_t *d = blk + 8 * 32;
+    uint16_t mode = fmt->bo->get16(d + 0);
+    if ((mode & (0100000 | 0040000)) != (0100000 | 0040000)) {
+        res->why = "root inode is not a directory";
+        return 0;
+    }
+    uint16_t a0 = fmt->bo->get16(d + 6);
+    if (a0 < dstart || a0 >= fsz) {
+        res->why = "root directory block out of range";
+        return 0;
+    }
+    res->class = "v1, v2 or v3";
+    res->isize = (uint16_t)dstart;
+    res->fsize = fsz;
+    res->blocksize = V1_BSIZE;
+    res->bitmap = 1;
+    return 1;
+}
+
 const struct filsys_ops v1fs_ops = {
     .name        = "v1",
     .dir         = &dir_fixed,
     .inode       = &inode_v1,
     .blocksize   = v1fs_blocksize_op,
+    .probe       = v1_probe,
     .open        = v1fs_open,
     .close       = v1fs_close,
     .sync        = v1fs_sync,

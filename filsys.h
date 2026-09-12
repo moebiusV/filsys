@@ -60,7 +60,8 @@ enum {
     FILSYS_BSD211 = 36,   /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
     FILSYS_SYSIII = 37,   /* System III: V7 superblock (no magic), middle-endian */
     FILSYS_SVR2   = 38,   /* System V Release 2 s5fs: 2-byte-aligned; byte order from -o arch */
-    FILSYS_SVR4   = 39    /* System V Release 4 s5fs: 4-byte-aligned + s_pad2; byte order from -o arch */
+    FILSYS_SVR4   = 39,   /* System V Release 4 s5fs: 4-byte-aligned + s_pad2; byte order from -o arch */
+    FILSYS_UNIX   = 40    /* not a format: autodetect across every edition (a -v mode) */
 };
 
 /* One row of the edition name table (defined in filsys_format.c): the canonical
@@ -122,6 +123,22 @@ enum {
     FILSYS_FREEMAP_BITMAP = 1,  /* in-superblock bitmap */
     FILSYS_FREEMAP_BIGMAP = 2,  /* out-of-superblock bitmap (V10 only) */
 };
+
+/* The result of filsys_detect(): a resolved edition and its geometry. */
+typedef struct {
+    int         edition;      /* FILSYS_* selector (never FILSYS_UNIX) */
+    uint32_t    blocksize;    /* 0 = edition default */
+    int         freemap;      /* -1 = derive; else a FILSYS_FREEMAP_* value */
+    const char *byteorder;    /* "le"/"be", or NULL = edition default */
+    const char *packing;      /* PDP-7 word container codec name, or NULL */
+} filsys_detect_t;
+
+/* Autodetect the filesystem whose block 0 sits at byte `offset`.  `fd` is an
+ * open read-only descriptor, `size` the image's total byte size, and `filter`
+ * the edition to accept (FILSYS_UNIX = any).  Returns 0 and fills *out, or -1
+ * with *why (a static description) when nothing matches.  Read-only. */
+int filsys_detect(filsys_detect_t *out, int fd, uint64_t offset, uint64_t size,
+                  int filter, const char **why);
 
 /* Open an image.  Returns 0 and *out, or -errno.  uid/gid are the ownership
  * reported by filsys_fill_stat (the "mounting user").  packing selects the

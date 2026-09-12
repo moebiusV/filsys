@@ -44,6 +44,26 @@ typedef struct filsys_io {
 
 extern const filsys_io_t filsys_io_file;
 
+/* Result of a read-only superblock probe (the edition vtable's `probe` method).
+ * `class` is the human-readable equivalence class the probe matched ("v7, sysiii
+ * or sysvr1", "v8 or v10, bs=1024", ...); the resolver (filsys_detect) maps it
+ * to a FILSYS_* edition + geometry.  isize/fsize/segs/why feed findfs's report:
+ * why is set on a near-miss, NULL on a validated hit. */
+typedef struct {
+    const char *class;      /* equivalence class, NULL = not this format */
+    uint32_t    blocksize;  /* detected block size */
+    int         freemap;    /* FILSYS_FREEMAP_* or -1 (V8-family only) */
+    const char *byteorder;  /* "le"/"be", or NULL = edition default */
+    const char *packing;    /* PDP-7 word container codec name, or NULL */
+    const char *note;       /* prose geometry note (findfs report), or NULL */
+    int         bitmap;     /* 1 = free space is a bitmap (no chain), 0 = free list */
+    uint16_t    isize;      /* i-list size in blocks (findfs report) */
+    uint32_t    fsize;      /* volume size in blocks (findfs report) */
+    uint32_t    segs;       /* free-list segments followed (findfs report) */
+    const char *why;        /* near-miss rejection reason, or NULL */
+    uint64_t    base;       /* matched fs-start byte (PDP-7 surface; 0 elsewhere) */
+} filsys_probe_t;
+
 /* Map a CPU architecture name ("vax", "3b2", "68k", "pdp11", ...) to the byte
  * order it stored multi-byte fields in, or NULL for an unknown arch.  The arch
  * (not the edition) selects the byte order: System V ran on both endiannesses. */

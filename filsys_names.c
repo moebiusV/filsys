@@ -75,6 +75,8 @@ int filsys_edition_by_name(const char *name) {
      * the strip, which would otherwise turn it into "ax32". */
     if (!strcmp(name, "vax32") || !strcmp(name, "VAX32"))
         return FILSYS_32V;
+    if (!strcmp(name, "unix") || !strcmp(name, "auto") || !strcmp(name, "any"))
+        return FILSYS_UNIX;   /* autodetect across every edition (not a format) */
     if (name[0] == 'v' || name[0] == 'V')
         name++;
     for (size_t i = 0; i < NFMT; i++) {
@@ -93,6 +95,7 @@ const char *filsys_editions_usage(void) {
     for (size_t i = 0; i < NFMT; i++)
         n += (size_t)snprintf(buf + n, sizeof buf - n, "%s%s",
                               i ? "|" : "", formats[i].name);
+    n += (size_t)snprintf(buf + n, sizeof buf - n, "|unix");
     return buf;
 }
 
