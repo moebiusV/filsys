@@ -136,3 +136,30 @@ jobs:
             --enable-fuzzing
           make -j4 filsys-fuzz
           ./filsys-fuzz -max_total_time=60 -print_final_stats=1
+
+  # The simh oracle: mutate a V7 image (hard-link a directory), boot it under
+  # simh, and require the *historical* icheck/dcheck to agree.  This closes the
+  # loop against the real V7 tools rather than filsys's own fsck, so it needs
+  # the simh pdp11 simulator, the prebsd driver (sibling repo), and the image.
+  oracle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y simh libcurl4-openssl-dev libjson-c-dev libfuse3-dev pkg-config
+      - name: Build the prebsd driver (sibling repo)
+        run: |
+          git clone --depth 1 https://github.com/moebiusV/prebsd ../prebsd
+          make -C ../prebsd
+      - name: Fetch the V7 image
+        run: |
+          curl -L -o rp06-0.disk.gz \
+            https://github.com/pcollinson/unixv7-extras/raw/main/bootstrap/rp06-0.disk.gz
+          gunzip rp06-0.disk.gz
+      - name: Build and run the simh oracle test
+        run: |
+          ./configure --enable-oracle-tests
+          make
+          make check; rc=$?; cat test-suite.log test_oracle.log 2>/dev/null; exit $rc
