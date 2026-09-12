@@ -179,6 +179,11 @@ struct filsys_ops {
     /* Mark the superblock dirty (s_fmod) and flush.  Optional: only the V6/V7
      * formats carry an s_fmod byte; other backends leave it NULL. */
     int  (*mark_dirty)(filsys_edition_t *fs);
+    /* Mark the superblock clean (s_fmod == 0) and flush.  Optional, same
+     * backends as mark_dirty.  Only the mount/unmount path calls this; a fsck
+     * repair must not clear s_fmod, since a partial repair leaves the image
+     * inconsistent and a clean flag would make the next check skip it. */
+    int  (*mark_clean)(filsys_edition_t *fs);
 
     /* block io */
     int  (*read_block)(filsys_edition_t *fs, uint32_t bno, uint8_t *buf);

@@ -145,10 +145,12 @@ static inline int sb_free_off(int pack4)   { return pack4 ? 12 : 8; }
 static inline int sb_ninode_off(int pack4, int nicfree) { return sb_free_off(pack4) + 4 * nicfree; }
 static inline int sb_inode_off(int pack4, int nicfree)  { return sb_ninode_off(pack4, nicfree) + 2; }
 static inline int sb_time_off(int pack4, int nicfree)   { return sb_inode_off(pack4, nicfree) + 2*V7_NICINOD + 4 + (pack4 ? 2 : 0); }
-/* s_tfree sits right after s_time in V7/32V/Xenix, but System V inserts
- * s_dinfo[4] (8 bytes of device info) first, so its totals are 8 bytes later. */
-static inline int sb_tfree_off(int pack4, int nicfree, int dyn_bsize) {
-    return sb_time_off(pack4, nicfree) + 4 + (dyn_bsize ? 8 : 0);
+/* s_tfree sits right after s_time in V7/32V/Xenix, but System III and System V
+ * insert s_dinfo[4] (8 bytes of device info) first, so their totals are 8 bytes
+ * later.  has_dinfo marks those editions (System III's PDP-11 form is packed,
+ * so this shift must not be tied to dyn_bsize or pack4). */
+static inline int sb_tfree_off(int pack4, int nicfree, int has_dinfo) {
+    return sb_time_off(pack4, nicfree) + 4 + (has_dinfo ? 8 : 0);
 }
 static inline int fb_free_off(int pack4)   { return pack4 ? 4 : 2; }
 
@@ -343,6 +345,7 @@ typedef struct filsys_edition {
     uint32_t    magic;              /* superblock magic word (0 = none) */
     int         magic_off;          /* byte offset of magic in the superblock */
     uint8_t     dyn_bsize;          /* block size comes from s_type (System V) */
+    uint8_t     has_dinfo;          /* s_dinfo[4] sits before s_tfree (System III/V) */
     uint8_t     has_state;          /* s_state field present (SysV R4; R2/R3 leave s_fill[12]) */
     uint8_t     ignore_magic;       /* -F: open despite a magic that matches neither order */
     uint8_t     fmod_back;          /* s_fmod sits N bytes before s_time (V7 2, 2.11BSD 3) */

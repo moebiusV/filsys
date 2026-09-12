@@ -29,10 +29,18 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
     const struct filsys_ops *o = fmt->ops;
     memset(rep, 0, sizeof(*rep));
 
-    if (o->is_clean(fs) && !(mode & (FILSYS_CK_SALVAGE | FILSYS_CK_FORCE))) {
-        /* No "(use -f to force)" here: -f means force only on fsck.filsys; on
-         * mount.filsys -f is "stay in foreground", so the hint would lie.  The
-         * fsck manpage/README document -f. */
+    /* Only the auto-fix modes (-p preen, -y yes, -i interactive) honour the
+     * clean flag: they are the boot-time "skip a cleanly-unmounted filesystem"
+     * fast path, matching System V's `fsck -p`.  A plain report fsck always
+     * runs the full check, because s_fmod==0 only means "cleanly unmounted",
+     * not "internally consistent" -- corruption (orphaned inodes, duplicate
+     * blocks) can coexist with a clean flag, and System III's fsck always
+     * full-checks regardless.  No "(use -f to force)" here: -f means force only
+     * on fsck.filsys; on mount.filsys -f is "stay in foreground", so the hint
+     * would lie.  The fsck manpage/README document -f. */
+    if (o->is_clean(fs) &&
+        (mode & (FILSYS_CK_PREEN | FILSYS_CK_YES | FILSYS_CK_ASK)) &&
+        !(mode & (FILSYS_CK_SALVAGE | FILSYS_CK_FORCE))) {
         if (!(mode & FILSYS_CK_QUIET))
             printf("filesystem clean; skipped\n");
         return 0;
@@ -134,6 +142,26 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
     rep->used_blocks = cx.used_blocks;
     rep->dup_blocks  = cx.dup_blocks;
 
+    /* 4b. superblock free-space totals (System III/V fsck's "FREE BLK COUNT
+     * WRONG IN SUPERBLK" / "FREE INODE COUNT WRONG IN SUPERBLK").  Only the
+     * free-list editions whose superblock actually carries s_tfree/s_tinode:
+     * the pack4/magic-free s5fs forms recompute them (their on-disk words are
+     * unmaintained), V6 has 16-bit words, V1/PDP-7 and the V8-family use other
+     * allocators.  Compare the walked counts against the on-disk totals. */
+    if (fmt->alloc == &freelist_alloc_ops && !fmt->sb_decode &&
+        !fmt->isize_count && (!fmt->pack4 || fmt->magic)) {
+        if (rep->free_blocks != fs->fl.tfree) {
+            printf("free block count wrong in superblock: %u free but s_tfree=%u\n",
+                   rep->free_blocks, fs->fl.tfree);
+            rep->errors++;
+        }
+        if (rep->inodes - rep->used_inodes != fs->fl.tinode) {
+            printf("free inode count wrong in superblock: %u free but s_tinode=%u\n",
+                   rep->inodes - rep->used_inodes, fs->fl.tinode);
+            rep->errors++;
+        }
+    }
+
     /* 5. dcheck: directory link counts. */
     uint8_t *ecount = calloc(maxino + 1, 1);
     if (ecount) {
@@ -176,19 +204,18 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
             if (o->inode->read_inode(fs, ino, &ip))
                 continue;
             int cnt = ecount[ino] & 0377;
-            /* A regular file (or symlink) with no directory entry is an orphan
-             * whatever its nlink claims -- hard_remove leaves unlink-while-open
-             * files here (allocated, nlink == 0) until the last close.  The nlink
-             * equality below would pass (0 == 0) and hide it.  Directories and
-             * devices are excluded: their unreferenced states are the preen
-             * reconnect paths, not this free-deferred state.
-             *
-             * Classified by is_regular(), the same predicate preen uses, so the
-             * report and reconnect paths cannot disagree about a symlink (there
-             * is no FILSYS_IN_ILNK; is_regular folds iflnk in explicitly).  The
-             * allocated guard matters: is_regular alone is true for a mode-0
-             * (free) inode on V6-family formats, where regular files are type 0. */
-            if (filsys_in_allocated(state[ino]) && is_regular(fmt, &ip) &&
+            /* Any allocated inode that is not a directory must carry a directory
+             * entry; one with zero entries is an orphan (System III fsck's "UNREF
+             * FILE").  Tested by exclusion -- !fs_is_dir -- so it holds for every
+             * file type a future edition might add (regular, symlink, FIFO,
+             * socket, char/block/multiplexed device), not just the ones is_regular
+             * names today.  It fires whatever nlink claims: hard_remove leaves
+             * unlink-while-open files here (allocated, nlink == 0) until the last
+             * close, and the nlink equality below would pass (0 == 0) and hide it.
+             * Directories are excluded: their link count is a subdir count, not an
+             * entry count, and their orphan state is the preen reconnect path.
+             * The allocated guard matters: a mode-0 (free) inode is not an orphan. */
+            if (filsys_in_allocated(state[ino]) && !fs_is_dir(fmt, &ip) &&
                 cnt == 0 && ino != fmt->rootino && ino != fmt->badino) {
                 printf("%u entries=0 link=%d (unreferenced)\n", ino, ip.nlink);
                 rep->errors++;
@@ -407,8 +434,19 @@ void filsys_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *st
         if (cnt == 0) {
             if (lf_ino == 0)
                 continue;
-            if (!is_regular(fs, &ip))   /* directory or device: leave it */
+            if (!is_regular(fs, &ip)) {
+                /* A non-data orphan (FIFO, socket, device, unknown type) has
+                 * nothing to preserve: clear the inode, as System III fsck does
+                 * for a zero-length UNREF inode.  A directory never lands here
+                 * (its own "." entry is always counted). */
+                if (filsys_query(mode, "clear unreferenced inode %u", ino)) {
+                    ip.mode = 0;
+                    ip.nlink = 0;
+                    fs->ops->inode->write_inode(fs, ino, &ip);
+                    printf("cleared unreferenced inode %u\n", ino);
+                }
                 continue;
+            }
             filsys_inode_t lf;
             char name[16];
             snprintf(name, sizeof(name), "%u", ino);

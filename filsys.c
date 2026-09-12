@@ -371,6 +371,15 @@ int filsys_close(filsys_t *fs) {
         }
     }
     if (fs->fs) {
+        /* A clean unmount clears s_fmod (the image is now consistent).  This
+         * happens on the mount path, not in the backend close: fsck opens the
+         * same backend read-write to repair, and a partial repair must not
+         * clear s_fmod (a clean flag would make the next check skip it). */
+        if (!fs->readonly && fs->ops->mark_clean) {
+            int r = fs->ops->mark_clean(fs->fs);
+            if (r && !rc)
+                rc = r;
+        }
         int r = fs->ops->close(fs->fs);
         if (r)
             rc = r;                     /* flush failure dominates */
