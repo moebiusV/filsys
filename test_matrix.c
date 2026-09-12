@@ -94,6 +94,22 @@ static int fsck_dup_zero(const char *name, const char *img) {
     return strstr(out, "dup=0") != NULL;
 }
 
+/* Open the image read-only, run the in-process integrity check, and classify
+ * the report (D = aliasing, B = leak, C = inconsistency, A = clean).  The
+ * crash-prefix and fault-injection drivers use this to assert a per-mutator
+ * worst-class bound instead of collapsing the report to a boolean; an image
+ * that will not open is D (the most severe). */
+static filsys_fail_class_t classify_image(int edition, const char *img) {
+    filsys_t *fs;
+    if (filsys_open(&fs, edition, img, 1, 0, 0, 0, NULL) != 0)
+        return FILSYS_CK_D;
+    filsys_check_t rep;
+    filsys_invariants(fs, &rep);
+    filsys_fail_class_t cls = filsys_classify(&rep);
+    filsys_close(fs);
+    return cls;
+}
+
 /* Run preen (-p -f: reconnect orphans, fix link counts) then salvage (-s:
  * rebuild the free list), then fsck -f; return whether the repaired filesystem
  * is clean.  The two families need different tools: an orphan is a namespace
@@ -744,11 +760,14 @@ static int fault_write(filsys_edition_t *fs, const void *buf, size_t n, off_t of
 static const filsys_io_t fault_io = { fault_read, fault_write };
 
 /* One mutator: setup builds the preconditions with the fault disabled, op is
- * the single mutation driven at each failing boundary. */
+ * the single mutation driven at each failing boundary, and max_class is the
+ * worst failure class its crash/fault prefixes may legitimately produce (never
+ * D -- aliasing -- which is the integrity contract). */
 typedef struct {
     const char *name;
     void (*setup)(filsys_t *fs);
     int  (*op)(filsys_t *fs);
+    filsys_fail_class_t max_class;
 } mutator_t;
 
 static void setup_none(filsys_t *fs) { (void)fs; }
@@ -838,11 +857,15 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
         g_fmode = FAIL_NONE;
         filsys_close(fs);
 
-        int dup_ok = fsck_dup_zero(f->name, img);
+        filsys_fail_class_t cls = classify_image(f->edition, img);
+        int class_ok = cls <= mut->max_class;
         int recov_ok = fsck_recover_clean(f->name, img);
-        snprintf(what, sizeof what, "%s %s fail-%s-%d%s%s", f->name, mut->name, label, n,
-                 dup_ok ? "" : " [dup]", recov_ok ? "" : " [recover]");
-        ok(what, dup_ok && recov_ok);
+        snprintf(what, sizeof what, "%s %s fail-%s-%d", f->name, mut->name, label, n);
+        if (!class_ok)
+            snprintf(what + strlen(what), sizeof what - strlen(what), " [class %c]", "ACBD"[cls]);
+        if (!recov_ok)
+            snprintf(what + strlen(what), sizeof what - strlen(what), " [recover]");
+        ok(what, class_ok && recov_ok);
         unlink(img);
 
         if (reached < n)                /* failure never reached: done */
@@ -871,20 +894,20 @@ static int mut_selected(const char *name) {
 
 static void fault_test(void) {
     static const mutator_t mut[] = {
-        { "create",   setup_none, op_create },
-        { "mkdir",    setup_none, op_mkdir },
-        { "mknod",    setup_none, op_mknod },
-        { "write",    setup_file, op_write },
-        { "truncate", setup_file, op_truncate },
-        { "unlink",   setup_file, op_unlink },
-        { "rmdir",    setup_dir,  op_rmdir },
-        { "link",     setup_file, op_link },
-        { "symlink",  setup_none, op_symlink },
-        { "rename",   setup_file, op_rename },
-        { "rename_over",     setup_file2, op_rename_over },
-        { "rename_dir",      setup_dir,   op_rename_dir },
-        { "rename_dir_over", setup_dir2,  op_rename_dir_over },
-        { "close_ino",       setup_open_unlink, op_close_ino },
+        { "create",   setup_none, op_create,   FILSYS_CK_B },
+        { "mkdir",    setup_none, op_mkdir,    FILSYS_CK_B },
+        { "mknod",    setup_none, op_mknod,    FILSYS_CK_B },
+        { "write",    setup_file, op_write,    FILSYS_CK_B },
+        { "truncate", setup_file, op_truncate, FILSYS_CK_B },
+        { "unlink",   setup_file, op_unlink,   FILSYS_CK_B },
+        { "rmdir",    setup_dir,  op_rmdir,    FILSYS_CK_B },
+        { "link",     setup_file, op_link,     FILSYS_CK_C },
+        { "symlink",  setup_none, op_symlink,  FILSYS_CK_B },
+        { "rename",   setup_file, op_rename,   FILSYS_CK_C },
+        { "rename_over",     setup_file2, op_rename_over,     FILSYS_CK_B },
+        { "rename_dir",      setup_dir,   op_rename_dir,      FILSYS_CK_C },
+        { "rename_dir_over", setup_dir2,  op_rename_dir_over, FILSYS_CK_B },
+        { "close_ino",       setup_open_unlink, op_close_ino, FILSYS_CK_B },
     };
     static const struct { fail_mode_e mode; const char *label; } modes[] = {
         { FAIL_WRITE, "write" },
@@ -983,11 +1006,15 @@ static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
         filsys_set_io(fs, &discard_io);   /* close without flushing */
         filsys_close(fs);
 
-        int dup_ok   = fsck_dup_zero(f->name, img);
+        filsys_fail_class_t cls = classify_image(f->edition, img);
+        int class_ok = cls <= mut->max_class;
         int recov_ok = fsck_recover_clean(f->name, img);
-        snprintf(what, sizeof what, "%s %s crash-prefix-%d%s%s", f->name, mut->name, k,
-                 dup_ok ? "" : " [dup]", recov_ok ? "" : " [recover]");
-        ok(what, dup_ok && recov_ok);
+        snprintf(what, sizeof what, "%s %s crash-prefix-%d", f->name, mut->name, k);
+        if (!class_ok)
+            snprintf(what + strlen(what), sizeof what - strlen(what), " [class %c]", "ACBD"[cls]);
+        if (!recov_ok)
+            snprintf(what + strlen(what), sizeof what - strlen(what), " [recover]");
+        ok(what, class_ok && recov_ok);
         unlink(img);
     }
 }
@@ -1001,18 +1028,18 @@ static void crash_prefix_test(void) {
      * still holds at every prefix.  mkdir's *error* path (where the rollback
      * runs) is covered by fault_test below. */
     static const mutator_t mut[] = {
-        { "create",   setup_none, op_create },
-        { "write",    setup_file, op_write },
-        { "truncate", setup_file, op_truncate },
-        { "unlink",   setup_file, op_unlink },
-        { "rmdir",    setup_dir,  op_rmdir },
-        { "link",     setup_file, op_link },
-        { "symlink",  setup_none, op_symlink },
-        { "rename",   setup_file, op_rename },
-        { "rename_over",     setup_file2, op_rename_over },
-        { "rename_dir",      setup_dir,   op_rename_dir },
-        { "rename_dir_over", setup_dir2,  op_rename_dir_over },
-        { "close_ino", setup_open_unlink, op_close_ino },
+        { "create",   setup_none, op_create,   FILSYS_CK_B },
+        { "write",    setup_file, op_write,    FILSYS_CK_B },
+        { "truncate", setup_file, op_truncate, FILSYS_CK_B },
+        { "unlink",   setup_file, op_unlink,   FILSYS_CK_B },
+        { "rmdir",    setup_dir,  op_rmdir,    FILSYS_CK_B },
+        { "link",     setup_file, op_link,     FILSYS_CK_C },
+        { "symlink",  setup_none, op_symlink,  FILSYS_CK_B },
+        { "rename",   setup_file, op_rename,   FILSYS_CK_C },
+        { "rename_over",     setup_file2, op_rename_over,     FILSYS_CK_B },
+        { "rename_dir",      setup_dir,   op_rename_dir,      FILSYS_CK_C },
+        { "rename_dir_over", setup_dir2,  op_rename_dir_over, FILSYS_CK_B },
+        { "close_ino", setup_open_unlink, op_close_ino, FILSYS_CK_B },
     };
     for (size_t i = 0; ; i++) {
         struct fmt f;
@@ -1068,6 +1095,7 @@ static void property_sequences(void) {
             g_model[j] = ~0ULL;
         g_prng = 0x9e3779b97f4a7c15ULL;
         int first_bad_step = -1;
+        filsys_fail_class_t worst = FILSYS_CK_A;
 
         for (int step = 0; step < PROP_STEPS; step++) {
             int slot = (int)(prng_next() % NMODEL);
@@ -1121,14 +1149,19 @@ static void property_sequences(void) {
             /* Invariant after every step: the integrity walk must find no
              * aliasing (dup==0), no missing block, and every inode's link count
              * equal to its directory reference count.  Checking here attributes
-             * a defect to `step` instead of burying it under 127 more ops. */
+             * a defect to `step` instead of burying it under 127 more ops, and
+             * records the worst failure class seen rather than a bare boolean. */
             filsys_check_t rep;
-            if (filsys_invariants(fs, &rep) != 0 && first_bad_step < 0)
+            filsys_invariants(fs, &rep);
+            filsys_fail_class_t cls = filsys_classify(&rep);
+            if (cls > worst)
+                worst = cls;
+            if (cls != FILSYS_CK_A && first_bad_step < 0)
                 first_bad_step = step;
         }
         filsys_close(fs);   /* flush the superblock, then check */
 
-        int clean = first_bad_step < 0;
+        int clean = worst == FILSYS_CK_A;
         /* every surviving file must read back at the modelled size */
         int sizes_ok = 1;
         filsys_t *r;
@@ -1146,7 +1179,8 @@ static void property_sequences(void) {
         } else
             sizes_ok = 0;
 
-        snprintf(what, sizeof what, "%s property-sequences", f.name);
+        snprintf(what, sizeof what, "%s property-sequences (worst class %c)",
+                 f.name, "ACBD"[worst]);
         ok(what, clean && sizes_ok);
         unlink(img);
     }

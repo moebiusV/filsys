@@ -218,6 +218,7 @@ int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
             if (filsys_in_allocated(state[ino]) && !fs_is_dir(fmt, &ip) &&
                 cnt == 0 && ino != fmt->rootino && ino != fmt->badino) {
                 printf("%u entries=0 link=%d (unreferenced)\n", ino, ip.nlink);
+                rep->orphaned++;
                 rep->errors++;
                 continue;
             }

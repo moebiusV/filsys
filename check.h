@@ -19,8 +19,34 @@ typedef struct {
     uint32_t dup_blocks;     /* blocks referenced twice, or used + free */
     uint32_t inodes;         /* total inode slots */
     uint32_t used_inodes;    /* inodes with a non-zero mode */
+    uint32_t orphaned;       /* allocated non-directory inodes with no dir entry */
     uint32_t errors;         /* number of integrity problems found */
 } filsys_check_t;
+
+/* The failure class of a check report, from cleanest to most severe.  The
+ * integrity contract is "never D": a block claimed twice (aliasing).  B is a
+ * leak (a missing block, or an allocated-but-unreferenced inode -- the state
+ * hard_remove's deferred free leaves on purpose, so it is a leak class, not an
+ * error class); C is a recoverable inconsistency (link counts, superblock
+ * totals); A is clean. */
+typedef enum {
+    FILSYS_CK_A = 0,   /* clean */
+    FILSYS_CK_C,       /* recoverable inconsistency */
+    FILSYS_CK_B,       /* recoverable leak (missing block / orphaned inode) */
+    FILSYS_CK_D,       /* corruption: a block claimed twice (aliasing) */
+} filsys_fail_class_t;
+
+/* Classify a check report by its worst finding.  The severity order (A < C < B
+ * < D) matches the enum, so "class > whitelist" reads as "worse than allowed". */
+static inline filsys_fail_class_t filsys_classify(const filsys_check_t *rep) {
+    if (rep->dup_blocks > 0)
+        return FILSYS_CK_D;
+    if (rep->missing_blocks > 0 || rep->orphaned > 0)
+        return FILSYS_CK_B;
+    if (rep->errors > 0)
+        return FILSYS_CK_C;
+    return FILSYS_CK_A;
+}
 
 /* The allocator vtable: the free-list cache (V6/V7/BSD211) and V1's dual
  * bitmap are two implementations.  `fs` is the backend state (filsys_edition_t
