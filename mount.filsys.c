@@ -58,7 +58,7 @@ static void usage(const char *p) {
 }
 
 int main(int argc, char *argv[]) {
-    int ver = -1, readonly = 0, foreground = 0, debug = 0, check = 0, force = 0;
+    int ver = FILSYS_UNIX, readonly = 0, foreground = 0, debug = 0, check = 0, force = 0;
     int no_lock = 0;
     uint64_t offset = 0;
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
@@ -135,19 +135,45 @@ int main(int argc, char *argv[]) {
         default: usage(argv[0]); return 2;
         }
     }
-    if (ver < 0) {
-        fprintf(stderr, "%s: no filesystem version given; use -v <edition>\n", argv[0]);
-        usage(argv[0]);
-        return 2;
-    }
     if (check && (argc - optind != 1)) { fprintf(stderr, "usage: %s -c <image>\n", argv[0]); return 2; }
     if (!check && (argc - optind != 2)) { usage(argv[0]); return 2; }
     const char *image = argv[optind];
     const char *mountpoint = check ? NULL : argv[optind + 1];
 
+    /* Autodetect: `-v unix` (or an omitted -v) and `-v v10` resolve the edition
+     * and geometry by probing; an explicit `-o` override still wins. */
+    int det_ver = ver;
+    if (ver == FILSYS_UNIX || ver == FILSYS_V10) {
+        int dfd = open(image, O_RDONLY);
+        if (dfd < 0) {
+            fprintf(stderr, "%s: %s: %s\n", argv[0], image, strerror(errno));
+            return 1;
+        }
+        uint64_t sz = 0;
+        if (filsys_dev_size(dfd, &sz) != 0) {
+            fprintf(stderr, "%s: cannot size %s\n", argv[0], image);
+            close(dfd);
+            return 1;
+        }
+        filsys_detect_t det;
+        const char *why = NULL;
+        int drc = filsys_detect(&det, dfd, offset, sz, ver, &why);
+        close(dfd);
+        if (drc != 0) {
+            fprintf(stderr, "%s: cannot determine filesystem edition for %s: %s\n",
+                    argv[0], image, why ? why : "no match");
+            return 1;
+        }
+        det_ver = det.edition;
+        if (det.blocksize && !geom.blocksize)   geom.blocksize = det.blocksize;
+        if (det.freemap >= 0 && geom.freemap < 0) geom.freemap = det.freemap;
+        if (det.byteorder && !geom.byteorder)   geom.byteorder = strdup(det.byteorder);
+        if (det.packing && !packing)            packing = strdup(det.packing);
+    }
+
     filsys_t *k = NULL;
     const char *errmsg = NULL;
-    int rc = filsys_open_arch(&k, ver, image, readonly || check, offset,
+    int rc = filsys_open_arch(&k, det_ver, image, readonly || check, offset,
                               uid >= 0 ? (uid_t)uid : getuid(),
                               gid >= 0 ? (gid_t)gid : getgid(), packing, arch,
                               force, &geom, no_lock, &errmsg);

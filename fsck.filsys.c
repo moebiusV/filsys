@@ -43,6 +43,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 
 #include "filsys.h"
@@ -97,7 +98,7 @@ int main(int argc, char **argv)
 {
     const char *path;
     uint64_t offblock = 0;
-    int edition = -1;   /* no default: the version must be named explicitly */
+    int edition = FILSYS_UNIX;   /* default: autodetect (-v unix); -v names one */
     int salvage = 0, resolve = 0, ncheck = 0, clri = 0, nochange = 0;
     int preen = 0, force = 0, yes = 0, ask = 0, force_arch = 0;
     uint32_t ino = 0;
@@ -173,9 +174,36 @@ int main(int argc, char **argv)
     }
     path = argv[optind];
 
-    if (edition < 0) {
-        fprintf(stderr, "fsck.filsys: no filesystem version given; use -v <edition>\n");
-        return 2;
+    /* Autodetect: `-v unix` (or an omitted -v) and `-v v10` probe at byte
+     * offblock * 512 (fsck's -o is a block number; 512 is the scanner's unit). */
+    filsys_geom_t det_geom = {0, -1, NULL};
+    int have_det_geom = 0;
+    if (edition == FILSYS_UNIX || edition == FILSYS_V10) {
+        int dfd = open(path, O_RDONLY);
+        if (dfd < 0) {
+            fprintf(stderr, "fsck.filsys: %s: %s\n", path, strerror(errno));
+            return 1;
+        }
+        uint64_t sz = 0;
+        if (filsys_dev_size(dfd, &sz) != 0) {
+            fprintf(stderr, "fsck.filsys: cannot size %s\n", path);
+            close(dfd);
+            return 1;
+        }
+        filsys_detect_t det;
+        const char *why = NULL;
+        int drc = filsys_detect(&det, dfd, offblock * 512, sz, edition, &why);
+        close(dfd);
+        if (drc != 0) {
+            fprintf(stderr, "fsck.filsys: cannot determine filesystem edition for %s: %s\n",
+                    path, why ? why : "no match");
+            return 1;
+        }
+        edition = det.edition;
+        det_geom.blocksize = det.blocksize;
+        det_geom.freemap = det.freemap;
+        det_geom.byteorder = det.byteorder;
+        have_det_geom = (edition == FILSYS_V8 || edition == FILSYS_V9 || edition == FILSYS_V10);
     }
 
     /* -s (salvage), -r (resolve dups), -N (ncheck) and -C (clri) all work on
@@ -287,6 +315,11 @@ int main(int argc, char **argv)
             return 2;
         }
         if (filsys_apply_geom(&fs, edition, &geom, &errmsg)) {
+            fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
+            return 2;
+        }
+    } else if (have_det_geom) {
+        if (filsys_apply_geom(&fs, edition, &det_geom, &errmsg)) {
             fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
             return 2;
         }

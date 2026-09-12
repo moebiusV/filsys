@@ -109,8 +109,16 @@ supersedes.
 .SH OPTIONS
 .TP
 .BI \-v " edition"
-Filesystem edition: one of pdp7, v1, v2, v3, v4, v5, v6, v7, vax32, coherent,
-xenix, bsd29, bsd211, sysiii, sysvr2, or sysvr4.  Required (there is no default).
+Filesystem edition: one of pdp7, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10,
+vax32, coherent, xenix, bsd29, bsd211, sysiii, sysvr2, or sysvr4; or
+.B unix
+to autodetect.  Optional: omitting
+.B \-v
+is the same as
+.BR "\-v unix" .
+.BR "\-v v10"
+probes only V10's three on-disk forms (1 KB free list, 4 KB bitmap, 4 KB
+bigmap) and errors if none matches.
 .TP
 .BI \-o " offset= N [, version= N ][, uid= N , gid= N ,...]"
 Comma-separated options.  The filsys-specific

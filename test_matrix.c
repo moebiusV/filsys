@@ -77,6 +77,32 @@ static int fsck_recover_clean(const char *name, const char *img) {
     return fsck_is_clean(name, img);
 }
 
+/* Run fsck -f and extract its free-block and free-inode counts (fsck computes
+ * both by walking the free list and i-list, independent of any superblock
+ * totals).  Returns 0 and sets *fblocks and *finodes, or -1 if it cannot parse the
+ * summary line. */
+static int fsck_free_counts(const char *name, const char *img,
+                            uint64_t *fblocks, uint64_t *finodes) {
+    char cmd[512], out[8192] = "";
+    snprintf(cmd, sizeof cmd, "./fsck.filsys -f -v %s %s 2>&1", name, img);
+    FILE *p = popen(cmd, "r");
+    if (!p)
+        return -1;
+    (void)!fread(out, 1, sizeof out - 1, p);
+    pclose(p);
+
+    char *fb = strstr(out, "free blocks=");
+    unsigned long fbv = 0, used = 0, total = 0;
+    if (!fb || sscanf(fb, "free blocks=%lu", &fbv) != 1)
+        return -1;
+    char *ino = strstr(out, "inodes=");
+    if (!ino || sscanf(ino, "inodes=%lu/%lu used", &used, &total) != 2)
+        return -1;
+    *fblocks = fbv;
+    *finodes = total - used;
+    return 0;
+}
+
 /* One row per format.  Everything here is derived from the shared edition table
  * (filsys_format_nth) and the descriptor: the mkfs block count (0 = the fixed
  * PDP-7 size), the direct-block capacity (ndaddr * bsize -- the byte count at
@@ -1470,6 +1496,75 @@ static void bitmap_roundtrip(void) {
     }
 }
 
+/* The statfs-vs-fsck invariant: for every mkfs-able edition, the free-block and
+ * free-inode counts statfs reports must equal what fsck -f computes by walking
+ * the free list and i-list.  This catches a format whose on-disk totals are
+ * unreadable or unmaintained (e.g. 32V/System III's pack4 superblock), where
+ * statfs would silently report zero or a stale count. */
+static void statfs_fsck_agreement(void) {
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        int frc = fmt_at(i, &f);
+        if (!frc)
+            break;
+        if (frc < 0)
+            continue;
+
+        char img[64], cmd[512], what[128];
+        snprintf(img, sizeof img, "test_matrix_%s_statfs.img", f.name);
+        unlink(img);
+        if (f.edition == FILSYS_PDP7)
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s >/dev/null 2>&1", f.name, img);
+        else
+            snprintf(cmd, sizeof cmd, "./mkfs.filsys -v %s %s 1000 >/dev/null 2>&1", f.name, img);
+        if (system(cmd) != 0) {
+            snprintf(what, sizeof what, "%s statfs mkfs", f.name);
+            ok(what, 0);
+            unlink(img);
+            continue;
+        }
+
+        filsys_t *fs = NULL;
+        int rc = filsys_open(&fs, f.edition, img, 1, 0, getuid(), getgid(), NULL);
+        if (rc) {
+            snprintf(what, sizeof what, "%s statfs open", f.name);
+            ok(what, 0);
+            unlink(img);
+            continue;
+        }
+        struct statvfs st;
+        rc = filsys_statfs(fs, &st);
+        filsys_close(fs);
+        if (rc) {
+            snprintf(what, sizeof what, "%s statfs call", f.name);
+            ok(what, 0);
+            unlink(img);
+            continue;
+        }
+
+        uint64_t fb = 0, fi = 0;
+        if (fsck_free_counts(f.name, img, &fb, &fi) != 0) {
+            snprintf(what, sizeof what, "%s fsck summary parse", f.name);
+            ok(what, 0);
+            unlink(img);
+            continue;
+        }
+        snprintf(what, sizeof what, "%s statfs free blocks == fsck", f.name);
+        ok(what, (uint64_t)st.f_bfree == fb);
+        /* V1 and PDP-7 reserve inode numbers outside their allocatable range (V1's
+         * inode map starts at inode 41; PDP-7 reserves the low inodes), so fsck's
+         * all-inodes walk counts those reserved slots as free while statfs reports
+         * only the allocatable ones.  The free-block invariant is the universal
+         * one; the free-inode invariant applies to the editions whose inode space
+         * is a single contiguous allocatable range. */
+        if (f.edition != FILSYS_V1 && f.edition != FILSYS_PDP7) {
+            snprintf(what, sizeof what, "%s statfs free inodes == fsck", f.name);
+            ok(what, (uint64_t)st.f_ffree == fi);
+        }
+        unlink(img);
+    }
+}
+
 int main(void) {
     /* The slow soak (fault injection x editions, exhaustive crash-prefix
      * enumeration, property-based op sequences) runs only when
@@ -1499,6 +1594,7 @@ int main(void) {
         }
         mkfs_validation();
         mkfs_cleanliness();
+        statfs_fsck_agreement();
         badino_consistency();
         namelength();
         v6_large_file();

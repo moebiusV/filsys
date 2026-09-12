@@ -115,9 +115,17 @@ Release 2/3 and Release 4 (the one 4-byte-aligned s5fs layout, plus a magic and
 a block-size field; R4 additionally stores an s_state clean/dirty word, whose
 byte order is set with
 .BR \-a ).
-There is no default edition;
 .B \-v
-is required.  A Research Unix
+is optional: omitting it is the same as
+.BR "\-v unix" ,
+which autodetects the edition; a bare
+.B unix
+(alias
+.BR auto ,
+.BR any )
+selects autodetection explicitly, and
+.B v10
+probes only V10's three on-disk forms.  A Research Unix
 disk image holds one or more filesystems
 .RI ( partitions ),
 selected by a partition table compiled into the kernel, not stored on the

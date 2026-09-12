@@ -126,6 +126,15 @@ struct filsys_ops {
     const struct filsys_inode_ops *inode;  /* 32-byte | 64-byte | 64+32bit-addr */
     uint32_t (*blocksize)(const filsys_edition_t *fs);  /* logical block size in bytes */
 
+    /* Read-only detection: validate the superblock whose block 0 sits at byte
+     * `base` (block size `bsize`) as THIS edition, reading only through `io`.
+     * `fmt` is the edition descriptor (its pack4/magic/bsize/bo/sb_decode fields
+     * select the layout, so one probe per backend serves all its editions).
+     * Returns 1 (validated, res->class set), 2 (near-miss, res->why set), or 0
+     * (not this format). */
+    int (*probe)(filsys_edition_t *fmt, const filsys_io_t *io, uint64_t base,
+                 int bsize, uint64_t nbytes, filsys_probe_t *res);
+
     /* lifecycle */
     int  (*open)(filsys_edition_t *fs, const char *path, int readonly,
                  const filsys_edition_t *proto, uint64_t offset);

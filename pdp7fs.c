@@ -787,11 +787,89 @@ static const struct filsys_inode_ops inode_pdp7 = {
     .allocated_blocks = p7fs_allocated_blocks,
 };
 
+/* PDP-7 (V0) probe: word-addressed, no magic.  The free-list head is block 0
+ * word 0; validate the chain and the root "dd" directory.  The container codec
+ * is not known a priori, so try all three at both surfaces (0 and surface 1). */
+static int p7_probe_read(filsys_edition_t *fmt, const filsys_io_t *io,
+                         const word_codec_t *wc, uint64_t base, uint32_t bno, uint32_t *words) {
+    uint8_t raw[P7_MAXBLOCKBYTES];
+    off_t pos = (off_t)base + (off_t)bno * wc->block_bytes;
+    if (io->read(fmt, raw, wc->block_bytes, pos) != 0)
+        return -1;
+    for (uint32_t i = 0; i < P7_WSIZE; i++)
+        words[i] = wc->get(raw, i);
+    return 0;
+}
+
+static int p7_probe_surface(filsys_edition_t *fmt, const filsys_io_t *io,
+                            const word_codec_t *wc, uint64_t base,
+                            uint32_t *segs, const char **why) {
+    uint32_t words[P7_WSIZE];
+    if (p7_probe_read(fmt, io, wc, base, 0, words) != 0)
+        return 0;
+    uint32_t head = words[0];
+    if (head == 0)
+        return 0;
+    uint8_t seen[P7_NBLOCKS / 8] = {0};
+    uint32_t hops = 0, s = 0;
+    while (head != 0) {
+        if (head < P7_DATASTART || head >= P7_KDATA) { *why = "chain leaves fs"; return 0; }
+        if (++hops > P7_NBLOCKS) { *why = "chain too long"; return 0; }
+        if (seen[head >> 3] & (1u << (head & 7))) { *why = "chain cycles"; return 0; }
+        seen[head >> 3] |= (uint8_t)(1u << (head & 7));
+        if (p7_probe_read(fmt, io, wc, base, head, words) != 0) { *why = "chain read error"; return 0; }
+        for (int i = 1; i <= 9; i++) {
+            uint32_t fb = words[i];
+            if (fb != 0 && (fb < P7_DATASTART || fb >= P7_KDATA)) { *why = "chain entry out of range"; return 0; }
+        }
+        head = words[0];
+        s++;
+    }
+    if (p7_probe_read(fmt, io, wc, base, P7_FIRSTINOBLK, words) != 0)
+        return 0;
+    uint32_t flags = words[P7_INODESZ * (P7_ROOTINO % P7_INOPB)];
+    if ((flags & (P7_IUSED | P7_IDIR)) != (P7_IUSED | P7_IDIR)) { *why = "root inode is not a directory"; return 0; }
+    *segs = s;
+    return 1;
+}
+
+static int p7_probe(filsys_edition_t *fmt, const filsys_io_t *io,
+                    uint64_t base, int bsize, uint64_t nbytes, filsys_probe_t *res)
+{
+    (void)base; (void)bsize;
+    static const struct { const word_codec_t *codec; const char *name; } containers[] = {
+        { &word_rb09, "rb09" },
+        { &word_packed18, "packed18" },
+        { &word_rim, "rim" },
+    };
+    for (size_t i = 0; i < sizeof containers / sizeof containers[0]; i++) {
+        const word_codec_t *wc = containers[i].codec;
+        uint64_t surf = (uint64_t)P7_NBLOCKS * wc->block_bytes;
+        uint64_t bases[2] = { 0, surf };
+        for (int b = 0; b < 2; b++) {
+            uint64_t bb = bases[b];
+            if (nbytes < bb + (uint64_t)P7_KDATA * wc->block_bytes)
+                continue;
+            uint32_t segs = 0;
+            const char *why = NULL;
+            if (p7_probe_surface(fmt, io, wc, bb, &segs, &why) == 1) {
+                res->class = "PDP-7";
+                res->packing = containers[i].name;
+                res->segs = segs;
+                res->base = bb;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 const struct filsys_ops p7fs_ops = {
     .name        = "pdp7",
     .dir         = &dir_pdp7,
     .inode       = &inode_pdp7,
     .blocksize   = p7fs_blocksize_op,   /* 64 words x 2 chars = 128 bytes */
+    .probe       = p7_probe,
     .open        = p7fs_open,
     .close       = p7fs_close,
     .sync        = p7fs_sync,

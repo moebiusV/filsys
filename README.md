@@ -6,7 +6,10 @@ filesystem on Linux, macOS, the BSDs, or illumos, so files can be copied
 on and off the disk for use with a simulator (SIMH `pdp11`/`vax780`).  Linux's
 own `sysv`/`v7` kernel driver was removed in 6.15 (2025) and never handled the
 PDP-7 through V6, 32V, or the V8 family to begin with, so this is now the only
-way to mount these filesystems — see "Linux kernel support" below.
+way to mount these filesystems — see "Linux kernel support" below.  filsys builds
+and runs on modern 32- and 64-bit hosts, big- and little-endian alike, and reads
+filesystems that are 16-, 18-, 32- and 64-bit (word- and block-addressed) in
+big-, little- and middle-endian byte order.
 
 One binary, every edition we care about: the on-disk format is understood
 (middle-endian, little-endian, and big-endian byte orders, and the kernel's own
@@ -137,8 +140,13 @@ mount.filsys -v <edition> -c <image>   # integrity check (no mount)
 are one on-disk format, and `v4` and `v5` are byte-identical to `v6`, so the
 seven pre-V7 editions collapse onto two code paths.  `usgpg3` (USG Program
 Generic Issue 3) resolves to `v6`, and `sysvr1` (System V Release 1) to `v7`,
-both verified against real media.  The edition is **required**: there is no
-default, and a wrong `-v` is an error, not a fallback.
+both verified against real media.  `-v` is **optional**: omitting it is the same
+as `-v unix`, which autodetects the edition (and, for the V8 family, the block
+size and free-space form) by probing the superblock.  `-v v10` narrows that to
+the three on-disk forms V10 can represent — the 1 KB free list, the 4 KB
+in-superblock bitmap, and the 4 KB out-of-superblock ("bigmap") bitmap — and
+errors if none matches; a wrong `-v` for a named edition is likewise an error,
+not a fallback.  `mkfs.filsys` has nothing to detect and still requires `-v`.
 
 | option | meaning                          |
 |--------|----------------------------------|
@@ -161,6 +169,7 @@ default, and a wrong `-v` is an error, not a fallback.
 | `-v v8` | Eighth Edition (V7 inode, rearranged superblock; 1 KB free list or 4 KB bitmap) |
 | `-v v9` | Ninth Edition (Sun-3 port: 8 KB blocks, big-endian; free list or bitmap) |
 | `-v v10`| Tenth Edition (V8 + the out-of-superblock bitmap at 4 KB) |
+| `-v unix`| autodetect any edition (the default when `-v` is omitted) |
 | `-o offset=N` | mount a filesystem at byte offset N (a partition) |
 | `-o arch=NAME` | override the byte order (System V on a non-default CPU) |
 | `-o blocksize=N` | V8-family block size (1024/4096; 8192 for v9) |
