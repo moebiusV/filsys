@@ -407,7 +407,8 @@ and V8-family codecs).
 | V9 | 8192 | 64 B (128/block) | 13 × 24-bit (BE) | free list or bitmap | 32-bit | 2 | none | 16 B |
 | V10 | 1024 / 4096 | 64 B (16/64 per block) | 13 × 24-bit (LE) | free list or bitmap (or tail-blocks) | 32-bit | 2 | none | 16 B |
 
-One engine covers the whole range: a `filsys_edition_t` descriptor plus a
+One engine covers the whole range: a `filsys_desc_t` descriptor (plus its
+per-mount `filsys_edition_t` state) and a
 `filsys_ops` vtable (`v7fs.c` / `filsys.c` / `filsys_format.c` / `check.c`).
 What survives per edition is only what genuinely differs on disk — the inode
 codec, the directory-entry codec, the block-mapping topology and the allocator —
@@ -749,9 +750,11 @@ against corrupting an image the emulator has open.
 
 ## Layout
 
-- `v7fs.h` / `v7fs.c`: the shared engine — `filsys_edition_t`, the free-list
-  and bitmap allocators, and the V6/V7/32V/Coherent/Xenix/2.9BSD/2.11BSD and
-  V8/V9/V10 codecs (the 2.11BSD variable-length dirent lives here too).
+- `v7fs.h` / `v7fs.c`: the shared engine — the `filsys_desc_t` descriptor and
+  its per-mount `filsys_edition_t` state, the V6/V7/32V/Coherent/Xenix/2.9BSD/
+  2.11BSD and V8/V9/V10 codecs, and the free-list/bitmap allocators
+  (`alloc_freelist.c`/`alloc_v8bitmap.c`) and directory codecs (`dir_fixed.c`/
+  `dir_bsd211.c`).
 - `v1fs.h` / `v1fs.c`: V1/V2/V3 — the 32-byte inode, 10-byte dirent and bitmap
   allocator (its file/dir/lookup layer is shared).
 - `pdp7fs.h` / `pdp7fs.c`: PDP-7 — the word container codec (`read_words` +
@@ -1069,7 +1072,7 @@ possible and freely implementable.
 first: a FUSE driver for V6/V7/2.9BSD/2.11BSD that incorporates the *genuine*
 kernel source, lightly modernized to run in userspace, rather than
 reimplementing the formats.  filsys is a clean-room reimplementation with a very
-different architecture — one `filsys_edition_t` descriptor and a single
+different architecture — one `filsys_desc_t` descriptor and a single
 `filsys_ops` vtable across fifteen editions, plus an in-process `fsck` — and
 wider coverage (PDP-7 through V10, 32V, Coherent, Xenix, System III/V), where
 retro-fuse ships four separate per-edition C APIs and no in-process checker.

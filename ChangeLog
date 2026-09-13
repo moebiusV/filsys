@@ -1,3 +1,13 @@
+2026-09-13  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: split filsys_edition_t into a static descriptor + runtime state.
+	* v7fs: split the file along its allocator and directory seams.
+	* bmap: unify the four per-backend bmaps into filsys_bmap.
+	* v7fs: route bmap allocation through the alloc vtable (drop balloc dispatch).
+	* ci: run the crash + property soak under ASan/UBSan, with the longjmp caveat.
+	* NEWS, README.md, packaging/*: re-cut 2.2.0 at this commit and pin the
+	new tarball checksums.
+
 2026-09-12  David Walther  <david@clearbrookdistillery.com>
 
 	* NEWS, configure.ac, configure, filsys.5, mount.filsys.1,
