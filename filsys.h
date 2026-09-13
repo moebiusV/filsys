@@ -216,7 +216,7 @@ ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size);
 /* ---- mutation (uid/gid are used when a new inode is created) ------------- */
 
 int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid,
-                  gid_t gid);
+                  gid_t gid, uint32_t *ino);
 int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid,
                  gid_t gid);
 int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,

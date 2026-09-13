@@ -536,8 +536,12 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     st->st_blksize = blksize;
     /* POSIX: st_blocks counts 512-byte units, not filesystem blocks, and only
      * blocks actually allocated -- a hole (zero block address) is not counted,
-     * so a sparse file reports less than st_size implies. */
-    st->st_blocks  = (fs->ops->inode->allocated_blocks(fs->fs, ip) * blksize + 511) / 512;
+     * so a sparse file reports less than st_size implies.  An unreadable
+     * indirect block makes the total unknowable; report zero rather than a
+     * guess, since fill_stat has no error channel. */
+    uint64_t blocks = 0;
+    if (fs->ops->inode->allocated_blocks(fs->fs, ip, &blocks) == 0)
+        st->st_blocks = (blocks * blksize + 511) / 512;
 }
 
 int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents, size_t *count) {
@@ -717,7 +721,8 @@ static int remove_name(filsys_t *fs, filsys_inode_t *ddir, const char *name,
  * be made safe, leave a leak (B) or an inconsistency (C) -- fsck repairs both
  * -- rather than free state that is still reachable. */
 
-int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
+int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid,
+                  uint32_t *ino) {
     int rc = uidgid_fit(uid, gid);
     if (rc) return rc;
     char name[64];
@@ -737,8 +742,11 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
          * it allocated -- a recoverable leak (B), not live state returned to the
          * allocator (D). */
         (void)inode_destroy(fs, nino, &nip);
+        return rc;
     }
-    return rc;
+    if (ino)
+        *ino = nino;
+    return 0;
 }
 
 int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
@@ -822,7 +830,7 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     if (!ischr && !isblk && !isreg)
         return -EPERM;
     if (isreg)
-        return filsys_create(fs, path, mode & 07777, uid, gid);
+        return filsys_create(fs, path, mode & 07777, uid, gid, NULL);
     /* V7 device numbers are 8-bit major + 8-bit minor packed into one word.
      * Reject rather than mask: a modern major like 300 would otherwise
      * silently become 44. */

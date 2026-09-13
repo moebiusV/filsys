@@ -1,4 +1,4 @@
-/* filsys 1.8.0 - 2026-09-06 - Copyright (C) 2026 David Walther */
+/* Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* pdp7fs.c - PDP-7 Unix filesystem, on-disk access layer.
  *
@@ -508,7 +508,8 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
     return 0;
 }
 
-static uint64_t p7fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip) {
+static int p7fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip,
+                                 uint64_t *out) {
     p7fs_t *f = fs;
     uint64_t n = 0;
     if (ip->mode & P7_ILARG) {
@@ -518,7 +519,7 @@ static uint64_t p7fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t
                 continue;
             uint32_t words[P7_WSIZE];
             if (read_words(f, blk, words))
-                continue;
+                return -EIO;
             n++;   /* the indirect block itself */
             for (uint32_t j = 0; j < P7_NINDIR; j++)
                 if (words[j]) n++;
@@ -527,7 +528,8 @@ static uint64_t p7fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t
         for (int i = 0; i < P7_NIADDR; i++)
             if (ip->addr[i]) n++;
     }
-    return n;
+    *out = n;
+    return 0;
 }
 
 /* ---- file data ----------------------------------------------------------

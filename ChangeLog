@@ -1,3 +1,639 @@
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: add a central range primitive for block I/O
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* Release 2.1.0
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* docs: correct fsck provenance and System III findings; complete the tables
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* test: keep the ownership table live across the fault/crash/property drivers
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* instrument: full assign coverage and inode-side ownership release
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* packaging: pin the 2.0.0 tarball checksums after the harness and rename fixes
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* build: build the check programs with `all`
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* test: check each mutator's success path; classify property runs on a closed image
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* rename: drop the replaced directory's ".." from its parent's link count
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* Release 2.0.0
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* test: find the System III oracle fixtures in VPATH builds
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* casts: drop redundant and const-discarding casts
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* alloc: type the allocator vtable as filsys_edition_t, not void *
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: the smaller true findings -- open table, size audit, overflow, readdir
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: test-build ownership table + mutation trace (instrumentation)
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: fold four named mutation primitives out of the ops
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: a rollback policy -- check or classify every undo call site
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* test: rename's fault prefixes may orphan the source (class B, not C)
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* check: classify findings (A/C/B/D) and bound crash/fault prefixes by class
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* Phase 0 (hygiene): silence a -Wmaybe-uninitialized false positive; -Werror in Linux CI
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* test: regression-check the System III oracle fixtures in test_matrix
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* dist: ship the System III (PDP-11) oracle root fixtures
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* fsck: match System III's checks and fix the s_dinfo superblock layout
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* sysiii: express the PDP-11 packed form as -a pdp11, not a new edition
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: wire the simh oracle test into the linux workflow
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* Add a libFuzzer harness and sanitizer/slow-soak CI coverage
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* Add a library-level invariant cross-check, called after every property step
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* Fold mkfs and the FUSE trampolines into the library
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* fold the findfs probes into the edition vtable; autodetect -v unix / -v v10
+
+2026-09-10  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: fix the macOS "PASS but exit 1" flake
+
+2026-09-10  David Walther  <david@clearbrookdistillery.com>
+
+	* docs: complete the port list and add the word-size/endianness matrix
+
+2026-09-10  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: build test_matrix in the endianness step (check_PROGRAM, not 'all')
+
+2026-09-10  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: fix the endianness smoke test's pkg-config handling
+
+2026-09-10  David Walther  <david@clearbrookdistillery.com>
+
+	* fsck: point a missing-free-list result at dump/restor and -s
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* fsck: System III is 32V-shaped, not V7-shaped
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci+ports: drop Solaris, add GhostBSD port, fix cross-compile FUSE detection
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci+lock: run endianness before slow soak; fix illumos lock
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: add armhf (32-bit little-endian) to the endianness smoke test
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: add m68k (32-bit big-endian) to the qemu-user smoke test
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* docs: restructure retro-fuse comparison into Wave 1 (graded) + Wave 2 (pending)
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: add GhostBSD job and a big-endian s390x smoke test
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: add OpenIndiana (illumos) and Solaris 11.4 jobs
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* docs: record retro-fuse comparison (modern API vs genuine V6/V7 code)
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* conformance: add an ftruncate-after-unlink step (Q7) to the probe
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* docs: record the six-BSD conformance results and the librefuse truncate nuance
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* conformance: key the ftruncate probe on truncate-fi, not FUSE3-vs-FUSE2
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: fix the three failing BSD VM prepare steps
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci/conformance: fix OpenBSD probe include path; record first probe results
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Address review: probe skip/fail, slow soak in CI, badino test, ESTALE + hard_remove docs
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: run the handle-fidelity probe on the six roadmap BSDs
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* gitignore: conformance/log.txt
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* probe: FUSE handle-fidelity conformance tool (Phase 1 of the port plan)
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* fsck: classify orphan reports with is_regular(), same as preen
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Packaging: pin 1.9.4 tarball checksums
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Release 1.9.4: version bump
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* test: crash-prefix the rename family; document rename's dir-fixup unwind
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* test: FUSE-boundary ftruncate-on-unlinked-open-fd regression
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys_close: never report success if a deferred free or the flush failed
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Packaging: pin 1.9.3 tarball checksums
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Release 1.9.3: version bump
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys.c: document that OpenBSD release fires at last close (finding A)
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* test.sh: portability for the BSD image test (truncate, umount)
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Remove accidentally-committed test.sh.log/test.sh.trs
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: print test.sh.log even when the check fails
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: collapse each BSD job to one configure + one check
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: don't let `exit $rc` cut off the OpenBSD probe; verify mount
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: run the finding-A probe before exiting the OpenBSD job
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* test: probe FUSE release-at-reclaim behaviour on OpenBSD (finding A)
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: fix hard_remove lifecycle bugs and add coverage
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Packaging: pin 1.9.2 tarball checksums
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Release 1.9.2: housekeeping version bump
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* packaging: correct stale coverage in descriptions; note packaging/ in README
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Packaging: pin 1.9.1 tarball checksums
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Release 1.9.1: housekeeping version bump
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* test: build mkfs/fsck/findfs before test_matrix
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys.c: fix stale "v6fs/v7fs backends" header comment
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Packaging: pin 1.9.0 tarball checksums
+
+2026-09-09  David Walther  <david@clearbrookdistillery.com>
+
+	* Release 1.9.0: version bump, NEWS, packaging, and a fast `make check` gate
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* fuse2: don't pass hard_remove; OpenBSD already defaults to it
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* test: cover symlink crash/fault regimes, readlink truncation, open-unlink-read
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* fuse: hard_remove + open-count so unlink-while-open keeps the inode
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* fsck: reconnect orphaned symlinks (is_regular misses IFLNK)
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: add Arch Linux to the distro matrix
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* test: fork for the RW-open lock check; POSIX locks are per-process
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* fuse: set fi->fh in create(), so the write after open(O_CREAT) lands
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* portability: makedev for st_rdev, and a POSIX-lock fallback for BSD/macOS
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* open: take an advisory OFD byte-range lock over the image's extent
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* fuse: key open descriptors by inode, not path
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* api: ssize_t read/write and reject oversized uid/gid
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* close: return the final-flush result instead of discarding it
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* symlinks: implement readlink/symlink for the IFLNK editions
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* stat: report st_blocks as allocated 512-byte units, not size-derived fs blocks
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* build: link mkfs/fsck against libfilsys.a like findfs and mount
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys_ops: fold check/is_clean/max_file into descriptor-driven shared ops
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: matrix the Linux job over the five major distro families
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys_ops: split the dir and inode format axes into sub-vtables
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* test: property-based op sequences; scope crash-prefix to recoverable ops
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: add a native Linux job
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: one pass over superblock offsets, filter before probing
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* test: exhaustive crash-prefix enumeration (soft updates)
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys_sync: fsync the backing fd; document the durability boundary
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* fetch: pin the static libfuse3.a, not the dangling .so symlink
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: fix uninitialised isize/fsize on the v8 near-miss path
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* test: exercise the V7 triple-indirect path
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* README: block-mapping comparison — filsys vs Linux vs plan9port
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* SysV R4 vs R2/R3: discriminate on s_state, and clarify Xenix in the README
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: report the equivalence class, act on a canonical -v token
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* v8 bitmap: enforce the 30752-block in-superblock capacity
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* build: make mount.filsys conditional so `make check` is FUSE-free
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* README: V8/V9/V10, fix the v6fs.c references, and fold in review fixes
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: V8/V9/V10 detection by structural traversal + silent default
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* V8/V9/V10: bitmap free-space allocator + mkfs/fsck geometry
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* V8/V9/V10: mkfs + fsck for the free-list forms
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* V8 free-list: walk_free reads df_nfree as 4 bytes too
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* V8-family free-list: df_nfree is 4 bytes in chain blocks
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* README: macOS is built + core tested in CI (mount is local-only)
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* macOS: fuseops_macos.c adapter for macFUSE's darwin attr API
+
+2026-09-08  David Walther  <david@clearbrookdistillery.com>
+
+	* V8/V9/V10: -o geometry overrides (blocksize/freemap/bitmap/byteorder)
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* V9/V10 mode bits: ICONC/ICCTYP concurrency, not ISVTX
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* V8/V9/V10: edition selectors, rearranged superblock codec, descriptors
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* ci(macos): locate FUSE-T header/lib and point configure at them
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* Drop NetBSD 9 support (no CI image exists)
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* ci(macos): use FUSE-T (fuse2), not macFUSE fuse3
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* CI: add macOS and NetBSD 9 runners; fuse2 probe for NetBSD 9
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* README: Windows is WSL2 (works), not unsupported; note macOS runner
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* README: mark FreeBSD, NetBSD, OpenBSD as built + tested
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* configure: detect NetBSD librefuse via the header's fuse_main, not __fuse_main
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: dump librefuse exports to find NetBSD's FUSE entry point
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: robust pkg install, drop fragile prepare diagnostics
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* NetBSD: link librefuse against libpuffs
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* test.sh: POSIX sh, not bash; probe NetBSD's libpuffs; dump CI diagnostics
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: fetch the image with curl; probe librefuse as -lfuse on NetBSD
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* fix BSD portability: sys/sysmacros.h guard, MAKE=gmake, librefuse probe
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* ci: build and test on real FreeBSD/OpenBSD/NetBSD kernels
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* packaging: OpenBSD/macOS support, README platform table
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* mount.filsys: honour the readdir resume offset; fs_umount() picks the tool
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* mount.filsys: FUSE-free core with FUSE3/FUSE2 adapters, --with-fuse probe
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: distinguish 2.11BSD from 2.9BSD by reading the root directory
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* gitignore: cover the test_oracle binary
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* add the SIMH V7 external-oracle test (icheck/dcheck via prebsd)
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: print validated hits before rejected near-misses
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: multi-linked directories, and cycle detection that fails closed
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* rename: defer target free to commit; fix free-list cache overflow
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys: free inodes only after the cleared inode is durable; harden rename
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* pdp7: make "-o offset=" point at the filesystem surface
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: detect V1 and PDP-7 (V0), and link the shared backend
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: cut-and-paste mount command, and a stride-safe end-of-fs skip
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: collapse blocks inside a validated fs's data area
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* findfs: walk the free-list chain, cross-check the root inode, report near-misses
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* byte-order detection: also recognise middle-endian (PDP-11) magic
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* mkfs: open block devices directly instead of O_CREAT/O_TRUNC
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* Detect System V/Xenix byte order from the superblock magic
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* mkfs.filsys: -B sets the System V block size (512/1024/2048)
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* System V: 1K/2K block support, and reject wrong-edition instead of crashing
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* Add format-equivalent aliases: usgpg3 (V6), sysvr1 (V7)
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* System V (s5fs) support, validated against AT&T source and SIMH
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* Separate arch from format: byte order via -o arch= / -a arch
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* mkfs: write System V s_magic/s_type so -v sysv creates a valid volume
+
+2026-09-07  David Walther  <david@clearbrookdistillery.com>
+
+	* Regularize option parsing; add the System III/V edition scaffold
+
 2026-09-06  David Walther  <david@clearbrookdistillery.com>
 
 	* pdp7fs.h, pdp7fs.c, byteorder.c, byteorder.h, filsys.h, filsys.c,

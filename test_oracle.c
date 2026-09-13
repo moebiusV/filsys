@@ -74,7 +74,7 @@ static int mutate(const char *img) {
     int rc = 0;
     if (filsys_mkdir(fs, "/oracle", 0755, 0, 0) ||
         filsys_mkdir(fs, "/oracle/sub", 0755, 0, 0) ||
-        filsys_create(fs, "/oracle/file", 0644, 0, 0)) {
+        filsys_create(fs, "/oracle/file", 0644, 0, 0, NULL)) {
         rc = -1; goto out;
     }
     static const char msg[] = "hello from filsys\n";
