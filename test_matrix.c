@@ -855,7 +855,7 @@ static int op_close_ino(filsys_t *fs) { return filsys_close_ino(fs, g_open_ino);
  * I/O ops than the fail index (i.e. the failure was never reached). */
 static void fault_mutator(const struct fmt *f, const mutator_t *mut,
                           fail_mode_e mode, const char *label) {
-    for (int n = 1; ; n++) {
+    for (int n = 0; ; n++) {
         char img[64], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_fault.img", f->name);
         unlink(img);
@@ -868,18 +868,32 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
         filsys_set_io(fs, &fault_io);
         mut->setup(fs);                 /* fault disabled */
 
-        g_fmode = mode;
-        g_fail_at = n;
+        /* n == 0 is the success path: no injected failure, and the result must
+         * be clean (class A).  n >= 1 injects a failure at the n-th I/O and
+         * bounds the result by the mutator's permitted class.  Without the
+         * n == 0 pass, classify_image() would only ever see images left by a
+         * *failed* operation and a success-path aliasing defect would pass. */
+        filsys_fail_class_t bound = (n == 0) ? FILSYS_CK_A : mut->max_class;
+        if (n == 0) {
+            g_fmode = FAIL_NONE;
+            g_fail_at = 0;
+        } else {
+            g_fmode = mode;
+            g_fail_at = n;
+        }
         g_fcount = 0;
-        (void)mut->op(fs);              /* fault enabled */
+        (void)mut->op(fs);
         int reached = g_fcount;         /* reads/writes the op performed */
         g_fmode = FAIL_NONE;
         filsys_close(fs);
 
         filsys_fail_class_t cls = classify_image(f->edition, img);
-        int class_ok = cls <= mut->max_class;
+        int class_ok = cls <= bound;
         int recov_ok = fsck_recover_clean(f->name, img);
-        snprintf(what, sizeof what, "%s %s fail-%s-%d", f->name, mut->name, label, n);
+        if (n == 0)
+            snprintf(what, sizeof what, "%s %s success", f->name, mut->name);
+        else
+            snprintf(what, sizeof what, "%s %s fail-%s-%d", f->name, mut->name, label, n);
         if (!class_ok)
             snprintf(what + strlen(what), sizeof what - strlen(what), " [class %c]", "ACBD"[cls]);
         if (!recov_ok)
@@ -887,7 +901,7 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
         ok(what, class_ok && recov_ok);
         unlink(img);
 
-        if (reached < n)                /* failure never reached: done */
+        if (n > 0 && reached < n)       /* failure never reached: done */
             return;
     }
 }
@@ -1004,6 +1018,14 @@ static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
     (void)mut->op(fs);
     int W = g_crash_count;
     filsys_close(fs);
+    /* This fault-disabled run is the success path and must be class A.  The
+     * k == 0..W prefixes below are crash states, which may leak within the
+     * mutator's bound; only this clean close is required to be A. */
+    filsys_fail_class_t run_cls = classify_image(f->edition, img);
+    snprintf(what, sizeof what, "%s %s success", f->name, mut->name);
+    if (run_cls != FILSYS_CK_A)
+        snprintf(what + strlen(what), sizeof what - strlen(what), " [class %c]", "ACBD"[run_cls]);
+    ok(what, run_cls == FILSYS_CK_A);
     unlink(img);
     if (W == 0)
         return;
@@ -1165,20 +1187,38 @@ static void property_sequences(void) {
                 break;
             }
             (void)rc;
-            /* Invariant after every step: the integrity walk must find no
-             * aliasing (dup==0), no missing block, and every inode's link count
-             * equal to its directory reference count.  Checking here attributes
-             * a defect to `step` instead of burying it under 127 more ops, and
-             * records the worst failure class seen rather than a bare boolean. */
+            /* Live-handle check: an attribution hint, not a verdict.  The
+             * in-core allocator state can disagree with the on-disk walk, so
+             * this only records which step first looked bad; the authoritative
+             * class comes from a freshly opened image (classify_image below). */
             filsys_check_t rep;
             filsys_invariants(fs, &rep);
             filsys_fail_class_t cls = filsys_classify(&rep);
-            if (cls > worst)
-                worst = cls;
             if (cls != FILSYS_CK_A && first_bad_step < 0)
                 first_bad_step = step;
+
+            /* Close and reopen every 32 steps: a fresh open re-reads the
+             * on-disk state, so a defect is attributed to this window and its
+             * class is folded into `worst` as we go. */
+            if ((step + 1) % 32 == 0 && step + 1 < PROP_STEPS) {
+                filsys_close(fs);
+                filsys_fail_class_t w = classify_image(f.edition, img);
+                if (w > worst)
+                    worst = w;
+                if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL) != 0) {
+                    ok("prop reopen", 0);
+                    fs = NULL;
+                    break;
+                }
+            }
         }
-        filsys_close(fs);   /* flush the superblock, then check */
+        if (fs)
+            filsys_close(fs);   /* flush the superblock, then check */
+
+        /* Authoritative verdict on the closed image, not the live handle. */
+        filsys_fail_class_t final_cls = classify_image(f.edition, img);
+        if (final_cls > worst)
+            worst = final_cls;
 
         int clean = worst == FILSYS_CK_A;
         /* every surviving file must read back at the modelled size */
@@ -1200,6 +1240,9 @@ static void property_sequences(void) {
 
         snprintf(what, sizeof what, "%s property-sequences (worst class %c)",
                  f.name, "ACBD"[worst]);
+        if (first_bad_step >= 0)
+            snprintf(what + strlen(what), sizeof what - strlen(what),
+                     " [live-check flagged step %d]", first_bad_step);
         ok(what, clean && sizes_ok);
         unlink(img);
     }
