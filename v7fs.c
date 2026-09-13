@@ -190,6 +190,7 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         fs->fd = -1;
         return -EINVAL;
     }
+    fs->imgsize = imgsize;
     return 0;
 }
 
@@ -249,13 +250,19 @@ static int io_file_write(filsys_edition_t *fs, const void *buf, size_t n, off_t 
 const filsys_io_t filsys_io_file = { io_file_read, io_file_write };
 
 int v7fs_read_block(filsys_edition_t *fs, uint32_t bno, uint8_t *buf) {
-    return fs->io->read(fs, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
+    uint64_t off = fs->base + (uint64_t)bno * fs->bsize;
+    if (filsys_check_range(fs, off, fs->bsize))
+        return -EINVAL;
+    return fs->io->read(fs, buf, fs->bsize, (off_t)off);
 }
 
 int v7fs_write_block(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
-    return fs->io->write(fs, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base);
+    uint64_t off = fs->base + (uint64_t)bno * fs->bsize;
+    if (filsys_check_range(fs, off, fs->bsize))
+        return -EINVAL;
+    return fs->io->write(fs, buf, fs->bsize, (off_t)off);
 }
 
 /* ---- superblock persistence --------------------------------------------- */

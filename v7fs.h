@@ -23,6 +23,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/types.h>
+#include <errno.h>
 
 #include "filsys.h"
 #include "byteorder.h"
@@ -395,6 +396,7 @@ typedef struct filsys_edition {
     int        readonly;
     const filsys_io_t *io;     /* raw byte-slice transport (default: filsys_io_file) */
     uint64_t   base;           /* byte offset of this filesystem within the file */
+    uint64_t   imgsize;        /* backing file size (0 = unknown: mkfs/detect) */
     /* in-core superblock (kept in sync with block 1) */
     uint16_t   isize;
     uint32_t   fsize;
@@ -422,6 +424,19 @@ typedef struct filsys_edition {
     uint32_t  v8_nblks;        /* on-disk bitmap blocks (0 = in-superblock) */
     uint32_t  v8_blk_start;    /* first on-disk bitmap block (out-of-superblock) */
 } filsys_edition_t;
+
+/* Check that [off, off+n) lies within the opened image (fs->imgsize).  Returns 0,
+ * or -EINVAL if the range runs past the end of the image (the subtraction form
+ * cannot overflow).  Every block access funnels through this, so a corrupt block
+ * number read out of a superblock or inode cannot read or write past the image.
+ * imgsize == 0 means the size is not yet known (mkfs/detect), and the check passes. */
+static inline int filsys_check_range(const filsys_edition_t *fs, uint64_t off, uint64_t n) {
+    if (fs->imgsize == 0)
+        return 0;
+    if (off > fs->imgsize || n > fs->imgsize - off)
+        return -EINVAL;
+    return 0;
+}
 
 /* The descriptor for an edition: a copy of the V7 default with the edition's
  * overrides.  Returns a zeroed descriptor (ops == NULL) for an unknown

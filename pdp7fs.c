@@ -33,8 +33,10 @@
 static int read_words(p7fs_t *fs, uint32_t bno, uint32_t *words) {
     uint8_t raw[P7_MAXBLOCKBYTES];
     uint32_t bb = fs->word->block_bytes;
-    off_t pos = (off_t)fs->base + (off_t)bno * (off_t)bb;
-    if (fs->io->read(fs, raw, bb, pos))
+    uint64_t pos = fs->base + (uint64_t)bno * bb;
+    if (filsys_check_range(fs, pos, bb))
+        return -EINVAL;
+    if (fs->io->read(fs, raw, bb, (off_t)pos))
         return -EIO;
     for (uint32_t i = 0; i < P7_WSIZE; i++)
         words[i] = fs->word->get(raw, i);
@@ -46,8 +48,10 @@ static int write_words(p7fs_t *fs, uint32_t bno, const uint32_t *words) {
     for (uint32_t i = 0; i < P7_WSIZE; i++)
         fs->word->put(raw, i, words[i]);
     uint32_t bb = fs->word->block_bytes;
-    off_t pos = (off_t)fs->base + (off_t)bno * (off_t)bb;
-    if (fs->io->write(fs, raw, bb, pos))
+    uint64_t pos = fs->base + (uint64_t)bno * bb;
+    if (filsys_check_range(fs, pos, bb))
+        return -EINVAL;
+    if (fs->io->write(fs, raw, bb, (off_t)pos))
         return -EIO;
     return 0;
 }
@@ -185,6 +189,7 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly,
         fs->fd = -1;
         return -EINVAL;   /* image too small to hold the filesystem surface */
     }
+    fs->imgsize = imgsize;
 
     uint32_t sb[P7_WSIZE];
     if (read_words(fs, 0, sb)) {
