@@ -979,7 +979,13 @@ static void fault_test(void) {
  * k = 0..W, killing the process after k writes (longjmp out of the write
  * transport, before write k+1 lands).  Each image must be alias-free (dup==0,
  * soft-updates rule 2) and fsck-salvageable back to clean (rule 3 leaves only
- * recoverable leaks).  Complete over the operation, not a sample of it. */
+ * recoverable leaks).  Complete over the operation, not a sample of it.
+ *
+ * The longjmp is a hard crash, so the mutation's error handling never runs and
+ * any allocation still in flight (dir_add / dir_remove's block buffer) is
+ * abandoned -- that is the point, but it means this phase must run under ASan
+ * with leak detection OFF (ASAN_OPTIONS=detect_leaks=0): LSan would report the
+ * abandoned buffers as leaks when they are crash artifacts, not library bugs. */
 
 static jmp_buf g_crash_jmp;
 static int g_crash_at;      /* crash before this 1-based write (0 = never) */
