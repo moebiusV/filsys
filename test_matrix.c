@@ -859,6 +859,7 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
         char img[64], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_fault.img", f->name);
         unlink(img);
+        filsys_instr_reset(0);          /* disabled across mkfs (makefree bulk-bfrees) */
         if (mkfs_image(f->edition, img, f->blocks, NULL) != 0) { ok("fault mkfs", 0); unlink(img); return; }
 
         filsys_t *fs;
@@ -866,6 +867,7 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
             ok("fault open", 0); unlink(img); return;
         }
         filsys_set_io(fs, &fault_io);
+        filsys_instr_reset(f->blocks);  /* track the mutations under test */
         mut->setup(fs);                 /* fault disabled */
 
         /* n == 0 is the success path: no injected failure, and the result must
@@ -890,6 +892,7 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
         filsys_fail_class_t cls = classify_image(f->edition, img);
         int class_ok = cls <= bound;
         int recov_ok = fsck_recover_clean(f->name, img);
+        int instr_ok = filsys_instr_violations() == 0;
         if (n == 0)
             snprintf(what, sizeof what, "%s %s success", f->name, mut->name);
         else
@@ -898,7 +901,9 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
             snprintf(what + strlen(what), sizeof what - strlen(what), " [class %c]", "ACBD"[cls]);
         if (!recov_ok)
             snprintf(what + strlen(what), sizeof what - strlen(what), " [recover]");
-        ok(what, class_ok && recov_ok);
+        if (!instr_ok)
+            snprintf(what + strlen(what), sizeof what - strlen(what), " [instrument]");
+        ok(what, class_ok && recov_ok && instr_ok);
         unlink(img);
 
         if (n > 0 && reached < n)       /* failure never reached: done */
@@ -1007,6 +1012,7 @@ static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
     /* learn the op's write count W on a clean run */
     snprintf(img, sizeof img, "test_matrix_%s_crash.img", f->name);
     unlink(img);
+    filsys_instr_reset(0);          /* disabled across mkfs */
     if (mkfs_image(f->edition, img, f->blocks, NULL) != 0) { ok("crash mkfs", 0); unlink(img); return; }
     if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
         ok("crash open", 0); unlink(img); return;
@@ -1033,11 +1039,13 @@ static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
     /* enumerate every prefix k = 0..W */
     for (int k = 0; k <= W; k++) {
         unlink(img);
+        filsys_instr_reset(0);          /* disabled across mkfs */
         if (mkfs_image(f->edition, img, f->blocks, NULL) != 0) { ok("crash mkfs", 0); unlink(img); return; }
         if (filsys_open(&fs, f->edition, img, 0, 0, 0, 0, NULL)) {
             ok("crash open", 0); unlink(img); return;
         }
         filsys_set_io(fs, &crash_io);
+        filsys_instr_reset(f->blocks);  /* track the mutations under test */
         g_crash_at = 0;
         mut->setup(fs);
         g_crash_count = 0;
@@ -1050,12 +1058,15 @@ static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
         filsys_fail_class_t cls = classify_image(f->edition, img);
         int class_ok = cls <= mut->max_class;
         int recov_ok = fsck_recover_clean(f->name, img);
+        int instr_ok = filsys_instr_violations() == 0;
         snprintf(what, sizeof what, "%s %s crash-prefix-%d", f->name, mut->name, k);
         if (!class_ok)
             snprintf(what + strlen(what), sizeof what - strlen(what), " [class %c]", "ACBD"[cls]);
         if (!recov_ok)
             snprintf(what + strlen(what), sizeof what - strlen(what), " [recover]");
-        ok(what, class_ok && recov_ok);
+        if (!instr_ok)
+            snprintf(what + strlen(what), sizeof what - strlen(what), " [instrument]");
+        ok(what, class_ok && recov_ok && instr_ok);
         unlink(img);
     }
 }
@@ -1127,11 +1138,13 @@ static void property_sequences(void) {
         char img[64], what[128];
         snprintf(img, sizeof img, "test_matrix_%s_prop.img", f.name);
         unlink(img);
+        filsys_instr_reset(0);          /* disabled across mkfs */
         if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("prop mkfs", 0); unlink(img); continue; }
         filsys_t *fs;
         if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
             ok("prop open", 0); unlink(img); continue;
         }
+        filsys_instr_reset(f.blocks);   /* track the mutations under test */
         for (int j = 0; j < NMODEL; j++)
             g_model[j] = ~0ULL;
         g_prng = 0x9e3779b97f4a7c15ULL;
@@ -1238,12 +1251,15 @@ static void property_sequences(void) {
         } else
             sizes_ok = 0;
 
+        int instr_ok = filsys_instr_violations() == 0;
         snprintf(what, sizeof what, "%s property-sequences (worst class %c)",
                  f.name, "ACBD"[worst]);
         if (first_bad_step >= 0)
             snprintf(what + strlen(what), sizeof what - strlen(what),
                      " [live-check flagged step %d]", first_bad_step);
-        ok(what, clean && sizes_ok);
+        if (!instr_ok)
+            snprintf(what + strlen(what), sizeof what - strlen(what), " [instrument]");
+        ok(what, clean && sizes_ok && instr_ok);
         unlink(img);
     }
 }
