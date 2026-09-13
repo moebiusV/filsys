@@ -10,7 +10,7 @@ depends=('fuse3')
 optdepends=('prebsd: boot the images on simh')
 makedepends=('pkg-config')
 source=("https://github.com/moebiusV/filsys/releases/download/v$pkgver/$pkgname-$pkgver.tar.gz")
-sha256sums=('80b08cddc497b2d9984ff2385fc728392246bfb094fa44f5ba7d860837fc3a79')
+sha256sums=('4119ad746b5956a1afcdc686a7b349d3dc6034d6ba9fc3a7728375f9b500324f')
 
 build() {
   cd "$pkgname-$pkgver"

@@ -242,7 +242,7 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
 }
 
 static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
-                       uint32_t blocks)
+                       uint32_t blocks, const void *boot)
 {
     uint32_t ipb = fs->bsize / fs->inode_size;
     fs->readonly = 0;
@@ -269,6 +269,9 @@ static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
         return fail("%u-block data area exceeds the %u-block in-superblock bitmap; "
                     "use -g freemap=bigmap (v10) or a smaller volume\n",
                     fs->fsize - fs->isize, (uint32_t)V8_BITMAP_BITS);
+
+    if (boot && pblock(fs, 0, boot))
+        return -1;
 
     /* Xenix and System V carry a magic word at a fixed superblock offset (in the
      * edition's byte order); System V also carries s_type naming the block size.
@@ -624,7 +627,7 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
             (edition == FILSYS_BSD211) ? &bsd211_hook :
             (edition == FILSYS_V8 || edition == FILSYS_V9 || edition == FILSYS_V10) ? &v8_hook :
             &v7_hook;
-        rc = mkfs_common(&fs, hook, opts->blocks);
+        rc = mkfs_common(&fs, hook, opts->blocks, opts->boot);
         *written = (uint64_t)fs.fsize * fs.bsize;
     }
 

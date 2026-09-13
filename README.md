@@ -259,6 +259,7 @@ free-list/inode-table check that the mount driver's `-c` does):
 mkfs.filsys -v v7 image.dk             # size the fs to the whole image
 mkfs.filsys -v v7 image.dk 5000        # ...or to an explicit block count
 mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partition)
+mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block first
 mkfs.filsys -v sysvr2 -B 1024 image.dk  # a 1K-block System V filesystem
 mkfs.filsys -v sysvr4 -B 2048 image.dk  # a 2K-block System V filesystem
 mkfs.filsys -v v10 -g blocksize=4096,freemap=bitmap image.dk   # a 4K-block V10 bitmap filesystem
@@ -276,7 +277,11 @@ list, and an empty root directory, laying out the root inode (and, for V7/32V,
 the empty bad-block file) exactly as that edition expects — root is inode 1 in
 V6, inode 2 in V7/32V and the V8 family, inode 41 in V1–V3, and inode 4 on the
 PDP-7.  `-o`
-places the filesystem at a block offset for multi-partition images.  `-B` sets
+places the filesystem at a block offset for multi-partition images; `-b`
+installs a boot block (a PDP-11 `a.out`, V7 magic `0407`) into block 0 before
+the superblock.  filsys ships no boot blocks of its own — the PDP-11
+bootstraps come from the [prebsd](https://github.com/moebiusV/prebsd) project,
+so pass one of those to `-b`.  `-B` sets
 the logical block size of a System V filesystem
 (`sysvr2`/`sysvr4`) to 512, 1024, or 2048 bytes — the `s_type` superblock field
 — since System V is the one edition whose block size is read from the
