@@ -484,11 +484,11 @@ static int v8_bitmap_sync(filsys_edition_t *fs)
 }
 
 const alloc_ops_t v8_bitmap_alloc_ops = {
-    .balloc = (int  (*)(void *, uint32_t *))v8_bitmap_balloc,
-    .bfree  = (void (*)(void *, uint32_t))v8_bitmap_bfree,
-    .ialloc = (int  (*)(void *, uint32_t *))v7fs_ialloc,
-    .ifree  = (void (*)(void *, uint32_t))v7fs_ifree,
-    .sync   = (int  (*)(void *))v8_bitmap_sync,
+    .balloc = v8_bitmap_balloc,
+    .bfree  = v8_bitmap_bfree,
+    .ialloc = v7fs_ialloc,
+    .ifree  = v7fs_ifree,
+    .sync   = v8_bitmap_sync,
 };
 
 /* ---- inode io ---------------------------------------------------------- */
@@ -2476,9 +2476,9 @@ const struct filsys_ops v6fs_ops = {
 /* ---- allocator vtable: the free-list cache (V6/V7/BSD211) ---------------- */
 
 const alloc_ops_t freelist_alloc_ops = {
-    .balloc = (int  (*)(void *, uint32_t *))v7fs_balloc,
-    .bfree  = (void (*)(void *, uint32_t))v7fs_bfree,
-    .ialloc = (int  (*)(void *, uint32_t *))v7fs_ialloc,
-    .ifree  = (void (*)(void *, uint32_t))v7fs_ifree,
-    .sync   = (int  (*)(void *))v7fs_sync,
+    .balloc = v7fs_balloc,
+    .bfree  = v7fs_bfree,
+    .ialloc = v7fs_ialloc,
+    .ifree  = v7fs_ifree,
+    .sync   = v7fs_sync,
 };

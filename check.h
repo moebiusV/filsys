@@ -51,13 +51,17 @@ static inline filsys_fail_class_t filsys_classify(const filsys_check_t *rep) {
 /* The allocator vtable: the free-list cache (V6/V7/BSD211) and V1's dual
  * bitmap are two implementations.  `fs` is the backend state (filsys_edition_t
  * for the free-list editions, v1fs_t for V1); the allocator reads its state
- * from the embedded freelist_state / bitmap_state. */
+ * from the embedded freelist_state / bitmap_state.  Every backend's state is
+ * the unified descriptor+state struct (v1fs_t and p7fs_t alias it), so the
+ * vtable types it directly -- not `void *` -- which keeps the calls compatible
+ * with each implementation (no function-pointer cast, which UBSan flags). */
+struct filsys_edition;
 typedef struct {
-    int  (*balloc)(void *fs, uint32_t *bno);
-    void (*bfree)(void *fs, uint32_t bno);
-    int  (*ialloc)(void *fs, uint32_t *ino);
-    void (*ifree)(void *fs, uint32_t ino);
-    int  (*sync)(void *fs);          /* flush the allocator state */
+    int  (*balloc)(struct filsys_edition *fs, uint32_t *bno);
+    void (*bfree)(struct filsys_edition *fs, uint32_t bno);
+    int  (*ialloc)(struct filsys_edition *fs, uint32_t *ino);
+    void (*ifree)(struct filsys_edition *fs, uint32_t ino);
+    int  (*sync)(struct filsys_edition *fs);          /* flush the allocator state */
 } alloc_ops_t;
 
 /* V1's dual-bitmap allocator state (the other allocator beside freelist_state). */

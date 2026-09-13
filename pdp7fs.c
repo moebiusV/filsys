@@ -902,9 +902,9 @@ const struct filsys_ops p7fs_ops = {
 /* ---- allocator vtable: PDP-7's on-disk free list ------------------------ */
 
 const alloc_ops_t pdp7_alloc_ops = {
-    .balloc = (int  (*)(void *, uint32_t *))p7fs_balloc,
-    .bfree  = (void (*)(void *, uint32_t))p7fs_bfree,
-    .ialloc = (int  (*)(void *, uint32_t *))p7fs_ialloc,
-    .ifree  = (void (*)(void *, uint32_t))p7fs_ifree,
-    .sync   = (int  (*)(void *))p7fs_sync,
+    .balloc = p7fs_balloc,
+    .bfree  = p7fs_bfree,
+    .ialloc = p7fs_ialloc,
+    .ifree  = p7fs_ifree,
+    .sync   = p7fs_sync,
 };
