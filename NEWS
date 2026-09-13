@@ -1,3 +1,61 @@
+filsys 3.2.0 (2026-09-12)
+=========================
+
+The fsck checks now match System III's own fsck (verified against a booted
+System III "oracle"), and a mutation-atomicity program (Phases 0-6) hardened
+every allocator/fs mutation against partial-failure corruption.  The allocator
+vtable is now typed `filsys_edition_t *` instead of `void *`, which changes its
+function-pointer signatures in the public check.h — hence the major version.
+
+System III (and 32V) fsck parity
+--------------------------------
+- fsck now performs System III's missing integrity checks: it reports an
+  unreferenced non-regular inode (the install's five orphaned FIFOs) and flags a
+  stale s_tfree / s_tinode against the live free-block and free-inode counts,
+  instead of passing them over silently.
+- the System III superblock tail was being decoded at the V7 offset; the
+  s_dinfo[4] field (8 bytes) shifts s_tfree/s_tinode later.  The layout is now
+  read and written correctly, so -s salvage no longer writes the wrong free
+  totals or disturbs s_fname/s_fpack.
+- the PDP-11 System III image is expressed as -a pdp11 on the 32V edition (it is
+  32V-shaped, not V7-shaped); the oracle root fixtures ship in the tarball and
+  are regression-checked in test_matrix.
+
+Mutation atomicity (Phases 0-6)
+-------------------------------
+- findings are classified A (clean) < C (recoverable inconsistency) < B (leak)
+  < D (aliasing/corruption), and the fault/crash-prefix tests now assert the
+  class bound for every mutator, not just "no duplicate blocks".
+- a rollback policy: every undo call site is checked (grep-tagged rollback:),
+  and two discarded dir_remove results in do_link/mkdir were fixed.
+- four named mutation primitives (resolve_parent, inode_create, inode_destroy,
+  remove_name) were folded out of the ops, so create/unlink/rename/rmdir share
+  one audited implementation.
+- a test-build-only ownership table and mutation trace (instrument.h) catches
+  double-alloc / double-free / write-to-unowned-block, off by default.
+- the open-handle table is now growable (was a fixed 1024 slots); a uint32_t
+  size audit, overflow boundary tests (off=-1, size=SIZE_MAX, straddle) and a
+  randomized readdir were added.
+- the allocator vtable is typed (no function-pointer cast, which UBSan flags),
+  and the remaining redundant / const-discarding casts were dropped.
+
+Conformance, ports, and CI
+--------------------------
+- a FUSE handle-fidelity probe runs against the six roadmap BSDs, and the first
+  conformance results are recorded (including the librefuse truncate nuance).
+- endianness smoke tests now cover s390x and m68k (big-endian) under qemu-user
+  plus armhf (32-bit little-endian), and the word-size/endianness matrix is
+  documented.
+- Solaris jobs were dropped for a GhostBSD port; OpenIndiana (illumos) and
+  Solaris 11.4 remain.
+- a libFuzzer harness plus ASan/UBSan and slow-soak coverage run in CI.
+
+Library refactor
+----------------
+- mkfs and the FUSE trampolines moved into the library; the findfs probes moved
+  into the edition vtable, so autodetect handles -v unix / -v v10.
+- a library-level invariant cross-check runs after every property step.
+
 filsys 3.1.1 (2026-09-09)
 =========================
 
