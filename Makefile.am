@@ -121,6 +121,10 @@ boot:
 # only run half its tests.
 TESTS = test_matrix
 check_PROGRAMS = test_matrix
+# check_PROGRAMS are not built by `make` (all), which left a stale test_matrix
+# to produce false greens after an edit to the library.  Build the test programs
+# with `all` too, so `make && ./test_matrix` tests the code just built.
+all-local: $(check_PROGRAMS)
 test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 # test_matrix shells out to ./mkfs.filsys, ./fsck.filsys and ./findfs.filsys, so

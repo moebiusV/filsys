@@ -1981,7 +1981,7 @@ check-am: all-am
 	$(MAKE) $(AM_MAKEFLAGS) check-TESTS
 check: check-am
 all-am: Makefile $(PROGRAMS) $(LIBRARIES) $(MANS) $(DATA) $(HEADERS) \
-		config.h
+		config.h all-local
 installdirs:
 	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" "$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)" "$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(filsysincludedir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
@@ -2151,8 +2151,8 @@ uninstall-man: uninstall-man1 uninstall-man5
 
 .MAKE: all check-am install-am install-strip
 
-.PHONY: CTAGS GTAGS TAGS all all-am am--depfiles am--refresh check \
-	check-TESTS check-am clean clean-binPROGRAMS \
+.PHONY: CTAGS GTAGS TAGS all all-am all-local am--depfiles am--refresh \
+	check check-TESTS check-am clean clean-binPROGRAMS \
 	clean-checkPROGRAMS clean-cscope clean-generic \
 	clean-libLIBRARIES clean-noinstPROGRAMS clean-sbinPROGRAMS \
 	cscope cscopelist-am ctags ctags-am dist dist-all dist-bzip2 \
@@ -2189,6 +2189,10 @@ boot:
 	$(V7AS) -o boot/hpuboot boot/hpuboot.s
 	$(V7AS) -o boot/rpuboot boot/rpuboot.s
 	chmod 644 boot/hpuboot boot/rpuboot
+# check_PROGRAMS are not built by `make` (all), which left a stale test_matrix
+# to produce false greens after an edit to the library.  Build the test programs
+# with `all` too, so `make && ./test_matrix` tests the code just built.
+all-local: $(check_PROGRAMS)
 
 # Convenience target: run the harness for 60 s.  `make fuzz` needs the
 # sanitizer-instrumented library (configure CFLAGS) for full coverage.
