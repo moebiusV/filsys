@@ -163,7 +163,7 @@ not a fallback.  `mkfs.filsys` has nothing to detect and still requires `-v`.
 | `-v xenix`| early V7-derived Xenix (little-endian, 1 KB blocks, 100-entry free cache, magic `0x2b5544`) |
 | `-v bsd29`| 2.9BSD format (V7 inode, 1 KB blocks, 4+3 addresses) |
 | `-v bsd211`| 2.11BSD format (32-bit inode, variable 63-char dirs) |
-| `-v sysiii`| System III format (V7's on-disk layout) |
+| `-v sysiii`| System III format (32V's on-disk layout; PDP-11 packed form via `-a pdp11`) |
 | `-v sysvr2`| System V Release 2/3 (s5fs: 4-byte-aligned fields + magic; byte order from `arch=`) |
 | `-v sysvr4`| System V Release 4 (same layout + an `s_state` clean/dirty word) |
 | `-v v8` | Eighth Edition (V7 inode, rearranged superblock; 1 KB free list or 4 KB bitmap) |
@@ -301,11 +301,17 @@ names the V8-family geometry the same way `mount.filsys`'s `-o` does.
 These checker features are the classic **BSD `fsck`** design — the multi-phase
 structure, the per-inode state byte, the bad-block/errflag handling, the
 phase-1b duplicate rescan, and the `query()`/YES/NO/ASK `-y`/`-n` prompting —
-which filsys folds back into its checker for *every* edition, not just Coherent:
+which filsys folds back into its checker for *every* edition (it descends from
+**2BSD**'s `fsck`):
 the state byte flags an inode whose type bits name nothing recognised, the
 errflag stops a badly-corrupt image from cascading into phantom missing blocks,
 phase-1b names a block's first owner, and `-i`/`-y` prompt or auto-answer each
-repair.
+repair.  **System III's `fsck`** adds checks of its own that filsys also
+adopts: it flags an unreferenced non-regular inode (an install leaves FIFOs
+behind), it compares `s_tfree`/`s_tinode` against the live free-block and
+free-inode counts, and its superblock carries `s_dinfo[4]` — an extra field
+that shifts `s_tfree`/`s_tinode` eight bytes later than V7, which filsys reads
+and writes correctly.
 
 ## Implementor's Notes
 
@@ -381,16 +387,22 @@ and V8-family codecs).
 
 ### Format table
 
-| | PDP-7 | V1 / V2 / V3 | V4 / V5 / V6 | V7 | 32V | Coherent | Xenix (early) | 2.9BSD | 2.11BSD | V8 | V9 | V10 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| block size | 64 words (256 B) | 512 | 512 | 512 | 512 | 512 | 1024 | 1024 | 1024 | 1024 / 4096 | 8192 | 1024 / 4096 |
-| inode size | 12 words (5/block) | 32 B (16/block) | 32 B (16/block) | 64 B (8/block) | 64 B (8/block) | 64 B (8/block) | 64 B (16/block) | 64 B (16/block) | 64 B (16/block) | 64 B (16/64 per block) | 64 B (128/block) | 64 B (16/64 per block) |
-| block addresses | 7 words | 8 × 16-bit | 8 × 16-bit | 13 × 24-bit (3-byte packed) | 13 × 24-bit (LE) | 13 × 24-bit (ME) | 13 × 24-bit (LE) | 7 × 24-bit (ME) | 7 × 32-bit (ME) | 13 × 24-bit (LE) | 13 × 24-bit (BE) | 13 × 24-bit (LE) |
-| allocator | free list | bitmap (in superblock) | free list | free list | free list | free list (interleaved) | free list (100-entry) | free list | free list | free list or bitmap | free list or bitmap | free list or bitmap (or tail-blocks) |
-| file size | 56 KB | 64 KB (16-bit) | 24-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit | 32-bit |
-| root inode | 4 | 41 | 1 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 |
-| bad-block file | none | none | none | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 | inode 1 | none | none | none |
-| directory entry | 8 words | 10 B | 16 B (`d_ino` + 14-char) | 16 B | 16 B | 16 B | 16 B | 16 B | variable (≤ 63-char) | 16 B | 16 B | 16 B |
+| edition | block size | inode size | block addresses | allocator | file size | root inode | bad-block file | directory entry |
+|---|---|---|---|---|---|---|---|---|
+| PDP-7 | 64 words (256 B) | 12 words (5/block) | 7 words | free list | 56 KB | 4 | none | 8 words |
+| V1 / V2 / V3 | 512 | 32 B (16/block) | 8 × 16-bit | bitmap (in superblock) | 64 KB (16-bit) | 41 | none | 10 B |
+| V4 / V5 / V6 | 512 | 32 B (16/block) | 8 × 16-bit | free list | 24-bit | 1 | none | 16 B (`d_ino` + 14-char) |
+| V7 | 512 | 64 B (8/block) | 13 × 24-bit (3-byte packed) | free list | 32-bit | 2 | inode 1 | 16 B |
+| 32V | 512 | 64 B (8/block) | 13 × 24-bit (LE) | free list | 32-bit | 2 | inode 1 | 16 B |
+| System III | 512 | 64 B (8/block) | 13 × 24-bit (LE) | free list | 32-bit | 2 | inode 1 | 16 B |
+| System V | 512 / 1024 / 2048 / 4096 | 64 B (8/block) | 13 × 24-bit (LE) | free list | 32-bit | 2 | inode 1 | 16 B |
+| Coherent | 512 | 64 B (8/block) | 13 × 24-bit (ME) | free list (interleaved) | 32-bit | 2 | inode 1 | 16 B |
+| Xenix (early) | 1024 | 64 B (16/block) | 13 × 24-bit (LE) | free list (100-entry) | 32-bit | 2 | inode 1 | 16 B |
+| 2.9BSD | 1024 | 64 B (16/block) | 7 × 24-bit (ME) | free list | 32-bit | 2 | inode 1 | 16 B |
+| 2.11BSD | 1024 | 64 B (16/block) | 7 × 32-bit (ME) | free list | 32-bit | 2 | inode 1 | variable (≤ 63-char) |
+| V8 | 1024 / 4096 | 64 B (16/64 per block) | 13 × 24-bit (LE) | free list or bitmap | 32-bit | 2 | none | 16 B |
+| V9 | 8192 | 64 B (128/block) | 13 × 24-bit (BE) | free list or bitmap | 32-bit | 2 | none | 16 B |
+| V10 | 1024 / 4096 | 64 B (16/64 per block) | 13 × 24-bit (LE) | free list or bitmap (or tail-blocks) | 32-bit | 2 | none | 16 B |
 
 One engine covers the whole range: a `filsys_edition_t` descriptor plus a
 `filsys_ops` vtable (`v7fs.c` / `filsys.c` / `filsys_format.c` / `check.c`).
@@ -445,6 +457,8 @@ disk image holds:
 | V4 / V5 / V6 | 32 MB | 65,536 | 1 MB (8 single-indirect × 256 blocks) |
 | V7 | 8 GB (2²⁴ blocks × 512 B) | 65,536 | ~1.08 GB (triple indirect) |
 | 32V | 8 GB | 65,536 | ~1.08 GB |
+| System III | 8 GB | 65,536 | ~1.08 GB |
+| System V (R2/R4) | 16 GB | 65,536 | ~16.1 GB (triple indirect) |
 | Coherent | 8 GB | 65,536 | ~1.08 GB |
 | Xenix (early) | 16 GB (2²⁴ blocks × 1024 B) | 65,536 | ~16.1 GB (triple indirect) |
 | 2.9BSD | 16 GB | 65,536 | ~16.1 GB (triple indirect) |
@@ -461,6 +475,14 @@ large-file flag can address a megabyte of blocks.
 
 ### Gotchas
 
+- **Installing Unix from tape left the free list in a bad state.**  The early
+  distribution tapes laid a filesystem down with `dd`/`restor` rather than a
+  clean `mkfs`, and the free list it carried was often stale or incomplete.  On
+  the first boot after an install the free blocks were wrong enough that the
+  standard procedure was to run `fsck` — specifically `fsck -s`, which rebuilds
+  the free list — and repair the disk *before* finishing the installation.
+  filsys's `-s` (salvage) is that same rebuild-the-free-list repair, and is what
+  a tape install effectively demanded before the system was trusted.
 - **The V6 24-bit size is `(size0 << 16) | size1`.**  `size0` (one byte at
   inode offset +5) is the *high* byte and `size1` (the word at +6) is the
   *low* 16 bits, not the other way around.  Getting this backwards makes a
@@ -681,6 +703,7 @@ create/write/delete path for every edition is additionally run by
 | V6 | pcollinson `rk0` / SIMH `uv6swre` | yes | yes | yes | yes | yes |
 | V7 | pcollinson `rp06-0.disk` | yes | yes | yes | yes | yes |
 | 32V (VAX) | `32v-root.disk`, `32v-rp06.disk` (`/usr`) | yes | yes | yes | yes | yes |
+| System III | PDP-11 oracle roots (`sysiii-pdp11-*.root.gz`), `sysIII_vax_root.img` | yes (oracle) | — | synthetic | — | — |
 | Coherent | `disk1..4.4.10.dd` (PUPS base floppies) | yes | — | — | — | — |
 | V8 / V9 / V10 | no original media survive | — | — | synthetic images only | — | — |
 
@@ -909,13 +932,20 @@ real media in SIMH.
    from a later one, not a value any writer stores.  `s_state` is written as-is,
    and it is an R4 field only (R2/R3 leave that word as `s_fill[12]`).
 
-A fourth finding, this one about System III rather than the header: **the System
-III precursor is V6**.  Booting the Cloutier USG PG3 tape (tuhs.org) in SIMH and
-running filsys's own `fsck` over its root filesystem reports V6 layout — 16-bit
-block numbers, 32-byte inodes — clean.  System III proper (1981) is still
-unconfirmed, but its direct predecessor is V6, not V7.  PDP-11 System V Release
-1 is V7 with no magic at all; the `0xfd187e20` s5fs magic only appears on the
-32-bit ports (VAX/3B2/68k) from Release 2 on.
+A fourth finding, this one about System III rather than the header: **System III
+is 32V-shaped, not V6 or V7**.  Its on-disk `s5fs` layout is 32V's — `daddr_t`/
+`time_t` 4-byte-aligned, little-endian, no magic, no `s_state` — confirmed
+against the `sysIII_vax_root.img` distribution image and the System V R2 source.
+The PDP-11 form is the same struct but PDP-11-packed (no 4-byte alignment) and
+middle-endian, reached as `-v sysiii -a pdp11`.  Its `fsck` adds three checks
+filsys adopts: an unreferenced non-regular inode (an install leaves FIFOs
+behind), `s_tfree`/`s_tinode` superblock-total checks, and `s_dinfo[4]` — an
+8-byte field between `s_time` and `s_tfree` that shifts those totals eight bytes
+past the V7 offset.  (The Cloutier USG PG3 tape that first looked like "the V6
+precursor" is a USG Programmer's Workbench tape, V6-based and predating System
+III proper.)  PDP-11 System V Release 1 is V7 with no magic at all; the
+`0xfd187e20` s5fs magic only appears on the 32-bit ports (VAX/3B2/68k) from
+Release 2 on.
 
 ### mkfs and fsck: never existed
 
@@ -1031,6 +1061,17 @@ distribution — is published at `nesssoftware.com/home/mwc/source.php`, mirrore
 on the Internet Archive as `mwc-coherent-unix-clone`, and on GitHub as
 `gspu/Coherent`.  It is that release that makes the Coherent backend here
 possible and freely implementable.
+
+**Jay Logue**'s [retro-fuse](https://github.com/jaylogue/retro-fuse) did this
+first: a FUSE driver for V6/V7/2.9BSD/2.11BSD that incorporates the *genuine*
+kernel source, lightly modernized to run in userspace, rather than
+reimplementing the formats.  filsys is a clean-room reimplementation with a very
+different architecture — one `filsys_edition_t` descriptor and a single
+`filsys_ops` vtable across fifteen editions, plus an in-process `fsck` — and
+wider coverage (PDP-7 through V10, 32V, Coherent, Xenix, System III/V), where
+retro-fuse ships four separate per-edition C APIs and no in-process checker.
+`docs/retro-fuse-comparison.md` grades retro-fuse's genuine V7 core against
+filsys's own test suite.
 
 Every format table in this document was read out of code, tape, or image that
 these people recovered or released; our project would not exist without their
