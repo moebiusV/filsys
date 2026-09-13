@@ -11,6 +11,7 @@
 #include <config.h>
 #include "v7fs.h"
 #include "filsys_ops.h"
+#include "instrument.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -442,6 +443,7 @@ static int v8_bitmap_balloc(filsys_edition_t *fs, uint32_t *bno)
                 return -EIO;
             if (fs->fl.tfree) fs->fl.tfree--;
             fs->fl_dirty = 1;
+            filsys_instr_balloc(blk);
             *bno = blk;
             return 0;
         }
@@ -457,6 +459,7 @@ static void v8_bitmap_bfree(filsys_edition_t *fs, uint32_t bno)
     fs->v8_bits[i >> 3] |= (uint8_t)(1u << (i & 7));
     fs->fl.tfree++;
     fs->fl_dirty = 1;
+    filsys_instr_bfree(bno);
 }
 
 /* Flush the bitmap and the superblock totals.  The in-superblock form rides
@@ -601,6 +604,7 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
      * on-disk free list still lists it as free.  Record that so write_inode can
      * flush first, closing the "free and referenced" aliasing window. */
     fs->fl_dirty = 1;
+    filsys_instr_balloc(blk);
     *bno = blk;
     return 0;
 }
@@ -636,6 +640,7 @@ void v7fs_bfree(filsys_edition_t *fs, uint32_t bno) {
     }
     fs->fl.free[fs->fl.nfree++] = bno;
     fs->fl.tfree++;
+    filsys_instr_bfree(bno);
 }
 
 int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
@@ -656,6 +661,7 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
             fs->ops->inode->write_inode(fs, cand, &ip);
             if (fs->fl.tinode) fs->fl.tinode--;
             fs->fl_dirty = 1;   /* inode cache changed: flush before reference */
+            filsys_instr_ialloc(cand);
             *ino = cand;
             return 0;
         }
@@ -678,6 +684,7 @@ void v7fs_ifree(filsys_edition_t *fs, uint32_t ino) {
         return;   /* kernel discards beyond the cache */
     fs->fl.inode[fs->fl.ninode++] = (uint16_t)ino;
     fs->fl.tinode++;
+    filsys_instr_ifree(ino);
 }
 
 /* ---- block mapping ------------------------------------------------------ */
@@ -748,6 +755,7 @@ int v7fs_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, ui
             if (rc)
                 return rc;   /* -EIO (barrier commit) or -ENOSPC */
             ip->addr[lbn] = nb;
+            filsys_instr_assign(ip->ino, lbn, nb, 1);   /* direct data block */
         }
         *bno = nb;
         return 0;
