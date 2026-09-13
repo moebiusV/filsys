@@ -70,6 +70,7 @@ int v1fs_open(v1fs_t *fs, const char *path, int readonly,
         fs->fd = -1;
         return -EINVAL;
     }
+    fs->imgsize = imgsize;
 
     fs->bm.freemap = malloc(fs->bm.freemap_bytes);
     fs->bm.inodemap = malloc(fs->bm.inodemap_bytes);
@@ -119,13 +120,19 @@ int v1fs_sync(v1fs_t *fs) {
 /* ---- block io ---------------------------------------------------------- */
 
 int v1fs_read_block(v1fs_t *fs, uint32_t bno, uint8_t *buf) {
-    return fs->io->read(fs, buf, V1_BSIZE, (off_t)bno * V1_BSIZE + (off_t)fs->base);
+    uint64_t off = fs->base + (uint64_t)bno * V1_BSIZE;
+    if (filsys_check_range(fs, off, V1_BSIZE))
+        return -EINVAL;
+    return fs->io->read(fs, buf, V1_BSIZE, (off_t)off);
 }
 
 int v1fs_write_block(v1fs_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
-    return fs->io->write(fs, buf, V1_BSIZE, (off_t)bno * V1_BSIZE + (off_t)fs->base);
+    uint64_t off = fs->base + (uint64_t)bno * V1_BSIZE;
+    if (filsys_check_range(fs, off, V1_BSIZE))
+        return -EINVAL;
+    return fs->io->write(fs, buf, V1_BSIZE, (off_t)off);
 }
 
 /* ---- superblock persistence --------------------------------------------- */

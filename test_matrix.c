@@ -1852,6 +1852,24 @@ static void readdir_randomized(void) {
     }
 }
 
+/* The range primitive: a block number past the end of the image must be
+ * rejected at the block-I/O boundary -- with -EINVAL -- rather than read or
+ * written out of bounds.  A synthetic descriptor with imgsize == 4096 stands in
+ * for a 4 KB image, so the check is exercised without real I/O. */
+static void range_check_test(void) {
+    filsys_edition_t fs = filsys_getformat(FILSYS_V7);
+    uint8_t buf[512];
+
+    fs.imgsize = 4096;
+    ok("range: accept in-range block", filsys_check_range(&fs, 0, 512) == 0);
+    ok("range: reject past-end range", filsys_check_range(&fs, 4000, 200) == -EINVAL);
+    ok("range: reject out-of-range block read",
+       v7fs_read_block(&fs, 0xFFFFFFu, buf) == -EINVAL);
+
+    fs.imgsize = 0;   /* unknown size (mkfs/detect): unchecked */
+    ok("range: unknown size is unchecked", filsys_check_range(&fs, UINT64_MAX, 512) == 0);
+}
+
 int main(void) {
     /* The slow soak (fault injection x editions, exhaustive crash-prefix
      * enumeration, property-based op sequences) runs only when
@@ -1890,6 +1908,7 @@ int main(void) {
         crash_consistency();
         durability_test();
         instrument_test();
+        range_check_test();
         readdir_randomized();
         rename_semantics();
         dir_link_semantics();
