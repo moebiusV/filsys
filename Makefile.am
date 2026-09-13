@@ -129,6 +129,9 @@ test_matrix_LDADD = libfilsys.a
 # developer-iteration path) would otherwise fail for a missing mkfs/fsck/findfs.
 test_matrix_DEPENDENCIES = libfilsys.a mkfs.filsys fsck.filsys findfs.filsys
 test_matrix_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
+# The oracle fixtures live in the source tree; a VPATH build (make distcheck)
+# runs test_matrix from the build dir, so hand it the source dir to find them.
+test_matrix_CPPFLAGS = -DTEST_SRCDIR=\"$(srcdir)\"
 
 # The slow soak (fault injection, crash-prefix enumeration, property sequences)
 # is gated by FILSYS_SLOW_TESTS inside test_matrix; configure sets -- or clears
