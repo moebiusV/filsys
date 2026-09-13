@@ -622,6 +622,7 @@ void filsys_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t
 typedef struct filsys_blklist filsys_blklist_t;
 filsys_blklist_t *filsys_blklist_new(void);
 void filsys_blklist_drain(filsys_edition_t *fs, filsys_blklist_t *b);   /* bfree all + free list */
+void filsys_blklist_release(filsys_blklist_t *b);                        /* mark blocks unowned (instrumentation) */
 void filsys_blklist_discard(filsys_blklist_t *b);                        /* free list, keep blocks */
 
 /* Collect every block of an inode (truncate to length 0) into *b. */

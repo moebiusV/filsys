@@ -691,7 +691,8 @@ void v7fs_ifree(filsys_edition_t *fs, uint32_t ino) {
 
 /* Follow an indirect chain of `levels` levels (1/2/3) from *slot.
  * indices[0] is the outermost index.  Allocates when create is set. */
-static int ind_follow(filsys_edition_t *fs, uint32_t *slot, int levels,
+static int ind_follow(filsys_edition_t *fs, uint32_t ino, uint32_t lbn,
+                      uint32_t *slot, int levels,
                       const uint32_t *indices, int create, uint32_t *out) {
     uint32_t blk = *slot;
     for (int L = 0; L < levels; L++) {
@@ -708,6 +709,7 @@ static int ind_follow(filsys_edition_t *fs, uint32_t *slot, int levels,
             if (v7fs_write_block(fs, blk, z))
                 return -EIO;
             *slot = blk;
+            filsys_instr_assign(ino, lbn, blk, 2);   /* indirect block */
         }
         uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf))
@@ -722,6 +724,7 @@ static int ind_follow(filsys_edition_t *fs, uint32_t *slot, int levels,
                 fs->bo->put32(buf + 4 * indices[L], next);
                 if (v7fs_write_block(fs, blk, buf))
                     return -EIO;
+                filsys_instr_assign(ino, lbn, next, 1);   /* data block */
             }
             *out = next;
             return 0;
@@ -741,6 +744,7 @@ static int ind_follow(filsys_edition_t *fs, uint32_t *slot, int levels,
             fs->bo->put32(buf + 4 * indices[L], next);
             if (v7fs_write_block(fs, blk, buf))
                 return -EIO;
+            filsys_instr_assign(ino, lbn, next, 2);   /* indirect block */
         }
         blk = next;
     }
@@ -762,16 +766,16 @@ int v7fs_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, ui
     }
     uint32_t r = lbn - fs->ndaddr;
     if (r < v7_nindir(fs))
-        return ind_follow(fs, &ip->addr[fs->ndaddr], 1, &r, create, bno);
+        return ind_follow(fs, ip->ino, lbn, &ip->addr[fs->ndaddr], 1, &r, create, bno);
     r -= v7_nindir(fs);
     if (r < (uint32_t)v7_nindir(fs) * v7_nindir(fs)) {
         uint32_t idx[2] = { r / v7_nindir(fs), r % v7_nindir(fs) };
-        return ind_follow(fs, &ip->addr[fs->ndaddr + 1], 2, idx, create, bno);
+        return ind_follow(fs, ip->ino, lbn, &ip->addr[fs->ndaddr + 1], 2, idx, create, bno);
     }
     r -= (uint32_t)v7_nindir(fs) * v7_nindir(fs);
     uint32_t idx[3] = { r / (v7_nindir(fs) * v7_nindir(fs)),
                         (r / v7_nindir(fs)) % v7_nindir(fs), r % v7_nindir(fs) };
-    return ind_follow(fs, &ip->addr[fs->ndaddr + 2], 3, idx, create, bno);
+    return ind_follow(fs, ip->ino, lbn, &ip->addr[fs->ndaddr + 2], 3, idx, create, bno);
 }
 
 /* Count the blocks in an indirect chain of `levels` levels, including the

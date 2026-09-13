@@ -212,6 +212,7 @@ static int inode_destroy(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
         filsys_blklist_discard(bl);   /* inode not persisted: blocks stay referenced */
         return rc;
     }
+    filsys_blklist_release(bl);       /* cleared inode persisted: drop ownership */
     filsys_blklist_drain(fs->fs, bl);
     ifree(fs, ino);
     return 0;
@@ -601,6 +602,7 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
             filsys_blklist_discard(bl);
             return rc;
         }
+        filsys_blklist_release(bl);   /* shrunk inode persisted: drop ownership */
         filsys_blklist_drain(fs->fs, bl);
     }
     return n;
@@ -791,6 +793,7 @@ fail:
         itrunc(fs, &nip, &bl);
         nip.mode = 0;
         if (write_inode(fs, nino, &nip) == 0) {
+            filsys_blklist_release(bl);   /* cleared inode persisted: drop ownership */
             filsys_blklist_drain(fs->fs, bl);
             ifree(fs, nino);
         } else {
@@ -1228,6 +1231,7 @@ static int truncate_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip, off_t 
             filsys_blklist_discard(bl);
             return rc;
         }
+        filsys_blklist_release(bl);   /* shrunk inode persisted: drop ownership */
         filsys_blklist_drain(fs->fs, bl);
         return 0;
     }

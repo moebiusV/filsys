@@ -26,14 +26,20 @@
  * the image is opened, so the table reflects only the mutations that follow. */
 void filsys_instr_reset(uint32_t nblk);
 
-/* Allocator transitions.  balloc asserts the block is currently free and marks
- * it allocated; bfree asserts it is currently owned and marks it free; assign
- * attributes an allocated block to an inode (ino, logical block, kind: 1 data,
- * 2 indirect).  A violation is printed with the trace and counted, never
- * fatal, so a test can inspect filsys_instr_violations() afterward. */
+/* Allocator transitions.  A block is free (0), allocated-but-unassigned
+ * (INO_ALLOC), or owned by an inode.  balloc asserts free and marks allocated;
+ * assign attributes an allocated block to an inode (ino, logical block, kind:
+ * 1 data, 2 indirect) and asserts the block was allocated but not yet owned;
+ * release returns an owned block to allocated-but-unassigned (called after the
+ * cleared/shrunk inode is *persisted*, before the block list is drained); bfree
+ * asserts allocated-but-unassigned -- a block still owned by a live inode at
+ * free time is the aliasing (class D) the table exists to catch.  A violation
+ * is printed with the trace and counted, never fatal, so a test can inspect
+ * filsys_instr_violations() afterward. */
 void filsys_instr_balloc(uint32_t bno);
 void filsys_instr_bfree(uint32_t bno);
 void filsys_instr_assign(uint32_t ino, uint32_t lbn, uint32_t bno, int kind);
+void filsys_instr_release(uint32_t bno);
 
 /* Mutation trace (sequence-numbered, dumped on a violation). */
 void filsys_instr_ialloc(uint32_t ino);
@@ -57,6 +63,7 @@ static inline void filsys_instr_bfree(uint32_t bno) { (void)bno; }
 static inline void filsys_instr_assign(uint32_t ino, uint32_t lbn, uint32_t bno, int kind) {
     (void)ino; (void)lbn; (void)bno; (void)kind;
 }
+static inline void filsys_instr_release(uint32_t bno) { (void)bno; }
 static inline void filsys_instr_ialloc(uint32_t ino) { (void)ino; }
 static inline void filsys_instr_ifree(uint32_t ino) { (void)ino; }
 static inline void filsys_instr_dir_add(uint32_t parent, const char *name, uint32_t ino) {

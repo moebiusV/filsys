@@ -259,7 +259,8 @@ void v1fs_ifree(v1fs_t *fs, uint32_t ino) {
 /* ---- block mapping ------------------------------------------------------ */
 
 /* Single indirect: *slot -> block, entry `idx` (2-byte entries). */
-static int ind1(v1fs_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *out) {
+static int ind1(v1fs_t *fs, uint32_t ino, uint32_t lbn,
+                uint32_t *slot, uint32_t idx, int create, uint32_t *out) {
     uint32_t blk = *slot;
     if (blk == 0) {
         if (!create) { *out = 0; return 0; }
@@ -271,6 +272,7 @@ static int ind1(v1fs_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *
         if (v1fs_write_block(fs, blk, z))
             return -EIO;
         *slot = blk;
+        filsys_instr_assign(ino, lbn, blk, 2);   /* indirect block */
     }
     uint8_t buf[V1_BSIZE];
     if (v1fs_read_block(fs, blk, buf))
@@ -283,6 +285,7 @@ static int ind1(v1fs_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *
         bo_put16le(buf + 2 * idx, (uint16_t)nb);
         if (v1fs_write_block(fs, blk, buf))
             return -EIO;
+        filsys_instr_assign(ino, lbn, nb, 1);   /* data block */
     }
     *out = nb;
     return 0;
@@ -305,6 +308,7 @@ int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
             ip->addr[i] = 0;
         ip->addr[0] = iblk;
         ip->mode |= V1_ILARG;
+        filsys_instr_assign(ip->ino, lbn, iblk, 2);   /* indirect block */
     }
 
     if (ip->mode & V1_ILARG) {
@@ -312,7 +316,7 @@ int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
             *bno = 0;
             return create ? -EFBIG : 0;
         }
-        return ind1(fs, &ip->addr[lbn >> 8], lbn & (V1_NINDIR - 1), create, bno);
+        return ind1(fs, ip->ino, lbn, &ip->addr[lbn >> 8], lbn & (V1_NINDIR - 1), create, bno);
     }
     if (lbn >= V1_NDADDR) {
         *bno = 0;
@@ -324,6 +328,7 @@ int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
         if (rc)
             return rc;
         ip->addr[lbn] = nb;
+        filsys_instr_assign(ip->ino, lbn, nb, 1);   /* direct data block */
     }
     *bno = nb;
     return 0;
