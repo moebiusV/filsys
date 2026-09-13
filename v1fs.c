@@ -535,9 +535,9 @@ const struct filsys_ops v1fs_ops = {
 /* ---- allocator vtable: V1's dual bitmap -------------------------------- */
 
 const alloc_ops_t bitmap_alloc_ops = {
-    .balloc = (int  (*)(void *, uint32_t *))v1fs_balloc,
-    .bfree  = (void (*)(void *, uint32_t))v1fs_bfree,
-    .ialloc = (int  (*)(void *, uint32_t *))v1fs_ialloc,
-    .ifree  = (void (*)(void *, uint32_t))v1fs_ifree,
-    .sync   = (int  (*)(void *))v1fs_sync,
+    .balloc = v1fs_balloc,
+    .bfree  = v1fs_bfree,
+    .ialloc = v1fs_ialloc,
+    .ifree  = v1fs_ifree,
+    .sync   = v1fs_sync,
 };
