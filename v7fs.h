@@ -646,6 +646,13 @@ int filsys_itrunc(filsys_edition_t *fs, filsys_inode_t *ip, filsys_blklist_t *b)
 int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_blk,
                        filsys_blklist_t *b);
 
+/* Map a logical block number to a physical block, allocating on create.  The
+ * one bmap for every edition: the slot topology comes from filsys_slot_level,
+ * the indirect-entry width from ind_get/ind_put, and allocation from
+ * fs->alloc->balloc. */
+int filsys_bmap(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int create,
+                uint32_t *bno);
+
 /* ---- shared maintenance (check.c): ncheck / clri / preen / resolve-dups -- */
 
 int filsys_ncheck(filsys_edition_t *fs, uint32_t ino);

@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "v7fs.h"
 #include "filsys_ops.h"
@@ -259,6 +260,130 @@ static uint32_t slot_span(const filsys_edition_t *fs, int level)
     for (int l = 0; l <= level; l++)
         span *= fs->nindir;
     return span;
+}
+
+/* Generic indirect-chain walk: follow `slot` down `levels` levels of
+ * indirection to the entry named by indices[0..levels-1] (top level first),
+ * allocating indirect blocks and the final data block on `create`.  This is the
+ * read/write path's one indirect walk, parameterised by the descriptor codec
+ * (ind_get/ind_put) and allocator (fs->alloc->balloc), mirroring how the
+ * check/truncate path walks through ind_get. */
+static int bmap_ind_follow(filsys_edition_t *fs, uint32_t ino, uint32_t lbn,
+                           uint32_t *slot, int levels,
+                           const uint32_t *indices, int create, uint32_t *out) {
+    uint32_t blk = *slot;
+    for (int L = 0; L < levels; L++) {
+        if (blk == 0) {
+            if (!create) {
+                *out = 0;
+                return 0;
+            }
+            int rc = fs->alloc->balloc(fs, &blk);   /* balloc zeroes the block */
+            if (rc)
+                return rc;   /* -EIO (barrier commit) or -ENOSPC */
+            *slot = blk;
+            filsys_instr_assign(ino, lbn, blk, 2);   /* indirect block */
+        }
+        uint8_t buf[V7_MAXBSIZE];
+        if (fs->ops->read_block(fs, blk, buf))
+            return -EIO;
+        uint32_t next = ind_get(fs, buf, indices[L]);
+
+        if (L == levels - 1) {
+            if (next == 0 && create) {
+                int rc = fs->alloc->balloc(fs, &next);
+                if (rc)
+                    return rc;   /* -EIO (barrier commit) or -ENOSPC */
+                ind_put(fs, buf, indices[L], next);
+                if (fs->ops->write_block(fs, blk, buf))
+                    return -EIO;
+                filsys_instr_assign(ino, lbn, next, 1);   /* data block */
+            }
+            *out = next;
+            return 0;
+        }
+        if (next == 0) {
+            if (!create) {
+                *out = 0;
+                return 0;
+            }
+            int rc = fs->alloc->balloc(fs, &next);   /* balloc zeroes the block */
+            if (rc)
+                return rc;   /* -EIO (barrier commit) or -ENOSPC */
+            ind_put(fs, buf, indices[L], next);
+            if (fs->ops->write_block(fs, blk, buf))
+                return -EIO;
+            filsys_instr_assign(ino, lbn, next, 2);   /* indirect block */
+        }
+        blk = next;
+    }
+    return -EIO;   /* unreachable */
+}
+
+/* Map a logical block number to a physical block, allocating on `create`.  This
+ * replaces the four per-backend bmaps (v7fs_bmap / v6_bmap / v1fs_bmap /
+ * p7fs_bmap): the slot topology is filsys_slot_level (ndaddr direct slots, or
+ * the ILARG large-file reinterpretation), the entry width is ind_get/ind_put,
+ * and the allocation is fs->alloc->balloc. */
+int filsys_bmap(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int create,
+                uint32_t *bno) {
+    /* Small-to-large promotion (V6/V1/PDP-7): a write past the direct slots moves
+     * the direct addresses into the first indirect block and sets the ILARG bit,
+     * reinterpreting the slots as large_single/large_double indirect slots. */
+    if (fs->ilarg_mask && !(ip->mode & fs->ilarg_mask) && create &&
+        lbn >= (uint32_t)fs->ndaddr) {
+        uint32_t iblk;
+        int rc = fs->alloc->balloc(fs, &iblk);
+        if (rc)
+            return rc;
+        uint8_t buf[V7_MAXBSIZE];
+        memset(buf, 0, sizeof buf);   /* full container buffer (PDP-7's word block > bsize) */
+        for (int i = 0; i < fs->ndaddr; i++)
+            ind_put(fs, buf, i, ip->addr[i]);
+        if (fs->ops->write_block(fs, iblk, buf))
+            return -EIO;
+        for (int i = 0; i < fs->ndaddr; i++)
+            ip->addr[i] = 0;
+        ip->addr[0] = iblk;
+        ip->mode |= fs->ilarg_mask;
+        filsys_instr_assign(ip->ino, lbn, iblk, 2);   /* indirect block */
+    }
+
+    /* Walk the address slots to find the one lbn falls in. */
+    uint32_t base = 0;
+    for (int slot = 0; slot < fs->niaddr; slot++) {
+        int level = filsys_slot_level(fs, ip->mode, slot);
+        uint32_t span = (level < 0) ? 1u : slot_span(fs, level);
+        if (lbn < base + span) {
+            uint32_t r = lbn - base;
+            if (level < 0) {
+                /* direct block */
+                uint32_t nb = ip->addr[slot];
+                if (nb == 0 && create) {
+                    int rc = fs->alloc->balloc(fs, &nb);
+                    if (rc)
+                        return rc;   /* -EIO (barrier commit) or -ENOSPC */
+                    ip->addr[slot] = nb;
+                    filsys_instr_assign(ip->ino, lbn, nb, 1);   /* direct data block */
+                }
+                *bno = nb;
+                return 0;
+            }
+            /* indirect: the per-level indices from r (top level first) */
+            uint32_t idx[3];
+            for (int l = 0; l <= level; l++) {
+                uint32_t div = 1;
+                for (int d = 0; d < level - l; d++)
+                    div *= fs->nindir;
+                idx[l] = (r / div) % fs->nindir;
+            }
+            return bmap_ind_follow(fs, ip->ino, lbn, &ip->addr[slot], level + 1,
+                                   idx, create, bno);
+        }
+        base += span;
+    }
+    *bno = 0;
+    return create ? -EFBIG : 0;
 }
 
 /* Collect every block of an inode (truncate to length 0) into *b.  The caller
