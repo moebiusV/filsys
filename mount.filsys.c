@@ -62,8 +62,8 @@ int main(int argc, char *argv[]) {
     int no_lock = 0;
     uint64_t offset = 0;
     int uid = -1, gid = -1;   /* -1 = report as the mounting user */
-    const char *packing = NULL; /* PDP-7 word container codec (rb09|packed18|rim) */
-    const char *arch = NULL;    /* CPU arch: overrides the edition's byte order (3b2/68k = BE) */
+    char *packing = NULL; /* PDP-7 word container codec (rb09|packed18|rim); strdup'd, owned */
+    char *arch = NULL;    /* CPU arch: overrides the edition's byte order (3b2/68k = BE); owned */
     filsys_geom_t geom = {0, -1, NULL}; /* V8-family -o blocksize/freemap/byteorder overrides */
     char fuse_opts[512] = ""; /* -o options passed through to FUSE (allow_other, ...) */
     int c;
@@ -177,9 +177,9 @@ int main(int argc, char *argv[]) {
                               uid >= 0 ? (uid_t)uid : getuid(),
                               gid >= 0 ? (gid_t)gid : getgid(), packing, arch,
                               force, &geom, no_lock, &errmsg);
-    free((void *)packing);
-    free((void *)arch);
-    free((void *)geom.byteorder);
+    free(packing);
+    free(arch);
+    free(geom.byteorder);
     if (rc) {
         fprintf(stderr, "filsys: cannot open %s: %s\n", image,
                 errmsg ? errmsg : strerror(-rc));

@@ -1204,7 +1204,7 @@ static uint32_t v7_data_start(filsys_edition_t *fs) { return v7_data_first(fs); 
 static uint32_t v7_data_end(filsys_edition_t *fs) {
     /* The out-of-superblock bitmap's blocks sit at the tail as metadata, not
      * free or data blocks; exclude them from the checker's data band. */
-    return ((filsys_edition_t *)fs)->fsize - ((filsys_edition_t *)fs)->v8_nblks;
+    return fs->fsize - fs->v8_nblks;
 }
 /* Walk the free list exactly as alloc() would, marking free blocks into cx->inode->bmap
  * (a free block already used is a duplicate) and counting free_blocks. */

@@ -327,7 +327,7 @@ int p7fs_write_inode(p7fs_t *fs, uint32_t ino, const p7_inode_t *ip) {
     d[0] = ip->mode & P7_MAXWORD;
     for (int i = 0; i < P7_NIADDR; i++)
         d[1 + i] = ip->addr[i] & P7_MAXWORD;
-    d[8]  = (uint32_t)(uint16_t)ip->uid & P7_MAXWORD;
+    d[8]  = (uint16_t)ip->uid & P7_MAXWORD;
     d[9]  = (uint32_t)(-(int32_t)ip->nlink) & P7_MAXWORD;   /* stored negative */
     d[10] = ((ip->size + 1) / 2) & P7_MAXWORD;              /* bytes -> words (round up) */
     /* d[11] (uniq) is left untouched */

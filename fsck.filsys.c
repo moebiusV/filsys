@@ -202,7 +202,7 @@ int main(int argc, char **argv)
         edition = det.edition;
         det_geom.blocksize = det.blocksize;
         det_geom.freemap = det.freemap;
-        det_geom.byteorder = det.byteorder;
+        det_geom.byteorder = det.byteorder ? strdup(det.byteorder) : NULL;
         have_det_geom = (edition == FILSYS_V8 || edition == FILSYS_V9 || edition == FILSYS_V10);
     }
 
@@ -314,12 +314,16 @@ int main(int argc, char **argv)
             fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
             return 2;
         }
-        if (filsys_apply_geom(&fs, edition, &geom, &errmsg)) {
+        int gerr = filsys_apply_geom(&fs, edition, &geom, &errmsg);
+        free(geom.byteorder);
+        if (gerr) {
             fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
             return 2;
         }
     } else if (have_det_geom) {
-        if (filsys_apply_geom(&fs, edition, &det_geom, &errmsg)) {
+        int gerr = filsys_apply_geom(&fs, edition, &det_geom, &errmsg);
+        free(det_geom.byteorder);
+        if (gerr) {
             fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
             return 2;
         }
