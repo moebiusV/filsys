@@ -116,7 +116,7 @@ typedef struct filsys filsys_t;  /* opaque */
 typedef struct {
     uint32_t    blocksize;      /* 0 = edition default (1024/4096/8192) */
     int         freemap;        /* -1 = derive; else a FILSYS_FREEMAP_* value */
-    const char *byteorder;      /* "le"/"be", or NULL = edition default */
+    char        *byteorder;      /* "le"/"be", or NULL = edition default (owned) */
 } filsys_geom_t;
 
 /* filsys_geom_t.freemap values: the V8-family free-space representation. */
