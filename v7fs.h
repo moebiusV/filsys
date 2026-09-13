@@ -467,6 +467,10 @@ int v7fs_sync(filsys_edition_t *fs);
 /* Mark the filesystem dirty (s_fmod) and flush: a read-write mount is dirty
  * until a clean close clears it, so a crash leaves the image flagged for fsck. */
 int v7fs_mark_dirty(filsys_edition_t *fs);
+/* Write the in-core superblock (and free list) back to the image, preserving the
+ * fields we don't maintain (s_tfree/s_tinode/s_fname/...).  Shared by the
+ * allocator files (alloc_freelist.c, alloc_v8bitmap.c). */
+int v7fs_super_write(filsys_edition_t *fs);
 
 /* V8-family superblock codec (Eighth/Ninth/Tenth Edition, docs/impl-v10fs.md
  * §5.8).  The on-disk superblock is rearranged relative to V7's, so these
@@ -579,10 +583,13 @@ void v7fs_bfree(filsys_edition_t *fs, uint32_t bno);
 int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino);
 void v7fs_ifree(filsys_edition_t *fs, uint32_t ino);
 
-/* ---- file / directory data --------------------------------------------- */
+/* V8-family bitmap allocator (alloc_v8bitmap.c): the block side of V8/V9/V10
+ * free space, behind v8_bitmap_alloc_ops. */
+int  v8_bitmap_balloc(filsys_edition_t *fs, uint32_t *bno);
+void v8_bitmap_bfree(filsys_edition_t *fs, uint32_t bno);
+int  v8_bitmap_sync(filsys_edition_t *fs);
 
-/* Map a logical block of an inode to a physical block (allocate if create). */
-int v7fs_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
+/* ---- file / directory data --------------------------------------------- */
 
 ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off);
 ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
@@ -597,6 +604,11 @@ int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint
 int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name);
 /* Remove an entry; 0 or -errno. */
 int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name);
+
+/* 2.11BSD variable-length directory entries (dir_bsd211.c). */
+int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count);
+int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name);
+int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name);
 
 /* Resolve a path into an inode number.  0 or -errno. */
 int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip);
@@ -619,6 +631,18 @@ int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
  * and 32-byte inode make the codec V6-specific, but it operates on the shared
  * filsys_edition_t. */
 int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode);
+
+/* Free-list check helpers (alloc_freelist.c): rebuild / walk / count. */
+uint32_t v7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx);
+void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep);
+void v7_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino);
+void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino);
+/* V6 inode codec (32-byte inodes, ILARG layout); v6_write_inode stays private
+ * to v7fs.c's ops table, but the count-free scan needs v6_read_inode. */
+int v6_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip);
+/* V8-family bitmap check helpers (alloc_v8bitmap.c). */
+uint32_t v8_makefree_bitmap(filsys_edition_t *fs, filsys_chkctx_t *cx);
+void v8_walk_free_bitmap(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep);
 
 /* ---- shared block-map walk + truncate (blocktree.c) ---------------------- */
 
