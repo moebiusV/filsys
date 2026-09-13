@@ -1,8 +1,5 @@
-.\" mkfs.filsys.1 - part of filsys 3.2.1
-.\" Derived from the Seventh Edition mkfs(8) page (usr/man/man1/mkfs.1m),
-.\" distributed under the Caldera International "Ancient UNIX License" (2002).
-.\" The LICENSE section below retains that license's notice and terms.
-.TH MKFS.FILSYS 1 "September 12, 2026" "filsys 3.2.1" "File Format and Disk Utilities"
+.\" mkfs.filsys.1 - part of filsys 4.0.0
+.TH MKFS.FILSYS 1 "September 12, 2026" "filsys 4.0.0" "File Format and Disk Utilities"
 .SH NAME
 mkfs.filsys \- construct a Research Unix filesystem in a disk image
 .SH SYNOPSIS
@@ -11,8 +8,6 @@ mkfs.filsys \- construct a Research Unix filesystem in a disk image
 .IR <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211|sysiii|sysvr2|sysvr4> ]
 .RB [ \-o
 .IR block ]
-.RB [ \-b
-.IR boot ]
 .RB [ \-m
 .IR m ]
 .RB [ \-n
@@ -69,8 +64,8 @@ the disk.  By default the filesystem is written at block 0 (the first
 partition); the
 .B \-o
 option places it at a different block offset within the image.  Block 0 of
-each filesystem is the boot block; block 1 is the superblock; blocks 2 onward
-are the i-list.
+each filesystem is left alone; block 1 is the superblock; blocks 2 onward are
+the i-list.
 .SH OPTIONS
 .TP
 .BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211|sysiii|sysvr2|sysvr4>"
@@ -154,44 +149,11 @@ field).  Only applies to
 which read their block size from the superblock; every other edition has a
 fixed block size.  Defaults to 512.
 .TP
-.BI \-b " boot"
-Write
-.I boot
-(a PDP-11
-.BR a.out (5)
-program, V7 magic 0407) as block 0 of the filesystem, before the superblock
-at block 1.  This is the standard PDP-11 boot block: text plus data, at most
-one block (512 bytes).  Without
-.BR \-b ,
-block 0 is left untouched.
-.TP
 .I blocks
 Size of the filesystem in blocks.  If omitted, the size defaults to the image's
 own size (from block 0, or from
 .IR \-o ),
 with a minimum of a small usable volume.
-.SH BOOT BLOCKS
-filsys ships two PDP-11 block-0 bootstraps, assembled from the Seventh Edition
-.I /usr/mdec
-sources and installed into the package data directory
-.RB ( share/filsys
-under the install prefix):
-.TP
-.B hpuboot
-the RP06 (HP controller) disk bootstrap.
-.TP
-.B rpuboot
-the RP03/04/05/06 disk bootstrap.
-.PP
-Pass one to
-.B \-b
-to write it into block 0 of a new filesystem, e.g.
-.PP
-.RS
-.nf
-mkfs.filsys -b /usr/local/share/filsys/hpuboot rp06-0.disk
-.fi
-.RE
 .SH HISTORICAL FORM
 The Seventh Edition
 .I mkfs
@@ -204,10 +166,8 @@ bootstrap program, whose second token was the filesystem size, whose third
 token was the i-list size, and whose remaining tokens described the root
 directory and its contents.  The V6/V7
 .I mkfs.filsys
-retains the notion of a boot block at block zero (now the
-.B \-b
-option) but drops the prototype file in favour of an empty root and an
-explicit
+drops the prototype file (and the boot block it would have written) in favour
+of an empty root and an explicit
 .I blocks
 argument; the i-list is sized automatically.
 .SH EXAMPLES
@@ -215,7 +175,6 @@ argument; the i-list is sized automatically.
 mkfs.filsys -v v7 image.dk             # size the fs to the whole image (V7)
 mkfs.filsys -v v6 image.dk             # ...as a V6 (V4/V5) filesystem
 mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partition)
-mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block
 mkfs.filsys -v v7 image.dk 5000        # an explicit 5000-block filesystem
 mkfs.filsys -v sysvr2 -B 1024 image.dk # a 1K-block System V filesystem
 .fi
@@ -225,49 +184,5 @@ mkfs.filsys -v sysvr2 -B 1024 image.dk # a 1K-block System V filesystem
 .BR mount.filsys (1),
 .BR filsys (5),
 .BR mkfs (8)
-.SH LICENSE
-This manpage is derived from the Seventh Edition
-.IR mkfs (8)
-page (distributed as
-.IR mkfs.1m ).
-The following notice, conditions and disclaimer are retained from that work,
-as its license requires.
-.PP
-Copyright (C) Caldera International Inc. 2001-2002. All rights reserved.
-.PP
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-.PP
-Redistributions of source code and documentation must retain the above
-copyright notice, this list of conditions and the following disclaimer.
-Redistributions in binary form must reproduce the above copyright notice,
-this list of conditions and the following disclaimer in the documentation
-and/or other materials provided with the distribution.
-.PP
-All advertising materials mentioning features or use of this software must
-display the following acknowledgement:
-.PP
-.RS
-This product includes software developed or owned by Caldera International,
-Inc.
-.RE
-.PP
-Neither the name of Caldera International, Inc. nor the names of other
-contributors may be used to endorse or promote products derived from this
-software without specific prior written permission.
-.PP
-USE OF THE SOFTWARE PROVIDED FOR UNDER THIS LICENSE BY CALDERA
-INTERNATIONAL, INC. AND CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED
-WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
-EVENT SHALL CALDERA INTERNATIONAL, INC. BE LIABLE FOR ANY DIRECT, INDIRECT
-INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
-OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 .SH AUTHOR
-Derived from the Seventh Edition
-.IR mkfs (8)
-manual, adapted for the filsys project.
+Written for the filsys project.

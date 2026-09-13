@@ -6,7 +6,7 @@ MASTER_SITES =	https://github.com/moebiusV/filsys/releases/download/v${V}/
 
 MAINTAINER =	maintainer@example.com
 
-# ISC + Caldera Ancient UNIX (see COPYING)
+# ISC (see COPYING)
 PERMIT_PACKAGE =	Yes
 
 USE_GMAKE =	Yes

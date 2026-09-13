@@ -259,7 +259,6 @@ free-list/inode-table check that the mount driver's `-c` does):
 mkfs.filsys -v v7 image.dk             # size the fs to the whole image
 mkfs.filsys -v v7 image.dk 5000        # ...or to an explicit block count
 mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partition)
-mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block first
 mkfs.filsys -v sysvr2 -B 1024 image.dk  # a 1K-block System V filesystem
 mkfs.filsys -v sysvr4 -B 2048 image.dk  # a 2K-block System V filesystem
 mkfs.filsys -v v10 -g blocksize=4096,freemap=bitmap image.dk   # a 4K-block V10 bitmap filesystem
@@ -277,9 +276,8 @@ list, and an empty root directory, laying out the root inode (and, for V7/32V,
 the empty bad-block file) exactly as that edition expects — root is inode 1 in
 V6, inode 2 in V7/32V and the V8 family, inode 41 in V1–V3, and inode 4 on the
 PDP-7.  `-o`
-places the filesystem at a block offset for multi-partition images; `-b`
-installs a boot block (a PDP-11 `a.out`, V7 magic `0407`) into block 0 before
-the superblock.  `-B` sets the logical block size of a System V filesystem
+places the filesystem at a block offset for multi-partition images.  `-B` sets
+the logical block size of a System V filesystem
 (`sysvr2`/`sysvr4`) to 512, 1024, or 2048 bytes — the `s_type` superblock field
 — since System V is the one edition whose block size is read from the
 superblock rather than fixed by the format; every other edition ignores `-B`.
@@ -1089,17 +1087,11 @@ work.
 
 ## License
 
-The original code (`pdp7fs.c`, `v1fs.c`, `v7fs.c`, `filsys.c`,
-`filsys_format.c`, `filsys_names.c`, `blocktree.c`, `byteorder.c`, `check.c`,
-`fuse_core.c`, `mount.filsys.c`, `findfs.filsys.c`, `mkfs.filsys.c`,
-`fsck.filsys.c`, the FUSE adapters `fuseops.c` / `fuseops_macos.c` /
-`fuseops_openbsd.c`, the test drivers `test_matrix.c` / `test_oracle.c`, and
-their headers) is licensed under the **ISC license**: Copyright (c) 2026 David
-Walther.
-
-The `filsys.5` manpage is derived from the ancient UNIX `fs(5)` (V4, V6) and
-`filsys(5)`/`dir(5)` (V7, 32V) pages, and retains the **Caldera International
-"Ancient UNIX License"** (2002) notice and terms, as that license requires for
-redistribution of derived documentation.
-
-Both texts are in [`COPYING`](COPYING).
+Everything in this repository — the library and tools (`pdp7fs.c`, `v1fs.c`,
+`v7fs.c`, `filsys.c`, `filsys_format.c`, `filsys_names.c`, `blocktree.c`,
+`byteorder.c`, `check.c`, `fuse_core.c`, `mount.filsys.c`, `findfs.filsys.c`,
+`mkfs.filsys.c`, `fsck.filsys.c`, the FUSE adapters `fuseops.c` /
+`fuseops_macos.c` / `fuseops_openbsd.c`, the test drivers `test_matrix.c` /
+`test_oracle.c`, their headers, and the manpages) — is licensed under the
+**ISC license**: Copyright (c) 2026 David Walther.  The text is in
+[`COPYING`](COPYING).

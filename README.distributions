@@ -36,19 +36,18 @@ How the Build Works
 
 Install layout (default prefix `/usr/local`):
 
-    $(bindir)/mount.filsys     the FUSE mount driver
+    $(sbindir)/mount.filsys    the FUSE mount driver
     $(bindir)/findfs.filsys    the superblock/partition finder
-    $(bindir)/mkfs.filsys      create a V7 filesystem
-    $(bindir)/fsck.filsys      check a V7 filesystem
+    $(bindir)/mkfs.filsys      create a filesystem
+    $(bindir)/fsck.filsys      check a filesystem
     $(mandir)/man5/filsys.5    the filesystem-format manual
     $(mandir)/man1/{mount,findfs,mkfs,fsck}.filsys.1
 
 License
 -------
 
-filsys is dual-licensed, by file origin (see COPYING): the driver source is
-ISC, and the V7/32V filesystem-format code is under the Caldera "Ancient
-UNIX" license.  Record this as "ISC AND Caldera" in license metadata.
+filsys is ISC-licensed (see COPYING).  Record this as "ISC" in license
+metadata.
 
 Per-Distribution Notes
 ======================

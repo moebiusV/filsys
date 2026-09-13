@@ -1,5 +1,20 @@
 2026-09-12  David Walther  <david@clearbrookdistillery.com>
 
+	* NEWS, configure.ac, configure, filsys.5, mount.filsys.1,
+	findfs.filsys.1, mkfs.filsys.1, fsck.filsys.1: release 4.0.0.
+	* mkfs.filsys.c, filsys_mkfs.c, filsys_ops.h, Makefile.am, Makefile.in,
+	boot/*: drop the -b boot-block option and the shipped PDP-11 bootstraps
+	(boot blocks are prebsd's job).
+	* COPYING, README.md, README.distributions, packaging/*: drop the Caldera
+	"Ancient UNIX" license -- the manpages are now original text, so the whole
+	repository is ISC -- and pin the 4.0.0 tarball checksums.
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys_create: return the inode; allocated_blocks: propagate read errors
+
+2026-09-12  David Walther  <david@clearbrookdistillery.com>
+
 	* filsys: add a central range primitive for block I/O
 
 2026-09-12  David Walther  <david@clearbrookdistillery.com>
@@ -634,202 +649,3 @@
 
 	* Regularize option parsing; add the System III/V edition scaffold
 
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* pdp7fs.h, pdp7fs.c, byteorder.c, byteorder.h, filsys.h, filsys.c,
-	mount.filsys.c, fsck.filsys.c, mkfs.filsys.c: wire the word container
-	codec into the tools.  filsys_word_codec_by_name() resolves "rb09",
-	"packed18" and "rim" (RIM = mkfs7's word2three, three 6-bit frames); a
-	new `packing` argument to filsys_open overrides the descriptor's codec,
-	mount.filsys takes `-o packing=NAME`, and fsck/mkfs take `-P NAME`.  So a
-	PDP-7 dump in any of the three container layouts is a flag, not a rewrite.
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* pdp7fs.h, pdp7fs.c, v7fs.h, filsys_format.c, byteorder.c, byteorder.h,
-	mkfs.filsys.c, fsck.filsys.c: make PDP-7's word container codec a
-	descriptor entry.  The SimH RB09 packing (one 18-bit word per 4-byte LE
-	slot) was baked into P7_WORDBYTES/P7_BLOCKBYTES/P7_SURFACE1; it is now a
-	word_codec_t (get/put/block_bytes) on the descriptor, so a dump from real
-	hardware -- which has no reason to use simh's padding -- is a table row
-	rather than a rewrite.  word_rb09 (256 bytes/block) is the default;
-	word_packed18 (bo_get18packed/bo_put18packed, 18 bits with no gap, 144
-	bytes/block) is the packed codec, and lcm(18,8) = 72 bits = 9 bytes per 4
-	words makes a 64-word block fill exactly with no ragged tail.
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* blocktree.c (new), v7fs.h, filsys_format.c, filsys_ops.h, check.c,
-	v7fs.c, v1fs.c, pdp7fs.c, filsys.c: fold the block-map tree walk and the
-	check helpers into one shared implementation.  The per-backend
-	mark_block/mark_tree/mark_blocks, tloop/tloop_from, itrunc/itrunc_from,
-	preen, ncheck/ncheck_dir, clri and resolve_dups bodies (the same fifteen
-	names four times) collapse into blocktree.c and check.c, driven by two
-	descriptor additions: the slot topology (ilarg_mask + large_single/
-	large_double, so V6/V1/PDP-7's ILARG reinterpretation is data, not code)
-	and the indirect-entry codec (ind_get/ind_put, defaulting to daddr_wid;
-	PDP-7 overrides with its 18-bit word).  The vtable loses .itrunc,
-	.itrunc_from, .mark_blocks and .preen; .nindir becomes a field (PDP-7's
-	container block is 256 bytes of words against a 128-byte logical block,
-	so it is not bsize/daddr_wid).  PDP-7 gains an alloc_ops row (pdp7_alloc_ops)
-	so the shared walk's bfree/balloc reaches it.
-	* The shared walk fixes a latent V6 fsck bug: v6_mark_tree walked slot 7
-	(the double-indirect slot) single-level, so a large V6 file's second-level
-	blocks were reported missing.
-	* test_matrix.c: a V6 large-file regression (write 2000 blocks, past the
-	1792-block single-indirect boundary, then fsck) that fails on the old
-	single-level walk.
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* filsys_ops.h, check.c, v7fs.c, v1fs.c, pdp7fs.c, filsys.c: fold the
-	*_op wrapper layer.  The ops vtable now takes filsys_edition_t * (not
-	void *) -- every backend already aliases that type -- so the ~66 one-line
-	void*-to-typed adapters are deleted and the tables point at the real
-	functions directly.  The *_op functions that remain carry real logic
-	(blocksize, check, max_file, statfs), not a signature cast.
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* test_matrix.c, filsys_format.c: drive the per-format regression table
-	from the shared edition table too.  The direct-block capacity and the max
-	file size now derive from the descriptor (ndaddr * bsize, ops->max_file)
-	and the mkfs block count is a test default, so a new edition is exercised
-	with no hand-written row; PDP-7's descriptor gains ndaddr.
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* mkfs.filsys.c, v7fs.c: fold mkfs's parallel per-format layout paths
-	into one descriptor-driven driver.  The free-list-cache editions
-	(V7/32V/Coherent/Xenix/2.9BSD/V6/2.11BSD) now build a filesystem through
-	the library's ops/alloc vtable -- alloc_ops for balloc/bfree, write_inode
-	for the on-disk inode codec, and the check driver's makefree for the
-	per-edition interleave -- leaving only the i-list sizing and the seed
-	(reserved + root) inodes as per-format hooks.  bsd211 gains a makefree
-	(sequential salvage).  V1 and PDP-7 stay their own paths.
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* v7fs.c, v7fs.h, filsys_format.c: fold V6 into the V7 engine.  The
-	allocator (balloc/bfree/ialloc/ifree), the superblock open/sync/write,
-	and the check-driver seams (mark_block, walk_free, maxino/data_start/
-	data_end, is_clean, statfs) become one shared implementation driven by
-	two new descriptor fields -- daddr_wid (2-byte V6 vs 4-byte V7 block
-	addresses) and isize_count (s_isize as i-list block count vs first data
-	block) -- plus the v7_data_first/v7_maxinode/v7_get_daddr/v7_put_daddr
-	helpers.  Only the ILARG bmap topology, the 32-byte inode codec, and the
-	mode-specific checker pieces remain V6-specific.
-	* filsys_format.c, filsys.h, mkfs.filsys.c, fsck.filsys.c,
-	mount.filsys.c, test_matrix.c: single-source the edition name/alias table
-	in filsys_format.c (filsys_format_nth, filsys_edition_by_name,
-	filsys_editions_usage); the tools resolve -v and generate their usage
-	lines through it instead of four hand-maintained parse_edition chains,
-	and test_matrix's namelength iterates it so PDP-7 is covered.
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* v7fs.c, v1fs.c, pdp7fs.c, filsys.c, filsys.h, mkfs.filsys.c,
-	fsck.filsys.c, check.c, filsys_ops.h: fix every -Wsign-conversion
-	warning by type rather than cast -- uint32_t down-count loops, unsigned
-	interleave factors, uint32_t makefree return, uid_t/gid_t ownership,
-	and int slot indices; the remaining conversions are explicit POSIX
-	boundary casts (nlink/off_t).
-	* mkfs.filsys.c: route byte order through the byte_order_ops table
-	(v7_fmt.bo->put16/get16, bo_me.*) instead of the hardcoded
-	bo_put16le/bo_put32me primitives; drop the sb_put wrappers.
-	* test_matrix.c: per-format regression suite -- odd sizes, the
-	direct->indirect promotion boundary, the size-field ceiling, truncate
-	cycles, and fsck cleanliness; add write_verify() and fsck_is_clean().
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* check.c, check.h, filsys_ops.h: fold the four per-edition *_check
-	bodies into one shared filsys_check_common() driver; each edition keeps
-	only its maxino/data-start/data-end, inode_state, mark_blocks,
-	walk_free, makefree and preen ops.
-	* filsys_ops.h, v7fs.c, v1fs.c, pdp7fs.c: blk_get/blk_put data-block
-	codec (logical bytes vs container bytes); alloc_ops allocator vtable
-	(freelist_alloc_ops / bitmap_alloc_ops).
-	* v7fs.h, v1fs.h, v1fs.c: v1fs_t is now filsys_edition_t; V1's
-	file/dir/lookup layer rides the shared engine, leaving the 32-byte
-	inode codec, the ILARG bmap and the bitmap allocator V1-specific.
-	* v7fs.h, pdp7fs.h, pdp7fs.c: p7fs_t is now filsys_edition_t; PDP-7's
-	file/write/lookup layer rides the shared engine, leaving the word
-	container codec, the 8-word dirent and the single-indirect bmap
-	PDP-7-specific.
-	* README.md: document the block-codec abstraction and the bsize
-	(logical) vs on-disk footprint invariant.
-
-2026-09-06  David Walther  <david@clearbrookdistillery.com>
-
-	* v7fs.c, v7fs.h: fold the V6 and 2.11BSD backends into the V7 engine
-	(v6fs.c and bsd211fs.c deleted).  V6's s_isize-as-block-count, 32-byte
-	inode and ILARG bmap, and 2.11BSD's 4-byte block addresses and
-	variable-length directory entries, become per-edition ops in the shared
-	engine.
-	* byteorder.c, byteorder.h: byte-order ops table (bo_le/bo_be/bo_me),
-	the single copy of each little-/big-/middle-endian primitive.
-	* filsys_format.c: per-edition descriptor table; filsys_getformat()
-	returns filsys_edition_t, which carries both the descriptor and the
-	runtime state.
-	* filsys.c: route every operation through the descriptor's ops table
-	(forty edition comparisons down to two).
-	* Makefile.am: drop v6fs.[ch] and bsd211fs.[ch]; add byteorder.[ch]
-	and filsys_format.c.
-
-2026-09-05  David Walther  <david@clearbrookdistillery.com>
-
-	* filsys.c: edition_bsize() per-edition block size (the open path had
-	a ternary that omitted 2.11BSD); truncate zero-fill buffer sized to
-	V7_MAXBSIZE instead of 512 bytes.
-	* test_matrix.c: name-length matrix at 14/30/63/64 for every edition.
-
-2026-09-05  David Walther  <david@clearbrookdistillery.com>
-
-	* filsys.c: max_namlen() per-edition name limit; the facade's
-	path-component buffer was 15 bytes for every edition, so 2.11BSD's
-	63-character names were rejected before reaching the backend.
-	* test_matrix.c: name-length regression (63 for bsd211, 14 for v7).
-
-2026-09-05  David Walther  <david@clearbrookdistillery.com>
-
-	* bsd211fs.c, bsd211fs.h: new backend for 2.11BSD (4-byte block
-	addresses, di_flags, symlinks, variable-length directory entries).
-	* v7fs.c, v7fs.h: Xenix (mode 3) and 2.9BSD (mode 4) support; the block
-	size is now a runtime property (512 or 1024); Xenix magic validation at
-	superblock offset 1016.
-	* mkfs.filsys.c: mkfs for Xenix, 2.9BSD and 2.11BSD; the v7fs mkfs path
-	is generalized to 1024-byte blocks, per-edition byte order, free-cache
-	width and address count.
-	* mount.filsys.c, fsck.filsys.c, mkfs.filsys.c: require -v (no default
-	edition); 32v renamed vax32.
-	* filsys.h, filsys.c, filsys_ops.h, test_matrix.c: FILSYS_BSD211
-	edition; test_matrix covers all nine editions.
-	* filsys.5, mount.filsys.1, fsck.filsys.1, mkfs.filsys.1,
-	findfs.filsys.1, README.md: document the new editions and the rename.
-
-2026-08-31  David Walther  <david@clearbrookdistillery.com>
-
-	* mount.filsys.c, findfs.filsys.c: renamed from filsysmount.c and
-	  filsysfind.c to match the `<verb>.filsys` binary names.
-	* mkfs.filsys.c: new tool; create a V7 filesystem (superblock, i-list,
-	  interleaved free list, root directory) in a disk image.  -o block
-	  offset; -b boot block (a PDP-11 a.out, V7 magic 0407).
-	* fsck.filsys.c: new tool; thin wrapper over v7fs_check().
-	* mkfs.filsys.1, fsck.filsys.1, findfs.filsys.1, mount.filsys.1:
-	  renamed man pages with .SH NAME lines so `man -k` finds them.
-	* Makefile.am, configure.ac, .gitignore, packaging/, README.distributions,
-	  COPYING, NEWS: updated for the new tool names and the two new tools.
-
-2026-08-26  David Walther  <david@clearbrookdistillery.com>
-
-	* configure.ac, Makefile.am: GNU autotools build (configure && make
-	  && make install).  pkg-config fuse3 with a no-root fallback.
-	* filsysmount.1: man page.
-	* COPYING, AUTHORS, NEWS, ChangeLog: GNU standard files.
-
-2026-08-25  David Walther  <david@clearbrookdistillery.com>
-
-	* filsysmount.c, v7fs.c, v7fs.h: first working driver.  Middle-endian
-	  V7 filesystem access, allocation mirroring sys/alloc.c, FUSE
-	  callbacks, and a free-list/inode-table integrity check (-c).

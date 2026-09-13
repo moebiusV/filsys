@@ -9,8 +9,7 @@ class Filsys < Formula
   homepage "https://github.com/moebiusV/filsys"
   url "https://github.com/moebiusV/filsys/releases/download/v3.1.1/filsys-3.1.1.tar.gz"
   sha256 "283e01ac74a85f0480b845e92505f46c144d043717f69209d787f158a95a12ff"
-  # The code is ISC; filsys.5 additionally carries the Caldera Ancient UNIX
-  # License (see COPYING).  Homebrew records the code licence here.
+  # ISC (see COPYING).
   license "ISC"
 
   depends_on "pkg-config" => :build
