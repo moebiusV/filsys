@@ -152,8 +152,11 @@ struct filsys_inode_ops {
     int  (*bmap)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
     uint8_t (*inode_state)(filsys_edition_t *fs, uint32_t ino, uint32_t mode); /* -> FILSYS_IN_* */
     /* Count of allocated filesystem blocks (data + indirect), for st_blocks.
-     * A zero block address is a hole -- not allocated, not counted. */
-    uint64_t (*allocated_blocks)(filsys_edition_t *fs, const filsys_inode_t *ip);
+     * A zero block address is a hole -- not allocated, not counted.  Returns 0
+     * with *out set, or -errno if an indirect block could not be read (the
+     * caller must not silently under-count a st_blocks total it cannot know). */
+    int (*allocated_blocks)(filsys_edition_t *fs, const filsys_inode_t *ip,
+                            uint64_t *out);
 };
 
 struct filsys_ops {

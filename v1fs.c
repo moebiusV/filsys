@@ -1,4 +1,4 @@
-/* filsys 2.1.3 - 2026-09-06 - Copyright (C) 2026 David Walther */
+/* Copyright (C) 2026 David Walther */
 /* SPDX-License-Identifier: ISC */
 /* v1fs.c - First Edition (V1) Unix filesystem, on-disk access layer.
  *
@@ -341,7 +341,8 @@ int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
     return 0;
 }
 
-static uint64_t v1fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip) {
+static int v1fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip,
+                                 uint64_t *out) {
     v1fs_t *f = fs;
     uint64_t n = 0;
     if (ip->mode & V1_ILARG) {
@@ -351,7 +352,7 @@ static uint64_t v1fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t
                 continue;
             uint8_t buf[V1_BSIZE];
             if (v1fs_read_block(f, blk, buf))
-                continue;
+                return -EIO;
             n++;   /* the indirect block itself */
             for (uint32_t j = 0; j < V1_NINDIR; j++)
                 if (bo_get16le(buf + 2 * j)) n++;
@@ -360,7 +361,8 @@ static uint64_t v1fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t
         for (int i = 0; i < V1_NDADDR; i++)
             if (ip->addr[i]) n++;
     }
-    return n;
+    *out = n;
+    return 0;
 }
 
 /* Rebuild the free-block map from the usage bitmap (icheck -s).  Only the

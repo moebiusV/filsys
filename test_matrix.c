@@ -205,7 +205,7 @@ static int write_verify(filsys_t *fs, const char *path, uint64_t size) {
     for (uint64_t i = 0; i < size; i++)
         buf[i] = (uint8_t)(i & 0x7f);   /* 7-bit: survives PDP-7 packing */
 
-    filsys_create(fs, path, 0644, 0, 0);
+    filsys_create(fs, path, 0644, 0, 0, NULL);
     if (filsys_write(fs, path, buf, (size_t)size, 0) != (int)size) {
         free(buf); free(back);
         return 0;
@@ -297,7 +297,7 @@ static void run(const struct fmt *f) {
     /* One byte past the size-field ceiling must fail EFBIG and leak nothing. */
     {
         char one = 'x';
-        filsys_create(fs, "/big", 0644, 0, 0);
+        filsys_create(fs, "/big", 0644, 0, 0, NULL);
         ok("oversized write EFBIG",
            filsys_write(fs, "/big", &one, 1, (off_t)f->maxfile) == -EFBIG);
         filsys_unlink(fs, "/big");
@@ -308,7 +308,7 @@ static void run(const struct fmt *f) {
      * mirror images.  Each must be rejected before any block is allocated. */
     {
         char one = 'x';
-        filsys_create(fs, "/big", 0644, 0, 0);
+        filsys_create(fs, "/big", 0644, 0, 0, NULL);
         ok("write off=-1 EINVAL", filsys_write(fs, "/big", &one, 1, -1) == -EINVAL);
         ok("write size=SIZE_MAX EFBIG",
            filsys_write(fs, "/big", &one, (size_t)-1, 0) == -EFBIG);
@@ -326,7 +326,7 @@ static void run(const struct fmt *f) {
     {
         uint8_t *buf = malloc(large ? large : 1);
         memset(buf, 'T', large);
-        filsys_create(fs, "/big", 0644, 0, 0);
+        filsys_create(fs, "/big", 0644, 0, 0, NULL);
         ok("truncate pre-write", filsys_write(fs, "/big", buf, (size_t)large, 0) == (int)large);
         ok("truncate down", filsys_truncate(fs, "/big", (off_t)(large / 2)) == 0);
         ok("truncate up", filsys_truncate(fs, "/big", (off_t)large) == 0);
@@ -344,17 +344,17 @@ static void run(const struct fmt *f) {
         uint8_t *b = malloc(bsize + 1);
         memset(b, 'a', bsize + 1);
 
-        filsys_create(fs, "/s1", 0644, 0, 0);
+        filsys_create(fs, "/s1", 0644, 0, 0, NULL);
         filsys_write(fs, "/s1", b, bsize, 0);
         ok("st_blocks one block (512-unit)",
            stat_blocks(fs, "/s1") == (long)((bsize + 511) / 512));
 
-        filsys_create(fs, "/s2", 0644, 0, 0);
+        filsys_create(fs, "/s2", 0644, 0, 0, NULL);
         filsys_write(fs, "/s2", b, bsize + 1, 0);
         ok("st_blocks two blocks",
            stat_blocks(fs, "/s2") == (long)((2 * bsize + 511) / 512));
 
-        filsys_create(fs, "/s3", 0644, 0, 0);
+        filsys_create(fs, "/s3", 0644, 0, 0, NULL);
         filsys_truncate(fs, "/s3", 1048576);
         ok("st_blocks sparse == 0", stat_blocks(fs, "/s3") == 0);
 
@@ -362,7 +362,7 @@ static void run(const struct fmt *f) {
          * block is allocated, so the count must exceed the direct data alone. */
         uint8_t *big = malloc(f->direct + 1);
         memset(big, 'b', f->direct + 1);
-        filsys_create(fs, "/s4", 0644, 0, 0);
+        filsys_create(fs, "/s4", 0644, 0, 0, NULL);
         filsys_write(fs, "/s4", big, f->direct + 1, 0);
         ok("st_blocks counts indirect block",
            stat_blocks(fs, "/s4") * 512 >= (long)(f->direct + bsize));
@@ -410,13 +410,13 @@ static void run(const struct fmt *f) {
     /* Ownership that doesn't fit the 16-bit field must be rejected, not
      * silently truncated (a uid of 70000 would wrap to 4464). */
     ok("create rejects oversized uid",
-       filsys_create(fs, "/biguid", 0644, 70000, 0) == -EINVAL);
+       filsys_create(fs, "/biguid", 0644, 70000, 0, NULL) == -EINVAL);
 
     /* Ino-keyed read/write: an open descriptor reads by inode, not path. */
     {
         uint8_t wbuf[32], rbuf[32] = {0};
         for (int i = 0; i < 32; i++) wbuf[i] = (uint8_t)i;
-        filsys_create(fs, "/ino", 0644, 0, 0);
+        filsys_create(fs, "/ino", 0644, 0, 0, NULL);
         filsys_write(fs, "/ino", wbuf, sizeof wbuf, 0);
         uint32_t ino; filsys_inode_t ip;
         filsys_lookup(fs, "/ino", &ino, &ip);
@@ -424,7 +424,7 @@ static void run(const struct fmt *f) {
            filsys_read_ino(fs, ino, rbuf, sizeof rbuf, 0) == (ssize_t)sizeof rbuf &&
            memcmp(wbuf, rbuf, sizeof wbuf) == 0);
         /* rename NOREPLACE: refuse to clobber, allow a fresh target */
-        filsys_create(fs, "/ino2", 0644, 0, 0);
+        filsys_create(fs, "/ino2", 0644, 0, 0, NULL);
         ok("rename NOREPLACE over existing",
            filsys_rename(fs, "/ino", "/ino2", 1) == -EEXIST);
         ok("rename NOREPLACE fresh",
@@ -439,7 +439,7 @@ static void run(const struct fmt *f) {
         filsys_statfs(fs, &st0);   /* free blocks before (for the leak check) */
         uint8_t wbuf[32], rbuf[32] = {0};
         for (int i = 0; i < 32; i++) wbuf[i] = (uint8_t)(i + 1);
-        filsys_create(fs, "/open", 0644, 0, 0);
+        filsys_create(fs, "/open", 0644, 0, 0, NULL);
         filsys_write(fs, "/open", wbuf, sizeof wbuf, 0);
         uint32_t ino; filsys_inode_t ip;
         filsys_lookup(fs, "/open", &ino, &ip);
@@ -461,9 +461,9 @@ static void run(const struct fmt *f) {
     {
         uint8_t ab[32], bb[32], rb[32] = {0};
         for (int i = 0; i < 32; i++) { ab[i] = 0x55; bb[i] = 0x2a; }   /* 7-bit: survives PDP-7 packing */
-        filsys_create(fs, "/a", 0644, 0, 0);
+        filsys_create(fs, "/a", 0644, 0, 0, NULL);
         filsys_write(fs, "/a", ab, sizeof ab, 0);
-        filsys_create(fs, "/b", 0644, 0, 0);
+        filsys_create(fs, "/b", 0644, 0, 0, NULL);
         filsys_write(fs, "/b", bb, sizeof bb, 0);
         uint32_t ino; filsys_inode_t ip;
         filsys_lookup(fs, "/a", &ino, &ip);
@@ -473,7 +473,7 @@ static void run(const struct fmt *f) {
            filsys_read_ino(fs, ino, rb, sizeof rb, 0) == (ssize_t)sizeof rb &&
            memcmp(ab, rb, sizeof ab) == 0);
         uint32_t cino; filsys_inode_t cip;
-        filsys_create(fs, "/c", 0644, 0, 0);
+        filsys_create(fs, "/c", 0644, 0, 0, NULL);
         filsys_lookup(fs, "/c", &cino, &cip);
         ok("rename-over: inode not reused", cino != ino);
         ok("rename-over: close frees", filsys_close_ino(fs, ino) == 0);
@@ -607,7 +607,7 @@ static void v6_large_file(void) {
     int write_ok = 0, read_ok = 0;
     if (buf && back) {
         memset(buf, 'V', bytes);
-        filsys_create(fs, "/big", 0644, 0, 0);
+        filsys_create(fs, "/big", 0644, 0, 0, NULL);
         write_ok = filsys_write(fs, "/big", buf, bytes, 0) == (int)bytes;
         if (write_ok) {
             memset(back, 0, bytes);
@@ -646,7 +646,7 @@ static void v7_triple_indirect(void) {
     if (buf && back) {
         for (size_t i = 0; i < bytes; i++)
             buf[i] = (uint8_t)(i & 0xff);
-        filsys_create(fs, "/big", 0644, 0, 0);
+        filsys_create(fs, "/big", 0644, 0, 0, NULL);
         write_ok = filsys_write(fs, "/big", buf, bytes, 0) == (int)bytes;
         if (write_ok) {
             memset(back, 0, bytes);
@@ -699,7 +699,7 @@ static void namelength(void) {
             memset(path + 1, 'a', L);
             path[L + 1] = 0;
             int want = (L <= max) ? 0 : -ENAMETOOLONG;
-            int got = filsys_create(fs, path, 0644, 0, 0);
+            int got = filsys_create(fs, path, 0644, 0, 0, NULL);
             snprintf(what, sizeof what, "%s %zu-char %s", f->name, L,
                      want == 0 ? "accepted" : "rejected");
             ok(what, got == want);
@@ -739,7 +739,7 @@ static void crash_consistency(void) {
         uint64_t size = f.direct * 12;
         uint8_t *buf = malloc(size ? size : 1);
         memset(buf, 'c', size);
-        filsys_create(fs, "/big", 0644, 0, 0);
+        filsys_create(fs, "/big", 0644, 0, 0, NULL);
         int wr = filsys_write(fs, "/big", buf, (size_t)size, 0);
         free(buf);
         snprintf(what, sizeof what, "%s crash-consistency", f.name);
@@ -793,12 +793,12 @@ static void setup_none(filsys_t *fs) { (void)fs; }
 static void setup_file(filsys_t *fs) {   /* a 4096-byte (8-block) file exists */
     uint8_t buf[4096];
     memset(buf, 'a', sizeof buf);
-    filsys_create(fs, "/f", 0644, 0, 0);
+    filsys_create(fs, "/f", 0644, 0, 0, NULL);
     filsys_write(fs, "/f", buf, sizeof buf, 0);
 }
 static void setup_dir(filsys_t *fs) { filsys_mkdir(fs, "/d", 0755, 0, 0); }
 
-static int op_create(filsys_t *fs)   { return filsys_create(fs, "/f", 0644, 0, 0); }
+static int op_create(filsys_t *fs)   { return filsys_create(fs, "/f", 0644, 0, 0, NULL); }
 static int op_mkdir(filsys_t *fs)    { return filsys_mkdir(fs, "/d", 0755, 0, 0); }
 static int op_mknod(filsys_t *fs)    { return filsys_mknod(fs, "/c", S_IFCHR | 0644, (dev_t)0x0103, 0, 0); }
 static int op_write(filsys_t *fs) {
@@ -819,9 +819,9 @@ static int op_rename(filsys_t *fs)   { return filsys_rename(fs, "/f", "/g", 0); 
 static void setup_file2(filsys_t *fs) {   /* /f and /g both exist */
     uint8_t buf[4096];
     memset(buf, 'a', sizeof buf);
-    filsys_create(fs, "/f", 0644, 0, 0);
+    filsys_create(fs, "/f", 0644, 0, 0, NULL);
     filsys_write(fs, "/f", buf, sizeof buf, 0);
-    filsys_create(fs, "/g", 0644, 0, 0);
+    filsys_create(fs, "/g", 0644, 0, 0, NULL);
     filsys_write(fs, "/g", buf, sizeof buf, 0);
 }
 static void setup_dir2(filsys_t *fs) {    /* /d1 and /d2 both exist (empty) */
@@ -839,7 +839,7 @@ static uint32_t g_open_ino;
 static void setup_open_unlink(filsys_t *fs) {
     uint8_t buf[512];
     memset(buf, 'a', sizeof buf);
-    filsys_create(fs, "/f", 0644, 0, 0);
+    filsys_create(fs, "/f", 0644, 0, 0, NULL);
     filsys_write(fs, "/f", buf, sizeof buf, 0);
     filsys_inode_t ip;
     if (filsys_lookup(fs, "/f", &g_open_ino, &ip) == 0) {
@@ -1163,7 +1163,7 @@ static void property_sequences(void) {
             switch (op) {
             case 0:  /* create if absent, else overwrite block 0 */
                 if (g_model[slot] == ~0ULL) {
-                    rc = filsys_create(fs, nm, 0644, 0, 0);
+                    rc = filsys_create(fs, nm, 0644, 0, 0, NULL);
                     if (rc == 0) g_model[slot] = 0;
                 } else {
                     rc = filsys_write(fs, nm, buf, sizeof buf, 0);
@@ -1287,7 +1287,7 @@ static void rename_semantics(void) {
             ok("rename open", 0); unlink(img); continue;
         }
 
-        filsys_create(fs, "/f", 0644, 0, 0);
+        filsys_create(fs, "/f", 0644, 0, 0, NULL);
         filsys_mkdir(fs, "/d", 0755, 0, 0);
 
         snprintf(what, sizeof what, "%s rename file->dir EISDIR", f.name);
@@ -1302,7 +1302,7 @@ static void rename_semantics(void) {
             ok(what, filsys_rename(fs, "/a", "/a/b/c", 0) == -EINVAL);
             /* The cycle check must run before any target removal: an existing
              * target inside the source subtree is left untouched. */
-            filsys_create(fs, "/a/b/t", 0644, 0, 0);
+            filsys_create(fs, "/a/b/t", 0644, 0, 0, NULL);
             uint32_t tino; filsys_inode_t tip;
             snprintf(what, sizeof what, "%s rename dir->descendant keeps target", f.name);
             ok(what, filsys_rename(fs, "/a", "/a/b/t", 0) == -EINVAL &&
@@ -1407,7 +1407,7 @@ static void durability_test(void) {
         uint8_t *buf = malloc(full);
         for (size_t k = 0; k < full; k++)
             buf[k] = (uint8_t)(k % 251);
-        filsys_create(fs, "/big", 0644, 0, 0);
+        filsys_create(fs, "/big", 0644, 0, 0, NULL);
         if (filsys_write(fs, "/big", buf, full, 0) != (int)full) {
             ok("dur write", 0); free(buf); filsys_close(fs); unlink(img); unlink(sb); continue;
         }
@@ -1552,7 +1552,7 @@ static void bitmap_roundtrip(void) {
         if (buf && back) {
             for (uint64_t j = 0; j < sz; j++)
                 buf[j] = (uint8_t)(j & 0x7f);
-            filsys_create(fs, "/big", 0644, 0, 0);
+            filsys_create(fs, "/big", 0644, 0, 0, NULL);
             wr = filsys_write(fs, "/big", buf, (size_t)sz, 0) == (int)sz;
             memset(back, 0, sz);
             rd = wr && filsys_read(fs, "/big", back, (size_t)sz, 0) == (int)sz &&
@@ -1751,7 +1751,7 @@ static void instrument_test(void) {
         /* Exercise allocator + directory transitions end to end. */
         uint8_t buf[8192];
         memset(buf, 'x', sizeof buf);
-        filsys_create(fs, "/f", 0644, 0, 0);
+        filsys_create(fs, "/f", 0644, 0, 0, NULL);
         filsys_write(fs, "/f", buf, sizeof buf, 0);   /* multi-block: several balloc */
         filsys_link(fs, "/f", "/g");
         filsys_mkdir(fs, "/d", 0755, 0, 0);
@@ -1815,7 +1815,7 @@ static void readdir_randomized(void) {
         filsys_mkdir(fs, "/d", 0755, 0, 0);
         for (int k = 0; k < N; k++) {
             snprintf(nm, sizeof nm, "/d/f%d", k);
-            filsys_create(fs, nm, 0644, 0, 0);
+            filsys_create(fs, nm, 0644, 0, 0, NULL);
         }
 
         /* mutate: delete every 3rd, rename every 5th survivor */
@@ -1845,7 +1845,7 @@ static void readdir_randomized(void) {
         lname[maxnl] = 0;
         snprintf(lpath, sizeof lpath, "/d/%s", lname);
         snprintf(what, sizeof what, "%s readdir long name", f.name);
-        ok(what, filsys_create(fs, lpath, 0644, 0, 0) == 0 && dir_has(fs, "/d", lname));
+        ok(what, filsys_create(fs, lpath, 0644, 0, 0, NULL) == 0 && dir_has(fs, "/d", lname));
 
         filsys_close(fs);
         unlink(img);
