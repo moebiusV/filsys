@@ -1,3 +1,25 @@
+filsys 2.1.0 (2026-09-12)
+=========================
+
+A test-hardening and documentation release; no on-disk or production-code change.
+
+- the block-ownership table (instrument.h, built with --enable-instrumentation)
+  now assigns every allocated block to its inode -- direct and indirect blocks on
+  all three backends, plus the V1/PDP-7 small-to-large promotion -- and releases
+  ownership when the cleared/shrunk inode is persisted, not when the block list
+  is drained.  bfree now asserts a block is allocated-but-unassigned, so freeing
+  a block still owned by a live inode (the class-D aliasing window) fires at the
+  allocator transition, before fsck ever sees the image.
+- the ownership table is live across the whole fault/crash/property slow soak,
+  not just the scripted instrument test, and every assertion folds
+  filsys_instr_violations() == 0 into its pass condition.
+- docs: the checker's provenance is corrected (it descends from 2BSD's fsck, with
+  System III's fsck contributing the unreferenced-inode, s_tfree/s_tinode and
+  s_dinfo[4] checks); System III is now documented as 32V-shaped, not V6; the
+  format/limits/media tables cover System III and System V (the format table is
+  transposed so editions are rows); and jaylogue's retro-fuse is acknowledged as
+  prior art.
+
 filsys 2.0.0 (2026-09-12)
 =========================
 
