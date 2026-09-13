@@ -27,6 +27,15 @@ and an unreadable indirect block no longer silently under-counts `st_blocks`.
   blocks gone the whole repository is ISC.  The stale 2.1.3 / 2026-09-06
   banners are stripped, and the ChangeLog — frozen at 2026-09-06 — is
   regenerated from git history.
+- CI: the crash-prefix and property soak now also runs under ASan/UBSan (leak
+  detection is off for the crash driver only, whose longjmp abandons the
+  dir_add/dir_remove buffers by design), closing the sanitizer gap in the test
+  gate.
+- internal refactor, no on-disk or behaviour change: block allocation goes
+  through the alloc vtable (the free-list/bitmap dispatch is gone), the four
+  per-backend bmap implementations are unified into one `filsys_bmap`, v7fs.c
+  is split along its allocator/directory seams, and `filsys_edition_t` is split
+  into a static `filsys_desc_t` plus the per-mount state.
 
 filsys 3.2.1 (2026-09-12)
 =========================
