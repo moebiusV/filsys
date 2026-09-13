@@ -11,6 +11,7 @@
 #include <config.h>
 #include "v1fs.h"
 #include "filsys_ops.h"
+#include "instrument.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -216,6 +217,7 @@ int v1fs_balloc(v1fs_t *fs, uint32_t *bno) {
             if (v1fs_write_block(fs, b, z))
                 return -EIO;
             fs->fl_dirty = 1;   /* free map changed: flush before reference */
+            filsys_instr_balloc(b);
             return 0;
         }
     }
@@ -227,6 +229,7 @@ void v1fs_bfree(v1fs_t *fs, uint32_t bno) {
         return;
     fs->bm.freemap[bno >> 3] |= (uint8_t)(1u << (bno & 7));
     fs->bm.tfree++;
+    filsys_instr_bfree(bno);
 }
 
 int v1fs_ialloc(v1fs_t *fs, uint32_t *ino) {
@@ -236,6 +239,7 @@ int v1fs_ialloc(v1fs_t *fs, uint32_t *ino) {
             fs->bm.inodemap[bit >> 3] |= (uint8_t)(1u << (bit & 7));
             if (fs->bm.tinode) fs->bm.tinode--;
             fs->fl_dirty = 1;   /* inode map changed: flush before reference */
+            filsys_instr_ialloc(i);
             *ino = i;
             return 0;
         }
@@ -249,6 +253,7 @@ void v1fs_ifree(v1fs_t *fs, uint32_t ino) {
     uint32_t bit = ino - V1_ROOTINO;
     fs->bm.inodemap[bit >> 3] &= (uint8_t)~(1u << (bit & 7));
     fs->bm.tinode++;
+    filsys_instr_ifree(ino);
 }
 
 /* ---- block mapping ------------------------------------------------------ */

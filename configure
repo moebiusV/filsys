@@ -775,6 +775,7 @@ with_fuse
 enable_image_tests
 enable_oracle_tests
 enable_slow_tests
+enable_instrumentation
 enable_fuzzing
 enable_year2038
 '
@@ -1431,6 +1432,9 @@ Optional Features:
                           check'
   --enable-slow-tests     run the slow fault-injection / crash-prefix /
                           property soak in `make check`
+  --enable-instrumentation
+                          build the library with the block-ownership table +
+                          mutation trace
   --enable-fuzzing        build the libFuzzer read-path harness (requires
                           clang)
   --enable-year2038       support timestamps after 2038
@@ -6356,6 +6360,29 @@ else case e in #(
 esac
 fi
 
+
+# ---------------------------------------------------------------------------
+# Test-build instrumentation (instrument.c): a block-ownership table plus a
+# sequence-numbered mutation trace.  The table turns an aliasing (class-D)
+# transition into an immediate report instead of a class-D finding at the next
+# fsck; the trace is dumped alongside it.  A debugging aid for the soak, off by
+# default so production builds pay nothing.
+# ---------------------------------------------------------------------------
+# Check whether --enable-instrumentation was given.
+if test ${enable_instrumentation+y}
+then :
+  enableval=$enable_instrumentation; enable_instrumentation=$enableval
+else case e in #(
+  e) enable_instrumentation=no ;;
+esac
+fi
+
+if test "x$enable_instrumentation" = xyes
+then :
+
+printf "%s\n" "#define FILSYS_INSTRUMENT 1" >>confdefs.h
+
+fi
 
 # ---------------------------------------------------------------------------
 # Optional libFuzzer harness (fuzz/filsys-fuzz.c).  --enable-fuzzing builds the

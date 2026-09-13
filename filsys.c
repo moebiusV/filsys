@@ -15,6 +15,7 @@
 #include "v1fs.h"
 #include "v7fs.h"
 #include "pdp7fs.h"
+#include "instrument.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -152,6 +153,7 @@ static int itrunc(filsys_t *fs, filsys_inode_t *ip, filsys_blklist_t **bl) {
     *bl = filsys_blklist_new();
     if (!*bl)
         return -ENOMEM;
+    filsys_instr_truncate(ip->ino);
     return filsys_itrunc(fs->fs, ip, *bl);
 }
 static int itrunc_from(filsys_t *fs, filsys_inode_t *ip, uint32_t first_blk,
@@ -174,10 +176,16 @@ static int dir_lookup(filsys_t *fs, filsys_inode_t *ip, const char *name, uint32
     return fs->ops->dir_lookup(fs->fs, ip, name, ino);
 }
 static int dir_add(filsys_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name) {
-    return fs->ops->dir->dir_add(fs->fs, ip, ino, name);
+    int rc = fs->ops->dir->dir_add(fs->fs, ip, ino, name);
+    if (rc == 0)
+        filsys_instr_dir_add(ip->ino, name, ino);
+    return rc;
 }
 static int dir_remove(filsys_t *fs, filsys_inode_t *ip, const char *name) {
-    return fs->ops->dir->dir_remove(fs->fs, ip, name);
+    int rc = fs->ops->dir->dir_remove(fs->fs, ip, name);
+    if (rc == 0)
+        filsys_instr_dir_remove(ip->ino, name);
+    return rc;
 }
 static int lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip) {
     return fs->ops->lookup(fs->fs, path, ino, ip);
@@ -667,6 +675,7 @@ static int remove_name(filsys_t *fs, filsys_inode_t *ddir, const char *name,
     int rc = dir_remove(fs, ddir, name);
     if (rc) return rc;
     ip->nlink--;
+    filsys_instr_link(ino, ip->nlink + 1, ip->nlink);
     d->orphaned = ip->nlink <= 0;
     d->deferred = d->orphaned && open_refs(fs, ino) > 0;
     return 0;
@@ -958,6 +967,7 @@ static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
     rc = dir_add(fs, &ddir, src_ino, name);
     if (rc) return rc;
     ip.nlink++;
+    filsys_instr_link(src_ino, ip.nlink - 1, ip.nlink);
     rc = write_inode(fs, src_ino, &ip);
     if (rc) {
         /* rollback: the link count didn't persist, so withdraw the name.  Check

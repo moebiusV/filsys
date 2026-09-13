@@ -231,6 +231,20 @@ AS_IF([test "x$enable_slow_tests" = xyes],
 AC_SUBST([SLOW_TESTS_ENV])
 
 # ---------------------------------------------------------------------------
+# Test-build instrumentation (instrument.c): a block-ownership table plus a
+# sequence-numbered mutation trace.  The table turns an aliasing (class-D)
+# transition into an immediate report instead of a class-D finding at the next
+# fsck; the trace is dumped alongside it.  A debugging aid for the soak, off by
+# default so production builds pay nothing.
+# ---------------------------------------------------------------------------
+AC_ARG_ENABLE([instrumentation],
+    [AS_HELP_STRING([--enable-instrumentation],
+                    [build the library with the block-ownership table + mutation trace])],
+    [enable_instrumentation=$enableval], [enable_instrumentation=no])
+AS_IF([test "x$enable_instrumentation" = xyes],
+    [AC_DEFINE([FILSYS_INSTRUMENT], [1], [Block-ownership table and mutation trace])])
+
+# ---------------------------------------------------------------------------
 # Optional libFuzzer harness (fuzz/filsys-fuzz.c).  --enable-fuzzing builds the
 # read-path fuzz target with clang's -fsanitize=fuzzer (libFuzzer provides
 # main); it is a development/corpus tool, not a shipped program, so it is off

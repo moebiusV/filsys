@@ -178,8 +178,8 @@ am_libfilsys_a_OBJECTS = libfilsys_a-filsys.$(OBJEXT) \
 	libfilsys_a-filsys_mkfs.$(OBJEXT) \
 	libfilsys_a-blocktree.$(OBJEXT) \
 	libfilsys_a-byteorder.$(OBJEXT) libfilsys_a-check.$(OBJEXT) \
-	libfilsys_a-v1fs.$(OBJEXT) libfilsys_a-v7fs.$(OBJEXT) \
-	libfilsys_a-pdp7fs.$(OBJEXT)
+	libfilsys_a-instrument.$(OBJEXT) libfilsys_a-v1fs.$(OBJEXT) \
+	libfilsys_a-v7fs.$(OBJEXT) libfilsys_a-pdp7fs.$(OBJEXT)
 libfilsys_a_OBJECTS = $(am_libfilsys_a_OBJECTS)
 am__filsys_fuzz_SOURCES_DIST = fuzz/filsys-fuzz.c
 am__dirstamp = $(am__leading_dot)dirstamp
@@ -267,6 +267,7 @@ am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po \
 	./$(DEPDIR)/libfilsys_a-filsys_format.Po \
 	./$(DEPDIR)/libfilsys_a-filsys_mkfs.Po \
 	./$(DEPDIR)/libfilsys_a-filsys_names.Po \
+	./$(DEPDIR)/libfilsys_a-instrument.Po \
 	./$(DEPDIR)/libfilsys_a-pdp7fs.Po \
 	./$(DEPDIR)/libfilsys_a-v1fs.Po \
 	./$(DEPDIR)/libfilsys_a-v7fs.Po \
@@ -671,7 +672,7 @@ GZIP_ENV = --best -n
 # internal per-format layer and stays uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h instrument.c instrument.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
@@ -704,10 +705,12 @@ fsck_filsys_SOURCES = fsck.filsys.c
 fsck_filsys_LDADD = libfilsys.a
 fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
+
 EXTRA_DIST = test.sh fetch.sh conformance/fuse-conformance.c \
 	conformance/fuse-conformance-fuse2.c \
 	conformance/conformance-client.c conformance/run.sh \
-	fuzz/filsys-fuzz.c boot/hpuboot.s boot/rpuboot.s
+	fuzz/filsys-fuzz.c
+	sysiii-pdp11-cleaned.root.gz boot/hpuboot.s boot/rpuboot.s
 
 # --- PDP-11 boot blocks -----------------------------------------------------
 # filsys ships two block-0 bootstraps assembled from the V7 /usr/mdec sources:
@@ -982,6 +985,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys_format.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys_mkfs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys_names.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-instrument.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-pdp7fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-v1fs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-v7fs.Po@am__quote@ # am--include-marker
@@ -1130,6 +1134,20 @@ libfilsys_a-check.obj: check.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='check.c' object='libfilsys_a-check.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-check.obj `if test -f 'check.c'; then $(CYGPATH_W) 'check.c'; else $(CYGPATH_W) '$(srcdir)/check.c'; fi`
+
+libfilsys_a-instrument.o: instrument.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-instrument.o -MD -MP -MF $(DEPDIR)/libfilsys_a-instrument.Tpo -c -o libfilsys_a-instrument.o `test -f 'instrument.c' || echo '$(srcdir)/'`instrument.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-instrument.Tpo $(DEPDIR)/libfilsys_a-instrument.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='instrument.c' object='libfilsys_a-instrument.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-instrument.o `test -f 'instrument.c' || echo '$(srcdir)/'`instrument.c
+
+libfilsys_a-instrument.obj: instrument.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-instrument.obj -MD -MP -MF $(DEPDIR)/libfilsys_a-instrument.Tpo -c -o libfilsys_a-instrument.obj `if test -f 'instrument.c'; then $(CYGPATH_W) 'instrument.c'; else $(CYGPATH_W) '$(srcdir)/instrument.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-instrument.Tpo $(DEPDIR)/libfilsys_a-instrument.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='instrument.c' object='libfilsys_a-instrument.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-instrument.obj `if test -f 'instrument.c'; then $(CYGPATH_W) 'instrument.c'; else $(CYGPATH_W) '$(srcdir)/instrument.c'; fi`
 
 libfilsys_a-v1fs.o: v1fs.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-v1fs.o -MD -MP -MF $(DEPDIR)/libfilsys_a-v1fs.Tpo -c -o libfilsys_a-v1fs.o `test -f 'v1fs.c' || echo '$(srcdir)/'`v1fs.c
@@ -2009,6 +2027,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_format.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_mkfs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_names.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-instrument.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v1fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v7fs.Po
@@ -2082,6 +2101,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_format.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_mkfs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_names.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-instrument.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-pdp7fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v1fs.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-v7fs.Po

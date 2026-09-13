@@ -15,6 +15,7 @@
 #include <config.h>
 #include "pdp7fs.h"
 #include "filsys_ops.h"
+#include "instrument.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -364,12 +365,14 @@ int p7fs_balloc(p7fs_t *fs, uint32_t *bno) {
     if (write_words(fs, *bno, z))
         return -EIO;
     fs->fl_dirty = 1;   /* free-list head changed: flush before reference */
+    filsys_instr_balloc(*bno);
     return 0;
 }
 
 void p7fs_bfree(p7fs_t *fs, uint32_t bno) {
     if (bno == 0 || fs->readonly)
         return;
+    filsys_instr_bfree(bno);
     uint32_t h = fs->freelist;
     if (h == 0) {
         fs->freelist = bno;
@@ -410,6 +413,7 @@ int p7fs_ialloc(p7fs_t *fs, uint32_t *ino) {
             if (write_words(fs, p7_itod(i), words))
                 return -EIO;
             fs->fl_dirty = 1;   /* inode list changed: flush before reference */
+            filsys_instr_ialloc(i);
             *ino = i;
             return 0;
         }
@@ -425,6 +429,7 @@ void p7fs_ifree(p7fs_t *fs, uint32_t ino) {
         return;
     memset(words + p7_itoo(ino), 0, P7_INODESZ * sizeof(uint32_t));
     write_words(fs, p7_itod(ino), words);
+    filsys_instr_ifree(ino);
 }
 
 /* ---- block mapping ------------------------------------------------------ */

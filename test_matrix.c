@@ -19,6 +19,7 @@
 #include "v7fs.h"
 #include "filsys_ops.h"
 #include "pdp7fs.h"
+#include "instrument.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1634,6 +1635,63 @@ static void oracle_fixtures(void) {
     unlink("/tmp/filsys-oracle-clean.img");
 }
 
+/* The ownership table + mutation trace (instrument.c) are compiled only with
+ * FILSYS_INSTRUMENT; without it every hook is a no-op and there is nothing to
+ * assert.  With it, a run of the allocator/directory transitions must leave
+ * zero violations: no block handed out twice, none freed while already free.
+ * This is the "allocator test on its own" that the crash/fault prefixes only
+ * reach indirectly through fsck. */
+static void instrument_test(void) {
+#ifdef FILSYS_INSTRUMENT
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        int frc = fmt_at(i, &f);
+        if (!frc)
+            break;
+        if (frc < 0)
+            continue;
+
+        char img[64], what[128];
+        snprintf(img, sizeof img, "test_matrix_%s_instr.img", f.name);
+        unlink(img);
+        /* The table is a global: disable it across mkfs, whose salvage op
+         * (makefree) bulk-bfrees every free block to rebuild the free list --
+         * those are not the mutations under test. */
+        filsys_instr_reset(0);
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("instr mkfs", 0); unlink(img); continue; }
+        filsys_t *fs;
+        if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
+            ok("instr open", 0); unlink(img); continue;
+        }
+
+        filsys_instr_reset(f.blocks);
+
+        /* Exercise allocator + directory transitions end to end. */
+        uint8_t buf[8192];
+        memset(buf, 'x', sizeof buf);
+        filsys_create(fs, "/f", 0644, 0, 0);
+        filsys_write(fs, "/f", buf, sizeof buf, 0);   /* multi-block: several balloc */
+        filsys_link(fs, "/f", "/g");
+        filsys_mkdir(fs, "/d", 0755, 0, 0);
+        filsys_rename(fs, "/g", "/d/h", 0);
+        filsys_truncate(fs, "/f", 0);                 /* bfree the blocks back */
+        filsys_unlink(fs, "/d/h");
+        filsys_rmdir(fs, "/d");
+        filsys_unlink(fs, "/f");
+
+        int v = filsys_instr_violations();
+        snprintf(what, sizeof what, "%s instrumentation (violations=%d)", f.name, v);
+        ok(what, v == 0);
+
+        filsys_close(fs);
+        unlink(img);
+        /* Leave the table disabled so a later test's mkfs (makefree -> bfree)
+         * does not fire on a stale ownership table. */
+        filsys_instr_reset(0);
+    }
+#endif
+}
+
 int main(void) {
     /* The slow soak (fault injection x editions, exhaustive crash-prefix
      * enumeration, property-based op sequences) runs only when
@@ -1671,6 +1729,7 @@ int main(void) {
         bitmap_roundtrip();
         crash_consistency();
         durability_test();
+        instrument_test();
         rename_semantics();
         dir_link_semantics();
         findfs_self_detect();
