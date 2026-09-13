@@ -1044,13 +1044,14 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     uint32_t tino = 0;
     filsys_inode_t tip_saved;          /* snapshot of the removed target */
     int had_target = 0;
+    int tisdir = 0;                    /* the removed target was a directory */
     int free_target = 0;               /* orphaned target to free at commit */
     if (dir_lookup(fs, &tdirip, tname, &tino) == 0) {
         if (flags & FS_RENAME_NOREPLACE) return -EEXIST;   /* don't clobber */
         if (tino == sino) return 0;   /* already there */
         filsys_inode_t tip;
         if (read_inode(fs, tino, &tip)) return -EIO;
-        int tisdir = mode_is_dir(&fs->fmt, &tip);
+        tisdir = mode_is_dir(&fs->fmt, &tip);
         if (isdir && !tisdir) return -ENOTDIR;   /* directory over a file */
         if (!isdir && tisdir) return -EISDIR;    /* file over a directory */
         if (tisdir) {
@@ -1141,6 +1142,17 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
              * it fresh so we bump nlink without clobbering that update. */
             if (read_inode(fs, tdino, &tdirip) == 0) {
                 tdirip.nlink++;
+                rc = write_inode(fs, tdino, &tdirip);
+                if (rc) return rc;
+            }
+        }
+        /* Freeing a replaced directory target drops its ".." entry (which points
+         * at tdir), so tdir loses one reference.  In the same-parent case (fdir
+         * == tdir) this is tdir's only change; in the cross-parent case it nets
+         * against the moved directory's ".." bump above, leaving tdir unchanged. */
+        if (tisdir) {
+            if (read_inode(fs, tdino, &tdirip) == 0) {
+                if (tdirip.nlink > 1) tdirip.nlink--;
                 rc = write_inode(fs, tdino, &tdirip);
                 if (rc) return rc;
             }
