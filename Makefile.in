@@ -179,7 +179,11 @@ am_libfilsys_a_OBJECTS = libfilsys_a-filsys.$(OBJEXT) \
 	libfilsys_a-blocktree.$(OBJEXT) \
 	libfilsys_a-byteorder.$(OBJEXT) libfilsys_a-check.$(OBJEXT) \
 	libfilsys_a-instrument.$(OBJEXT) libfilsys_a-v1fs.$(OBJEXT) \
-	libfilsys_a-v7fs.$(OBJEXT) libfilsys_a-pdp7fs.$(OBJEXT)
+	libfilsys_a-v7fs.$(OBJEXT) libfilsys_a-pdp7fs.$(OBJEXT) \
+	libfilsys_a-dir_fixed.$(OBJEXT) \
+	libfilsys_a-dir_bsd211.$(OBJEXT) \
+	libfilsys_a-alloc_freelist.$(OBJEXT) \
+	libfilsys_a-alloc_v8bitmap.$(OBJEXT)
 libfilsys_a_OBJECTS = $(am_libfilsys_a_OBJECTS)
 am__filsys_fuzz_SOURCES_DIST = fuzz/filsys-fuzz.c
 am__dirstamp = $(am__leading_dot)dirstamp
@@ -259,9 +263,13 @@ depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po \
 	./$(DEPDIR)/fsck_filsys-fsck.filsys.Po \
+	./$(DEPDIR)/libfilsys_a-alloc_freelist.Po \
+	./$(DEPDIR)/libfilsys_a-alloc_v8bitmap.Po \
 	./$(DEPDIR)/libfilsys_a-blocktree.Po \
 	./$(DEPDIR)/libfilsys_a-byteorder.Po \
 	./$(DEPDIR)/libfilsys_a-check.Po \
+	./$(DEPDIR)/libfilsys_a-dir_bsd211.Po \
+	./$(DEPDIR)/libfilsys_a-dir_fixed.Po \
 	./$(DEPDIR)/libfilsys_a-filsys.Po \
 	./$(DEPDIR)/libfilsys_a-filsys_detect.Po \
 	./$(DEPDIR)/libfilsys_a-filsys_format.Po \
@@ -672,7 +680,7 @@ GZIP_ENV = --best -n
 # internal per-format layer and stays uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h instrument.c instrument.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h instrument.c instrument.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h dir_fixed.c dir_bsd211.c alloc_freelist.c alloc_v8bitmap.c
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
@@ -967,9 +975,13 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/findfs_filsys-findfs.filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fsck_filsys-fsck.filsys.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-alloc_freelist.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-alloc_v8bitmap.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-blocktree.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-byteorder.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-check.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-dir_bsd211.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-dir_fixed.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys_detect.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfilsys_a-filsys_format.Po@am__quote@ # am--include-marker
@@ -1180,6 +1192,62 @@ libfilsys_a-pdp7fs.obj: pdp7fs.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pdp7fs.c' object='libfilsys_a-pdp7fs.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-pdp7fs.obj `if test -f 'pdp7fs.c'; then $(CYGPATH_W) 'pdp7fs.c'; else $(CYGPATH_W) '$(srcdir)/pdp7fs.c'; fi`
+
+libfilsys_a-dir_fixed.o: dir_fixed.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-dir_fixed.o -MD -MP -MF $(DEPDIR)/libfilsys_a-dir_fixed.Tpo -c -o libfilsys_a-dir_fixed.o `test -f 'dir_fixed.c' || echo '$(srcdir)/'`dir_fixed.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-dir_fixed.Tpo $(DEPDIR)/libfilsys_a-dir_fixed.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dir_fixed.c' object='libfilsys_a-dir_fixed.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-dir_fixed.o `test -f 'dir_fixed.c' || echo '$(srcdir)/'`dir_fixed.c
+
+libfilsys_a-dir_fixed.obj: dir_fixed.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-dir_fixed.obj -MD -MP -MF $(DEPDIR)/libfilsys_a-dir_fixed.Tpo -c -o libfilsys_a-dir_fixed.obj `if test -f 'dir_fixed.c'; then $(CYGPATH_W) 'dir_fixed.c'; else $(CYGPATH_W) '$(srcdir)/dir_fixed.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-dir_fixed.Tpo $(DEPDIR)/libfilsys_a-dir_fixed.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dir_fixed.c' object='libfilsys_a-dir_fixed.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-dir_fixed.obj `if test -f 'dir_fixed.c'; then $(CYGPATH_W) 'dir_fixed.c'; else $(CYGPATH_W) '$(srcdir)/dir_fixed.c'; fi`
+
+libfilsys_a-dir_bsd211.o: dir_bsd211.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-dir_bsd211.o -MD -MP -MF $(DEPDIR)/libfilsys_a-dir_bsd211.Tpo -c -o libfilsys_a-dir_bsd211.o `test -f 'dir_bsd211.c' || echo '$(srcdir)/'`dir_bsd211.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-dir_bsd211.Tpo $(DEPDIR)/libfilsys_a-dir_bsd211.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dir_bsd211.c' object='libfilsys_a-dir_bsd211.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-dir_bsd211.o `test -f 'dir_bsd211.c' || echo '$(srcdir)/'`dir_bsd211.c
+
+libfilsys_a-dir_bsd211.obj: dir_bsd211.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-dir_bsd211.obj -MD -MP -MF $(DEPDIR)/libfilsys_a-dir_bsd211.Tpo -c -o libfilsys_a-dir_bsd211.obj `if test -f 'dir_bsd211.c'; then $(CYGPATH_W) 'dir_bsd211.c'; else $(CYGPATH_W) '$(srcdir)/dir_bsd211.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-dir_bsd211.Tpo $(DEPDIR)/libfilsys_a-dir_bsd211.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='dir_bsd211.c' object='libfilsys_a-dir_bsd211.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-dir_bsd211.obj `if test -f 'dir_bsd211.c'; then $(CYGPATH_W) 'dir_bsd211.c'; else $(CYGPATH_W) '$(srcdir)/dir_bsd211.c'; fi`
+
+libfilsys_a-alloc_freelist.o: alloc_freelist.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-alloc_freelist.o -MD -MP -MF $(DEPDIR)/libfilsys_a-alloc_freelist.Tpo -c -o libfilsys_a-alloc_freelist.o `test -f 'alloc_freelist.c' || echo '$(srcdir)/'`alloc_freelist.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-alloc_freelist.Tpo $(DEPDIR)/libfilsys_a-alloc_freelist.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='alloc_freelist.c' object='libfilsys_a-alloc_freelist.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-alloc_freelist.o `test -f 'alloc_freelist.c' || echo '$(srcdir)/'`alloc_freelist.c
+
+libfilsys_a-alloc_freelist.obj: alloc_freelist.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-alloc_freelist.obj -MD -MP -MF $(DEPDIR)/libfilsys_a-alloc_freelist.Tpo -c -o libfilsys_a-alloc_freelist.obj `if test -f 'alloc_freelist.c'; then $(CYGPATH_W) 'alloc_freelist.c'; else $(CYGPATH_W) '$(srcdir)/alloc_freelist.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-alloc_freelist.Tpo $(DEPDIR)/libfilsys_a-alloc_freelist.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='alloc_freelist.c' object='libfilsys_a-alloc_freelist.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-alloc_freelist.obj `if test -f 'alloc_freelist.c'; then $(CYGPATH_W) 'alloc_freelist.c'; else $(CYGPATH_W) '$(srcdir)/alloc_freelist.c'; fi`
+
+libfilsys_a-alloc_v8bitmap.o: alloc_v8bitmap.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-alloc_v8bitmap.o -MD -MP -MF $(DEPDIR)/libfilsys_a-alloc_v8bitmap.Tpo -c -o libfilsys_a-alloc_v8bitmap.o `test -f 'alloc_v8bitmap.c' || echo '$(srcdir)/'`alloc_v8bitmap.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-alloc_v8bitmap.Tpo $(DEPDIR)/libfilsys_a-alloc_v8bitmap.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='alloc_v8bitmap.c' object='libfilsys_a-alloc_v8bitmap.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-alloc_v8bitmap.o `test -f 'alloc_v8bitmap.c' || echo '$(srcdir)/'`alloc_v8bitmap.c
+
+libfilsys_a-alloc_v8bitmap.obj: alloc_v8bitmap.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -MT libfilsys_a-alloc_v8bitmap.obj -MD -MP -MF $(DEPDIR)/libfilsys_a-alloc_v8bitmap.Tpo -c -o libfilsys_a-alloc_v8bitmap.obj `if test -f 'alloc_v8bitmap.c'; then $(CYGPATH_W) 'alloc_v8bitmap.c'; else $(CYGPATH_W) '$(srcdir)/alloc_v8bitmap.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfilsys_a-alloc_v8bitmap.Tpo $(DEPDIR)/libfilsys_a-alloc_v8bitmap.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='alloc_v8bitmap.c' object='libfilsys_a-alloc_v8bitmap.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libfilsys_a_CFLAGS) $(CFLAGS) -c -o libfilsys_a-alloc_v8bitmap.obj `if test -f 'alloc_v8bitmap.c'; then $(CYGPATH_W) 'alloc_v8bitmap.c'; else $(CYGPATH_W) '$(srcdir)/alloc_v8bitmap.c'; fi`
 
 fuzz/filsys_fuzz-filsys-fuzz.o: fuzz/filsys-fuzz.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(filsys_fuzz_CFLAGS) $(CFLAGS) -MT fuzz/filsys_fuzz-filsys-fuzz.o -MD -MP -MF fuzz/$(DEPDIR)/filsys_fuzz-filsys-fuzz.Tpo -c -o fuzz/filsys_fuzz-filsys-fuzz.o `test -f 'fuzz/filsys-fuzz.c' || echo '$(srcdir)/'`fuzz/filsys-fuzz.c
@@ -1988,9 +2056,13 @@ distclean: distclean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -f ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-fsck.filsys.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-alloc_freelist.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-alloc_v8bitmap.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-blocktree.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-byteorder.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-check.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-dir_bsd211.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-dir_fixed.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_detect.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_format.Po
@@ -2062,9 +2134,13 @@ maintainer-clean: maintainer-clean-am
 	-rm -rf $(top_srcdir)/autom4te.cache
 	-rm -f ./$(DEPDIR)/findfs_filsys-findfs.filsys.Po
 	-rm -f ./$(DEPDIR)/fsck_filsys-fsck.filsys.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-alloc_freelist.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-alloc_v8bitmap.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-blocktree.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-byteorder.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-check.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-dir_bsd211.Po
+	-rm -f ./$(DEPDIR)/libfilsys_a-dir_fixed.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_detect.Po
 	-rm -f ./$(DEPDIR)/libfilsys_a-filsys_format.Po
