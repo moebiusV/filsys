@@ -44,17 +44,9 @@
  * (e.g. for a readdir-offset cache), that invariant has to be re-established,
  * or a directory can strand its blocks the same way.
  *
- * Why the table is a fixed 1024 entries (rather than grown on demand): a
- * hypothesis worth recording and NOT re-chasing.  On some platforms the FUSE
- * `release` callback can fire at vnode *reclaim* instead of at last close,
- * which would leave entries live long after close and let 1024 distinct inodes
- * overflow the table as -ENFILE (and defer hard_remove frees so statfs
- * under-reports).  Measured on OpenBSD 7.9 (base libfuse 2.6) through a live
- * FUSE2 mount -- test-openbsd-release.sh, "finding A" -- 2000 distinct files
- * were created and re-opened with zero -ENFILE failures and statfs recovered
- * to baseline.  So release fires at last close there and the fixed 1024 table
- * is not the binding limit; no reclaim-time-release workaround is needed. */
-enum { FILSYS_OPEN_MAX = 1024 };
+ * The table is a heap array that doubles on demand; the simultaneous-open count
+ * is not a correctness limit (a fixed cap would surface as spurious -ENFILE on a
+ * mount that legitimately holds many files open). */
 struct open_handle {
     uint32_t ino;
     int      refs;
@@ -69,8 +61,9 @@ struct filsys {
     uid_t uid;                 /* reported ownership (default: the mounting user) */
     gid_t gid;
     int readonly;
-    struct open_handle opens[FILSYS_OPEN_MAX];
+    struct open_handle *opens;
     int nopen;
+    int nopen_cap;
 };
 
 /* ---- mode conversion ----------------------------------------------------- */
@@ -408,9 +401,24 @@ int filsys_close(filsys_t *fs) {
         if (r)
             rc = r;                     /* flush failure dominates */
     }
+    free(fs->opens);
     free(fs->fs);
     free(fs);
     return rc;
+}
+
+/* Grow the open-handle table (doubling from an initial 16) and return 0, or
+ * -ENFILE if the table cannot be grown. */
+static int open_reserve(filsys_t *fs) {
+    if (fs->nopen < fs->nopen_cap)
+        return 0;
+    int newcap = fs->nopen_cap ? fs->nopen_cap * 2 : 16;
+    struct open_handle *n = realloc(fs->opens, (size_t)newcap * sizeof *n);
+    if (!n)
+        return -ENFILE;
+    fs->opens = n;
+    fs->nopen_cap = newcap;
+    return 0;
 }
 
 int filsys_open_ino(filsys_t *fs, uint32_t ino) {
@@ -419,7 +427,7 @@ int filsys_open_ino(filsys_t *fs, uint32_t ino) {
             fs->opens[i].refs++;
             return 0;
         }
-    if (fs->nopen >= FILSYS_OPEN_MAX)
+    if (open_reserve(fs) != 0)
         return -ENFILE;
     fs->opens[fs->nopen].ino = ino;
     fs->opens[fs->nopen].refs = 1;

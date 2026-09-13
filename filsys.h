@@ -96,7 +96,9 @@ typedef struct {
     int16_t  nlink;
     int16_t  uid;
     int16_t  gid;
-    uint32_t size;
+    uint32_t size;               /* bytes; 32-bit by decision -- every edition's
+                                  * on-disk size field is <= 32 bits (V7-family 32,
+                                  * V6 24, V1 16), so a wider field would never fill */
     uint32_t addr[13];           /* block numbers (device number in addr[0]) */
     uint32_t atime, mtime, ctime;
 } filsys_inode_t;

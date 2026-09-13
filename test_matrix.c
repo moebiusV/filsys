@@ -303,6 +303,24 @@ static void run(const struct fmt *f) {
         filsys_unlink(fs, "/big");
     }
 
+    /* Overflow boundaries: a negative offset, a size that would wrap the
+     * uint32_t size field, an offset straddling the ceiling, and the truncate
+     * mirror images.  Each must be rejected before any block is allocated. */
+    {
+        char one = 'x';
+        filsys_create(fs, "/big", 0644, 0, 0);
+        ok("write off=-1 EINVAL", filsys_write(fs, "/big", &one, 1, -1) == -EINVAL);
+        ok("write size=SIZE_MAX EFBIG",
+           filsys_write(fs, "/big", &one, (size_t)-1, 0) == -EFBIG);
+        ok("write straddles ceiling EFBIG",
+           f->maxfile > 0 &&
+           filsys_write(fs, "/big", &one, 2, (off_t)(f->maxfile - 1)) == -EFBIG);
+        ok("truncate -1 EFBIG", filsys_truncate(fs, "/big", -1) == -EFBIG);
+        ok("truncate past ceiling EFBIG",
+           filsys_truncate(fs, "/big", (off_t)f->maxfile + 1) == -EFBIG);
+        filsys_unlink(fs, "/big");
+    }
+
     /* Truncate cycles: write large, then shrink/grow/zero; the freed indirect
      * blocks must all return to the free list (fsck below reports missing=0). */
     {
@@ -1692,6 +1710,84 @@ static void instrument_test(void) {
 #endif
 }
 
+/* Does directory `path` contain an entry named `name`?  (filsys_readdir hands
+ * back every entry, "." and ".." included where they are real on-disk names;
+ * the caller frees the list.) */
+static int dir_has(filsys_t *fs, const char *path, const char *name) {
+    filsys_dirent_t *ents = NULL;
+    size_t count = 0;
+    if (filsys_readdir(fs, path, &ents, &count) != 0)
+        return 0;
+    for (size_t i = 0; i < count; i++)
+        if (strcmp(ents[i].name, name) == 0) {
+            free(ents);
+            return 1;
+        }
+    free(ents);
+    return 0;
+}
+
+/* A directory that spans many blocks and is mutated (unlink/rename) between
+ * reads must keep a consistent listing: surviving names present, removed names
+ * gone, and the longest legal name intact.  This is the area most exposed to
+ * the macFUSE non-zero-first-offset readdir behaviour. */
+static void readdir_randomized(void) {
+    enum { N = 2000 };
+    for (size_t i = 0; ; i++) {
+        struct fmt f;
+        int frc = fmt_at(i, &f);
+        if (!frc)
+            break;
+        if (frc < 0)
+            continue;
+
+        char img[64], what[128], nm[80];
+        snprintf(img, sizeof img, "test_matrix_%s_readdir.img", f.name);
+        unlink(img);
+        if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("readdir mkfs", 0); unlink(img); continue; }
+        filsys_t *fs;
+        if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) { ok("readdir open", 0); unlink(img); continue; }
+
+        filsys_mkdir(fs, "/d", 0755, 0, 0);
+        for (int k = 0; k < N; k++) {
+            snprintf(nm, sizeof nm, "/d/f%d", k);
+            filsys_create(fs, nm, 0644, 0, 0);
+        }
+
+        /* mutate: delete every 3rd, rename every 5th survivor */
+        for (int k = 0; k < N; k++) {
+            if (k % 3 == 0) {
+                snprintf(nm, sizeof nm, "/d/f%d", k);
+                filsys_unlink(fs, nm);
+            } else if (k % 5 == 0) {
+                char from[80], to[80];
+                snprintf(from, sizeof from, "/d/f%d", k);
+                snprintf(to, sizeof to, "/d/r%d", k);
+                filsys_rename(fs, from, to, 0);
+            }
+        }
+
+        snprintf(what, sizeof what, "%s readdir unlink/rename listing", f.name);
+        ok(what,
+           dir_has(fs, "/d", "f1") && !dir_has(fs, "/d", "f0") &&
+           dir_has(fs, "/d", "r5") && !dir_has(fs, "/d", "f5") &&
+           dir_has(fs, "/d", "f2") && !dir_has(fs, "/d", "f3"));
+
+        /* the longest legal name round-trips */
+        uint32_t maxnl = filsys_getformat(f.edition).max_namlen;
+        char lname[80], lpath[88];
+        for (uint32_t c = 0; c < maxnl; c++)
+            lname[c] = (char)('a' + (c % 26));
+        lname[maxnl] = 0;
+        snprintf(lpath, sizeof lpath, "/d/%s", lname);
+        snprintf(what, sizeof what, "%s readdir long name", f.name);
+        ok(what, filsys_create(fs, lpath, 0644, 0, 0) == 0 && dir_has(fs, "/d", lname));
+
+        filsys_close(fs);
+        unlink(img);
+    }
+}
+
 int main(void) {
     /* The slow soak (fault injection x editions, exhaustive crash-prefix
      * enumeration, property-based op sequences) runs only when
@@ -1730,6 +1826,7 @@ int main(void) {
         crash_consistency();
         durability_test();
         instrument_test();
+        readdir_randomized();
         rename_semantics();
         dir_link_semantics();
         findfs_self_detect();

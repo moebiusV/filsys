@@ -335,11 +335,16 @@ int filsys_is_clean(filsys_edition_t *fs) {
 
 uint64_t filsys_max_file_op(filsys_edition_t *fs) {
     /* The block-mapping capacity (direct + single + double + triple indirect),
-     * capped by the on-disk size-field width where that is the smaller limit
-     * (V6's 24-bit and V1's 16-bit size field).  Word-addressed PDP-7 keeps its
-     * own constant. */
+     * capped first by the decoded size field -- a 32-bit value
+     * (filsys_inode_t.size), so no edition can address a file past UINT32_MAX
+     * even where the block-mapping capacity is larger (the V7-family
+     * triple-indirect and the V8/V9/V10 large-block layouts) -- and then by a
+     * narrower on-disk size field where one exists (V6 24-bit, V1 16-bit).
+     * Word-addressed PDP-7 keeps its own constant. */
     uint64_t n = fs->nindir;
     uint64_t cap = (fs->ndaddr + n + n * n + n * n * n) * (uint64_t)fs->bsize;
+    if (cap > UINT32_MAX)
+        cap = UINT32_MAX;
     if (fs->size_bits) {
         uint64_t field = (1ULL << fs->size_bits) - 1;
         if (cap > field)
