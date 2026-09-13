@@ -1,15 +1,11 @@
 #!/bin/sh
 # Finding-A probe (OpenBSD): FUSE `release` fires at vnode reclaim, not at last
-# close, so filsys_open_ino's fixed FILSYS_OPEN_MAX=1024 table keeps entries
-# alive until the kernel reclaims the vnode.  Two observable consequences, both
-# of which this script measures:
-#   1. The 1025th distinct inode opened through the mount fails (-ENFILE) once
-#      the table fills, because release is what drops the entry.
-#   2. df free space stays depressed after unlink, because hard_remove defers
-#      the free to release and release has not run yet.
-# Diagnostic, not a gate: on Linux (release == last close) all 2000 create/cat
-# succeed and df recovers; a create/cat plateau around 1024 on OpenBSD confirms
-# the hypothesis.  Always exits 0.
+# close, so an unlink-while-open inode's deferred free waits until the kernel
+# reclaims the vnode.  The observable consequence this script measures is that
+# df free space stays depressed after unlink (hard_remove defers the free to
+# release, which has not run yet).  The open-handle table itself now grows on
+# demand, so the old "-ENFILE at the 1025th inode" signature is gone.
+# Diagnostic, not a gate.  Always exits 0.
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
