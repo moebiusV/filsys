@@ -16,7 +16,7 @@ stdenv.mkDerivation rec {
   meta = with lib; {
     description = "FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images";
     homepage = "https://github.com/moebiusV/filsys";
-    license = [ licenses.isc ];  # ISC + Caldera Ancient UNIX (see COPYING)
+    license = [ licenses.isc ];
     maintainers = [ maintainers.maintainer ];
     platforms = platforms.linux;
   };

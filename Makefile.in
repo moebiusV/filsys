@@ -120,8 +120,8 @@ am__aclocal_m4_deps = $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
-	$(am__configure_deps) $(dist_boot_DATA) \
-	$(filsysinclude_HEADERS) $(am__DIST_COMMON)
+	$(am__configure_deps) $(filsysinclude_HEADERS) \
+	$(am__DIST_COMMON)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
  configure.lineno config.status.lineno
 mkinstalldirs = $(install_sh) -d
@@ -130,8 +130,8 @@ CONFIG_CLEAN_FILES = filsys.pc
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" \
 	"$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" \
-	"$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)" \
-	"$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(filsysincludedir)"
+	"$(DESTDIR)$(man5dir)" "$(DESTDIR)$(pkgconfigdir)" \
+	"$(DESTDIR)$(filsysincludedir)"
 @ENABLE_IMAGE_TESTS_TRUE@am__EXEEXT_1 =  \
 @ENABLE_IMAGE_TESTS_TRUE@	test_fuse_unlink_open$(EXEEXT)
 @ENABLE_ORACLE_TESTS_TRUE@am__EXEEXT_2 = test_oracle$(EXEEXT)
@@ -318,7 +318,7 @@ man1dir = $(mandir)/man1
 man5dir = $(mandir)/man5
 NROFF = nroff
 MANS = $(dist_man_MANS)
-DATA = $(dist_boot_DATA) $(pkgconfig_DATA)
+DATA = $(pkgconfig_DATA)
 HEADERS = $(filsysinclude_HEADERS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP) \
 	config.h.in
@@ -719,19 +719,7 @@ EXTRA_DIST = test.sh fetch.sh conformance/fuse-conformance.c \
 	conformance/fuse-conformance-fuse2.c \
 	conformance/conformance-client.c conformance/run.sh \
 	fuzz/filsys-fuzz.c sysiii-pdp11-original.root.gz \
-	sysiii-pdp11-cleaned.root.gz boot/hpuboot.s boot/rpuboot.s
-
-# --- PDP-11 boot blocks -----------------------------------------------------
-# filsys ships two block-0 bootstraps assembled from the V7 /usr/mdec sources:
-# hpuboot (RP06/HP disk) and rpuboot (RP03/04/05/06 disk).  The prebuilt a.out
-# files are installed with the package; pass one to `mkfs.filsys -b` to drop it
-# into block 0 (see mkfs.filsys(1)).  Regenerate them from source with the
-# ported V7 assembler:
-#   make boot
-# (the assembler ships in v7unix-toolchain at $(libexecdir)/v7unix/as; it finds
-#  its as2 second pass next to itself, so no AS2 needs to be passed)
-bootdir = $(pkgdatadir)
-dist_boot_DATA = boot/hpuboot boot/rpuboot
+	sysiii-pdp11-cleaned.root.gz
 test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 # test_matrix shells out to ./mkfs.filsys, ./fsck.filsys and ./findfs.filsys, so
@@ -1470,27 +1458,6 @@ uninstall-man5:
 	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^5][0-9a-z]*$$,5,;x' \
 	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
 	dir='$(DESTDIR)$(man5dir)'; $(am__uninstall_files_from_dir)
-install-dist_bootDATA: $(dist_boot_DATA)
-	@$(NORMAL_INSTALL)
-	@list='$(dist_boot_DATA)'; test -n "$(bootdir)" || list=; \
-	if test -n "$$list"; then \
-	  echo " $(MKDIR_P) '$(DESTDIR)$(bootdir)'"; \
-	  $(MKDIR_P) "$(DESTDIR)$(bootdir)" || exit 1; \
-	fi; \
-	for p in $$list; do \
-	  if test -f "$$p"; then d=; else d="$(srcdir)/"; fi; \
-	  echo "$$d$$p"; \
-	done | $(am__base_list) | \
-	while read files; do \
-	  echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(bootdir)'"; \
-	  $(INSTALL_DATA) $$files "$(DESTDIR)$(bootdir)" || exit $$?; \
-	done
-
-uninstall-dist_bootDATA:
-	@$(NORMAL_UNINSTALL)
-	@list='$(dist_boot_DATA)'; test -n "$(bootdir)" || list=; \
-	files=`for p in $$list; do echo $$p; done | sed -e 's|^.*/||'`; \
-	dir='$(DESTDIR)$(bootdir)'; $(am__uninstall_files_from_dir)
 install-pkgconfigDATA: $(pkgconfig_DATA)
 	@$(NORMAL_INSTALL)
 	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
@@ -1983,7 +1950,7 @@ check: check-am
 all-am: Makefile $(PROGRAMS) $(LIBRARIES) $(MANS) $(DATA) $(HEADERS) \
 		config.h all-local
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" "$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man5dir)" "$(DESTDIR)$(bootdir)" "$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(filsysincludedir)"; do \
+	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(sbindir)" "$(DESTDIR)$(libdir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man5dir)" "$(DESTDIR)$(pkgconfigdir)" "$(DESTDIR)$(filsysincludedir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -2070,8 +2037,8 @@ info: info-am
 
 info-am:
 
-install-data-am: install-dist_bootDATA install-filsysincludeHEADERS \
-	install-man install-pkgconfigDATA
+install-data-am: install-filsysincludeHEADERS install-man \
+	install-pkgconfigDATA
 
 install-dvi: install-dvi-am
 
@@ -2143,9 +2110,9 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS uninstall-dist_bootDATA \
-	uninstall-filsysincludeHEADERS uninstall-libLIBRARIES \
-	uninstall-man uninstall-pkgconfigDATA uninstall-sbinPROGRAMS
+uninstall-am: uninstall-binPROGRAMS uninstall-filsysincludeHEADERS \
+	uninstall-libLIBRARIES uninstall-man uninstall-pkgconfigDATA \
+	uninstall-sbinPROGRAMS
 
 uninstall-man: uninstall-man1 uninstall-man5
 
@@ -2161,20 +2128,20 @@ uninstall-man: uninstall-man1 uninstall-man5
 	distclean-compile distclean-generic distclean-hdr \
 	distclean-tags distcleancheck distdir distuninstallcheck dvi \
 	dvi-am html html-am info info-am install install-am \
-	install-binPROGRAMS install-data install-data-am \
-	install-dist_bootDATA install-dvi install-dvi-am install-exec \
-	install-exec-am install-filsysincludeHEADERS install-html \
-	install-html-am install-info install-info-am \
-	install-libLIBRARIES install-man install-man1 install-man5 \
-	install-pdf install-pdf-am install-pkgconfigDATA install-ps \
-	install-ps-am install-sbinPROGRAMS install-strip installcheck \
+	install-binPROGRAMS install-data install-data-am install-dvi \
+	install-dvi-am install-exec install-exec-am \
+	install-filsysincludeHEADERS install-html install-html-am \
+	install-info install-info-am install-libLIBRARIES install-man \
+	install-man1 install-man5 install-pdf install-pdf-am \
+	install-pkgconfigDATA install-ps install-ps-am \
+	install-sbinPROGRAMS install-strip installcheck \
 	installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic pdf pdf-am ps ps-am recheck tags tags-am \
 	uninstall uninstall-am uninstall-binPROGRAMS \
-	uninstall-dist_bootDATA uninstall-filsysincludeHEADERS \
-	uninstall-libLIBRARIES uninstall-man uninstall-man1 \
-	uninstall-man5 uninstall-pkgconfigDATA uninstall-sbinPROGRAMS
+	uninstall-filsysincludeHEADERS uninstall-libLIBRARIES \
+	uninstall-man uninstall-man1 uninstall-man5 \
+	uninstall-pkgconfigDATA uninstall-sbinPROGRAMS
 
 .PRECIOUS: Makefile
 
@@ -2182,13 +2149,6 @@ export TAR_OPTIONS = --owner=0 --group=0
 dist-hook:
 	@find $(distdir) -exec touch -h -d @$${SOURCE_DATE_EPOCH:-0} {} +
 	@find $(distdir) -exec chmod a-s {} +
-
-V7AS ?= $(libexecdir)/v7unix/as
-.PHONY: boot
-boot:
-	$(V7AS) -o boot/hpuboot boot/hpuboot.s
-	$(V7AS) -o boot/rpuboot boot/rpuboot.s
-	chmod 644 boot/hpuboot boot/rpuboot
 # check_PROGRAMS are not built by `make` (all), which left a stale test_matrix
 # to produce false greens after an edit to the library.  Build the test programs
 # with `all` too, so `make && ./test_matrix` tests the code just built.

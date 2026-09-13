@@ -1,3 +1,33 @@
+filsys 2.2.0 (2026-09-12)
+=========================
+
+Hardening and an API addition: `filsys_create` now returns the inode it made,
+and an unreadable indirect block no longer silently under-counts `st_blocks`.
+
+- `filsys_create` gains a `uint32_t *ino` out-param (set to the new inode), so
+  the FUSE create callback stops re-resolving the path after a successful
+  create; mknod and the tests pass `NULL`.  This changes the signature in the
+  installed `filsys.h` header.
+- the inode-ops `allocated_blocks` vtable returns `int` with a `uint64_t *out`
+  instead of `uint64_t`: `v7_ind_count`/`v6_ind_count` return `-EIO` on an
+  unreadable indirect block, and the V1/PDP-7 counters stop `continue`-ing past
+  the failure, so `st_blocks` reports 0 rather than a guessed, under-counted
+  total.
+- block I/O funnels through `filsys_check_range()`, a central subtraction-form
+  range primitive that cannot overflow.  The image size is stored in the
+  descriptor, every block read/write computes its offset in `uint64_t` and
+  checks it before the `off_t` cast, so a corrupt block number returns `-EINVAL`
+  instead of reading or writing past the image — on a 32-bit host too.
+  `test_matrix` exercises the boundary directly.
+- mkfs: the `-b` boot-block option and the two shipped PDP-11 bootstraps
+  (`hpuboot`/`rpuboot`, assembled from the V7 `/usr/mdec` sources) are removed —
+  boot blocks are `prebsd`'s job, and `mkfs.filsys` leaves block 0 alone.
+- docs: the manpages are now original text, so the Caldera "Ancient UNIX
+  License" is dropped from them and from COPYING/packaging; with the boot
+  blocks gone the whole repository is ISC.  The stale 1.8.0 / 2026-09-06
+  banners are stripped, and the ChangeLog — frozen at 2026-09-06 — is
+  regenerated from git history.
+
 filsys 2.1.0 (2026-09-12)
 =========================
 

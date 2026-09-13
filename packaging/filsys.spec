@@ -3,7 +3,7 @@ Version:        1.9.4
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
 
-License:        ISC AND Caldera
+License:        ISC
 URL:            https://github.com/moebiusV/filsys
 Source0:        https://github.com/moebiusV/filsys/releases/download/v%{version}/%{name}-%{version}.tar.gz
 
