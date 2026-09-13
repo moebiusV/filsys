@@ -126,7 +126,7 @@ static int inode_read_word(p7fs_t *fs, p7_inode_t *ip, uint32_t woff, uint32_t *
     uint32_t lbn = woff / P7_WSIZE;
     uint32_t idx = woff % P7_WSIZE;
     uint32_t pbn;
-    if (p7fs_bmap(fs, ip, lbn, 0, &pbn))
+    if (filsys_bmap(fs, ip, lbn, 0, &pbn))
         return -EIO;
     uint32_t words[P7_WSIZE];
     if (pbn == 0) {
@@ -145,7 +145,7 @@ static int inode_write_word(p7fs_t *fs, p7_inode_t *ip, uint32_t woff, uint32_t 
     uint32_t lbn = woff / P7_WSIZE;
     uint32_t idx = woff % P7_WSIZE;
     uint32_t pbn;
-    if (p7fs_bmap(fs, ip, lbn, 1, &pbn))
+    if (filsys_bmap(fs, ip, lbn, 1, &pbn))
         return -EIO;
     if (pbn == 0)
         return -EIO;
@@ -439,75 +439,6 @@ void p7fs_ifree(p7fs_t *fs, uint32_t ino) {
 
 /* ---- block mapping ------------------------------------------------------ */
 
-int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    /* A write past the seven direct slots promotes a small file to a large one:
-     * the seven direct block numbers move into the first indirect block. */
-    if (!(ip->mode & P7_ILARG) && create && lbn >= P7_NIADDR) {
-        uint32_t iblk;
-        int rc = p7fs_balloc(fs, &iblk);
-        if (rc)
-            return rc;   /* -EIO or -EROFS or -ENOSPC */
-        uint32_t words[P7_WSIZE] = {0};
-        for (int i = 0; i < P7_NIADDR; i++)
-            words[i] = ip->addr[i];
-        if (write_words(fs, iblk, words))
-            return -EIO;
-        for (int i = 0; i < P7_NIADDR; i++)
-            ip->addr[i] = 0;
-        ip->addr[0] = iblk;
-        ip->mode |= P7_ILARG;
-        filsys_instr_assign(ip->ino, lbn, iblk, 2);   /* indirect block */
-    }
-
-    if (ip->mode & P7_ILARG) {
-        if (lbn >= P7_NIADDR * P7_NINDIR) {
-            *bno = 0;
-            return create ? -EFBIG : 0;
-        }
-        uint32_t slot = lbn / P7_NINDIR;
-        uint32_t idx  = lbn % P7_NINDIR;
-        uint32_t iblk = ip->addr[slot];
-        if (iblk == 0) {
-            if (!create) { *bno = 0; return 0; }
-            int rc = p7fs_balloc(fs, &iblk);
-            if (rc)
-                return rc;
-            uint32_t z[P7_WSIZE] = {0};
-            if (write_words(fs, iblk, z))
-                return -EIO;
-            ip->addr[slot] = iblk;
-            filsys_instr_assign(ip->ino, lbn, iblk, 2);   /* indirect block */
-        }
-        uint32_t words[P7_WSIZE];
-        if (read_words(fs, iblk, words))
-            return -EIO;
-        if (words[idx] == 0 && create) {
-            int rc = p7fs_balloc(fs, &words[idx]);
-            if (rc)
-                return rc;
-            if (write_words(fs, iblk, words))
-                return -EIO;
-            filsys_instr_assign(ip->ino, lbn, words[idx], 1);   /* data block */
-        }
-        *bno = words[idx];
-        return 0;
-    }
-
-    /* small file: 7 direct block pointers */
-    if (lbn >= P7_NIADDR) {
-        *bno = 0;
-        return create ? -EFBIG : 0;
-    }
-    if (ip->addr[lbn] == 0 && create) {
-        int rc = p7fs_balloc(fs, &ip->addr[lbn]);
-        if (rc)
-            return rc;
-        filsys_instr_assign(ip->ino, lbn, ip->addr[lbn], 1);   /* direct data block */
-    }
-    *bno = ip->addr[lbn];
-    return 0;
-}
-
 static int p7fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip,
                                  uint64_t *out) {
     p7fs_t *f = fs;
@@ -798,7 +729,7 @@ static const struct filsys_dir_ops dir_pdp7 = {
 static const struct filsys_inode_ops inode_pdp7 = {
     .read_inode  = p7fs_read_inode,
     .write_inode = p7fs_write_inode,
-    .bmap        = p7fs_bmap,
+    .bmap        = filsys_bmap,
     .inode_state = p7_inode_state,
     .allocated_blocks = p7fs_allocated_blocks,
 };

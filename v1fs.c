@@ -266,81 +266,6 @@ void v1fs_ifree(v1fs_t *fs, uint32_t ino) {
 /* ---- block mapping ------------------------------------------------------ */
 
 /* Single indirect: *slot -> block, entry `idx` (2-byte entries). */
-static int ind1(v1fs_t *fs, uint32_t ino, uint32_t lbn,
-                uint32_t *slot, uint32_t idx, int create, uint32_t *out) {
-    uint32_t blk = *slot;
-    if (blk == 0) {
-        if (!create) { *out = 0; return 0; }
-        uint8_t z[V1_BSIZE];
-        memset(z, 0, V1_BSIZE);
-        int rc = v1fs_balloc(fs, &blk);
-        if (rc)
-            return rc;   /* -EIO (zeroing write) or -ENOSPC */
-        if (v1fs_write_block(fs, blk, z))
-            return -EIO;
-        *slot = blk;
-        filsys_instr_assign(ino, lbn, blk, 2);   /* indirect block */
-    }
-    uint8_t buf[V1_BSIZE];
-    if (v1fs_read_block(fs, blk, buf))
-        return -EIO;
-    uint32_t nb = bo_get16le(buf + 2 * idx);
-    if (nb == 0 && create) {
-        int rc = v1fs_balloc(fs, &nb);
-        if (rc)
-            return rc;
-        bo_put16le(buf + 2 * idx, (uint16_t)nb);
-        if (v1fs_write_block(fs, blk, buf))
-            return -EIO;
-        filsys_instr_assign(ino, lbn, nb, 1);   /* data block */
-    }
-    *out = nb;
-    return 0;
-}
-
-int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    /* A write past the eight direct slots promotes a small file to a large one:
-     * the eight direct block numbers move into the first indirect block. */
-    if (!(ip->mode & V1_ILARG) && create && lbn >= V1_NDADDR) {
-        uint32_t iblk;
-        int rc = v1fs_balloc(fs, &iblk);
-        if (rc)
-            return rc;
-        uint8_t buf[V1_BSIZE] = {0};
-        for (int i = 0; i < V1_NDADDR; i++)
-            bo_put16le(buf + 2 * i, (uint16_t)ip->addr[i]);
-        if (v1fs_write_block(fs, iblk, buf))
-            return -EIO;
-        for (int i = 0; i < V1_NDADDR; i++)
-            ip->addr[i] = 0;
-        ip->addr[0] = iblk;
-        ip->mode |= V1_ILARG;
-        filsys_instr_assign(ip->ino, lbn, iblk, 2);   /* indirect block */
-    }
-
-    if (ip->mode & V1_ILARG) {
-        if (lbn >= V1_NIADDR * V1_NINDIR) {   /* 8 single-indirect slots */
-            *bno = 0;
-            return create ? -EFBIG : 0;
-        }
-        return ind1(fs, ip->ino, lbn, &ip->addr[lbn >> 8], lbn & (V1_NINDIR - 1), create, bno);
-    }
-    if (lbn >= V1_NDADDR) {
-        *bno = 0;
-        return create ? -EFBIG : 0;
-    }
-    uint32_t nb = ip->addr[lbn];
-    if (nb == 0 && create) {
-        int rc = v1fs_balloc(fs, &nb);
-        if (rc)
-            return rc;
-        ip->addr[lbn] = nb;
-        filsys_instr_assign(ip->ino, lbn, nb, 1);   /* direct data block */
-    }
-    *bno = nb;
-    return 0;
-}
-
 static int v1fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip,
                                  uint64_t *out) {
     v1fs_t *f = fs;
@@ -464,7 +389,7 @@ static void v1fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
 static const struct filsys_inode_ops inode_v1 = {
     .read_inode  = v1fs_read_inode,
     .write_inode = v1fs_write_inode,
-    .bmap        = v1fs_bmap,
+    .bmap        = filsys_bmap,
     .inode_state = v1_inode_state,
     .allocated_blocks = v1fs_allocated_blocks,
 };

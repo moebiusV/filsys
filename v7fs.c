@@ -692,93 +692,6 @@ void v7fs_ifree(filsys_edition_t *fs, uint32_t ino) {
 
 /* Follow an indirect chain of `levels` levels (1/2/3) from *slot.
  * indices[0] is the outermost index.  Allocates when create is set. */
-static int ind_follow(filsys_edition_t *fs, uint32_t ino, uint32_t lbn,
-                      uint32_t *slot, int levels,
-                      const uint32_t *indices, int create, uint32_t *out) {
-    uint32_t blk = *slot;
-    for (int L = 0; L < levels; L++) {
-        if (blk == 0) {
-            if (!create) {
-                *out = 0;
-                return 0;
-            }
-            uint8_t z[V7_MAXBSIZE];
-            memset(z, 0, fs->bsize);
-            int rc = fs->alloc->balloc(fs, &blk);
-            if (rc)
-                return rc;   /* -EIO (barrier commit) or -ENOSPC */
-            if (v7fs_write_block(fs, blk, z))
-                return -EIO;
-            *slot = blk;
-            filsys_instr_assign(ino, lbn, blk, 2);   /* indirect block */
-        }
-        uint8_t buf[V7_MAXBSIZE];
-        if (v7fs_read_block(fs, blk, buf))
-            return -EIO;
-        uint32_t next = fs->bo->get32(buf + 4 * indices[L]);
-
-        if (L == levels - 1) {
-            if (next == 0 && create) {
-                int rc = fs->alloc->balloc(fs, &next);
-                if (rc)
-                    return rc;   /* -EIO (barrier commit) or -ENOSPC */
-                fs->bo->put32(buf + 4 * indices[L], next);
-                if (v7fs_write_block(fs, blk, buf))
-                    return -EIO;
-                filsys_instr_assign(ino, lbn, next, 1);   /* data block */
-            }
-            *out = next;
-            return 0;
-        }
-        if (next == 0) {
-            if (!create) {
-                *out = 0;
-                return 0;
-            }
-            uint8_t z[V7_MAXBSIZE];
-            memset(z, 0, fs->bsize);
-            int rc = fs->alloc->balloc(fs, &next);
-            if (rc)
-                return rc;   /* -EIO (barrier commit) or -ENOSPC */
-            if (v7fs_write_block(fs, next, z))
-                return -EIO;
-            fs->bo->put32(buf + 4 * indices[L], next);
-            if (v7fs_write_block(fs, blk, buf))
-                return -EIO;
-            filsys_instr_assign(ino, lbn, next, 2);   /* indirect block */
-        }
-        blk = next;
-    }
-    return -EIO;   /* unreachable */
-}
-
-int v7fs_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    if (lbn < (uint32_t)fs->ndaddr) {
-        uint32_t nb = ip->addr[lbn];
-        if (nb == 0 && create) {
-            int rc = fs->alloc->balloc(fs, &nb);
-            if (rc)
-                return rc;   /* -EIO (barrier commit) or -ENOSPC */
-            ip->addr[lbn] = nb;
-            filsys_instr_assign(ip->ino, lbn, nb, 1);   /* direct data block */
-        }
-        *bno = nb;
-        return 0;
-    }
-    uint32_t r = lbn - fs->ndaddr;
-    if (r < v7_nindir(fs))
-        return ind_follow(fs, ip->ino, lbn, &ip->addr[fs->ndaddr], 1, &r, create, bno);
-    r -= v7_nindir(fs);
-    if (r < (uint32_t)v7_nindir(fs) * v7_nindir(fs)) {
-        uint32_t idx[2] = { r / v7_nindir(fs), r % v7_nindir(fs) };
-        return ind_follow(fs, ip->ino, lbn, &ip->addr[fs->ndaddr + 1], 2, idx, create, bno);
-    }
-    r -= (uint32_t)v7_nindir(fs) * v7_nindir(fs);
-    uint32_t idx[3] = { r / (v7_nindir(fs) * v7_nindir(fs)),
-                        (r / v7_nindir(fs)) % v7_nindir(fs), r % v7_nindir(fs) };
-    return ind_follow(fs, ip->ino, lbn, &ip->addr[fs->ndaddr + 2], 3, idx, create, bno);
-}
-
 /* Count the blocks in an indirect chain of `levels` levels, including the
  * indirect blocks themselves (they are allocated and do count toward
  * st_blocks).  A zero entry is a hole and contributes nothing.  Returns 0
@@ -1915,7 +1828,7 @@ const struct filsys_dir_ops dir_fixed = {
 static const struct filsys_inode_ops inode_64 = {
     .read_inode  = v7fs_read_inode,
     .write_inode = v7fs_write_inode,
-    .bmap        = v7fs_bmap,
+    .bmap        = filsys_bmap,
     .inode_state = v7_inode_state,
     .allocated_blocks = v7fs_allocated_blocks,
 };
@@ -2092,7 +2005,7 @@ static const struct filsys_dir_ops dir_variable = {
 static const struct filsys_inode_ops inode_64_32addr = {
     .read_inode  = v7fs_read_inode,
     .write_inode = v7fs_write_inode,
-    .bmap        = v7fs_bmap,
+    .bmap        = filsys_bmap,
     .inode_state = bsd211_inode_state,
     .allocated_blocks = v7fs_allocated_blocks,
 };
@@ -2268,106 +2181,6 @@ static int v6_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *
     return v7fs_write_block(fs, bno, raw);
 }
 
-static int v6_ind1(filsys_edition_t *fs, uint32_t *slot, uint32_t idx, int create, uint32_t *out) {
-    uint32_t blk = *slot;
-    if (blk == 0) {
-        if (!create) { *out = 0; return 0; }
-        uint8_t z[V6_BSIZE];
-        memset(z, 0, V6_BSIZE);
-        int rc = fs->alloc->balloc(fs, &blk);
-        if (rc)
-            return rc;   /* -EIO (barrier commit) or -ENOSPC */
-        if (v7fs_write_block(fs, blk, z))
-            return -EIO;
-        *slot = blk;
-    }
-    uint8_t buf[V6_BSIZE];
-    if (v7fs_read_block(fs, blk, buf))
-        return -EIO;
-    uint32_t nb = fs->bo->get16(buf + 2 * idx);
-    if (nb == 0 && create) {
-        int rc = fs->alloc->balloc(fs, &nb);
-        if (rc)
-            return rc;   /* -EIO (barrier commit) or -ENOSPC */
-        fs->bo->put16(buf + 2 * idx, (uint16_t)nb);
-        if (v7fs_write_block(fs, blk, buf))
-            return -EIO;
-    }
-    *out = nb;
-    return 0;
-}
-
-static int v6_ind2(filsys_edition_t *fs, uint32_t *slot, uint32_t o, uint32_t i, int create, uint32_t *out) {
-    uint32_t blk = *slot;
-    if (blk == 0) {
-        if (!create) { *out = 0; return 0; }
-        uint8_t z[V6_BSIZE];
-        memset(z, 0, V6_BSIZE);
-        int rc = fs->alloc->balloc(fs, &blk);
-        if (rc)
-            return rc;   /* -EIO (barrier commit) or -ENOSPC */
-        if (v7fs_write_block(fs, blk, z))
-            return -EIO;
-        *slot = blk;
-    }
-    uint8_t buf[V6_BSIZE];
-    if (v7fs_read_block(fs, blk, buf))
-        return -EIO;
-    uint32_t sub = fs->bo->get16(buf + 2 * o);
-    if (sub == 0 && create) {
-        uint8_t z[V6_BSIZE];
-        memset(z, 0, V6_BSIZE);
-        int rc = fs->alloc->balloc(fs, &sub);
-        if (rc)
-            return rc;   /* -EIO (barrier commit) or -ENOSPC */
-        if (v7fs_write_block(fs, sub, z))
-            return -EIO;
-        fs->bo->put16(buf + 2 * o, (uint16_t)sub);
-        if (v7fs_write_block(fs, blk, buf))
-            return -EIO;
-    }
-    if (sub == 0) { *out = 0; return 0; }
-    return v6_ind1(fs, &sub, i, create, out);
-}
-
-static int v6_bmap(filsys_edition_t *fs, v7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    if (!(ip->mode & V6_ILARG) && create && lbn >= V6_NDADDR) {
-        uint32_t iblk;
-        int rc = fs->alloc->balloc(fs, &iblk);
-        if (rc)
-            return rc;   /* -EIO (barrier commit) or -ENOSPC */
-        uint8_t buf[V6_BSIZE] = {0};
-        for (int i = 0; i < V6_NDADDR; i++)
-            fs->bo->put16(buf + 2 * i, (uint16_t)ip->addr[i]);
-        if (v7fs_write_block(fs, iblk, buf))
-            return -EIO;
-        for (int i = 0; i < V6_NDADDR; i++)
-            ip->addr[i] = 0;
-        ip->addr[0] = iblk;
-        ip->mode |= V6_ILARG;
-    }
-
-    if (ip->mode & V6_ILARG) {
-        if (lbn < 7 * V6_NINDIR)
-            return v6_ind1(fs, &ip->addr[lbn >> 8], lbn & (V6_NINDIR - 1), create, bno);
-        uint32_t r = lbn - 7 * V6_NINDIR;
-        return v6_ind2(fs, &ip->addr[7], r >> 8, r & (V6_NINDIR - 1), create, bno);
-    }
-    if (lbn >= V6_NDADDR) {
-        *bno = 0;
-        return create ? -EFBIG : 0;
-    }
-    uint32_t nb = ip->addr[lbn];
-    if (nb == 0 && create) {
-        int rc = fs->alloc->balloc(fs, &nb);
-        if (rc)
-            return rc;   /* -EIO (barrier commit) or -ENOSPC */
-        ip->addr[lbn] = nb;
-    }
-    *bno = nb;
-    return 0;
-}
-
 static uint32_t v6_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx) {
     filsys_edition_t *f = fs;
     uint32_t m = 3, n = 100;
@@ -2482,7 +2295,7 @@ int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
 static const struct filsys_inode_ops inode_32 = {
     .read_inode  = v6_read_inode,
     .write_inode = v6_write_inode,
-    .bmap        = v6_bmap,
+    .bmap        = filsys_bmap,
     .inode_state = v6_inode_state,
     .allocated_blocks = v6_allocated_blocks,
 };
