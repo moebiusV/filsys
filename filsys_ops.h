@@ -163,7 +163,7 @@ struct filsys_ops {
     const char *name;
     const struct filsys_dir_ops   *dir;    /* fixed-16 | variable | v1-10byte */
     const struct filsys_inode_ops *inode;  /* 32-byte | 64-byte | 64+32bit-addr */
-    uint32_t (*blocksize)(const filsys_edition_t *fs);  /* logical block size in bytes */
+    uint32_t (*blocksize)(const filsys_desc_t *fs);  /* logical block size in bytes */
 
     /* Read-only detection: validate the superblock whose block 0 sits at byte
      * `base` (block size `bsize`) as THIS edition, reading only through `io`.
@@ -176,7 +176,7 @@ struct filsys_ops {
 
     /* lifecycle */
     int  (*open)(filsys_edition_t *fs, const char *path, int readonly,
-                 const filsys_edition_t *proto, uint64_t offset);
+                 const filsys_desc_t *proto, uint64_t offset);
     int  (*close)(filsys_edition_t *fs);   /* final flush; returns the sync result */
     int  (*sync)(filsys_edition_t *fs);
     /* Mark the superblock dirty (s_fmod) and flush.  Optional: only the V6/V7
@@ -232,7 +232,7 @@ struct filsys_ops {
     void (*statfs)(filsys_edition_t *fs, struct statvfs *st);
 
     /* largest addressable file, in bytes */
-    uint64_t (*max_file)(filsys_edition_t *fs);
+    uint64_t (*max_file)(const filsys_desc_t *fs);
 };
 
 extern const struct filsys_ops v6fs_ops;
@@ -248,11 +248,11 @@ extern const struct filsys_dir_ops dir_fixed;
 /* The check-side ops shared across every edition (filsys_format.c). */
 int filsys_check_op(filsys_edition_t *fs);
 int filsys_is_clean(filsys_edition_t *fs);
-uint64_t filsys_max_file_op(filsys_edition_t *fs);
+uint64_t filsys_max_file_op(const filsys_desc_t *fs);
 
 /* The shared integrity-check driver (check.c).  fmt is the format descriptor
  * (for rootino / cache depths / generic fields); fs is the backend state. */
-int filsys_check_common(filsys_edition_t *fmt, filsys_edition_t *fs,
+int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
                         filsys_check_t *rep, int mode);
 
 #endif /* FILSYS_OPS_H */

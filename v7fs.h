@@ -31,7 +31,7 @@
 
 struct filsys_ops;       /* forward: the per-backend vtable (see filsys_ops.h) */
 struct word_codec;       /* forward: PDP-7's 18-bit-word container codec (pdp7fs.h) */
-struct filsys_edition;   /* forward: the unified descriptor+state struct (defined below) */
+struct filsys_edition;   /* forward: the per-mount state (defined below) */
 
 /* Raw byte-slice transport: read/write exactly `n` bytes at absolute image
  * offset `off`.  filsys_io_file is the default (pread/pwrite on fs->fd); a test
@@ -331,7 +331,7 @@ typedef struct {
 extern const alloc_ops_t freelist_alloc_ops;
 extern const alloc_ops_t v8_bitmap_alloc_ops;
 
-typedef struct filsys_edition {
+typedef struct filsys_desc {
     /* ---- format descriptor (static; set by filsys_getformat) ---- */
     const struct filsys_ops *ops;   /* backend vtable */
     const alloc_ops_t *alloc;       /* allocator (free-list or bitmap) */
@@ -390,6 +390,10 @@ typedef struct filsys_edition {
      * layout (v8_sb_decode/v8_sb_encode). */
     int  (*sb_decode)(struct filsys_edition *fs, const uint8_t *sb);
     int  (*sb_encode)(struct filsys_edition *fs, uint8_t *sb);
+} filsys_desc_t;
+
+typedef struct filsys_edition {
+    filsys_desc_t desc;   /* the static format descriptor (a mutable per-mount copy) */
 
     /* ---- runtime (filled by v7fs_open) ---- */
     int        fd;             /* open disk image */
@@ -441,13 +445,13 @@ static inline int filsys_check_range(const filsys_edition_t *fs, uint64_t off, u
 /* The descriptor for an edition: a copy of the V7 default with the edition's
  * overrides.  Returns a zeroed descriptor (ops == NULL) for an unknown
  * edition. */
-filsys_edition_t filsys_getformat(int edition);
+filsys_desc_t filsys_getformat(int edition);
 
 /* Resolve a magic-bearing edition's byte order from its on-disk magic word
  * (and, if given, check it against `arch`).  Sets fmt->bo; returns 0 or a
  * negative errno with *errmsg (if non-NULL) set to a static description.
  * `force` proceeds despite a magic that matches neither byte order. */
-int filsys_resolve_byteorder(filsys_edition_t *fmt, const char *path,
+int filsys_resolve_byteorder(filsys_desc_t *fmt, const char *path,
                              uint64_t offset, const char *arch, int force,
                              const char **errmsg);
 
@@ -459,7 +463,7 @@ int filsys_resolve_byteorder(filsys_edition_t *fmt, const char *path,
  * fields.  offset is the byte offset of the filesystem within the file (0 =
  * block 0 of the file). */
 int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
-              const filsys_edition_t *proto, uint64_t offset);
+              const filsys_desc_t *proto, uint64_t offset);
 /* Flush the superblock and close. */
 int v7fs_close(filsys_edition_t *fs);
 /* Flush the superblock (and pending metadata) to the image without closing. */
@@ -485,7 +489,7 @@ int v8_bitmap_load(filsys_edition_t *fs, const uint8_t *sb);
 /* Apply the V8-family `-o` geometry overrides (blocksize/freemap/byteorder) to a
  * descriptor, enforcing the one-bit-selects-both rule the kernels honour.  ed is
  * the FILSYS_* selector.  Returns 0, or -EINVAL with *errmsg set. */
-int filsys_apply_geom(filsys_edition_t *fmt, int ed, const filsys_geom_t *g,
+int filsys_apply_geom(filsys_desc_t *fmt, int ed, const filsys_geom_t *g,
                       const char **errmsg);
 
 /* ---- block / inode io -------------------------------------------------- */
@@ -497,8 +501,8 @@ int v7fs_write_block(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf);
  * compile-time V7_BSIZE.  The per-indirect-block entry count lives in
  * fs->nindir (it is not always bsize/daddr_wid: PDP-7's container block is 256
  * bytes of 4-byte words against a 128-byte logical block). */
-static inline uint32_t v7_nindir(const filsys_edition_t *fs) { return fs->nindir; }
-static inline uint32_t v7_inopb(const filsys_edition_t *fs)  { return fs->bsize / fs->inode_size; }
+static inline uint32_t v7_nindir(const filsys_edition_t *fs) { return fs->desc.nindir; }
+static inline uint32_t v7_inopb(const filsys_edition_t *fs)  { return fs->desc.bsize / fs->desc.inode_size; }
 /* itod / itoo: inode number -> block and offset. */
 static inline uint32_t v7_itod(const filsys_edition_t *fs, uint32_t ino) { return 2 + (ino - 1) / v7_inopb(fs); }
 static inline uint32_t v7_itoo(const filsys_edition_t *fs, uint32_t ino) { return (ino - 1) % v7_inopb(fs); }
@@ -507,42 +511,42 @@ static inline uint32_t v7_itoo(const filsys_edition_t *fs, uint32_t ino) { retur
  * starts at isize+2, max inode = isize * inodes/block); V7's s_isize is itself
  * the first data block (max inode = (isize-2) * inodes/block). */
 static inline uint32_t v7_data_first(const filsys_edition_t *fs) {
-    return fs->isize + (fs->isize_count ? 2u : 0u);
+    return fs->isize + (fs->desc.isize_count ? 2u : 0u);
 }
 static inline uint32_t v7_maxinode(const filsys_edition_t *fs) {
-    return (uint32_t)(fs->isize - (fs->isize_count ? 0u : 2u)) * v7_inopb(fs);
+    return (uint32_t)(fs->isize - (fs->desc.isize_count ? 0u : 2u)) * v7_inopb(fs);
 }
 
 /* An on-disk block address in a free-list or indirect block: 2-byte LE for V6,
  * 4-byte in the descriptor's byte order otherwise. */
 static inline uint32_t v7_get_daddr(const filsys_edition_t *fs, const uint8_t *p) {
-    return fs->daddr_wid == 2 ? (uint32_t)bo_get16le(p) : fs->bo->get32(p);
+    return fs->desc.daddr_wid == 2 ? (uint32_t)bo_get16le(p) : fs->desc.bo->get32(p);
 }
 static inline void v7_put_daddr(const filsys_edition_t *fs, uint8_t *p, uint32_t v) {
-    if (fs->daddr_wid == 2)
+    if (fs->desc.daddr_wid == 2)
         bo_put16le(p, v & 0xFFFFu);
     else
-        fs->bo->put32(p, v);
+        fs->desc.bo->put32(p, v);
 }
 
 /* The offset of df_free[] within a free-list *chain* block: after df_nfree
  * (4 bytes in the V8-family, 2 elsewhere).  V7/32V's 2-byte df_nfree is padded
  * to 4 on 32V, which fb_free_off(pack4) encodes. */
 static inline int v7_chain_free_off(const filsys_edition_t *fs) {
-    return fs->df_nfree_wid == 4 ? 4 : fb_free_off(fs->pack4);
+    return fs->desc.df_nfree_wid == 4 ? 4 : fb_free_off(fs->desc.pack4);
 }
 
 /* The default indirect-entry codec: 2-byte LE (V6/V1) or 4-byte in the
  * descriptor's byte order (V7/2.11BSD), indexed by entry.  PDP-7 overrides the
  * descriptor's ind_get/ind_put with its 18-bit-word codec. */
 static inline uint32_t v7_ind_get(const filsys_edition_t *fs, const uint8_t *buf, uint32_t i) {
-    return fs->daddr_wid == 2 ? (uint32_t)bo_get16le(buf + 2 * i) : fs->bo->get32(buf + 4 * i);
+    return fs->desc.daddr_wid == 2 ? (uint32_t)bo_get16le(buf + 2 * i) : fs->desc.bo->get32(buf + 4 * i);
 }
 static inline void v7_ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t i, uint32_t v) {
-    if (fs->daddr_wid == 2)
+    if (fs->desc.daddr_wid == 2)
         bo_put16le(buf + 2 * i, v & 0xFFFFu);
     else
-        fs->bo->put32(buf + 4 * i, v);
+        fs->desc.bo->put32(buf + 4 * i, v);
 }
 
 /* The level of address slot `slot` for an inode whose mode is `mode`:
@@ -551,24 +555,24 @@ static inline void v7_ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t
  * layouts reinterpret the slots under the ILARG mode bit (large_single + one
  * optional large_double slot), all of which this describes as data. */
 static inline int filsys_slot_level(const filsys_edition_t *fs, uint32_t mode, int slot) {
-    if (fs->ilarg_mask && (mode & fs->ilarg_mask)) {
-        if (slot < (int)fs->large_single)
+    if (fs->desc.ilarg_mask && (mode & fs->desc.ilarg_mask)) {
+        if (slot < (int)fs->desc.large_single)
             return 0;
-        if (slot < (int)(fs->large_single + fs->large_double))
+        if (slot < (int)(fs->desc.large_single + fs->desc.large_double))
             return 1;
         return -1;   /* no slot beyond the large layout */
     }
-    if (slot < (int)fs->ndaddr)
+    if (slot < (int)fs->desc.ndaddr)
         return -1;
-    return slot - (int)fs->ndaddr;   /* 0, 1, 2, ... */
+    return slot - (int)fs->desc.ndaddr;   /* 0, 1, 2, ... */
 }
 
 /* Directory test: V1/PDP-7 carry an is_dir callback (their type bits don't fit
  * the V6/V7 ifmt/ifdir pair); the V6/V7 family derives it from ifmt. */
 static inline int fs_is_dir(const filsys_edition_t *fs, const filsys_inode_t *ip) {
-    if (fs->is_dir)
-        return fs->is_dir(fs, ip);
-    return (ip->mode & fs->ifmt) == fs->ifdir;
+    if (fs->desc.is_dir)
+        return fs->desc.is_dir(fs, ip);
+    return (ip->mode & fs->desc.ifmt) == fs->desc.ifdir;
 }
 
 int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip);

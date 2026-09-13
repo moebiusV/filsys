@@ -90,7 +90,7 @@ typedef filsys_edition_t p7fs_t;
 /* ---- lifecycle --------------------------------------------------------- */
 
 int p7fs_open(p7fs_t *fs, const char *path, int readonly,
-              const filsys_edition_t *proto, uint64_t offset);
+              const filsys_desc_t *proto, uint64_t offset);
 int p7fs_close(p7fs_t *fs);
 int p7fs_sync(p7fs_t *fs);
 

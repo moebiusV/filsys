@@ -19,9 +19,9 @@ int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size
     /* A directory's data cannot exceed the filesystem's data area; reject a
      * corrupt size before the malloc below, else a bogus di_size (up to 4 GiB)
      * turns into a multi-gigabyte allocation. */
-    if (ip->size > (uint64_t)(fs->fsize - fs->ops->data_start(fs)) * fs->bsize)
+    if (ip->size > (uint64_t)(fs->fsize - fs->desc.ops->data_start(fs)) * fs->desc.bsize)
         return -EFBIG;
-    size_t cap = ip->size / fs->dirent_size + 1;
+    size_t cap = ip->size / fs->desc.dirent_size + 1;
     v7_dirent_t *out = calloc(cap, sizeof(v7_dirent_t));
     if (!out)
         return -ENOMEM;
@@ -39,13 +39,13 @@ int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size
     }
 
     size_t cnt = 0;
-    for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
-        uint16_t ino = fs->bo->get16(buf + off);
+    for (size_t off = 0; off + fs->desc.dirent_size <= (size_t)n; off += fs->desc.dirent_size) {
+        uint16_t ino = fs->desc.bo->get16(buf + off);
         if (ino == 0)
             continue;
         out[cnt].ino = ino;
-        memcpy(out[cnt].name, buf + off + 2, fs->max_namlen);
-        out[cnt].name[fs->max_namlen] = 0;
+        memcpy(out[cnt].name, buf + off + 2, fs->desc.max_namlen);
+        out[cnt].name[fs->desc.max_namlen] = 0;
         cnt++;
     }
     free(buf);
@@ -61,7 +61,7 @@ void v7fs_dirents_free(v7_dirent_t *ents) {
 int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
     v7_dirent_t *ents = NULL;
     size_t count = 0;
-    int rc = fs->ops->dir->dir_read(fs, ip, &ents, &count);
+    int rc = fs->desc.ops->dir->dir_read(fs, ip, &ents, &count);
     if (rc)
         return rc;
     rc = -ENOENT;
@@ -78,12 +78,12 @@ int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint
 
 int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
     size_t namelen = strlen(name);
-    if (namelen == 0 || namelen > fs->max_namlen)
+    if (namelen == 0 || namelen > fs->desc.max_namlen)
         return -ENAMETOOLONG;
     if (strchr(name, '/'))
         return -EINVAL;
 
-    size_t newsize = ip->size + fs->dirent_size;
+    size_t newsize = ip->size + fs->desc.dirent_size;
     uint8_t *buf = malloc(newsize);
     if (!buf)
         return -ENOMEM;
@@ -96,19 +96,19 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
 
     /* find an empty slot, else append */
     size_t slot = SIZE_MAX;
-    for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
-        if (fs->bo->get16(buf + off) == 0) {
+    for (size_t off = 0; off + fs->desc.dirent_size <= (size_t)n; off += fs->desc.dirent_size) {
+        if (fs->desc.bo->get16(buf + off) == 0) {
             slot = off;
             break;
         }
     }
     if (slot == SIZE_MAX) {
         slot = (size_t)n;
-        n += fs->dirent_size;
+        n += fs->desc.dirent_size;
     }
 
-    fs->bo->put16(buf + slot, (uint16_t)ino);
-    memset(buf + slot + 2, 0, fs->max_namlen);
+    fs->desc.bo->put16(buf + slot, (uint16_t)ino);
+    memset(buf + slot + 2, 0, fs->desc.max_namlen);
     memcpy(buf + slot + 2, name, namelen);
 
     ssize_t w = v7fs_file_write(fs, ip, buf, (size_t)n, 0);
@@ -126,15 +126,15 @@ int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
         return (int)n;
     }
     int rc = -ENOENT;
-    for (size_t off = 0; off + fs->dirent_size <= (size_t)n; off += fs->dirent_size) {
-        if (fs->bo->get16(buf + off) == 0)
+    for (size_t off = 0; off + fs->desc.dirent_size <= (size_t)n; off += fs->desc.dirent_size) {
+        if (fs->desc.bo->get16(buf + off) == 0)
             continue;
         char ent[64];
-        memcpy(ent, buf + off + 2, fs->max_namlen);
-        ent[fs->max_namlen] = 0;
+        memcpy(ent, buf + off + 2, fs->desc.max_namlen);
+        ent[fs->desc.max_namlen] = 0;
         if (strcmp(ent, name) == 0) {
-            fs->bo->put16(buf + off, 0);
-            memset(buf + off + 2, 0, fs->max_namlen);
+            fs->desc.bo->put16(buf + off, 0);
+            memset(buf + off + 2, 0, fs->desc.max_namlen);
             ssize_t w = v7fs_file_write(fs, ip, buf, (size_t)n, 0);
             rc = w < 0 ? (int)w : 0;
             break;

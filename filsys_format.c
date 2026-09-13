@@ -1,7 +1,7 @@
 /* filsys_format.c - the per-format descriptor table.
  *
  * Each edition's on-disk constants and structural predicates (mode conversion,
- * device/directory detection) live here as a filsys_edition_t row; filsys.c and
+ * device/directory detection) live here as a filsys_desc_t row; filsys.c and
  * the standalone tools look a format up by edition and read its descriptor
  * rather than switching on the edition.  Adding a format is a new row.
  *
@@ -127,14 +127,14 @@ static mode_t v910_to_posix_mode(const filsys_edition_t *f, const filsys_inode_t
         if (ip->mode & 04000) m |= S_ISUID;
         if (ip->mode & 02000) m |= S_ISGID;
     }
-    uint32_t t = ip->mode & f->ifmt;
-    if (t == f->ifdir)
+    uint32_t t = ip->mode & f->desc.ifmt;
+    if (t == f->desc.ifdir)
         m |= S_IFDIR;
-    else if (t == f->ifchr || (f->ifmpc && t == f->ifmpc))
+    else if (t == f->desc.ifchr || (f->desc.ifmpc && t == f->desc.ifmpc))
         m |= S_IFCHR;
-    else if (t == f->ifblk || (f->ifmpb && t == f->ifmpb))
+    else if (t == f->desc.ifblk || (f->desc.ifmpb && t == f->desc.ifmpb))
         m |= S_IFBLK;
-    else if (f->iflnk && t == f->iflnk)
+    else if (f->desc.iflnk && t == f->desc.iflnk)
         m |= S_IFLNK;
     else
         m |= S_IFREG;
@@ -146,7 +146,7 @@ static mode_t v910_to_posix_mode(const filsys_edition_t *f, const filsys_inode_t
 /* The V7 format is the prototype for the V7-family variants (32V, Coherent,
  * Xenix, 2.9BSD): each copies it and overrides only what differs, so a new
  * variant is a few field assignments rather than a full descriptor row. */
-static const filsys_edition_t v7 = {
+static const filsys_desc_t v7 = {
     .ops = &v7fs_ops, .alloc = &freelist_alloc_ops,
     .state_size = sizeof(filsys_edition_t), .name = "v7",
     .bsize = V7_BSIZE, .bo = &bo_me,
@@ -158,7 +158,7 @@ static const filsys_edition_t v7 = {
     .ifmt = V7_IFMT, .ifdir = V7_IFDIR, .ifreg = V7_IFREG,
     .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .ifmpc = V7_IFMPC, .ifmpb = V7_IFMPB,
 };
-static const filsys_edition_t v6 = {
+static const filsys_desc_t v6 = {
     .ops = &v6fs_ops, .alloc = &freelist_alloc_ops,
     .state_size = sizeof(filsys_edition_t), .name = "v6",
     .bsize = V6_BSIZE, .bo = &bo_me,
@@ -169,7 +169,7 @@ static const filsys_edition_t v6 = {
     .max_namlen = V6_DIRSIZ, .dirent_size = 2 + V6_DIRSIZ,
     .ifmt = V6_IFMT, .ifdir = V6_IFDIR, .ifchr = V6_IFCHR, .ifblk = V6_IFBLK,
 };
-static const filsys_edition_t v1 = {
+static const filsys_desc_t v1 = {
     .ops = &v1fs_ops, .alloc = &bitmap_alloc_ops,
     .state_size = sizeof(filsys_edition_t), .name = "v1",
     .bsize = V1_BSIZE, .bo = &bo_me,
@@ -181,7 +181,7 @@ static const filsys_edition_t v1 = {
     .is_device = v1_is_device, .to_disk_mode = v1_to_disk_mode,
     .chmod_mode = v1_chmod_mode,
 };
-static const filsys_edition_t pdp7 = {
+static const filsys_desc_t pdp7 = {
     .ops = &p7fs_ops, .alloc = &pdp7_alloc_ops,
     .state_size = sizeof(filsys_edition_t), .name = "pdp7",
     .bsize = P7_WSIZE * 2, .bo = &bo_me,
@@ -194,7 +194,7 @@ static const filsys_edition_t pdp7 = {
     .is_device = p7_is_device, .to_disk_mode = p7_to_disk_mode,
     .chmod_mode = p7_chmod_mode,
 };
-static const filsys_edition_t bsd211 = {
+static const filsys_desc_t bsd211 = {
     .ops = &bsd211fs_ops, .alloc = &freelist_alloc_ops,
     .state_size = sizeof(filsys_edition_t), .name = "bsd211",
     .bsize = BSD211_BSIZE, .bo = &bo_me,
@@ -212,7 +212,7 @@ static const filsys_edition_t bsd211 = {
  * with a rearranged superblock (v8_sb_decode/v8_sb_encode), a larger block size
  * (1K/8K), and IFLNK symlinks.  The V8 prototype is the 1K free-list form; v9
  * and v10 override byte order / block size / free-cache depth from it. */
-static const filsys_edition_t v8 = {
+static const filsys_desc_t v8 = {
     .ops = &v7fs_ops, .alloc = &freelist_alloc_ops,
     .state_size = sizeof(filsys_edition_t), .name = "v8",
     .bsize = 1024, .bo = &bo_le,
@@ -226,7 +226,7 @@ static const filsys_edition_t v8 = {
     .ifchr = V7_IFCHR, .ifblk = V7_IFBLK, .iflnk = V8_IFLNK,
 };
 
-filsys_edition_t filsys_getformat(int edition) {
+filsys_desc_t filsys_getformat(int edition) {
     switch (edition) {
     case FILSYS_PDP7:   return pdp7;
     case FILSYS_V1:     return v1;
@@ -237,7 +237,7 @@ filsys_edition_t filsys_getformat(int edition) {
     case FILSYS_V9: {
         /* Ninth Edition: the Sun-3 port, 8K blocks, big-endian.  NICFREE 946
          * (the V8-family free-list cache depth for an 8K superblock). */
-        filsys_edition_t f; memcpy(&f, &v8, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v8, sizeof f);
         f.name = "v9"; f.bsize = 8192; f.bo = &bo_be;
         f.nicfree = V8_NICFREE_LARGE; f.nindir = 8192 / 4;
         f.to_posix_mode = v910_to_posix_mode;   /* ICONC/ICCTYP, not ISVTX */
@@ -247,29 +247,29 @@ filsys_edition_t filsys_getformat(int edition) {
         /* Tenth Edition: the 1K free-list default is byte-identical to V8's;
          * the 4K in-/out-of-superblock bitmap forms are selected by -o
          * overrides (Task 6). */
-        filsys_edition_t f; memcpy(&f, &v8, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v8, sizeof f);
         f.name = "v10";
         f.to_posix_mode = v910_to_posix_mode;   /* ICONC/ICCTYP, not ISVTX */
         return f;
     }
     case FILSYS_32V: {
-        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v7, sizeof f);
         f.name = "vax32"; f.bo = &bo_le; f.pack4 = 1;
         return f;
     }
     case FILSYS_COHERENT: {
-        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v7, sizeof f);
         f.name = "coherent"; f.nicfree = V7_COH_NICFREE; f.interleave = 1;
         return f;
     }
     case FILSYS_XENIX: {
-        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v7, sizeof f);
         f.name = "xenix"; f.bsize = 1024; f.bo = &bo_le; f.nicfree = V7_XEN_NICFREE;
         f.nindir = 1024 / 4; f.magic = V7_XEN_MAGIC; f.magic_off = 0x3F8;
         return f;
     }
     case FILSYS_BSD29: {
-        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v7, sizeof f);
         f.name = "bsd29"; f.bsize = 1024; f.ndaddr = 4; f.niaddr = 7; f.nindir = 1024 / 4;
         return f;
     }
@@ -281,7 +281,7 @@ filsys_edition_t filsys_getformat(int edition) {
          * reports it), so sysiii is the 32V/V7 shape with a distinct name.
          * The PDP-11 form is the same struct packed (V7 packing): -o arch=pdp11
          * clears pack4 and switches to middle-endian. */
-        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v7, sizeof f);
         f.name = "sysiii"; f.bo = &bo_le; f.pack4 = 1; f.has_dinfo = 1;
         return f;
     }
@@ -292,7 +292,7 @@ filsys_edition_t filsys_getformat(int edition) {
          * The byte order is the arch's, not the edition's: default little-endian
          * (VAX/x86), overridden by -o arch=3b2 / -o arch=68k for the big-endian
          * ports. */
-        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v7, sizeof f);
         f.name = "sysvr2"; f.bo = &bo_le; f.pack4 = 1;
         f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
         f.has_dinfo = 1;
@@ -302,7 +302,7 @@ filsys_edition_t filsys_getformat(int edition) {
         /* System V Release 4: the same on-disk layout as sysvr2, plus an
          * s_state field at offset 500 (R2/R3 leave that as s_fill[12]).  The
          * clean/dirty values are FsOKAY/FsACTIVE, written by super_write. */
-        filsys_edition_t f; memcpy(&f, &v7, sizeof f);
+        filsys_desc_t f; memcpy(&f, &v7, sizeof f);
         f.name = "sysvr4"; f.bo = &bo_le;
         f.pack4 = 1;
         f.magic = V7_SYSV_MAGIC; f.magic_off = V7_SYSV_MAGIC_OFF; f.dyn_bsize = 1;
@@ -311,7 +311,7 @@ filsys_edition_t filsys_getformat(int edition) {
         return f;
     }
     default: {
-        filsys_edition_t f = {0};
+        filsys_desc_t f = {0};
         return f;   /* ops == NULL marks an unknown edition */
     }
     }
@@ -326,14 +326,14 @@ filsys_edition_t filsys_getformat(int edition) {
 
 int filsys_check_op(filsys_edition_t *fs) {
     filsys_check_t rep;
-    return filsys_check_common(fs, fs, &rep, 0);
+    return filsys_check_common(&fs->desc, fs, &rep, 0);
 }
 
 int filsys_is_clean(filsys_edition_t *fs) {
-    return fs->has_fmod ? fs->fmod == 0 : 0;
+    return fs->desc.has_fmod ? fs->fmod == 0 : 0;
 }
 
-uint64_t filsys_max_file_op(filsys_edition_t *fs) {
+uint64_t filsys_max_file_op(const filsys_desc_t *fs) {
     /* The block-mapping capacity (direct + single + double + triple indirect),
      * capped first by the decoded size field -- a 32-bit value
      * (filsys_inode_t.size), so no edition can address a file past UINT32_MAX
@@ -355,7 +355,7 @@ uint64_t filsys_max_file_op(filsys_edition_t *fs) {
 
 /* ---- V8-family geometry overrides ----------------------------------------- */
 
-int filsys_apply_geom(filsys_edition_t *fmt, int ed, const filsys_geom_t *g,
+int filsys_apply_geom(filsys_desc_t *fmt, int ed, const filsys_geom_t *g,
                       const char **errmsg) {
     static char msgbuf[128];
     if (errmsg)
@@ -428,7 +428,7 @@ static const char *bo_endian_name(const byte_order_ops_t *bo) {
  * measured from the start of the filesystem.  System V keeps its 512-byte
  * superblock at byte 512 whatever the logical block size; Xenix keeps its magic
  * at byte 1016 of its block-1 superblock (1024 bytes). */
-static off_t magic_byte_offset(const filsys_edition_t *fmt) {
+static off_t magic_byte_offset(const filsys_desc_t *fmt) {
     if (fmt->dyn_bsize)
         return 512 + (off_t)fmt->magic_off;
     return (off_t)fmt->bsize + fmt->magic_off;
@@ -453,7 +453,7 @@ static off_t magic_byte_offset(const filsys_edition_t *fmt) {
  *                     a different order is a conflict (EINVAL); a magic word
  *                     that reads in none is refused (EILSEQ) unless `force`.
  */
-int filsys_resolve_byteorder(filsys_edition_t *fmt, const char *path,
+int filsys_resolve_byteorder(filsys_desc_t *fmt, const char *path,
                              uint64_t offset, const char *arch, int force,
                              const char **errmsg) {
     static char msgbuf[160];

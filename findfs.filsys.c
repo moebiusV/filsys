@@ -190,12 +190,13 @@ static void emit(const char *image, int verbose) {
 /* Run one edition's probe at `base` (the filesystem start byte). */
 static int probe_one(const filsys_format_t *f, int fd, uint64_t base, int bsize,
                      uint64_t sz, filsys_probe_t *res) {
-    filsys_edition_t desc = filsys_getformat(f->edition);
-    if (!desc.ops)
+    filsys_edition_t st = {0};
+    st.desc = filsys_getformat(f->edition);
+    if (!st.desc.ops)
         return 0;
-    desc.fd = fd;
-    desc.io = &filsys_io_file;
-    return desc.ops->probe(&desc, &filsys_io_file, base, bsize, sz, res);
+    st.fd = fd;
+    st.io = &filsys_io_file;
+    return st.desc.ops->probe(&st, &filsys_io_file, base, bsize, sz, res);
 }
 
 /* A "strong" edition identifies itself by a superblock magic word or the V8
@@ -203,7 +204,7 @@ static int probe_one(const filsys_format_t *f, int fd, uint64_t base, int bsize,
  * (no-magic) V7/32V/Coherent/BSD probes -- exactly the precedence findfs had
  * before the per-edition fold (System V checked before V7, V8 before BSD). */
 static int edition_is_strong(const filsys_format_t *f) {
-    filsys_edition_t d = filsys_getformat(f->edition);
+    filsys_desc_t d = filsys_getformat(f->edition);
     return d.sb_decode != NULL || d.magic != 0;
 }
 
@@ -211,7 +212,7 @@ static int edition_is_strong(const filsys_format_t *f) {
  * addressed formats, and the full V8-family range (1024/4096 for V8/V10, 8192
  * for V9) for the rearranged-superblock editions. */
 static int edition_bsizes(const filsys_format_t *f, int sizes[3]) {
-    filsys_edition_t d = filsys_getformat(f->edition);
+    filsys_desc_t d = filsys_getformat(f->edition);
     if (!d.sb_decode) {
         sizes[0] = (int)d.bsize;
         return 1;
@@ -347,12 +348,13 @@ int main(int argc, char **argv) {
      * the byte-aligned block scan above.  p7_probe tries all three codecs at both
      * surfaces itself. */
     {
-        filsys_edition_t desc = filsys_getformat(FILSYS_PDP7);
-        desc.fd = fd;
-        desc.io = &filsys_io_file;
+        filsys_edition_t st = {0};
+        st.desc = filsys_getformat(FILSYS_PDP7);
+        st.fd = fd;
+        st.io = &filsys_io_file;
         filsys_probe_t res;
         memset(&res, 0, sizeof res);
-        if (desc.ops->probe(&desc, &filsys_io_file, 0, 0, sz, &res) == 1 &&
+        if (st.desc.ops->probe(&st, &filsys_io_file, 0, 0, sz, &res) == 1 &&
             matches(edition_filter, res.class)) {
             printf("fs @ byte %llu  PDP-7 (%s)  chain ok (%u segs), root inode ok\n",
                    (unsigned long long)res.base, res.packing ? res.packing : "rb09", res.segs);

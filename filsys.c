@@ -2,7 +2,7 @@
  * images.  Dispatches through the per-edition filsys_ops vtable; this is the
  * behind both mount.filsys (FUSE) and the standalone tools.
  *
- * An edition is described by a filsys_edition_t (constants + mode conversion,
+ * An edition is described by a filsys_desc_t (constants + mode conversion,
  * in filsys_format.c) and a filsys_ops vtable (operations).  filsys_getformat()
  * is the single lookup: adding a format is a new descriptor row, not another
  * arm of a dozen `== FILSYS_` switches here.
@@ -55,7 +55,7 @@ struct open_handle {
 
 struct filsys {
     const struct filsys_ops *ops;
-    filsys_edition_t            fmt;      /* the format (by value) */
+    filsys_desc_t               fmt;      /* the format descriptor (by value) */
     filsys_edition_t *fs;                  /* backend state (filsys_edition_t / v1fs_t / p7fs_t) */
     int ver;
     uid_t uid;                 /* reported ownership (default: the mounting user) */
@@ -73,52 +73,52 @@ struct filsys {
  * fall through to the shared logic below.  V1 and PDP-7 supply their own (in
  * filsys_format.c). */
 static mode_t mode_to_posix(const filsys_edition_t *f, const filsys_inode_t *ip) {
-    if (f->to_posix_mode)
-        return f->to_posix_mode(f, ip);
+    if (f->desc.to_posix_mode)
+        return f->desc.to_posix_mode(f, ip);
     mode_t m = ip->mode & 07777;
-    uint32_t t = ip->mode & f->ifmt;
-    if (t == f->ifdir)
+    uint32_t t = ip->mode & f->desc.ifmt;
+    if (t == f->desc.ifdir)
         m |= S_IFDIR;
-    else if (t == f->ifchr || (f->ifmpc && t == f->ifmpc))
+    else if (t == f->desc.ifchr || (f->desc.ifmpc && t == f->desc.ifmpc))
         m |= S_IFCHR;
-    else if (t == f->ifblk || (f->ifmpb && t == f->ifmpb))
+    else if (t == f->desc.ifblk || (f->desc.ifmpb && t == f->desc.ifmpb))
         m |= S_IFBLK;
-    else if (f->iflnk && t == f->iflnk)
+    else if (f->desc.iflnk && t == f->desc.iflnk)
         m |= S_IFLNK;
-    else if (f->ifsock && t == f->ifsock)
+    else if (f->desc.ifsock && t == f->desc.ifsock)
         m |= S_IFSOCK;
     else
         m |= S_IFREG;   /* V6: regular file = type 0 */
     return m;
 }
 static int mode_is_dir(const filsys_edition_t *f, const filsys_inode_t *ip) {
-    if (f->is_dir)
-        return f->is_dir(f, ip);
-    return (ip->mode & f->ifmt) == f->ifdir;
+    if (f->desc.is_dir)
+        return f->desc.is_dir(f, ip);
+    return (ip->mode & f->desc.ifmt) == f->desc.ifdir;
 }
 static int mode_is_device(const filsys_edition_t *f, const filsys_inode_t *ip) {
-    if (f->is_device)
-        return f->is_device(f, ip);
-    uint32_t t = ip->mode & f->ifmt;
-    return t == f->ifchr || t == f->ifblk ||
-           (f->ifmpc && t == f->ifmpc) || (f->ifmpb && t == f->ifmpb);
+    if (f->desc.is_device)
+        return f->desc.is_device(f, ip);
+    uint32_t t = ip->mode & f->desc.ifmt;
+    return t == f->desc.ifchr || t == f->desc.ifblk ||
+           (f->desc.ifmpc && t == f->desc.ifmpc) || (f->desc.ifmpb && t == f->desc.ifmpb);
 }
 static uint32_t mode_to_disk(const filsys_edition_t *f, mode_t m, int type) {
-    if (f->to_disk_mode)
-        return f->to_disk_mode(f, m, type);
+    if (f->desc.to_disk_mode)
+        return f->desc.to_disk_mode(f, m, type);
     uint32_t base = (uint32_t)(m & 07777);
     switch (type) {
-    case FILSYS_FT_DIR: return base | f->ifdir;
-    case FILSYS_FT_CHR: return base | f->ifchr;
-    case FILSYS_FT_BLK: return base | f->ifblk;
-    case FILSYS_FT_LNK: return base | f->iflnk;
-    default:            return f->ifreg ? (base | f->ifreg) : base;
+    case FILSYS_FT_DIR: return base | f->desc.ifdir;
+    case FILSYS_FT_CHR: return base | f->desc.ifchr;
+    case FILSYS_FT_BLK: return base | f->desc.ifblk;
+    case FILSYS_FT_LNK: return base | f->desc.iflnk;
+    default:            return f->desc.ifreg ? (base | f->desc.ifreg) : base;
     }
 }
 static uint32_t mode_chmod(const filsys_edition_t *f, uint32_t old, mode_t m) {
-    if (f->chmod_mode)
-        return f->chmod_mode(f, old, m);
-    return (old & f->ifmt) | ((uint32_t)m & 07777);
+    if (f->desc.chmod_mode)
+        return f->desc.chmod_mode(f, old, m);
+    return (old & f->desc.ifmt) | ((uint32_t)m & 07777);
 }
 
 /* The on-disk uid/gid is 16-bit; a modern uid like 70000 would silently wrap
@@ -189,7 +189,7 @@ static int bmap(filsys_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint
 
 /* Largest file the selected edition can address, in bytes. */
 static uint64_t maxfile(const filsys_t *fs) {
-    return fs->ops->max_file(fs->fs);
+    return fs->ops->max_file(&fs->fs->desc);
 }
 
 /* Tear an inode down in the one safe order: truncate its blocks, persist the
@@ -263,7 +263,7 @@ static int split_path(const char *path, char *dir, size_t dirsz,
  * isn't dropped when any descriptor of the file is closed.  Advisory: it does
  * not stop simh, which does not participate. */
 static int lock_image(filsys_t *fs, const char *path, uint64_t offset) {
-    uint64_t len = (uint64_t)fs->fs->fsize * fs->fs->bsize;
+    uint64_t len = (uint64_t)fs->fs->fsize * fs->fs->desc.bsize;
     struct flock lk = { .l_type = F_WRLCK, .l_whence = SEEK_SET,
                         .l_start = (off_t)offset, .l_len = (off_t)len };
     int fd = fs->fs->fd;
@@ -294,7 +294,7 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
                      const char *arch, int force, const filsys_geom_t *geom,
                      int no_lock, const char **errmsg) {
-    filsys_edition_t fmt = filsys_getformat(edition);
+    filsys_desc_t fmt = filsys_getformat(edition);
     if (!fmt.ops)
         return -EINVAL;
     if (geom && (edition == FILSYS_V8 || edition == FILSYS_V9 || edition == FILSYS_V10)) {
@@ -505,7 +505,7 @@ int filsys_invariants(filsys_t *fs, filsys_check_t *rep) {
      * so passing the state as its own format descriptor is correct here -- the
      * same `fs, fs` pairing filsys_check_op uses.  FORCE bypasses the
      * is_clean short-circuit; QUIET drops the always-on chatter. */
-    return filsys_check_common(fs->fs, fs->fs, rep, FILSYS_CK_FORCE | FILSYS_CK_QUIET);
+    return filsys_check_common(&fs->fs->desc, fs->fs, rep, FILSYS_CK_FORCE | FILSYS_CK_QUIET);
 }
 
 int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip) {
@@ -519,12 +519,12 @@ int filsys_read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
 void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     memset(st, 0, sizeof(*st));
     st->st_ino   = ip->ino;
-    st->st_mode  = mode_to_posix(&fs->fmt, ip);
+    st->st_mode  = mode_to_posix(fs->fs, ip);
     st->st_nlink = (nlink_t)ip->nlink;
     st->st_uid   = fs->uid;
     st->st_gid   = fs->gid;
     st->st_size  = ip->size;
-    if (mode_is_device(&fs->fmt, ip))
+    if (mode_is_device(fs->fs, ip))
         /* V7 packs 8-bit major + 8-bit minor into one word; makedev() re-encodes
          * into the host's dev_t layout (Linux's is the same, the BSDs'/macOS's
          * differ). */
@@ -532,7 +532,7 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     st->st_atime   = ip->atime;
     st->st_mtime   = ip->mtime;
     st->st_ctime   = ip->ctime;
-    uint32_t blksize = fs->ops->blocksize(fs->fs);
+    uint32_t blksize = fs->ops->blocksize(&fs->fs->desc);
     st->st_blksize = blksize;
     /* POSIX: st_blocks counts 512-byte units, not filesystem blocks, and only
      * blocks actually allocated -- a hole (zero block address) is not counted,
@@ -594,7 +594,7 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
          * inode, then free the collected blocks.  The reset is persisted before
          * the free, so a failed write leaves leaks (B, recoverable) rather than
          * aliasing (D). */
-        uint32_t bsize = fs->ops->blocksize(fs->fs);
+        uint32_t bsize = fs->ops->blocksize(&fs->fs->desc);
         uint32_t first_blk = oldsize ? (oldsize - 1) / bsize + 1 : 0;
         filsys_blklist_t *bl = NULL;
         rc = itrunc_from(fs, &ip, first_blk, &bl);
@@ -646,7 +646,7 @@ static int inode_create(filsys_t *fs, mode_t mode, uid_t uid, gid_t gid,
     if (rc) return rc;
     memset(ip, 0, sizeof *ip);
     ip->ino = *ino;
-    ip->mode = mode_to_disk(&fs->fmt, mode, type);
+    ip->mode = mode_to_disk(fs->fs, mode, type);
     ip->nlink = (type == FILSYS_FT_DIR) ? 2 : 1;
     ip->uid = (int16_t)uid;
     ip->gid = (int16_t)gid;
@@ -892,7 +892,7 @@ int filsys_unlink(filsys_t *fs, const char *path) {
     uint32_t ino;
     rc = lookup(fs, path, &ino, &ip);
     if (rc) return rc;
-    if (mode_is_dir(&fs->fmt, &ip)) return -EISDIR;
+    if (mode_is_dir(fs->fs, &ip)) return -EISDIR;
     return do_unlink(fs, dir, name);
 }
 
@@ -907,7 +907,7 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     if (rc) return rc;
     filsys_inode_t tip;
     if (read_inode(fs, ino, &tip)) return -EIO;
-    if (!mode_is_dir(&fs->fmt, &tip)) return -ENOTDIR;
+    if (!mode_is_dir(fs->fs, &tip)) return -ENOTDIR;
     filsys_dirent_t *ents = NULL;
     size_t count = 0;
     if (dir_read(fs, &tip, &ents, &count)) return -EIO;
@@ -978,7 +978,7 @@ static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
     if (read_inode(fs, src_ino, &ip)) return -EIO;
     /* A directory may be hard-linked (V7 lets the superuser do it), but never
      * into its own subtree -- that would form a cycle. */
-    if (mode_is_dir(&fs->fmt, &ip)) {
+    if (mode_is_dir(fs->fs, &ip)) {
         int a = dir_ancestor(fs, src_ino, dino);
         if (a == 1) return -EINVAL;   /* would form a cycle */
         if (a < 0) return a;          /* cannot verify: fail closed */
@@ -1027,7 +1027,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     int rc = lookup(fs, from, &sino, &sip);
     if (rc) return rc;
 
-    int isdir = mode_is_dir(&fs->fmt, &sip);
+    int isdir = mode_is_dir(fs->fs, &sip);
 
     char fdir[PATH_MAX], fname[64];
     split_path(from, fdir, sizeof(fdir), fname, fs->fmt.max_namlen + 1);
@@ -1062,7 +1062,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         if (tino == sino) return 0;   /* already there */
         filsys_inode_t tip;
         if (read_inode(fs, tino, &tip)) return -EIO;
-        tisdir = mode_is_dir(&fs->fmt, &tip);
+        tisdir = mode_is_dir(fs->fs, &tip);
         if (isdir && !tisdir) return -ENOTDIR;   /* directory over a file */
         if (!isdir && tisdir) return -EISDIR;    /* file over a directory */
         if (tisdir) {
@@ -1211,7 +1211,7 @@ static int truncate_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip, off_t 
     /* Shrink in place: zero the partial tail of the last surviving block, free
      * the blocks strictly past the new end, and leave everything else alone. */
     if (newsize < oldsize) {
-        uint32_t bsize = fs->ops->blocksize(fs->fs);
+        uint32_t bsize = fs->ops->blocksize(&fs->fs->desc);
         uint32_t last  = newsize ? (newsize - 1) / bsize : 0;
         uint32_t blk_end = newsize ? (last + 1) * bsize : 0;
         uint32_t tail = oldsize < blk_end ? oldsize : blk_end;
@@ -1304,7 +1304,7 @@ int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {
     filsys_inode_t nip;
     memset(&nip, 0, sizeof(nip));
     nip.ino = nino;
-    nip.mode = mode_to_disk(&fs->fmt, 0777, FILSYS_FT_LNK);
+    nip.mode = mode_to_disk(fs->fs, 0777, FILSYS_FT_LNK);
     nip.nlink = 1;
     nip.uid = (int16_t)fs->uid;
     nip.gid = (int16_t)fs->gid;
@@ -1333,7 +1333,7 @@ int filsys_chmod(filsys_t *fs, const char *path, mode_t mode) {
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
     if (rc) return rc;
-    ip.mode = mode_chmod(&fs->fmt, ip.mode, mode);
+    ip.mode = mode_chmod(fs->fs, ip.mode, mode);
     ip.ctime = (uint32_t)time(NULL);
     return write_inode(fs, ino, &ip);
 }
@@ -1372,7 +1372,7 @@ int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]) 
 
 int filsys_statfs(filsys_t *fs, struct statvfs *st) {
     memset(st, 0, sizeof(*st));
-    st->f_bsize = st->f_frsize = fs->ops->blocksize(fs->fs);
+    st->f_bsize = st->f_frsize = fs->ops->blocksize(&fs->fs->desc);
     fs->ops->statfs(fs->fs, st);
     st->f_namemax = fs->fmt.max_namlen;
     return 0;

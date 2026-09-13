@@ -27,9 +27,9 @@ static int super_write(v1fs_t *fs);
 /* ---- lifecycle --------------------------------------------------------- */
 
 int v1fs_open(v1fs_t *fs, const char *path, int readonly,
-              const filsys_edition_t *proto, uint64_t offset) {
-    if (fs != proto)
-        memcpy(fs, proto, sizeof *fs); /* copy the static descriptor fields */
+              const filsys_desc_t *proto, uint64_t offset) {
+    if (&fs->desc != proto)
+        fs->desc = *proto;   /* copy the static descriptor fields */
     fs->readonly = readonly;
     fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
@@ -350,7 +350,7 @@ static void v1_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_c
 }
 
 int v1fs_check(v1fs_t *fs, v1_check_t *rep, int mode) {
-    filsys_edition_t fmt = filsys_getformat(FILSYS_V1);
+    filsys_desc_t fmt = filsys_getformat(FILSYS_V1);
     return filsys_check_common(&fmt, fs, rep, mode);
 }
 
@@ -360,7 +360,7 @@ int v1fs_check(v1fs_t *fs, v1_check_t *rep, int mode) {
  * v1fs_t*, so there is no cast anywhere. */
 
 
-static uint32_t v1fs_blocksize_op(const filsys_edition_t *fs) { (void)fs; return V1_BSIZE; }
+static uint32_t v1fs_blocksize_op(const filsys_desc_t *fs) { (void)fs; return V1_BSIZE; }
 
 
 
@@ -404,13 +404,13 @@ static int v1_probe(filsys_edition_t *fmt, const filsys_io_t *io,
     uint8_t sb[V1_BSIZE * 2];
     if (io->read(fmt, sb, sizeof sb, (off_t)base) != 0)
         return 0;
-    uint16_t freemap_bytes = fmt->bo->get16(sb + 0);
+    uint16_t freemap_bytes = fmt->desc.bo->get16(sb + 0);
     if (freemap_bytes == 0)
         return 0;
     uint32_t inodemap_bytes_off = 2 + freemap_bytes;
     if (inodemap_bytes_off + 2 > V1_BSIZE * 2)
         return 0;
-    uint16_t inodemap_bytes = fmt->bo->get16(sb + inodemap_bytes_off);
+    uint16_t inodemap_bytes = fmt->desc.bo->get16(sb + inodemap_bytes_off);
     uint32_t inodemap_off = inodemap_bytes_off + 2;
     if (inodemap_bytes == 0 || inodemap_off + inodemap_bytes > V1_BSIZE * 2)
         return 0;
@@ -423,12 +423,12 @@ static int v1_probe(filsys_edition_t *fmt, const filsys_io_t *io,
     if (io->read(fmt, blk, sizeof blk, (off_t)(base + 4 * V1_BSIZE)) != 0)
         return 0;
     const uint8_t *d = blk + 8 * 32;
-    uint16_t mode = fmt->bo->get16(d + 0);
+    uint16_t mode = fmt->desc.bo->get16(d + 0);
     if ((mode & (0100000 | 0040000)) != (0100000 | 0040000)) {
         res->why = "root inode is not a directory";
         return 0;
     }
-    uint16_t a0 = fmt->bo->get16(d + 6);
+    uint16_t a0 = fmt->desc.bo->get16(d + 6);
     if (a0 < dstart || a0 >= fsz) {
         res->why = "root directory block out of range";
         return 0;

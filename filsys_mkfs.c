@@ -43,7 +43,7 @@ static int fail(const char *fmt, ...)
  * write. */
 static int pblock(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf)
 {
-    if (fs->io->write(fs, buf, fs->bsize, (off_t)bno * fs->bsize + (off_t)fs->base))
+    if (fs->io->write(fs, buf, fs->desc.bsize, (off_t)bno * fs->desc.bsize + (off_t)fs->base))
         return fail("write error at block %u\n", bno);
     return 0;
 }
@@ -100,26 +100,26 @@ static uint32_t seed_v7(filsys_edition_t *fs)
     /* inode 1: the (empty) bad-block file, as V7's mkfs writes */
     memset(&ip, 0, sizeof ip);
     ip.ino = 1;
-    ip.mode = fs->ifreg;
-    fs->ops->inode->write_inode(fs, 1, &ip);
+    ip.mode = fs->desc.ifreg;
+    fs->desc.ops->inode->write_inode(fs, 1, &ip);
 
     /* root: a one-block directory with "." and ".." */
     uint32_t bno;
-    fs->alloc->balloc(fs, &bno);
-    memset(db, 0, fs->bsize);
-    fs->bo->put16(db, fs->rootino);
+    fs->desc.alloc->balloc(fs, &bno);
+    memset(db, 0, fs->desc.bsize);
+    fs->desc.bo->put16(db, fs->desc.rootino);
     memcpy(db + 2, ".", 1);
-    fs->bo->put16(db + fs->dirent_size, fs->rootino);
-    memcpy(db + fs->dirent_size + 2, "..", 2);
-    fs->ops->write_block(fs, bno, db);
+    fs->desc.bo->put16(db + fs->desc.dirent_size, fs->desc.rootino);
+    memcpy(db + fs->desc.dirent_size + 2, "..", 2);
+    fs->desc.ops->write_block(fs, bno, db);
 
     memset(&ip, 0, sizeof ip);
-    ip.ino = fs->rootino;
-    ip.mode = fs->ifdir | 0777;
+    ip.ino = fs->desc.rootino;
+    ip.mode = fs->desc.ifdir | 0777;
     ip.nlink = 2;
-    ip.size = 2 * fs->dirent_size;
+    ip.size = 2 * fs->desc.dirent_size;
     ip.addr[0] = bno;
-    fs->ops->inode->write_inode(fs, fs->rootino, &ip);
+    fs->desc.ops->inode->write_inode(fs, fs->desc.rootino, &ip);
     return 2;
 }
 
@@ -130,21 +130,21 @@ static uint32_t seed_v8(filsys_edition_t *fs)
     uint8_t db[V7_MAXBSIZE];
 
     uint32_t bno;
-    fs->alloc->balloc(fs, &bno);
-    memset(db, 0, fs->bsize);
-    fs->bo->put16(db, fs->rootino);
+    fs->desc.alloc->balloc(fs, &bno);
+    memset(db, 0, fs->desc.bsize);
+    fs->desc.bo->put16(db, fs->desc.rootino);
     memcpy(db + 2, ".", 1);
-    fs->bo->put16(db + fs->dirent_size, fs->rootino);
-    memcpy(db + fs->dirent_size + 2, "..", 2);
-    fs->ops->write_block(fs, bno, db);
+    fs->desc.bo->put16(db + fs->desc.dirent_size, fs->desc.rootino);
+    memcpy(db + fs->desc.dirent_size + 2, "..", 2);
+    fs->desc.ops->write_block(fs, bno, db);
 
     memset(&ip, 0, sizeof ip);
-    ip.ino = fs->rootino;
-    ip.mode = fs->ifdir | 0777;
+    ip.ino = fs->desc.rootino;
+    ip.mode = fs->desc.ifdir | 0777;
     ip.nlink = 2;
-    ip.size = 2 * fs->dirent_size;
+    ip.size = 2 * fs->desc.dirent_size;
     ip.addr[0] = bno;
-    fs->ops->inode->write_inode(fs, fs->rootino, &ip);
+    fs->desc.ops->inode->write_inode(fs, fs->desc.rootino, &ip);
     return 1;
 }
 
@@ -155,13 +155,13 @@ static uint32_t seed_v6(filsys_edition_t *fs)
 
     /* root (inode 1): "." and ".." point at the root itself */
     uint32_t bno;
-    fs->alloc->balloc(fs, &bno);
+    fs->desc.alloc->balloc(fs, &bno);
     memset(db, 0, V6_BSIZE);
     bo_put16le(db, V6_ROOTINO);
     memcpy(db + 2, ".", 1);
     bo_put16le(db + 16, V6_ROOTINO);
     memcpy(db + 18, "..", 2);
-    fs->ops->write_block(fs, bno, db);
+    fs->desc.ops->write_block(fs, bno, db);
 
     memset(&ip, 0, sizeof ip);
     ip.ino = V6_ROOTINO;
@@ -169,7 +169,7 @@ static uint32_t seed_v6(filsys_edition_t *fs)
     ip.nlink = 2;
     ip.size = 32;
     ip.addr[0] = bno;
-    fs->ops->inode->write_inode(fs, V6_ROOTINO, &ip);
+    fs->desc.ops->inode->write_inode(fs, V6_ROOTINO, &ip);
     return 1;
 }
 
@@ -184,11 +184,11 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
     memset(&ip, 0, sizeof ip);
     ip.ino = 1;
     ip.mode = BSD211_IFREG;
-    fs->ops->inode->write_inode(fs, 1, &ip);
+    fs->desc.ops->inode->write_inode(fs, 1, &ip);
 
     /* lost+found (inode 3): two 512-byte directory blocks */
     uint32_t lfb;
-    fs->alloc->balloc(fs, &lfb);
+    fs->desc.alloc->balloc(fs, &lfb);
     memset(lf, 0, sizeof lf);
     bo_put16le(lf + 0, BSD211_LOSTFOUNDINO);
     bo_put16le(lf + 2, (uint16_t)bsd211_dirsiz(1));
@@ -199,7 +199,7 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
     bo_put16le(lf + 12, 2);
     lf[14] = '.'; lf[15] = '.';
     bo_put16le(lf + BSD211_DIRBLKSIZ + 2, (uint16_t)BSD211_DIRBLKSIZ);
-    fs->ops->write_block(fs, lfb, lf);
+    fs->desc.ops->write_block(fs, lfb, lf);
 
     memset(&ip, 0, sizeof ip);
     ip.ino = BSD211_LOSTFOUNDINO;
@@ -207,11 +207,11 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
     ip.nlink = 2;
     ip.size = BSD211_DIRBLKSIZ * 2;
     ip.addr[0] = lfb;
-    fs->ops->inode->write_inode(fs, BSD211_LOSTFOUNDINO, &ip);
+    fs->desc.ops->inode->write_inode(fs, BSD211_LOSTFOUNDINO, &ip);
 
     /* root (inode 2): ".", "..", "lost+found" */
     uint32_t rb;
-    fs->alloc->balloc(fs, &rb);
+    fs->desc.alloc->balloc(fs, &rb);
     uint8_t rd[BSD211_BSIZE];
     memset(rd, 0, sizeof rd);
     uint32_t off = 0;
@@ -229,7 +229,7 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
     bo_put16le(rd + off + 2, (uint16_t)(BSD211_DIRBLKSIZ - off));
     bo_put16le(rd + off + 4, 10);
     memcpy(rd + off + 6, "lost+found", 10);
-    fs->ops->write_block(fs, rb, rd);
+    fs->desc.ops->write_block(fs, rb, rd);
 
     memset(&ip, 0, sizeof ip);
     ip.ino = BSD211_ROOTINO;
@@ -237,22 +237,22 @@ static uint32_t seed_bsd211(filsys_edition_t *fs)
     ip.nlink = 3;
     ip.size = BSD211_DIRBLKSIZ;
     ip.addr[0] = rb;
-    fs->ops->inode->write_inode(fs, BSD211_ROOTINO, &ip);
+    fs->desc.ops->inode->write_inode(fs, BSD211_ROOTINO, &ip);
     return 3;
 }
 
 static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
                        uint32_t blocks, const void *boot)
 {
-    uint32_t ipb = fs->bsize / fs->inode_size;
+    uint32_t ipb = fs->desc.bsize / fs->desc.inode_size;
     fs->readonly = 0;
     fs->isize = fmt->isize(blocks, ipb) & 0xFFFFu;   /* s_isize is a 16-bit field */
     fs->fsize = blocks;
 
     /* The out-of-superblock bitmap's blocks sit at the tail as metadata; work
      * them out up front so data_end (and the checker's data band) exclude them. */
-    if (fs->freemap == V8_FREEMAP_BIGMAP) {
-        uint32_t bits_per_blk = fs->bsize * 8;
+    if (fs->desc.freemap == V8_FREEMAP_BIGMAP) {
+        uint32_t bits_per_blk = fs->desc.bsize * 8;
         fs->v8_nblks = (fs->fsize + bits_per_blk - 1) / bits_per_blk;
         fs->v8_blk_start = fs->fsize - fs->v8_nblks;
     }
@@ -264,7 +264,7 @@ static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
     /* The in-superblock bitmap holds V8_BITMAP_BITS (30752) data blocks; a
      * larger data area must use the out-of-superblock bigmap (v10 only).  Reject
      * it here rather than write a bitmap the decode side cannot read back. */
-    if (fs->freemap == V8_FREEMAP_BITMAP &&
+    if (fs->desc.freemap == V8_FREEMAP_BITMAP &&
         fs->fsize - fs->isize > V8_BITMAP_BITS)
         return fail("%u-block data area exceeds the %u-block in-superblock bitmap; "
                     "use -g freemap=bigmap (v10) or a smaller volume\n",
@@ -278,28 +278,28 @@ static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
      * Write both once, since super_write preserves the bytes it does not
      * maintain.  System V's superblock is a 512-byte struct at byte 512, not
      * block 1, whatever the logical block size. */
-    if (fs->magic) {
+    if (fs->desc.magic) {
         uint8_t sb[V7_MAXBSIZE] = {0};
-        fs->bo->put32(sb + fs->magic_off, fs->magic);
-        if (fs->dyn_bsize) {
-            uint32_t st = fs->bsize == 512 ? V7_SYSV_Fs1b
-                        : fs->bsize == 1024 ? V7_SYSV_Fs2b
+        fs->desc.bo->put32(sb + fs->desc.magic_off, fs->desc.magic);
+        if (fs->desc.dyn_bsize) {
+            uint32_t st = fs->desc.bsize == 512 ? V7_SYSV_Fs1b
+                        : fs->desc.bsize == 1024 ? V7_SYSV_Fs2b
                         : V7_SYSV_Fs4b;
-            fs->bo->put32(sb + V7_SYSV_TYPE_OFF, st);
+            fs->desc.bo->put32(sb + V7_SYSV_TYPE_OFF, st);
             fs->io->write(fs, sb, 512, 512 + (off_t)fs->base);
         } else {
-            fs->ops->write_block(fs, V7_SUPERB, sb);
+            fs->desc.ops->write_block(fs, V7_SUPERB, sb);
         }
     }
 
     uint8_t zb[V7_MAXBSIZE] = {0};
     for (uint32_t b = 2; b < v7_data_first(fs); b++)
-        fs->ops->write_block(fs, b, zb);
+        fs->desc.ops->write_block(fs, b, zb);
 
     /* Build the free list by reusing the check driver's salvage op, which
      * applies the per-edition interleave (Coherent maptab / V6 stride / none)
      * against an empty used-block map -- nothing is allocated yet. */
-    uint32_t nblk = fs->ops->data_end(fs) - v7_data_first(fs);
+    uint32_t nblk = fs->desc.ops->data_end(fs) - v7_data_first(fs);
     uint8_t *bmap = calloc((size_t)(nblk + 7) / 8, 1);
     if (!bmap)
         return fail("out of memory\n");
@@ -307,7 +307,7 @@ static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
     memset(&cx, 0, sizeof cx);
     cx.bmap = bmap;
     cx.nblk = nblk;
-    fs->ops->makefree(fs, &cx);
+    fs->desc.ops->makefree(fs, &cx);
     free(bmap);
 
     /* reserved + root inodes and directories */
@@ -315,7 +315,7 @@ static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
 
     /* makefree resets the free-inode total; restore it here. */
     fs->fl.tinode = v7_maxinode(fs) - used;
-    if (fs->ops->sync(fs))
+    if (fs->desc.ops->sync(fs))
         return fail("final flush failed\n");
 
     return 0;
@@ -577,7 +577,8 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
     if (errmsg)
         *errmsg = NULL;
 
-    filsys_edition_t fs = filsys_getformat(edition);
+    filsys_edition_t fs = {0};
+    fs.desc = filsys_getformat(edition);
     fs.io = io;
     fs.fd = fd;
     fs.base = base;
@@ -588,32 +589,32 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
         const byte_order_ops_t *bo = filsys_arch_bo(opts->arch);
         if (!bo)
             return fail("bad arch '%s'\n", opts->arch);
-        fs.bo = bo;
+        fs.desc.bo = bo;
         if (bo == &bo_me)
-            fs.pack4 = 0;   /* PDP-11 packs the s5fs; no 4-byte alignment */
+            fs.desc.pack4 = 0;   /* PDP-11 packs the s5fs; no 4-byte alignment */
     }
     if (opts->geom) {
         const char *gerr = NULL;
-        if (filsys_apply_geom(&fs, edition, opts->geom, &gerr))
+        if (filsys_apply_geom(&fs.desc, edition, opts->geom, &gerr))
             return fail("%s\n", gerr ? gerr : "bad geometry");
     }
     if (opts->bsize) {
-        if (!fs.dyn_bsize)
+        if (!fs.desc.dyn_bsize)
             return fail("block size is System-V-only\n");
         if (opts->bsize != 512 && opts->bsize != 1024 && opts->bsize != 2048)
             return fail("bad block size %u (want 512, 1024 or 2048)\n", opts->bsize);
-        fs.bsize = opts->bsize;
-        fs.nindir = opts->bsize / fs.daddr_wid;
+        fs.desc.bsize = opts->bsize;
+        fs.desc.nindir = opts->bsize / fs.desc.daddr_wid;
     }
 
     int rc;
     if (edition == FILSYS_PDP7) {
         if (opts->blocks != 0)
             return fail("pdp7: size is fixed by the RB09 geometry (8000 blocks/surface)\n");
-        if (opts->packing && !(fs.word = filsys_word_codec_by_name(opts->packing)))
+        if (opts->packing && !(fs.desc.word = filsys_word_codec_by_name(opts->packing)))
             return fail("unknown packing '%s'\n", opts->packing);
-        rc = mkfs_pdp7(&fs, fs.word);
-        *written = (uint64_t)P7_NBLOCKS * fs.word->block_bytes;
+        rc = mkfs_pdp7(&fs, fs.desc.word);
+        *written = (uint64_t)P7_NBLOCKS * fs.desc.word->block_bytes;
     } else if (edition == FILSYS_V1) {
         rc = mkfs_v1(&fs, opts->blocks);
         *written = (uint64_t)fs.fsize * V1_BSIZE;
@@ -628,7 +629,7 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
             (edition == FILSYS_V8 || edition == FILSYS_V9 || edition == FILSYS_V10) ? &v8_hook :
             &v7_hook;
         rc = mkfs_common(&fs, hook, opts->blocks, opts->boot);
-        *written = (uint64_t)fs.fsize * fs.bsize;
+        *written = (uint64_t)fs.fsize * fs.desc.bsize;
     }
 
     /* mkfs_common builds the free space by reusing the check driver's salvage

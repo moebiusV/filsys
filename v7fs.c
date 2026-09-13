@@ -26,7 +26,7 @@
  * write their bitmap (in-superblock via v7fs_super_write, out-of-superblock via its
  * blocks) and then the superblock. */
 static int flush_fs(filsys_edition_t *fs) {
-    if (fs->freemap != V8_FREEMAP_LIST)
+    if (fs->desc.freemap != V8_FREEMAP_LIST)
         return v8_bitmap_sync(fs);
     return v7fs_super_write(fs);
 }
@@ -34,9 +34,9 @@ static int flush_fs(filsys_edition_t *fs) {
 /* ---- lifecycle --------------------------------------------------------- */
 
 int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
-              const filsys_edition_t *proto, uint64_t offset) {
-    if (fs != proto)
-        memcpy(fs, proto, sizeof *fs); /* copy the static descriptor fields */
+              const filsys_desc_t *proto, uint64_t offset) {
+    if (&fs->desc != proto)
+        fs->desc = *proto;   /* copy the static descriptor fields */
     fs->readonly = readonly;
     fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
@@ -44,7 +44,7 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         return -errno;
     fs->io = &filsys_io_file;
 
-    if (fs->dyn_bsize) {
+    if (fs->desc.dyn_bsize) {
         /* System V: the 512-byte superblock sits at a fixed byte offset (512),
          * not "block 1" -- that only coincides with byte 512 when the block size
          * is 512.  s_type (offset 508) names the block size. */
@@ -54,13 +54,13 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
             fs->fd = -1;
             return -EIO;
         }
-        if (!fs->ignore_magic &&
-            fs->bo->get32(probe + V7_SYSV_MAGIC_OFF) != V7_SYSV_MAGIC) {
+        if (!fs->desc.ignore_magic &&
+            fs->desc.bo->get32(probe + V7_SYSV_MAGIC_OFF) != V7_SYSV_MAGIC) {
             close(fs->fd);
             fs->fd = -1;
             return -EINVAL;
         }
-        uint32_t t = fs->bo->get32(probe + V7_SYSV_TYPE_OFF);
+        uint32_t t = fs->desc.bo->get32(probe + V7_SYSV_TYPE_OFF);
         uint32_t bsize = t == V7_SYSV_Fs1b ? 512 : t == V7_SYSV_Fs2b ? 1024 : t == V7_SYSV_Fs4b ? 2048 : 0;
         if (bsize == 0) {
             close(fs->fd);
@@ -69,12 +69,12 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         }
         /* The logical block size and the indirect-block entry count both follow
          * from s_type; the 4-byte daddr_t is fixed. */
-        fs->bsize = bsize;
-        fs->nindir = bsize / fs->daddr_wid;
+        fs->desc.bsize = bsize;
+        fs->desc.nindir = bsize / fs->desc.daddr_wid;
     }
 
     uint8_t sb[V7_MAXBSIZE];
-    if (fs->dyn_bsize) {
+    if (fs->desc.dyn_bsize) {
         /* The System V superblock is a 512-byte struct at byte 512, whatever the
          * logical block size (for 1K/2K blocks it lives inside logical block 0). */
         if (fs->io->read(fs, sb, 512, 512 + (off_t)fs->base)) {
@@ -85,39 +85,39 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         close(fs->fd);
         return -EIO;
     }
-    if (fs->sb_decode) {
+    if (fs->desc.sb_decode) {
         /* V8-family: the rearranged superblock is decoded by the format's own
          * codec (v8_sb_decode), which also validates the cache counts. */
-        if (fs->sb_decode(fs, sb)) {
+        if (fs->desc.sb_decode(fs, sb)) {
             close(fs->fd);
             fs->fd = -1;
             return -EINVAL;
         }
-    } else if (fs->isize_count) {
+    } else if (fs->desc.isize_count) {
         /* V6: 16-bit superblock (s_fsize and the free cache are 2 bytes). */
-        fs->isize  = fs->bo->get16(sb + 0);
-        fs->fsize  = fs->bo->get16(sb + 2);
-        fs->fl.nfree  = fs->bo->get16(sb + 4);
-        for (int i = 0; i < fs->nicfree; i++)
-            fs->fl.free[i] = fs->bo->get16(sb + 6 + 2 * i);
-        fs->fl.ninode = fs->bo->get16(sb + 206);
-        for (int i = 0; i < fs->nicinod; i++)
-            fs->fl.inode[i] = fs->bo->get16(sb + 208 + 2 * i);
-        fs->time   = fs->bo->get32(sb + 412);
+        fs->isize  = fs->desc.bo->get16(sb + 0);
+        fs->fsize  = fs->desc.bo->get16(sb + 2);
+        fs->fl.nfree  = fs->desc.bo->get16(sb + 4);
+        for (int i = 0; i < fs->desc.nicfree; i++)
+            fs->fl.free[i] = fs->desc.bo->get16(sb + 6 + 2 * i);
+        fs->fl.ninode = fs->desc.bo->get16(sb + 206);
+        for (int i = 0; i < fs->desc.nicinod; i++)
+            fs->fl.inode[i] = fs->desc.bo->get16(sb + 208 + 2 * i);
+        fs->time   = fs->desc.bo->get32(sb + 412);
         fs->fmod   = sb[410];              /* s_fmod */
     } else {
-        fs->isize  = fs->bo->get16(sb + 0);
-        fs->fsize  = fs->bo->get32(sb + sb_fsize_off(fs->pack4));
-        fs->fl.nfree  = fs->bo->get16(sb + sb_nfree_off(fs->pack4));
-        for (int i = 0; i < fs->nicfree; i++)
-            fs->fl.free[i] = fs->bo->get32(sb + sb_free_off(fs->pack4) + 4 * i);
-        fs->fl.ninode = fs->bo->get16(sb + sb_ninode_off(fs->pack4, fs->nicfree));
+        fs->isize  = fs->desc.bo->get16(sb + 0);
+        fs->fsize  = fs->desc.bo->get32(sb + sb_fsize_off(fs->desc.pack4));
+        fs->fl.nfree  = fs->desc.bo->get16(sb + sb_nfree_off(fs->desc.pack4));
+        for (int i = 0; i < fs->desc.nicfree; i++)
+            fs->fl.free[i] = fs->desc.bo->get32(sb + sb_free_off(fs->desc.pack4) + 4 * i);
+        fs->fl.ninode = fs->desc.bo->get16(sb + sb_ninode_off(fs->desc.pack4, fs->desc.nicfree));
         for (int i = 0; i < V7_NICINOD; i++)
-            fs->fl.inode[i] = fs->bo->get16(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i);
-        fs->time   = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree));
-        fs->fmod   = sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back];  /* s_fmod */
+            fs->fl.inode[i] = fs->desc.bo->get16(sb + sb_inode_off(fs->desc.pack4, fs->desc.nicfree) + 2 * i);
+        fs->time   = fs->desc.bo->get32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree));
+        fs->fmod   = sb[sb_time_off(fs->desc.pack4, fs->desc.nicfree) - fs->desc.fmod_back];  /* s_fmod */
     }
-    if (fs->sb_decode && fs->freemap != V8_FREEMAP_LIST) {
+    if (fs->desc.sb_decode && fs->desc.freemap != V8_FREEMAP_LIST) {
         /* V8-family bitmap forms: load the free-space bitmap into core (from
          * the superblock for the in-superblock form, from its blocks for the
          * out-of-superblock v10 form). */
@@ -131,7 +131,7 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
      * it means this superblock was mis-decoded (the wrong edition, e.g. a V7
      * volume opened as V6) -- reject before the free-list walk reads cur[nfree]
      * out of bounds. */
-    if (fs->fl.nfree > fs->nicfree || fs->fl.ninode > fs->nicinod) {
+    if (fs->fl.nfree > fs->desc.nicfree || fs->fl.ninode > fs->desc.nicinod) {
         close(fs->fd);
         fs->fd = -1;
         return -EINVAL;
@@ -141,14 +141,14 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
      * statfs can report real free space rather than the cache depth.  V6 has no
      * such fields, so its totals are recomputed from the free list + i-list.
      * The V8-family codec already read them. */
-    if (fs->sb_decode)
+    if (fs->desc.sb_decode)
         ;   /* totals already read by v8_sb_decode */
-    else if (fs->isize_count)
+    else if (fs->desc.isize_count)
         v6_count_free(fs, &fs->fl.tfree, &fs->fl.tinode);
-    else if (!fs->pack4 || fs->magic) {
-        int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->has_dinfo);
-        fs->fl.tfree  = fs->bo->get32(sb + toff);
-        fs->fl.tinode = fs->bo->get16(sb + toff + 4);
+    else if (!fs->desc.pack4 || fs->desc.magic) {
+        int toff = sb_tfree_off(fs->desc.pack4, fs->desc.nicfree, fs->desc.has_dinfo);
+        fs->fl.tfree  = fs->desc.bo->get32(sb + toff);
+        fs->fl.tinode = fs->desc.bo->get16(sb + toff + 4);
     } else {
         /* 32V and System III (pack4, no magic): the s_tfree/s_tinode words sit at
          * the pack4 offset but are unmaintained on historical media, so recompute
@@ -156,13 +156,13 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
          * does for its layout. */
         v7_count_free(fs, &fs->fl.tfree, &fs->fl.tinode);
     }
-    if (fs->interleave) {
-        fs->m      = fs->bo->get16(sb + sb_time_off(fs->pack4, fs->nicfree) + 10);
-        fs->n      = fs->bo->get16(sb + sb_time_off(fs->pack4, fs->nicfree) + 12);
-        fs->unique = fs->bo->get32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26);
+    if (fs->desc.interleave) {
+        fs->m      = fs->desc.bo->get16(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 10);
+        fs->n      = fs->desc.bo->get16(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 12);
+        fs->unique = fs->desc.bo->get32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 26);
     }
-    if (!fs->ignore_magic && fs->magic &&
-        fs->bo->get32(sb + fs->magic_off) != fs->magic) {
+    if (!fs->desc.ignore_magic && fs->desc.magic &&
+        fs->desc.bo->get32(sb + fs->desc.magic_off) != fs->desc.magic) {
         /* Xenix carries a magic at superblock offset 1016; System V carries one
          * at 504.  Validate it rather than mis-decoding a foreign volume named
          * with this edition. */
@@ -178,8 +178,8 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
      * the checker (and directory readers) allocate gigabytes. */
     uint64_t imgsize;
     if (filsys_dev_size(fs->fd, &imgsize) != 0 ||
-        fs->isize < (fs->isize_count ? 1 : 2) ||
-        fs->base + (uint64_t)fs->fsize * fs->bsize > imgsize ||
+        fs->isize < (fs->desc.isize_count ? 1 : 2) ||
+        fs->base + (uint64_t)fs->fsize * fs->desc.bsize > imgsize ||
         fs->fsize <= v7_data_first(fs)) {
         close(fs->fd);
         fs->fd = -1;
@@ -245,19 +245,19 @@ static int io_file_write(filsys_edition_t *fs, const void *buf, size_t n, off_t 
 const filsys_io_t filsys_io_file = { io_file_read, io_file_write };
 
 int v7fs_read_block(filsys_edition_t *fs, uint32_t bno, uint8_t *buf) {
-    uint64_t off = fs->base + (uint64_t)bno * fs->bsize;
-    if (filsys_check_range(fs, off, fs->bsize))
+    uint64_t off = fs->base + (uint64_t)bno * fs->desc.bsize;
+    if (filsys_check_range(fs, off, fs->desc.bsize))
         return -EINVAL;
-    return fs->io->read(fs, buf, fs->bsize, (off_t)off);
+    return fs->io->read(fs, buf, fs->desc.bsize, (off_t)off);
 }
 
 int v7fs_write_block(filsys_edition_t *fs, uint32_t bno, const uint8_t *buf) {
     if (fs->readonly)
         return -EROFS;
-    uint64_t off = fs->base + (uint64_t)bno * fs->bsize;
-    if (filsys_check_range(fs, off, fs->bsize))
+    uint64_t off = fs->base + (uint64_t)bno * fs->desc.bsize;
+    if (filsys_check_range(fs, off, fs->desc.bsize))
         return -EINVAL;
-    return fs->io->write(fs, buf, fs->bsize, (off_t)off);
+    return fs->io->write(fs, buf, fs->desc.bsize, (off_t)off);
 }
 
 /* ---- superblock persistence --------------------------------------------- */
@@ -269,53 +269,53 @@ int v7fs_super_write(filsys_edition_t *fs) {
     /* Read the current block to preserve the fields we don't maintain
      * (s_tfree, s_tinode, s_m, s_n, s_fname, s_fpack, ...).  System V keeps the
      * superblock at a fixed byte offset (512), not block 1. */
-    if (fs->dyn_bsize
+    if (fs->desc.dyn_bsize
             ? fs->io->read(fs, sb, 512, 512 + (off_t)fs->base)
             : v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
-    if (fs->sb_encode) {
+    if (fs->desc.sb_encode) {
         /* V8-family: the rearranged superblock is encoded by its own codec. */
-        fs->sb_encode(fs, sb);
-    } else if (fs->isize_count) {
+        fs->desc.sb_encode(fs, sb);
+    } else if (fs->desc.isize_count) {
         /* V6: a 16-bit superblock (s_fsize and the free cache are 2 bytes), and
          * no s_tfree/s_tinode -- those totals are recomputed on open. */
-        fs->bo->put16(sb + 0, fs->isize);
-        fs->bo->put16(sb + 2, (uint16_t)fs->fsize);
-        fs->bo->put16(sb + 4, fs->fl.nfree);
-        for (int i = 0; i < fs->nicfree; i++)
-            fs->bo->put16(sb + 6 + 2 * i, (uint16_t)fs->fl.free[i]);
-        fs->bo->put16(sb + 206, fs->fl.ninode);
-        for (int i = 0; i < fs->nicinod; i++)
-            fs->bo->put16(sb + 208 + 2 * i, fs->fl.inode[i]);
-        fs->bo->put32(sb + 412, (uint32_t)time(NULL));   /* s_time[2] */
+        fs->desc.bo->put16(sb + 0, fs->isize);
+        fs->desc.bo->put16(sb + 2, (uint16_t)fs->fsize);
+        fs->desc.bo->put16(sb + 4, fs->fl.nfree);
+        for (int i = 0; i < fs->desc.nicfree; i++)
+            fs->desc.bo->put16(sb + 6 + 2 * i, (uint16_t)fs->fl.free[i]);
+        fs->desc.bo->put16(sb + 206, fs->fl.ninode);
+        for (int i = 0; i < fs->desc.nicinod; i++)
+            fs->desc.bo->put16(sb + 208 + 2 * i, fs->fl.inode[i]);
+        fs->desc.bo->put32(sb + 412, (uint32_t)time(NULL));   /* s_time[2] */
         sb[410] = (uint8_t)(fs->fmod != 0);              /* s_fmod */
     } else {
-        fs->bo->put16(sb + 0, fs->isize);
-        fs->bo->put32(sb + sb_fsize_off(fs->pack4), fs->fsize);
-        fs->bo->put16(sb + sb_nfree_off(fs->pack4), fs->fl.nfree);
-        for (int i = 0; i < fs->nicfree; i++)
-            fs->bo->put32(sb + sb_free_off(fs->pack4) + 4 * i, fs->fl.free[i]);
-        fs->bo->put16(sb + sb_ninode_off(fs->pack4, fs->nicfree), fs->fl.ninode);
+        fs->desc.bo->put16(sb + 0, fs->isize);
+        fs->desc.bo->put32(sb + sb_fsize_off(fs->desc.pack4), fs->fsize);
+        fs->desc.bo->put16(sb + sb_nfree_off(fs->desc.pack4), fs->fl.nfree);
+        for (int i = 0; i < fs->desc.nicfree; i++)
+            fs->desc.bo->put32(sb + sb_free_off(fs->desc.pack4) + 4 * i, fs->fl.free[i]);
+        fs->desc.bo->put16(sb + sb_ninode_off(fs->desc.pack4, fs->desc.nicfree), fs->fl.ninode);
         for (int i = 0; i < V7_NICINOD; i++)
-            fs->bo->put16(sb + sb_inode_off(fs->pack4, fs->nicfree) + 2 * i, fs->fl.inode[i]);
+            fs->desc.bo->put16(sb + sb_inode_off(fs->desc.pack4, fs->desc.nicfree) + 2 * i, fs->fl.inode[i]);
         uint32_t now = (uint32_t)time(NULL);
-        fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree), now);  /* s_time */
-        sb[sb_time_off(fs->pack4, fs->nicfree) - fs->fmod_back] = (uint8_t)(fs->fmod != 0); /* s_fmod */
-        if (fs->has_state)
-            fs->bo->put32(sb + V7_SYSV_STATE_OFF,
+        fs->desc.bo->put32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree), now);  /* s_time */
+        sb[sb_time_off(fs->desc.pack4, fs->desc.nicfree) - fs->desc.fmod_back] = (uint8_t)(fs->fmod != 0); /* s_fmod */
+        if (fs->desc.has_state)
+            fs->desc.bo->put32(sb + V7_SYSV_STATE_OFF,
                           fs->fmod ? V7_SYSV_STATE_ACTIVE : V7_SYSV_STATE_CLEAN); /* s_state (R4 only) */
-        if (!fs->pack4 || fs->magic) {
-            int toff = sb_tfree_off(fs->pack4, fs->nicfree, fs->has_dinfo);
-            fs->bo->put32(sb + toff, fs->fl.tfree);        /* s_tfree */
-            fs->bo->put16(sb + toff + 4, (uint16_t)fs->fl.tinode);   /* s_tinode */
+        if (!fs->desc.pack4 || fs->desc.magic) {
+            int toff = sb_tfree_off(fs->desc.pack4, fs->desc.nicfree, fs->desc.has_dinfo);
+            fs->desc.bo->put32(sb + toff, fs->fl.tfree);        /* s_tfree */
+            fs->desc.bo->put16(sb + toff + 4, (uint16_t)fs->fl.tinode);   /* s_tinode */
         }
-        if (fs->interleave) {
-            fs->bo->put16(sb + sb_time_off(fs->pack4, fs->nicfree) + 10, fs->m);
-            fs->bo->put16(sb + sb_time_off(fs->pack4, fs->nicfree) + 12, fs->n);
-            fs->bo->put32(sb + sb_time_off(fs->pack4, fs->nicfree) + 26, fs->unique);
+        if (fs->desc.interleave) {
+            fs->desc.bo->put16(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 10, fs->m);
+            fs->desc.bo->put16(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 12, fs->n);
+            fs->desc.bo->put32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 26, fs->unique);
         }
     }
-    if (fs->dyn_bsize
+    if (fs->desc.dyn_bsize
             ? fs->io->write(fs, sb, 512, 512 + (off_t)fs->base)
             : v7fs_write_block(fs, V7_SUPERB, sb))
         return -EIO;
@@ -345,21 +345,21 @@ int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
     uint8_t raw[V7_MAXBSIZE];
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
-    const uint8_t *d = raw + off * fs->inode_size;
+    const uint8_t *d = raw + off * fs->desc.inode_size;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = fs->bo->get16(d + 0);
-    ip->nlink = (int16_t)fs->bo->get16(d + 2);
-    ip->uid   = (int16_t)fs->bo->get16(d + 4);
-    ip->gid   = (int16_t)fs->bo->get16(d + 6);
-    ip->size  = fs->bo->get32(d + 8);
-    for (int i = 0; i < fs->niaddr; i++)
-        ip->addr[i] = fs->addr_width == 4
-                    ? fs->bo->get32(d + 12 + 4 * i)
-                    : fs->bo->get24(d + 12 + 3 * i);
-    ip->atime = fs->bo->get32(d + 52);
-    ip->mtime = fs->bo->get32(d + 56);
-    ip->ctime = fs->bo->get32(d + 60);
+    ip->mode  = fs->desc.bo->get16(d + 0);
+    ip->nlink = (int16_t)fs->desc.bo->get16(d + 2);
+    ip->uid   = (int16_t)fs->desc.bo->get16(d + 4);
+    ip->gid   = (int16_t)fs->desc.bo->get16(d + 6);
+    ip->size  = fs->desc.bo->get32(d + 8);
+    for (int i = 0; i < fs->desc.niaddr; i++)
+        ip->addr[i] = fs->desc.addr_width == 4
+                    ? fs->desc.bo->get32(d + 12 + 4 * i)
+                    : fs->desc.bo->get24(d + 12 + 3 * i);
+    ip->atime = fs->desc.bo->get32(d + 52);
+    ip->mtime = fs->desc.bo->get32(d + 56);
+    ip->ctime = fs->desc.bo->get32(d + 60);
     return 0;
 }
 
@@ -382,21 +382,21 @@ int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
     uint8_t raw[V7_MAXBSIZE];
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
-    uint8_t *d = raw + off * fs->inode_size;
-    fs->bo->put16(d + 0, (uint16_t)ip->mode);
-    fs->bo->put16(d + 2, (uint16_t)ip->nlink);
-    fs->bo->put16(d + 4, (uint16_t)ip->uid);
-    fs->bo->put16(d + 6, (uint16_t)ip->gid);
-    fs->bo->put32(d + 8, ip->size);
-    for (int i = 0; i < fs->niaddr; i++) {
-        if (fs->addr_width == 4)
-            fs->bo->put32(d + 12 + 4 * i, ip->addr[i]);
+    uint8_t *d = raw + off * fs->desc.inode_size;
+    fs->desc.bo->put16(d + 0, (uint16_t)ip->mode);
+    fs->desc.bo->put16(d + 2, (uint16_t)ip->nlink);
+    fs->desc.bo->put16(d + 4, (uint16_t)ip->uid);
+    fs->desc.bo->put16(d + 6, (uint16_t)ip->gid);
+    fs->desc.bo->put32(d + 8, ip->size);
+    for (int i = 0; i < fs->desc.niaddr; i++) {
+        if (fs->desc.addr_width == 4)
+            fs->desc.bo->put32(d + 12 + 4 * i, ip->addr[i]);
         else
-            fs->bo->put24(d + 12 + 3 * i, ip->addr[i]);
+            fs->desc.bo->put24(d + 12 + 3 * i, ip->addr[i]);
     }
-    fs->bo->put32(d + 52, ip->atime);
-    fs->bo->put32(d + 56, ip->mtime);
-    fs->bo->put32(d + 60, ip->ctime);
+    fs->desc.bo->put32(d + 52, ip->atime);
+    fs->desc.bo->put32(d + 56, ip->mtime);
+    fs->desc.bo->put32(d + 60, ip->ctime);
     return v7fs_write_block(fs, bno, raw);
 }
 
@@ -416,7 +416,7 @@ static int v7_ind_count(filsys_edition_t *fs, uint32_t blk, int levels, uint64_t
         return -EIO;   /* unreadable: the count cannot be trusted */
     uint64_t n = 1;   /* the indirect block itself */
     for (uint32_t i = 0; i < v7_nindir(fs); i++) {
-        uint32_t sub = fs->bo->get32(buf + 4 * i);
+        uint32_t sub = fs->desc.bo->get32(buf + 4 * i);
         if (sub == 0)
             continue;
         if (levels == 1) {
@@ -436,16 +436,16 @@ static int v7_ind_count(filsys_edition_t *fs, uint32_t blk, int levels, uint64_t
 static int v7fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip,
                                  uint64_t *out) {
     uint64_t n = 0;
-    for (int i = 0; i < fs->ndaddr; i++)
+    for (int i = 0; i < fs->desc.ndaddr; i++)
         if (ip->addr[i]) n++;
     uint64_t sub;
-    int rc = v7_ind_count(fs, ip->addr[fs->ndaddr], 1, &sub);      /* single */
+    int rc = v7_ind_count(fs, ip->addr[fs->desc.ndaddr], 1, &sub);      /* single */
     if (rc) return rc;
     n += sub;
-    rc = v7_ind_count(fs, ip->addr[fs->ndaddr + 1], 2, &sub);      /* double */
+    rc = v7_ind_count(fs, ip->addr[fs->desc.ndaddr + 1], 2, &sub);      /* double */
     if (rc) return rc;
     n += sub;
-    rc = v7_ind_count(fs, ip->addr[fs->ndaddr + 2], 3, &sub);      /* triple */
+    rc = v7_ind_count(fs, ip->addr[fs->desc.ndaddr + 2], 3, &sub);      /* triple */
     if (rc) return rc;
     n += sub;
     *out = n;
@@ -465,18 +465,18 @@ ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_
 
     size_t done = 0;
     while (done < size) {
-        uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->bsize);
-        uint32_t boff = (uint32_t)((off + (off_t)done) % fs->bsize);
+        uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->desc.bsize);
+        uint32_t boff = (uint32_t)((off + (off_t)done) % fs->desc.bsize);
         uint32_t pbn;
-        if (fs->ops->inode->bmap(fs, ip, lbn, 0, &pbn))
+        if (fs->desc.ops->inode->bmap(fs, ip, lbn, 0, &pbn))
             return -EIO;
         uint8_t blk[V7_MAXBSIZE];
         if (pbn == 0) {
-            memset(blk, 0, fs->bsize);   /* sparse hole */
-        } else if (fs->ops->blk_get(fs, pbn, blk)) {
+            memset(blk, 0, fs->desc.bsize);   /* sparse hole */
+        } else if (fs->desc.ops->blk_get(fs, pbn, blk)) {
             return -EIO;
         }
-        size_t n = fs->bsize - boff;
+        size_t n = fs->desc.bsize - boff;
         if (n > size - done)
             n = size - done;
         memcpy(buf + done, blk + boff, n);
@@ -491,30 +491,30 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
 
     size_t done = 0;
     while (done < size) {
-        uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->bsize);
-        uint32_t boff = (uint32_t)((off + (off_t)done) % fs->bsize);
+        uint32_t lbn  = (uint32_t)((off + (off_t)done) / fs->desc.bsize);
+        uint32_t boff = (uint32_t)((off + (off_t)done) % fs->desc.bsize);
         uint32_t pbn;
-        int rc = fs->ops->inode->bmap(fs, ip, lbn, 1, &pbn);
+        int rc = fs->desc.ops->inode->bmap(fs, ip, lbn, 1, &pbn);
         if (rc)
             return rc;   /* -EIO (allocator commit) or -ENOSPC or -EFBIG */
         if (pbn == 0)
             return -ENOSPC;
 
         uint8_t blk[V7_MAXBSIZE];
-        if (fs->ops->blk_get(fs, pbn, blk))
+        if (fs->desc.ops->blk_get(fs, pbn, blk))
             return -EIO;
 
-        size_t n = fs->bsize - boff;
+        size_t n = fs->desc.bsize - boff;
         if (n > size - done)
             n = size - done;
         memcpy(blk + boff, buf + done, n);
-        if (fs->ops->blk_put(fs, pbn, blk))
+        if (fs->desc.ops->blk_put(fs, pbn, blk))
             return -EIO;
         done += n;
     }
     if ((uint64_t)off + size > ip->size)
         ip->size = (uint32_t)((uint64_t)off + size);
-    int rc = fs->ops->inode->write_inode(fs, ip->ino, ip);
+    int rc = fs->desc.ops->inode->write_inode(fs, ip->ino, ip);
     if (rc)
         return rc;   /* the inode write failed: don't report a partial write */
     return (ssize_t)done;
@@ -525,9 +525,9 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
 int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
     if (path[0] != '/')
         return -EINVAL;
-    uint32_t cur = fs->rootino;
+    uint32_t cur = fs->desc.rootino;
     v7_inode_t dip;
-    if (fs->ops->inode->read_inode(fs, cur, &dip))
+    if (fs->desc.ops->inode->read_inode(fs, cur, &dip))
         return -EIO;
 
     const char *p = path + 1;
@@ -538,7 +538,7 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
             p++;
             continue;
         }
-        if (len > fs->max_namlen)
+        if (len > fs->desc.max_namlen)
             return -ENAMETOOLONG;
         char name[64];
         memcpy(name, p, len);
@@ -547,10 +547,10 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
         if (!fs_is_dir(fs, &dip))
             return -ENOTDIR;
         uint32_t next;
-        int rc = fs->ops->dir_lookup(fs, &dip, name, &next);
+        int rc = fs->desc.ops->dir_lookup(fs, &dip, name, &next);
         if (rc)
             return rc;
-        if (fs->ops->inode->read_inode(fs, next, &dip))
+        if (fs->desc.ops->inode->read_inode(fs, next, &dip))
             return -EIO;
         p = slash ? slash + 1 : p + len;
     }
@@ -584,7 +584,7 @@ static uint32_t v7_data_end(filsys_edition_t *fs) {
 }
 
 int v7fs_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
-    return filsys_check_common(fs, fs, rep, mode);
+    return filsys_check_common(&fs->desc, fs, rep, mode);
 }
 
 /* ---- ops table ----------------------------------------------------------
@@ -593,8 +593,8 @@ int v7fs_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
  * filsys_edition_t*, so there is no cast anywhere. */
 
 
-static uint32_t v7fs_blocksize_op(const filsys_edition_t *fs) {
-    return ((const filsys_edition_t *)fs)->bsize;
+static uint32_t v7fs_blocksize_op(const filsys_desc_t *fs) {
+    return ((const filsys_edition_t *)fs)->desc.bsize;
 }
 
 
@@ -908,43 +908,43 @@ static int probe_v7_family(filsys_edition_t *fmt, const filsys_io_t *io,
     uint8_t sb[V7_MAXBSIZE];
     if (io->read(fmt, sb, bsize, (off_t)(base + (uint64_t)bsize)) != 0)
         return 0;
-    uint16_t isz = fmt->bo->get16(sb);
+    uint16_t isz = fmt->desc.bo->get16(sb);
     if (isz < 3)
         return 0;
-    int nfree_off  = sb_nfree_off(fmt->pack4);
-    int ninode_off = sb_ninode_off(fmt->pack4, fmt->nicfree);
-    int free_off   = sb_free_off(fmt->pack4);
-    uint16_t nfree  = fmt->bo->get16(sb + nfree_off);
-    uint16_t ninode = fmt->bo->get16(sb + ninode_off);
-    if (nfree > fmt->nicfree || ninode > V7_NICINOD)
+    int nfree_off  = sb_nfree_off(fmt->desc.pack4);
+    int ninode_off = sb_ninode_off(fmt->desc.pack4, fmt->desc.nicfree);
+    int free_off   = sb_free_off(fmt->desc.pack4);
+    uint16_t nfree  = fmt->desc.bo->get16(sb + nfree_off);
+    uint16_t ninode = fmt->desc.bo->get16(sb + ninode_off);
+    if (nfree > fmt->desc.nicfree || ninode > V7_NICINOD)
         return 0;
-    uint32_t fsz = fmt->bo->get32(sb + sb_fsize_off(fmt->pack4));
+    uint32_t fsz = fmt->desc.bo->get32(sb + sb_fsize_off(fmt->desc.pack4));
     if (fsz <= isz || base + (uint64_t)fsz * bsize > nbytes)
         return 0;
     for (int i = 0; i < nfree; i++) {
-        uint32_t fb = fmt->bo->get32(sb + free_off + 4 * i);
+        uint32_t fb = fmt->desc.bo->get32(sb + free_off + 4 * i);
         if (fb != 0 && (fb < isz || fb >= fsz))
             return 0;
     }
-    uint32_t head = fmt->bo->get32(sb + free_off);
-    int fb_free = fmt->pack4 ? 4 : 2;
+    uint32_t head = fmt->desc.bo->get32(sb + free_off);
+    int fb_free = fmt->desc.pack4 ? 4 : 2;
     uint32_t s = 0;
     const char *why = NULL;
-    if (probe_walk_chain(fmt, io, head, isz, fsz, base, bsize, fmt->nicfree, 4,
-                         fmt->bo->get16, fmt->bo->get32, fb_free, &s, &why) < 0) {
+    if (probe_walk_chain(fmt, io, head, isz, fsz, base, bsize, fmt->desc.nicfree, 4,
+                         fmt->desc.bo->get16, fmt->desc.bo->get32, fb_free, &s, &why) < 0) {
         res->why = why; res->isize = isz; res->fsize = fsz; res->segs = s;
-        res->class = fmt->nicfree == V7_COH_NICFREE ? "Coherent"
-                   : fmt->pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
+        res->class = fmt->desc.nicfree == V7_COH_NICFREE ? "Coherent"
+                   : fmt->desc.pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
         return 2;
     }
-    if (probe_root_ok(fmt, io, base, bsize, fmt->bo->get16, fmt->bo->get32, &why) < 0) {
+    if (probe_root_ok(fmt, io, base, bsize, fmt->desc.bo->get16, fmt->desc.bo->get32, &why) < 0) {
         res->why = why; res->isize = isz; res->fsize = fsz; res->segs = s;
-        res->class = fmt->nicfree == V7_COH_NICFREE ? "Coherent"
-                   : fmt->pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
+        res->class = fmt->desc.nicfree == V7_COH_NICFREE ? "Coherent"
+                   : fmt->desc.pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
         return 2;
     }
-    res->class = fmt->nicfree == V7_COH_NICFREE ? "Coherent"
-               : fmt->pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
+    res->class = fmt->desc.nicfree == V7_COH_NICFREE ? "Coherent"
+               : fmt->desc.pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
     res->isize = isz; res->fsize = fsz; res->segs = s;
     res->blocksize = bsize;
     return 1;
@@ -1181,13 +1181,13 @@ static int v7_probe(filsys_edition_t *fmt, const filsys_io_t *io,
 {
     memset(res, 0, sizeof *res);
     res->freemap = -1;
-    if (fmt->sb_decode)
+    if (fmt->desc.sb_decode)
         return probe_v8(fmt, io, base, bsize, nbytes, res);
-    if (fmt->magic == V7_XEN_MAGIC)
+    if (fmt->desc.magic == V7_XEN_MAGIC)
         return probe_xenix(fmt, io, base, bsize, nbytes, res);
-    if (fmt->magic == V7_SYSV_MAGIC)
+    if (fmt->desc.magic == V7_SYSV_MAGIC)
         return probe_sysv(fmt, io, base, bsize, nbytes, res);
-    if (fmt->bsize == 1024)
+    if (fmt->desc.bsize == 1024)
         return probe_bsd29(fmt, io, base, bsize, nbytes, res);
     return probe_v7_family(fmt, io, base, bsize, nbytes, res);
 }
@@ -1253,7 +1253,7 @@ static uint8_t bsd211_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t m
 }
 
 int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
-    return filsys_check_common(fs, fs, rep, mode);
+    return filsys_check_common(&fs->desc, fs, rep, mode);
 }
 
 /* ---- 2.11BSD ops table: the shared V7 engine + variable-length dirents ---- */
@@ -1332,18 +1332,18 @@ int v6_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
     uint8_t raw[V6_BSIZE];
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
-    const uint8_t *d = raw + off * fs->inode_size;
+    const uint8_t *d = raw + off * fs->desc.inode_size;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = fs->bo->get16(d + 0);
+    ip->mode  = fs->desc.bo->get16(d + 0);
     ip->nlink = (int16_t)d[2];        /* char */
     ip->uid   = (int16_t)d[3];        /* char */
     ip->gid   = (int16_t)d[4];        /* char */
-    ip->size  = ((uint32_t)d[5] << 16) | fs->bo->get16(d + 6);
-    for (int i = 0; i < fs->niaddr; i++)
-        ip->addr[i] = fs->bo->get16(d + 8 + 2 * i);
-    ip->atime = fs->bo->get32(d + 24);
-    ip->mtime = fs->bo->get32(d + 28);
+    ip->size  = ((uint32_t)d[5] << 16) | fs->desc.bo->get16(d + 6);
+    for (int i = 0; i < fs->desc.niaddr; i++)
+        ip->addr[i] = fs->desc.bo->get16(d + 8 + 2 * i);
+    ip->atime = fs->desc.bo->get32(d + 24);
+    ip->mtime = fs->desc.bo->get32(d + 28);
     ip->ctime = ip->mtime;            /* V6 has no ctime */
     return 0;
 }
@@ -1366,17 +1366,17 @@ static int v6_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *
     uint8_t raw[V6_BSIZE];
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
-    uint8_t *d = raw + off * fs->inode_size;
-    fs->bo->put16(d + 0, (uint16_t)ip->mode);
+    uint8_t *d = raw + off * fs->desc.inode_size;
+    fs->desc.bo->put16(d + 0, (uint16_t)ip->mode);
     d[2] = (uint8_t)ip->nlink;
     d[3] = (uint8_t)ip->uid;
     d[4] = (uint8_t)ip->gid;
     d[5] = (uint8_t)((ip->size >> 16) & 0xff);
-    fs->bo->put16(d + 6, (uint16_t)(ip->size & 0xffff));
-    for (int i = 0; i < fs->niaddr; i++)
-        fs->bo->put16(d + 8 + 2 * i, (uint16_t)ip->addr[i]);
-    fs->bo->put32(d + 24, ip->atime);
-    fs->bo->put32(d + 28, ip->mtime);
+    fs->desc.bo->put16(d + 6, (uint16_t)(ip->size & 0xffff));
+    for (int i = 0; i < fs->desc.niaddr; i++)
+        fs->desc.bo->put16(d + 8 + 2 * i, (uint16_t)ip->addr[i]);
+    fs->desc.bo->put32(d + 24, ip->atime);
+    fs->desc.bo->put32(d + 28, ip->mtime);
     return v7fs_write_block(fs, bno, raw);
 }
 
@@ -1428,7 +1428,7 @@ static int v6_ind_count(filsys_edition_t *fs, uint32_t blk, int levels, uint64_t
         return -EIO;
     uint64_t n = 1;   /* the indirect block itself */
     for (uint32_t i = 0; i < V6_NINDIR; i++) {
-        uint32_t sub = fs->bo->get16(buf + 2 * i);
+        uint32_t sub = fs->desc.bo->get16(buf + 2 * i);
         if (sub == 0)
             continue;
         if (levels == 1) {
@@ -1481,7 +1481,7 @@ static uint8_t v6_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode)
 }
 
 int v6_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
-    return filsys_check_common(fs, fs, rep, mode);
+    return filsys_check_common(&fs->desc, fs, rep, mode);
 }
 
 /* ---- V6 ops table: shared engine + V6 inode/bmap/check ------------------- */
