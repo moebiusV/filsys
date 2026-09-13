@@ -17,6 +17,7 @@
 
 #include "v7fs.h"
 #include "filsys_ops.h"
+#include "instrument.h"
 
 /* The indirect-entry codec: the descriptor's override (PDP-7's 18-bit word) or
  * the daddr_wid-based default (2-byte V6/V1, 4-byte V7/BSD). */
@@ -163,6 +164,19 @@ void filsys_blklist_drain(filsys_edition_t *fs, filsys_blklist_t *b)
         fs->alloc->bfree(fs, b->blk[i]);
     free(b->blk);
     free(b);
+}
+
+/* Mark every collected block released (owned -> allocated-unassigned) for the
+ * ownership table, before the blocks return to the free list.  The caller must
+ * have persisted the cleared/shrunk inode first: if a block is still owned by a
+ * live inode when filsys_blklist_drain bfree's it, that is the aliasing the
+ * table exists to catch. */
+void filsys_blklist_release(filsys_blklist_t *b)
+{
+    if (!b)
+        return;
+    for (size_t i = 0; i < b->n; i++)
+        filsys_instr_release(b->blk[i]);
 }
 
 /* Free the list without freeing the blocks it names (the truncate failed before

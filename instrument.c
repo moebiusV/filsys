@@ -69,13 +69,13 @@ void filsys_instr_dump(void) {
                 g_trace[i % TRACE_MAX].what);
 }
 
-static void owner_violation(const char *what, uint32_t bno, int want_free) {
+static void owner_violation(const char *what, uint32_t bno) {
     const block_owner_t *o = &g_owner[bno];
-    int is_free = o->ino == 0;
-    fprintf(stderr,
-            "INSTRUMENT: %s block %u: expected %s, found %s (ino=%u lbn=%u kind=%u)\n",
-            what, bno, want_free ? "free" : "owned",
-            is_free ? "free" : "owned", o->ino, o->lbn, o->kind);
+    const char *state = o->ino == 0 ? "free"
+                      : o->ino == INO_ALLOC ? "allocated-unassigned"
+                      : "owned";
+    fprintf(stderr, "INSTRUMENT: %s block %u: found %s (ino=%u lbn=%u kind=%u)\n",
+            what, bno, state, o->ino, o->lbn, o->kind);
     g_violations++;
     filsys_instr_dump();
 }
@@ -84,7 +84,7 @@ void filsys_instr_balloc(uint32_t bno) {
     if (bno >= g_nblk)
         return;   /* out of the data area: the allocator already rejects it */
     if (g_owner[bno].ino != 0)
-        owner_violation("ALLOC_BLOCK", bno, 1);   /* claimed twice */
+        owner_violation("ALLOC_BLOCK (claimed twice)", bno);
     g_owner[bno].ino = INO_ALLOC;
     g_owner[bno].lbn = 0;
     g_owner[bno].kind = 3;
@@ -94,8 +94,10 @@ void filsys_instr_balloc(uint32_t bno) {
 void filsys_instr_bfree(uint32_t bno) {
     if (bno >= g_nblk)
         return;
-    if (g_owner[bno].ino == 0)
-        owner_violation("FREE_BLOCK", bno, 0);    /* already free */
+    if (g_owner[bno].ino != INO_ALLOC)
+        owner_violation(g_owner[bno].ino == 0
+                        ? "FREE_BLOCK (already free)"
+                        : "FREE_BLOCK (still owned by a live inode)", bno);
     g_owner[bno].ino = 0;
     g_owner[bno].lbn = 0;
     g_owner[bno].kind = 0;
@@ -105,10 +107,20 @@ void filsys_instr_bfree(uint32_t bno) {
 void filsys_instr_assign(uint32_t ino, uint32_t lbn, uint32_t bno, int kind) {
     if (bno >= g_nblk)
         return;
+    if (g_owner[bno].ino != INO_ALLOC)
+        owner_violation("ASSIGN (block not allocated-unassigned)", bno);
     g_owner[bno].ino = ino;
     g_owner[bno].lbn = lbn;
     g_owner[bno].kind = (uint8_t)kind;
     trace("ASSIGN ino=%u lbn=%u blk=%u kind=%d", ino, lbn, bno, kind);
+}
+
+void filsys_instr_release(uint32_t bno) {
+    if (bno >= g_nblk)
+        return;
+    if (g_owner[bno].ino != 0 && g_owner[bno].ino != INO_ALLOC)
+        g_owner[bno].ino = INO_ALLOC;   /* owned -> released (inode persisted) */
+    trace("RELEASE_BLOCK %u", bno);
 }
 
 void filsys_instr_ialloc(uint32_t ino) {

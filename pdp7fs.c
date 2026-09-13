@@ -451,6 +451,7 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
             ip->addr[i] = 0;
         ip->addr[0] = iblk;
         ip->mode |= P7_ILARG;
+        filsys_instr_assign(ip->ino, lbn, iblk, 2);   /* indirect block */
     }
 
     if (ip->mode & P7_ILARG) {
@@ -470,6 +471,7 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
             if (write_words(fs, iblk, z))
                 return -EIO;
             ip->addr[slot] = iblk;
+            filsys_instr_assign(ip->ino, lbn, iblk, 2);   /* indirect block */
         }
         uint32_t words[P7_WSIZE];
         if (read_words(fs, iblk, words))
@@ -480,6 +482,7 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
                 return rc;
             if (write_words(fs, iblk, words))
                 return -EIO;
+            filsys_instr_assign(ip->ino, lbn, words[idx], 1);   /* data block */
         }
         *bno = words[idx];
         return 0;
@@ -494,6 +497,7 @@ int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bn
         int rc = p7fs_balloc(fs, &ip->addr[lbn]);
         if (rc)
             return rc;
+        filsys_instr_assign(ip->ino, lbn, ip->addr[lbn], 1);   /* direct data block */
     }
     *bno = ip->addr[lbn];
     return 0;
