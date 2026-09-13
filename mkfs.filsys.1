@@ -8,6 +8,8 @@ mkfs.filsys \- construct a Research Unix filesystem in a disk image
 .IR <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211|sysiii|sysvr2|sysvr4> ]
 .RB [ \-o
 .IR block ]
+.RB [ \-b
+.IR boot ]
 .RB [ \-m
 .IR m ]
 .RB [ \-n
@@ -64,8 +66,8 @@ the disk.  By default the filesystem is written at block 0 (the first
 partition); the
 .B \-o
 option places it at a different block offset within the image.  Block 0 of
-each filesystem is left alone; block 1 is the superblock; blocks 2 onward are
-the i-list.
+each filesystem is the boot block; block 1 is the superblock; blocks 2 onward
+are the i-list.
 .SH OPTIONS
 .TP
 .BI \-v " <pdp7|v1|v2|v3|v4|v5|v6|v7|vax32|coherent|xenix|bsd29|bsd211|sysiii|sysvr2|sysvr4>"
@@ -149,6 +151,18 @@ field).  Only applies to
 which read their block size from the superblock; every other edition has a
 fixed block size.  Defaults to 512.
 .TP
+.BI \-b " boot"
+Write
+.I boot
+(a PDP-11
+.BR a.out (5)
+program, V7 magic 0407) as block 0 of the filesystem, before the superblock
+at block 1.  This is the standard PDP-11 boot block: text plus data, at most
+one block (512 bytes).  Without
+.BR \-b ,
+block 0 is left untouched.  filsys ships no boot blocks; get one from the
+prebsd project, which distributes the PDP-11 bootstraps.
+.TP
 .I blocks
 Size of the filesystem in blocks.  If omitted, the size defaults to the image's
 own size (from block 0, or from
@@ -166,8 +180,10 @@ bootstrap program, whose second token was the filesystem size, whose third
 token was the i-list size, and whose remaining tokens described the root
 directory and its contents.  The V6/V7
 .I mkfs.filsys
-drops the prototype file (and the boot block it would have written) in favour
-of an empty root and an explicit
+retains the notion of a boot block at block zero (now the
+.B \-b
+option) but drops the prototype file in favour of an empty root and an
+explicit
 .I blocks
 argument; the i-list is sized automatically.
 .SH EXAMPLES
@@ -175,6 +191,7 @@ argument; the i-list is sized automatically.
 mkfs.filsys -v v7 image.dk             # size the fs to the whole image (V7)
 mkfs.filsys -v v6 image.dk             # ...as a V6 (V4/V5) filesystem
 mkfs.filsys -v v7 -o 18392 image.dk    # start the fs at block 18392 (a partition)
+mkfs.filsys -v v7 -b /v7/mdec/rp06boot image.dk   # write a PDP-11 boot block
 mkfs.filsys -v v7 image.dk 5000        # an explicit 5000-block filesystem
 mkfs.filsys -v sysvr2 -B 1024 image.dk # a 1K-block System V filesystem
 .fi

@@ -111,7 +111,8 @@ int filsys_invariants(filsys_t *fs, filsys_check_t *rep);
 
 /* ---- image creation ------------------------------------------------------ */
 
-/* Options for filsys_mkfs().  Zero/NULL = the edition's default. */
+/* Options for filsys_mkfs().  Zero/NULL = the edition's default.  `boot` is a
+ * pointer to a full block (bsize bytes) written at block 0, or NULL. */
 typedef struct {
     uint32_t      blocks;    /* filesystem size in blocks (caller resolves) */
     uint32_t      bsize;     /* System V logical block size (0 = edition default) */
@@ -119,6 +120,7 @@ typedef struct {
     const char   *arch;      /* byte order override, or NULL */
     const filsys_geom_t *geom;  /* V8-family geometry, or NULL */
     uint16_t      m, n;      /* Coherent interleave (s_m/s_n) */
+    const void   *boot;      /* boot block bytes (one block), or NULL */
 } filsys_mkfs_opts_t;
 
 /* Create a fresh filesystem at byte offset `base`, writing through the byte-

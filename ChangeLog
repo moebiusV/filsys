@@ -2,9 +2,8 @@
 
 	* NEWS, configure.ac, configure, filsys.5, mount.filsys.1,
 	findfs.filsys.1, mkfs.filsys.1, fsck.filsys.1: release 2.2.0.
-	* mkfs.filsys.c, filsys_mkfs.c, filsys_ops.h, Makefile.am, Makefile.in,
-	boot/*: drop the -b boot-block option and the shipped PDP-11 bootstraps
-	(boot blocks are prebsd's job).
+	* Makefile.am, Makefile.in, boot/*: drop the shipped PDP-11 bootstraps
+	(boot blocks move to prebsd); the mkfs -b option stays.
 	* COPYING, README.md, README.distributions, packaging/*: drop the Caldera
 	"Ancient UNIX" license -- the manpages are now original text, so the whole
 	repository is ISC -- and pin the 2.2.0 tarball checksums.

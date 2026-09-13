@@ -19,9 +19,9 @@ and an unreadable indirect block no longer silently under-counts `st_blocks`.
   checks it before the `off_t` cast, so a corrupt block number returns `-EINVAL`
   instead of reading or writing past the image — on a 32-bit host too.
   `test_matrix` exercises the boundary directly.
-- mkfs: the `-b` boot-block option and the two shipped PDP-11 bootstraps
-  (`hpuboot`/`rpuboot`, assembled from the V7 `/usr/mdec` sources) are removed —
-  boot blocks are `prebsd`'s job, and `mkfs.filsys` leaves block 0 alone.
+- mkfs: the two shipped PDP-11 bootstraps (`hpuboot`/`rpuboot`, assembled from
+  the V7 `/usr/mdec` sources) are removed and now ship with `prebsd`; the `-b`
+  option remains, and the docs point at prebsd for a boot block.
 - docs: the manpages are now original text, so the Caldera "Ancient UNIX
   License" is dropped from them and from COPYING/packaging; with the boot
   blocks gone the whole repository is ISC.  The stale 1.8.0 / 2026-09-06
