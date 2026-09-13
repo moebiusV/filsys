@@ -44,7 +44,7 @@ static void ok(const char *what, int cond) {
  * arguments).  The image is created (or truncated) to the final written size. */
 static int mkfs_image(int edition, const char *img, int blocks,
                       const filsys_geom_t *geom) {
-    filsys_edition_t desc = filsys_getformat(edition);
+    filsys_desc_t desc = filsys_getformat(edition);
     int fd = open(img, O_RDWR | O_CREAT | O_TRUNC, 0666);
     if (fd < 0)
         return -1;
@@ -176,7 +176,7 @@ static int fmt_at(size_t i, struct fmt *out) {
     const filsys_format_t *f = filsys_format_nth(i);
     if (!f)
         return 0;
-    filsys_edition_t desc = filsys_getformat(f->edition);
+    filsys_desc_t desc = filsys_getformat(f->edition);
     if (!desc.ops)
         return 0;
     if (desc.nomkfs)
@@ -566,7 +566,7 @@ static void badino_consistency(void) {
         unlink(img);
         if (mkfs_image(f.edition, img, f.blocks, NULL) != 0) { ok("badino mkfs", 0); unlink(img); continue; }
 
-        filsys_edition_t desc = filsys_getformat(f.edition);
+        filsys_desc_t desc = filsys_getformat(f.edition);
         if (desc.badino) {
             filsys_t *fs;
             if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
@@ -677,7 +677,7 @@ static void namelength(void) {
         const filsys_format_t *f = filsys_format_nth(i);
         if (!f)
             break;
-        filsys_edition_t desc = filsys_getformat(f->edition);
+        filsys_desc_t desc = filsys_getformat(f->edition);
         if (!desc.ops)
             continue;
         size_t max = desc.max_namlen;
@@ -1395,7 +1395,7 @@ static void durability_test(void) {
         if (f.edition == FILSYS_V1 || f.edition == FILSYS_PDP7)
             continue;
 
-        filsys_edition_t desc = filsys_getformat(f.edition);
+        filsys_desc_t desc = filsys_getformat(f.edition);
         uint32_t bsize = desc.bsize;
 
         char img[64], sb[64], cmd[512], what[128];
@@ -1863,7 +1863,8 @@ static void readdir_randomized(void) {
  * written out of bounds.  A synthetic descriptor with imgsize == 4096 stands in
  * for a 4 KB image, so the check is exercised without real I/O. */
 static void range_check_test(void) {
-    filsys_edition_t fs = filsys_getformat(FILSYS_V7);
+    filsys_edition_t fs = {0};
+    fs.desc = filsys_getformat(FILSYS_V7);
     uint8_t buf[512];
 
     fs.imgsize = 4096;

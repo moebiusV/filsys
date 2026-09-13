@@ -16,7 +16,7 @@
 #include "v7fs.h"
 
 static int edition_is_strong(const filsys_format_t *f) {
-    filsys_edition_t d = filsys_getformat(f->edition);
+    filsys_desc_t d = filsys_getformat(f->edition);
     return d.sb_decode != NULL || d.magic != 0;
 }
 
@@ -76,7 +76,7 @@ static int resolve_class(const char *class, const filsys_probe_t *res,
  * for V9) for the rearranged-superblock editions, whose block size is chosen
  * per volume rather than fixed by the edition. */
 static int edition_bsizes(const filsys_format_t *f, int sizes[3]) {
-    filsys_edition_t d = filsys_getformat(f->edition);
+    filsys_desc_t d = filsys_getformat(f->edition);
     if (!d.sb_decode) {
         sizes[0] = (int)d.bsize;
         return 1;
@@ -98,8 +98,9 @@ int filsys_detect(filsys_detect_t *out, int fd, uint64_t offset, uint64_t size,
             const filsys_format_t *f = filsys_format_nth(i);
             if (!f)
                 break;
-            filsys_edition_t desc = filsys_getformat(f->edition);
-            if (!desc.ops)
+            filsys_edition_t desc = {0};
+            desc.desc = filsys_getformat(f->edition);
+            if (!desc.desc.ops)
                 continue;
             if ((pass == 0) != edition_is_strong(f))
                 continue;
@@ -111,7 +112,7 @@ int filsys_detect(filsys_detect_t *out, int fd, uint64_t offset, uint64_t size,
                 desc.io = &filsys_io_file;
                 filsys_probe_t res;
                 memset(&res, 0, sizeof res);
-                if (desc.ops->probe(&desc, &filsys_io_file, offset, 0, size, &res) == 1)
+                if (desc.desc.ops->probe(&desc, &filsys_io_file, offset, 0, size, &res) == 1)
                     return resolve_class(res.class, &res, filter, out, why);
                 continue;
             }
@@ -125,7 +126,7 @@ int filsys_detect(filsys_detect_t *out, int fd, uint64_t offset, uint64_t size,
                 desc.io = &filsys_io_file;
                 filsys_probe_t res;
                 memset(&res, 0, sizeof res);
-                if (desc.ops->probe(&desc, &filsys_io_file, offset, bsize, size, &res) == 1)
+                if (desc.desc.ops->probe(&desc, &filsys_io_file, offset, bsize, size, &res) == 1)
                     return resolve_class(res.class, &res, filter, out, why);
             }
         }

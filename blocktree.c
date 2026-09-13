@@ -23,20 +23,20 @@
 /* The indirect-entry codec: the descriptor's override (PDP-7's 18-bit word) or
  * the daddr_wid-based default (2-byte V6/V1, 4-byte V7/BSD). */
 static inline uint32_t ind_get(const filsys_edition_t *fs, const uint8_t *buf, uint32_t i) {
-    return fs->ind_get ? fs->ind_get(fs, buf, i) : v7_ind_get(fs, buf, i);
+    return fs->desc.ind_get ? fs->desc.ind_get(fs, buf, i) : v7_ind_get(fs, buf, i);
 }
 static inline void ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t i, uint32_t v) {
-    if (fs->ind_put) fs->ind_put(fs, buf, i, v);
+    if (fs->desc.ind_put) fs->desc.ind_put(fs, buf, i, v);
     else v7_ind_put(fs, buf, i, v);
 }
 
 /* True if the inode can carry data blocks (regular/dir/symlink), false for a
  * device inode whose addr[0] is a device number rather than a block. */
 static int is_data_inode(const filsys_edition_t *fs, const filsys_inode_t *ip) {
-    if (fs->is_device)                      /* V1/PDP-7: device by inode/flag */
-        return !fs->is_device(fs, ip);
-    uint32_t t = ip->mode & fs->ifmt;
-    return t == fs->ifreg || t == fs->ifdir || (fs->iflnk && t == fs->iflnk);
+    if (fs->desc.is_device)                      /* V1/PDP-7: device by inode/flag */
+        return !fs->desc.is_device(fs, ip);
+    uint32_t t = ip->mode & fs->desc.ifmt;
+    return t == fs->desc.ifreg || t == fs->desc.ifdir || (fs->desc.iflnk && t == fs->desc.iflnk);
 }
 
 /* Mark one data block as accounted-for.  Returns 0 on a first claim, 1 for an
@@ -47,10 +47,10 @@ int filsys_mark_block(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t bno)
 {
     if (bno == 0)
         return 0;
-    uint32_t dstart = fs->ops->data_start(fs);
-    uint32_t dend   = fs->ops->data_end(fs);
+    uint32_t dstart = fs->desc.ops->data_start(fs);
+    uint32_t dend   = fs->desc.ops->data_end(fs);
     if (bno < dstart || bno >= dend) {
-        if (fs->badino && cx->ino == fs->badino && bno >= 2 && bno < dstart)
+        if (fs->desc.badino && cx->ino == fs->desc.badino && bno >= 2 && bno < dstart)
             return 0;   /* bad-block record: a gone-bad i-list block */
         printf("block %u bad; inode=%u\n", bno, cx->ino);
         cx->bad_blocks++;
@@ -86,12 +86,12 @@ void filsys_mark_tree(filsys_edition_t *fs, filsys_chkctx_t *cx, uint32_t blk, i
     if (filsys_mark_block(fs, cx, blk) != 0)
         return;                       /* bad or duplicate: don't chase it */
     uint8_t buf[V7_MAXBSIZE];
-    if (fs->ops->read_block(fs, blk, buf)) {
+    if (fs->desc.ops->read_block(fs, blk, buf)) {
         printf("cannot read indirect block %u\n", blk);
         cx->errors++;
         return;
     }
-    for (uint32_t i = 0; i < fs->nindir; i++) {
+    for (uint32_t i = 0; i < fs->desc.nindir; i++) {
         uint32_t nb = ind_get(fs, buf, i);
         if (nb == 0)
             continue;
@@ -107,7 +107,7 @@ void filsys_mark_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint32_t
                         filsys_chkctx_t *cx)
 {
     (void)ino;   /* the driver set cx->ino */
-    for (int i = 0; i < fs->niaddr; i++) {
+    for (int i = 0; i < fs->desc.niaddr; i++) {
         uint32_t a = ip->addr[i];
         if (a == 0)
             continue;
@@ -162,7 +162,7 @@ void filsys_blklist_drain(filsys_edition_t *fs, filsys_blklist_t *b)
     if (!b)
         return;
     for (size_t i = 0; i < b->n; i++)
-        fs->alloc->bfree(fs, b->blk[i]);
+        fs->desc.alloc->bfree(fs, b->blk[i]);
     free(b->blk);
     free(b);
 }
@@ -197,9 +197,9 @@ static int collect_subtree(filsys_edition_t *fs, uint32_t blk, int level, filsys
     if (blk == 0)
         return 0;
     uint8_t buf[V7_MAXBSIZE];
-    if (fs->ops->read_block(fs, blk, buf))
+    if (fs->desc.ops->read_block(fs, blk, buf))
         return -EIO;
-    for (uint32_t i = 0; i < fs->nindir; i++) {
+    for (uint32_t i = 0; i < fs->desc.nindir; i++) {
         uint32_t nb = ind_get(fs, buf, i);
         if (nb == 0)
             continue;
@@ -223,14 +223,14 @@ static int collect_subtree_from(filsys_edition_t *fs, uint32_t blk, int level,
                                 uint32_t skip, filsys_blklist_t *b)
 {
     uint8_t buf[V7_MAXBSIZE];
-    if (fs->ops->read_block(fs, blk, buf))
+    if (fs->desc.ops->read_block(fs, blk, buf))
         return -EIO;
     uint32_t sub = 1;
     for (int l = 0; l < level; l++)
-        sub *= fs->nindir;               /* leaves per entry */
+        sub *= fs->desc.nindir;               /* leaves per entry */
     uint32_t se = skip / sub;            /* whole entries to keep */
     uint32_t sp = skip % sub;            /* partial skip within entry se */
-    for (uint32_t i = 0; i < fs->nindir; i++) {
+    for (uint32_t i = 0; i < fs->desc.nindir; i++) {
         uint32_t nb = ind_get(fs, buf, i);
         if (nb == 0)
             continue;
@@ -249,7 +249,7 @@ static int collect_subtree_from(filsys_edition_t *fs, uint32_t blk, int level,
             ind_put(fs, buf, i, 0);      /* drop the collected entry */
         }
     }
-    return fs->ops->write_block(fs, blk, buf);  /* persist dropped entries */
+    return fs->desc.ops->write_block(fs, blk, buf);  /* persist dropped entries */
 }
 
 /* The number of logical blocks a slot at `level` covers (level 0 = single =
@@ -258,7 +258,7 @@ static uint32_t slot_span(const filsys_edition_t *fs, int level)
 {
     uint32_t span = 1;
     for (int l = 0; l <= level; l++)
-        span *= fs->nindir;
+        span *= fs->desc.nindir;
     return span;
 }
 
@@ -278,24 +278,24 @@ static int bmap_ind_follow(filsys_edition_t *fs, uint32_t ino, uint32_t lbn,
                 *out = 0;
                 return 0;
             }
-            int rc = fs->alloc->balloc(fs, &blk);   /* balloc zeroes the block */
+            int rc = fs->desc.alloc->balloc(fs, &blk);   /* balloc zeroes the block */
             if (rc)
                 return rc;   /* -EIO (barrier commit) or -ENOSPC */
             *slot = blk;
             filsys_instr_assign(ino, lbn, blk, 2);   /* indirect block */
         }
         uint8_t buf[V7_MAXBSIZE];
-        if (fs->ops->read_block(fs, blk, buf))
+        if (fs->desc.ops->read_block(fs, blk, buf))
             return -EIO;
         uint32_t next = ind_get(fs, buf, indices[L]);
 
         if (L == levels - 1) {
             if (next == 0 && create) {
-                int rc = fs->alloc->balloc(fs, &next);
+                int rc = fs->desc.alloc->balloc(fs, &next);
                 if (rc)
                     return rc;   /* -EIO (barrier commit) or -ENOSPC */
                 ind_put(fs, buf, indices[L], next);
-                if (fs->ops->write_block(fs, blk, buf))
+                if (fs->desc.ops->write_block(fs, blk, buf))
                     return -EIO;
                 filsys_instr_assign(ino, lbn, next, 1);   /* data block */
             }
@@ -307,11 +307,11 @@ static int bmap_ind_follow(filsys_edition_t *fs, uint32_t ino, uint32_t lbn,
                 *out = 0;
                 return 0;
             }
-            int rc = fs->alloc->balloc(fs, &next);   /* balloc zeroes the block */
+            int rc = fs->desc.alloc->balloc(fs, &next);   /* balloc zeroes the block */
             if (rc)
                 return rc;   /* -EIO (barrier commit) or -ENOSPC */
             ind_put(fs, buf, indices[L], next);
-            if (fs->ops->write_block(fs, blk, buf))
+            if (fs->desc.ops->write_block(fs, blk, buf))
                 return -EIO;
             filsys_instr_assign(ino, lbn, next, 2);   /* indirect block */
         }
@@ -330,28 +330,28 @@ int filsys_bmap(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int crea
     /* Small-to-large promotion (V6/V1/PDP-7): a write past the direct slots moves
      * the direct addresses into the first indirect block and sets the ILARG bit,
      * reinterpreting the slots as large_single/large_double indirect slots. */
-    if (fs->ilarg_mask && !(ip->mode & fs->ilarg_mask) && create &&
-        lbn >= (uint32_t)fs->ndaddr) {
+    if (fs->desc.ilarg_mask && !(ip->mode & fs->desc.ilarg_mask) && create &&
+        lbn >= (uint32_t)fs->desc.ndaddr) {
         uint32_t iblk;
-        int rc = fs->alloc->balloc(fs, &iblk);
+        int rc = fs->desc.alloc->balloc(fs, &iblk);
         if (rc)
             return rc;
         uint8_t buf[V7_MAXBSIZE];
         memset(buf, 0, sizeof buf);   /* full container buffer (PDP-7's word block > bsize) */
-        for (int i = 0; i < fs->ndaddr; i++)
+        for (int i = 0; i < fs->desc.ndaddr; i++)
             ind_put(fs, buf, i, ip->addr[i]);
-        if (fs->ops->write_block(fs, iblk, buf))
+        if (fs->desc.ops->write_block(fs, iblk, buf))
             return -EIO;
-        for (int i = 0; i < fs->ndaddr; i++)
+        for (int i = 0; i < fs->desc.ndaddr; i++)
             ip->addr[i] = 0;
         ip->addr[0] = iblk;
-        ip->mode |= fs->ilarg_mask;
+        ip->mode |= fs->desc.ilarg_mask;
         filsys_instr_assign(ip->ino, lbn, iblk, 2);   /* indirect block */
     }
 
     /* Walk the address slots to find the one lbn falls in. */
     uint32_t base = 0;
-    for (int slot = 0; slot < fs->niaddr; slot++) {
+    for (int slot = 0; slot < fs->desc.niaddr; slot++) {
         int level = filsys_slot_level(fs, ip->mode, slot);
         uint32_t span = (level < 0) ? 1u : slot_span(fs, level);
         if (lbn < base + span) {
@@ -360,7 +360,7 @@ int filsys_bmap(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int crea
                 /* direct block */
                 uint32_t nb = ip->addr[slot];
                 if (nb == 0 && create) {
-                    int rc = fs->alloc->balloc(fs, &nb);
+                    int rc = fs->desc.alloc->balloc(fs, &nb);
                     if (rc)
                         return rc;   /* -EIO (barrier commit) or -ENOSPC */
                     ip->addr[slot] = nb;
@@ -374,8 +374,8 @@ int filsys_bmap(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int crea
             for (int l = 0; l <= level; l++) {
                 uint32_t div = 1;
                 for (int d = 0; d < level - l; d++)
-                    div *= fs->nindir;
-                idx[l] = (r / div) % fs->nindir;
+                    div *= fs->desc.nindir;
+                idx[l] = (r / div) % fs->desc.nindir;
             }
             return bmap_ind_follow(fs, ip->ino, lbn, &ip->addr[slot], level + 1,
                                    idx, create, bno);
@@ -392,7 +392,7 @@ int filsys_itrunc(filsys_edition_t *fs, filsys_inode_t *ip, filsys_blklist_t *b)
 {
     if (!is_data_inode(fs, ip))
         return 0;
-    for (int i = fs->niaddr - 1; i >= 0; i--) {
+    for (int i = fs->desc.niaddr - 1; i >= 0; i--) {
         uint32_t bn = ip->addr[i];
         if (bn == 0)
             continue;
@@ -416,7 +416,7 @@ int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_
                        filsys_blklist_t *b)
 {
     uint32_t lbn = 0;
-    for (int i = 0; i < fs->niaddr; i++) {
+    for (int i = 0; i < fs->desc.niaddr; i++) {
         int level = filsys_slot_level(fs, ip->mode, i);
         uint32_t span = (level < 0) ? 1u : slot_span(fs, level);
         uint32_t a = ip->addr[i];

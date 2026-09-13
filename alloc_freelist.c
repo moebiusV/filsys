@@ -32,10 +32,10 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
         uint8_t buf[V7_MAXBSIZE];
         if (v7fs_read_block(fs, blk, buf))
             return -EIO;
-        fs->fl.nfree = fs->df_nfree_wid == 4 ? fs->bo->get32(buf + 0)
-                                             : fs->bo->get16(buf + 0);
-        for (int i = 0; i < fs->nicfree; i++)
-            fs->fl.free[i] = v7_get_daddr(fs, buf + v7_chain_free_off(fs) + fs->daddr_wid * i);
+        fs->fl.nfree = fs->desc.df_nfree_wid == 4 ? fs->desc.bo->get32(buf + 0)
+                                             : fs->desc.bo->get16(buf + 0);
+        for (int i = 0; i < fs->desc.nicfree; i++)
+            fs->fl.free[i] = v7_get_daddr(fs, buf + v7_chain_free_off(fs) + fs->desc.daddr_wid * i);
         /* blk was the on-disk chain head; its contents (the next segment) are
          * now in the cache, and blk is about to become file data.  Commit the
          * allocator state *before* the caller overwrites blk, else a crash would
@@ -47,7 +47,7 @@ int v7fs_balloc(filsys_edition_t *fs, uint32_t *bno) {
     /* Zero the freshly-allocated block: V7's alloc() clrbuf()s it, and without
      * this the previous file's data leaks into a new file. */
     uint8_t z[V7_MAXBSIZE];
-    memset(z, 0, fs->bsize);
+    memset(z, 0, fs->desc.bsize);
     if (v7fs_write_block(fs, blk, z))
         return -EIO;
     if (fs->fl.tfree) fs->fl.tfree--;
@@ -67,15 +67,15 @@ void v7fs_bfree(filsys_edition_t *fs, uint32_t bno) {
         fs->fl.nfree = 1;
         fs->fl.free[0] = 0;
     }
-    if (fs->fl.nfree >= fs->nicfree) {
+    if (fs->fl.nfree >= fs->desc.nicfree) {
         uint8_t buf[V7_MAXBSIZE];
-        memset(buf, 0, fs->bsize);
-        if (fs->df_nfree_wid == 4)
-            fs->bo->put32(buf + 0, fs->fl.nfree);
+        memset(buf, 0, fs->desc.bsize);
+        if (fs->desc.df_nfree_wid == 4)
+            fs->desc.bo->put32(buf + 0, fs->fl.nfree);
         else
-            fs->bo->put16(buf + 0, fs->fl.nfree);
-        for (int i = 0; i < fs->nicfree; i++)
-            v7_put_daddr(fs, buf + v7_chain_free_off(fs) + fs->daddr_wid * i, fs->fl.free[i]);
+            fs->desc.bo->put16(buf + 0, fs->fl.nfree);
+        for (int i = 0; i < fs->desc.nicfree; i++)
+            v7_put_daddr(fs, buf + v7_chain_free_off(fs) + fs->desc.daddr_wid * i, fs->fl.free[i]);
         /* The dump block must reach disk before the cache is reset, else the
          * freed blocks are lost; and a failed dump must not fall through to
          * free[nfree++] with nfree == nicfree -- that overflows free[].  On a
@@ -99,13 +99,13 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
             if (cand < 2 || cand > maxino)
                 continue;   /* bad cache entry: skip */
             v7_inode_t ip;
-            if (fs->ops->inode->read_inode(fs, cand, &ip))
+            if (fs->desc.ops->inode->read_inode(fs, cand, &ip))
                 return -EIO;   /* read error, not "in use": don't reclassify */
             if (ip.mode != 0)
                 continue;   /* was already allocated; look again */
             memset(&ip, 0, sizeof(ip));
             ip.ino = cand;
-            fs->ops->inode->write_inode(fs, cand, &ip);
+            fs->desc.ops->inode->write_inode(fs, cand, &ip);
             if (fs->fl.tinode) fs->fl.tinode--;
             fs->fl_dirty = 1;   /* inode cache changed: flush before reference */
             filsys_instr_ialloc(cand);
@@ -114,9 +114,9 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
         }
         /* Refill the cache with a linear scan of the i-list. */
         fs->fl.ninode = 0;
-        for (uint32_t in = 2; in <= maxino && fs->fl.ninode < fs->nicinod; in++) {
+        for (uint32_t in = 2; in <= maxino && fs->fl.ninode < fs->desc.nicinod; in++) {
             v7_inode_t ip;
-            if (fs->ops->inode->read_inode(fs, in, &ip))
+            if (fs->desc.ops->inode->read_inode(fs, in, &ip))
                 return -EIO;   /* a mid-scan read error must propagate, not truncate */
             if (ip.mode == 0)
                 fs->fl.inode[fs->fl.ninode++] = (uint16_t)in;
@@ -127,7 +127,7 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
 }
 
 void v7fs_ifree(filsys_edition_t *fs, uint32_t ino) {
-    if (fs->fl.ninode >= fs->nicinod)
+    if (fs->fl.ninode >= fs->desc.nicinod)
         return;   /* kernel discards beyond the cache */
     fs->fl.inode[fs->fl.ninode++] = (uint16_t)ino;
     fs->fl.tinode++;
@@ -147,10 +147,10 @@ void v7fs_ifree(filsys_edition_t *fs, uint32_t ino) {
 uint32_t v7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
 {
     filsys_edition_t *f = fs;
-    if (f->freemap != V8_FREEMAP_LIST)
+    if (f->desc.freemap != V8_FREEMAP_LIST)
         return v8_makefree_bitmap(fs, cx);
     uint32_t m, n;
-    if (f->interleave) {
+    if (f->desc.interleave) {
         m = f->m;
         n = f->n;
         if (n < 1 || n > V7_COH_MAXINTN || m < 1 || m > n || n % m != 0) {
@@ -212,7 +212,7 @@ uint32_t v7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
 void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
 {
     filsys_edition_t *f = fs;
-    if (f->freemap != V8_FREEMAP_LIST) {
+    if (f->desc.freemap != V8_FREEMAP_LIST) {
         v8_walk_free_bitmap(fs, cx, rep);
         return;
     }
@@ -248,7 +248,7 @@ void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep
             cx->bmap[off >> 3] |= m;
             rep->free_blocks++;   /* a duplicate is used, not free */
         }
-        if (++guard > f->fsize + f->nicfree) {
+        if (++guard > f->fsize + f->desc.nicfree) {
             printf("free list does not terminate\n");
             rep->errors++;
             break;
@@ -260,14 +260,14 @@ void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep
                 rep->errors++;
                 break;
             }
-            n = f->df_nfree_wid == 4 ? f->bo->get32(blk) : f->bo->get16(blk);
-            if (n > f->nicfree) {
+            n = f->desc.df_nfree_wid == 4 ? f->desc.bo->get32(blk) : f->desc.bo->get16(blk);
+            if (n > f->desc.nicfree) {
                 printf("free-list block %u has bad count %u\n", bno, n);
                 rep->errors++;
                 break;
             }
-            for (int i = 0; i < f->nicfree; i++)
-                cur[i] = v7_get_daddr(f, blk + v7_chain_free_off(f) + f->daddr_wid * i);
+            for (int i = 0; i < f->desc.nicfree; i++)
+                cur[i] = v7_get_daddr(f, blk + v7_chain_free_off(f) + f->desc.daddr_wid * i);
         }
     }
     free(seen);
@@ -287,13 +287,13 @@ void v7_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
             uint8_t blk[V7_MAXBSIZE];
             if (v7fs_read_block(fs, bno, blk))
                 break;
-            n = fs->df_nfree_wid == 4 ? fs->bo->get32(blk) : fs->bo->get16(blk);
-            if (n > fs->nicfree)
+            n = fs->desc.df_nfree_wid == 4 ? fs->desc.bo->get32(blk) : fs->desc.bo->get16(blk);
+            if (n > fs->desc.nicfree)
                 break;
-            for (int i = 0; i < fs->nicfree; i++)
-                cur[i] = v7_get_daddr(fs, blk + v7_chain_free_off(fs) + fs->daddr_wid * i);
+            for (int i = 0; i < fs->desc.nicfree; i++)
+                cur[i] = v7_get_daddr(fs, blk + v7_chain_free_off(fs) + fs->desc.daddr_wid * i);
         }
-        if (++guard > fs->fsize + fs->nicfree)
+        if (++guard > fs->fsize + fs->desc.nicfree)
             break;
     }
     *nblk = blocks;
@@ -321,11 +321,11 @@ void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
             uint8_t blk[V6_BSIZE];
             if (v7fs_read_block(fs, bno, blk))
                 break;
-            n = fs->bo->get16(blk + 0);
-            for (int i = 0; i < fs->nicfree; i++)
-                cur[i] = fs->bo->get16(blk + 2 + 2 * i);
+            n = fs->desc.bo->get16(blk + 0);
+            for (int i = 0; i < fs->desc.nicfree; i++)
+                cur[i] = fs->desc.bo->get16(blk + 2 + 2 * i);
         }
-        if (++guard > fs->fsize + fs->nicfree)
+        if (++guard > fs->fsize + fs->desc.nicfree)
             break;
     }
     *nblk = blocks;

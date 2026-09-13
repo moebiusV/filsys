@@ -216,7 +216,7 @@ int main(int argc, char **argv)
     if (optind + 1 < argc)
         blocks = (uint32_t)strtoul(argv[optind + 1], NULL, 0);
 
-    filsys_edition_t fmt = filsys_getformat(edition);
+    filsys_desc_t fmt = filsys_getformat(edition);
 
     /* Resolve the geometry spec and the -B block size the way the library will,
      * so the byte offset and default block count are computed in the final

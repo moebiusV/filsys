@@ -52,9 +52,10 @@ static inline filsys_fail_class_t filsys_classify(const filsys_check_t *rep) {
  * bitmap are two implementations.  `fs` is the backend state (filsys_edition_t
  * for the free-list editions, v1fs_t for V1); the allocator reads its state
  * from the embedded freelist_state / bitmap_state.  Every backend's state is
- * the unified descriptor+state struct (v1fs_t and p7fs_t alias it), so the
- * vtable types it directly -- not `void *` -- which keeps the calls compatible
- * with each implementation (no function-pointer cast, which UBSan flags). */
+ * the per-mount filsys_edition_t (v1fs_t and p7fs_t alias it), which embeds the
+ * shared filsys_desc_t descriptor, so the vtable types it directly -- not
+ * `void *` -- which keeps the calls compatible with each implementation (no
+ * function-pointer cast, which UBSan flags). */
 struct filsys_edition;
 typedef struct {
     int  (*balloc)(struct filsys_edition *fs, uint32_t *bno);

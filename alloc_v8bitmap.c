@@ -15,42 +15,42 @@
 
 /* Decode the rearranged V8-family superblock into the shared in-core fields. */
 int v8_sb_decode(filsys_edition_t *fs, const uint8_t *sb) {
-    fs->isize  = fs->bo->get16(sb + V8_SB_ISIZE);
-    fs->fsize  = fs->bo->get32(sb + V8_SB_FSIZE);
-    fs->fl.ninode = fs->bo->get16(sb + V8_SB_NINODE);
+    fs->isize  = fs->desc.bo->get16(sb + V8_SB_ISIZE);
+    fs->fsize  = fs->desc.bo->get32(sb + V8_SB_FSIZE);
+    fs->fl.ninode = fs->desc.bo->get16(sb + V8_SB_NINODE);
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->fl.inode[i] = fs->bo->get16(sb + V8_SB_INODE + 2 * i);
-    fs->time   = fs->bo->get32(sb + V8_SB_TIME);
+        fs->fl.inode[i] = fs->desc.bo->get16(sb + V8_SB_INODE + 2 * i);
+    fs->time   = fs->desc.bo->get32(sb + V8_SB_TIME);
     fs->fmod   = sb[V8_SB_FMOD];
-    fs->fl.tfree  = fs->bo->get32(sb + V8_SB_TFREE);
-    fs->fl.tinode = fs->bo->get16(sb + V8_SB_TINODE);
-    if (fs->freemap == V8_FREEMAP_LIST) {
-        fs->fl.nfree = fs->bo->get16(sb + V8_SB_NFREE);
-        for (int i = 0; i < fs->nicfree; i++)
-            fs->fl.free[i] = fs->bo->get32(sb + V8_SB_FREE + 4 * i);
+    fs->fl.tfree  = fs->desc.bo->get32(sb + V8_SB_TFREE);
+    fs->fl.tinode = fs->desc.bo->get16(sb + V8_SB_TINODE);
+    if (fs->desc.freemap == V8_FREEMAP_LIST) {
+        fs->fl.nfree = fs->desc.bo->get16(sb + V8_SB_NFREE);
+        for (int i = 0; i < fs->desc.nicfree; i++)
+            fs->fl.free[i] = fs->desc.bo->get32(sb + V8_SB_FREE + 4 * i);
     } else {
         fs->fl.nfree = 0;   /* bitmap: no free-list cache */
     }
-    if (fs->fl.nfree > fs->nicfree || fs->fl.ninode > fs->nicinod)
+    if (fs->fl.nfree > fs->desc.nicfree || fs->fl.ninode > fs->desc.nicinod)
         return -EINVAL;
     return 0;
 }
 
 int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb) {
-    fs->bo->put16(sb + V8_SB_ISIZE, fs->isize);
-    fs->bo->put32(sb + V8_SB_FSIZE, fs->fsize);
-    fs->bo->put16(sb + V8_SB_NINODE, fs->fl.ninode);
+    fs->desc.bo->put16(sb + V8_SB_ISIZE, fs->isize);
+    fs->desc.bo->put32(sb + V8_SB_FSIZE, fs->fsize);
+    fs->desc.bo->put16(sb + V8_SB_NINODE, fs->fl.ninode);
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->bo->put16(sb + V8_SB_INODE + 2 * i, fs->fl.inode[i]);
-    fs->bo->put32(sb + V8_SB_TIME, (uint32_t)time(NULL));
+        fs->desc.bo->put16(sb + V8_SB_INODE + 2 * i, fs->fl.inode[i]);
+    fs->desc.bo->put32(sb + V8_SB_TIME, (uint32_t)time(NULL));
     sb[V8_SB_FMOD] = (uint8_t)(fs->fmod != 0);
-    fs->bo->put32(sb + V8_SB_TFREE, fs->fl.tfree);
-    fs->bo->put16(sb + V8_SB_TINODE, (uint16_t)fs->fl.tinode);
-    if (fs->freemap == V8_FREEMAP_LIST) {
-        fs->bo->put16(sb + V8_SB_NFREE, fs->fl.nfree);
-        for (int i = 0; i < fs->nicfree; i++)
-            fs->bo->put32(sb + V8_SB_FREE + 4 * i, fs->fl.free[i]);
-    } else if (fs->freemap == V8_FREEMAP_BITMAP) {
+    fs->desc.bo->put32(sb + V8_SB_TFREE, fs->fl.tfree);
+    fs->desc.bo->put16(sb + V8_SB_TINODE, (uint16_t)fs->fl.tinode);
+    if (fs->desc.freemap == V8_FREEMAP_LIST) {
+        fs->desc.bo->put16(sb + V8_SB_NFREE, fs->fl.nfree);
+        for (int i = 0; i < fs->desc.nicfree; i++)
+            fs->desc.bo->put32(sb + V8_SB_FREE + 4 * i, fs->fl.free[i]);
+    } else if (fs->desc.freemap == V8_FREEMAP_BITMAP) {
         /* in-superblock bitmap: S_valid=1 and S_bfree[] from the in-core bits */
         sb[V8_SB_VALID] = 1;
         for (uint32_t w = 0; w < V8_BITMAP; w++) {
@@ -62,12 +62,12 @@ int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb) {
                 if (fs->v8_bits[i >> 3] & (uint8_t)(1u << (i & 7)))
                     word |= (1u << b);
             }
-            fs->bo->put32(sb + V8_SB_BFREE + 4 * w, word);
+            fs->desc.bo->put32(sb + V8_SB_BFREE + 4 * w, word);
         }
     } else {   /* out-of-superblock bitmap (v10): S_flag=1, S_bsize=BSIZE*8 */
         sb[V8_SB_VALID] = 1;
         sb[V8_SB_FLAG] = 1;
-        fs->bo->put32(sb + V8_SB_BSIZE, fs->bsize * 8);
+        fs->desc.bo->put32(sb + V8_SB_BSIZE, fs->desc.bsize * 8);
     }
     return 0;
 }
@@ -77,10 +77,10 @@ int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb) {
  * blocks from disk.  bit i is set iff the block is free. */
 int v8_bitmap_load(filsys_edition_t *fs, const uint8_t *sb)
 {
-    if (fs->freemap == V8_FREEMAP_BIGMAP) {
+    if (fs->desc.freemap == V8_FREEMAP_BIGMAP) {
         fs->v8_base = 0;
         fs->v8_nbits = fs->fsize;
-        uint32_t bits_per_blk = fs->bsize * 8;
+        uint32_t bits_per_blk = fs->desc.bsize * 8;
         fs->v8_nblks = (fs->fsize + bits_per_blk - 1) / bits_per_blk;
         fs->v8_blk_start = fs->fsize - fs->v8_nblks;
     } else {
@@ -97,9 +97,9 @@ int v8_bitmap_load(filsys_edition_t *fs, const uint8_t *sb)
     fs->v8_bits = calloc((size_t)(fs->v8_nbits + 7) / 8, 1);
     if (!fs->v8_bits)
         return -ENOMEM;
-    if (fs->freemap == V8_FREEMAP_BITMAP) {
+    if (fs->desc.freemap == V8_FREEMAP_BITMAP) {
         for (uint32_t w = 0; w < (fs->v8_nbits + 31) / 32; w++) {
-            uint32_t word = fs->bo->get32(sb + V8_SB_BFREE + 4 * w);
+            uint32_t word = fs->desc.bo->get32(sb + V8_SB_BFREE + 4 * w);
             for (uint32_t b = 0; b < 32 && w * 32 + b < fs->v8_nbits; b++)
                 if (word & (1u << b))
                     fs->v8_bits[(w * 32 + b) >> 3] |= (uint8_t)(1u << ((w * 32 + b) & 7));
@@ -109,10 +109,10 @@ int v8_bitmap_load(filsys_edition_t *fs, const uint8_t *sb)
             uint8_t blk[V7_MAXBSIZE];
             if (v7fs_read_block(fs, fs->v8_blk_start + k, blk))
                 return -EIO;
-            uint32_t nbytes = fs->bsize;
+            uint32_t nbytes = fs->desc.bsize;
             if (k == fs->v8_nblks - 1)
-                nbytes = (fs->v8_nbits - k * fs->bsize * 8 + 7) / 8;
-            memcpy(fs->v8_bits + k * fs->bsize, blk, nbytes);
+                nbytes = (fs->v8_nbits - k * fs->desc.bsize * 8 + 7) / 8;
+            memcpy(fs->v8_bits + k * fs->desc.bsize, blk, nbytes);
         }
     }
     return 0;
@@ -127,7 +127,7 @@ int v8_bitmap_balloc(filsys_edition_t *fs, uint32_t *bno)
             /* Zero the freshly-allocated block: alloc() clrbuf()s it, so a new
              * file's partial block can't leak the previous file's data. */
             uint8_t z[V7_MAXBSIZE];
-            memset(z, 0, fs->bsize);
+            memset(z, 0, fs->desc.bsize);
             if (v7fs_write_block(fs, blk, z))
                 return -EIO;
             if (fs->fl.tfree) fs->fl.tfree--;
@@ -158,13 +158,13 @@ int v8_bitmap_sync(filsys_edition_t *fs)
 {
     if (fs->readonly)
         return 0;
-    if (fs->freemap == V8_FREEMAP_BIGMAP) {
+    if (fs->desc.freemap == V8_FREEMAP_BIGMAP) {
         for (uint32_t k = 0; k < fs->v8_nblks; k++) {
             uint8_t blk[V7_MAXBSIZE] = {0};
-            uint32_t nbytes = fs->bsize;
+            uint32_t nbytes = fs->desc.bsize;
             if (k == fs->v8_nblks - 1)
-                nbytes = (fs->v8_nbits - k * fs->bsize * 8 + 7) / 8;
-            memcpy(blk, fs->v8_bits + k * fs->bsize, nbytes);
+                nbytes = (fs->v8_nbits - k * fs->desc.bsize * 8 + 7) / 8;
+            memcpy(blk, fs->v8_bits + k * fs->desc.bsize, nbytes);
             if (v7fs_write_block(fs, fs->v8_blk_start + k, blk))
                 return -EIO;
         }
@@ -178,8 +178,8 @@ uint32_t v8_makefree_bitmap(filsys_edition_t *fs, filsys_chkctx_t *cx)
 {
     filsys_edition_t *f = fs;
     uint32_t base, nbits;
-    if (f->freemap == V8_FREEMAP_BIGMAP) {
-        uint32_t bits_per_blk = f->bsize * 8;
+    if (f->desc.freemap == V8_FREEMAP_BIGMAP) {
+        uint32_t bits_per_blk = f->desc.bsize * 8;
         f->v8_nblks = (f->fsize + bits_per_blk - 1) / bits_per_blk;
         f->v8_blk_start = f->fsize - f->v8_nblks;
         base = 0; nbits = f->fsize;

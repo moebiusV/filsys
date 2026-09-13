@@ -228,8 +228,9 @@ int main(int argc, char **argv)
 
     if (edition == FILSYS_V6) {
         int readonly = !(salvage || resolve || clri || preen || yes || ask);
-        filsys_edition_t fs = filsys_getformat(edition);
-        int rc = fs.ops->open(&fs, path, readonly, &fs, offblock * fs.bsize);
+        filsys_edition_t fs = {0};
+        fs.desc = filsys_getformat(edition);
+        int rc = fs.desc.ops->open(&fs, path, readonly, &fs.desc, offblock * fs.desc.bsize);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;
@@ -245,7 +246,7 @@ int main(int argc, char **argv)
             v7_check_t rep;
             err = v6_check(&fs, &rep, mode);
         }
-        int cl = fs.ops->close(&fs);
+        int cl = fs.desc.ops->close(&fs);
         if (cl)
             fprintf(stderr, "%s: final flush failed: %s\n", path, strerror(-cl));
         return (err || cl) ? 1 : 0;
@@ -253,8 +254,9 @@ int main(int argc, char **argv)
 
     if (edition == FILSYS_V1) {
         int readonly = !(salvage || resolve || clri || preen || yes || ask);
-        filsys_edition_t fs = filsys_getformat(edition);
-        int rc = v1fs_open(&fs, path, readonly, &fs, offblock * V1_BSIZE);
+        filsys_edition_t fs = {0};
+        fs.desc = filsys_getformat(edition);
+        int rc = v1fs_open(&fs, path, readonly, &fs.desc, offblock * V1_BSIZE);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;
@@ -278,12 +280,13 @@ int main(int argc, char **argv)
 
     if (edition == FILSYS_PDP7) {
         int readonly = !(salvage || resolve || clri || preen || yes || ask);
-        filsys_edition_t fs = filsys_getformat(edition);
-        if (packing && !(fs.word = filsys_word_codec_by_name(packing))) {
+        filsys_edition_t fs = {0};
+        fs.desc = filsys_getformat(edition);
+        if (packing && !(fs.desc.word = filsys_word_codec_by_name(packing))) {
             fprintf(stderr, "fsck.filsys: unknown packing '%s'\n", packing);
             return 2;
         }
-        int rc = p7fs_open(&fs, path, readonly, &fs, offblock * fs.word->block_bytes);
+        int rc = p7fs_open(&fs, path, readonly, &fs.desc, offblock * fs.desc.word->block_bytes);
         if (rc < 0) {
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;
@@ -306,7 +309,8 @@ int main(int argc, char **argv)
     }
 
     int readonly = !(salvage || resolve || clri || preen || yes || ask);
-    filsys_edition_t fs = filsys_getformat(edition);
+    filsys_edition_t fs = {0};
+    fs.desc = filsys_getformat(edition);
     const char *errmsg = NULL;
     if (geom_spec) {
         filsys_geom_t geom = {0, -1, NULL};
@@ -314,28 +318,28 @@ int main(int argc, char **argv)
             fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
             return 2;
         }
-        int gerr = filsys_apply_geom(&fs, edition, &geom, &errmsg);
+        int gerr = filsys_apply_geom(&fs.desc, edition, &geom, &errmsg);
         free(geom.byteorder);
         if (gerr) {
             fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
             return 2;
         }
     } else if (have_det_geom) {
-        int gerr = filsys_apply_geom(&fs, edition, &det_geom, &errmsg);
+        int gerr = filsys_apply_geom(&fs.desc, edition, &det_geom, &errmsg);
         free(det_geom.byteorder);
         if (gerr) {
             fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
             return 2;
         }
     }
-    int rc = filsys_resolve_byteorder(&fs, path, offblock * fs.bsize, arch,
+    int rc = filsys_resolve_byteorder(&fs.desc, path, offblock * fs.desc.bsize, arch,
                                       force_arch, &errmsg);
     if (rc < 0) {
         fprintf(stderr, "fsck.filsys: %s: %s\n", path,
                 errmsg ? errmsg : strerror(-rc));
         return 2;
     }
-    rc = v7fs_open(&fs, path, readonly, &fs, offblock * fs.bsize);
+    rc = v7fs_open(&fs, path, readonly, &fs.desc, offblock * fs.desc.bsize);
     if (rc < 0) {
         fprintf(stderr, "%s: %s\n", path, strerror(-rc));
         return 1;

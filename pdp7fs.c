@@ -32,22 +32,22 @@
  * backend's "-o offset=" convention. */
 static int read_words(p7fs_t *fs, uint32_t bno, uint32_t *words) {
     uint8_t raw[P7_MAXBLOCKBYTES];
-    uint32_t bb = fs->word->block_bytes;
+    uint32_t bb = fs->desc.word->block_bytes;
     uint64_t pos = fs->base + (uint64_t)bno * bb;
     if (filsys_check_range(fs, pos, bb))
         return -EINVAL;
     if (fs->io->read(fs, raw, bb, (off_t)pos))
         return -EIO;
     for (uint32_t i = 0; i < P7_WSIZE; i++)
-        words[i] = fs->word->get(raw, i);
+        words[i] = fs->desc.word->get(raw, i);
     return 0;
 }
 
 static int write_words(p7fs_t *fs, uint32_t bno, const uint32_t *words) {
     uint8_t raw[P7_MAXBLOCKBYTES];
     for (uint32_t i = 0; i < P7_WSIZE; i++)
-        fs->word->put(raw, i, words[i]);
-    uint32_t bb = fs->word->block_bytes;
+        fs->desc.word->put(raw, i, words[i]);
+    uint32_t bb = fs->desc.word->block_bytes;
     uint64_t pos = fs->base + (uint64_t)bno * bb;
     if (filsys_check_range(fs, pos, bb))
         return -EINVAL;
@@ -171,9 +171,9 @@ static void unpack_name(const uint32_t *w, char *name) {
 /* ---- lifecycle --------------------------------------------------------- */
 
 int p7fs_open(p7fs_t *fs, const char *path, int readonly,
-              const filsys_edition_t *proto, uint64_t offset) {
-    if (fs != proto)
-        memcpy(fs, proto, sizeof *fs); /* copy the static descriptor fields */
+              const filsys_desc_t *proto, uint64_t offset) {
+    if (&fs->desc != proto)
+        fs->desc = *proto;   /* copy the static descriptor fields */
     fs->readonly = readonly;
     fs->base = offset;
     fs->fd = open(path, readonly ? O_RDONLY : O_RDWR);
@@ -181,7 +181,7 @@ int p7fs_open(p7fs_t *fs, const char *path, int readonly,
         return -errno;
     fs->io = &filsys_io_file;
 
-    uint32_t bb = fs->word->block_bytes;
+    uint32_t bb = fs->desc.word->block_bytes;
     uint64_t imgsize;
     if (filsys_dev_size(fs->fd, &imgsize) != 0 ||
         fs->base + bb > imgsize) {
@@ -238,7 +238,7 @@ int p7fs_read_block(p7fs_t *fs, uint32_t bno, uint8_t *buf) {
     if (read_words(fs, bno, words))
         return -EIO;
     for (uint32_t i = 0; i < P7_WSIZE; i++)
-        fs->word->put(buf, i, words[i]);
+        fs->desc.word->put(buf, i, words[i]);
     return 0;
 }
 
@@ -247,17 +247,17 @@ int p7fs_write_block(p7fs_t *fs, uint32_t bno, const uint8_t *buf) {
         return -EROFS;
     uint32_t words[P7_WSIZE];
     for (uint32_t i = 0; i < P7_WSIZE; i++)
-        words[i] = fs->word->get(buf, i);
+        words[i] = fs->desc.word->get(buf, i);
     return write_words(fs, bno, words);
 }
 
 /* PDP-7's indirect-entry codec (the descriptor's ind_get/ind_put override):
  * the word container codec, applied to the block buffer. */
 uint32_t p7_ind_get(const filsys_edition_t *fs, const uint8_t *buf, uint32_t i) {
-    return fs->word->get(buf, i);
+    return fs->desc.word->get(buf, i);
 }
 void p7_ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t i, uint32_t v) {
-    fs->word->put(buf, i, v);
+    fs->desc.word->put(buf, i, v);
 }
 
 /* Data-block codec: 64 words <-> bsize (128) logical bytes, two 7-bit ASCII
@@ -680,7 +680,7 @@ static void p7_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_c
 }
 
 int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
-    filsys_edition_t fmt = filsys_getformat(FILSYS_PDP7);
+    filsys_desc_t fmt = filsys_getformat(FILSYS_PDP7);
     return filsys_check_common(&fmt, fs, rep, mode);
 }
 
@@ -690,7 +690,7 @@ int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
  * p7fs_t*, so there is no cast anywhere. */
 
 
-static uint32_t p7fs_blocksize_op(const filsys_edition_t *fs) { (void)fs; return P7_WSIZE * 2; }
+static uint32_t p7fs_blocksize_op(const filsys_desc_t *fs) { (void)fs; return P7_WSIZE * 2; }
 
 
 
@@ -709,7 +709,7 @@ static uint32_t p7fs_blocksize_op(const filsys_edition_t *fs) { (void)fs; return
 
 
 
-static uint64_t p7fs_max_file_op(filsys_edition_t *fs) {
+static uint64_t p7fs_max_file_op(const filsys_desc_t *fs) {
     (void)fs;
     return (uint64_t)P7_NIADDR * P7_NINDIR * P7_WSIZE * 2;   /* 7*64*64*2 bytes */
 }
