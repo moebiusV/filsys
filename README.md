@@ -707,7 +707,7 @@ create/write/delete path for every edition is additionally run by
 | V6 | pcollinson `rk0` / SIMH `uv6swre` | yes | yes | yes | yes | yes |
 | V7 | pcollinson `rp06-0.disk` | yes | yes | yes | yes | yes |
 | 32V (VAX) | `32v-root.disk`, `32v-rp06.disk` (`/usr`) | yes | yes | yes | yes | yes |
-| System III | PDP-11 oracle roots (`sysiii-pdp11-*.root.gz`), `sysIII_vax_root.img` | yes (oracle) | — | synthetic | — | — |
+| System III | `sysIII_vax_root.img` | yes | — | synthetic | — | — |
 | Coherent | `disk1..4.4.10.dd` (PUPS base floppies) | yes | — | — | — | — |
 | V8 / V9 / V10 | no original media survive | — | — | synthetic images only | — | — |
 
