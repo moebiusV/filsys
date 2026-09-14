@@ -763,6 +763,7 @@ typedef enum { FAIL_NONE, FAIL_WRITE, FAIL_READ } fail_mode_e;
 static fail_mode_e g_fmode = FAIL_NONE;
 static int g_fail_at;   /* 1-based index of the read/write to fail (0 = never) */
 static int g_fcount;    /* reads/writes seen since (re)arm */
+static off_t g_fail_off = -1;  /* exact write offset to fail (FAIL_WRITE; -1 = never) */
 
 static int fault_read(filsys_edition_t *fs, void *buf, size_t n, off_t off) {
     if (g_fmode == FAIL_READ && g_fail_at > 0) {
@@ -778,6 +779,8 @@ static int fault_write(filsys_edition_t *fs, const void *buf, size_t n, off_t of
         if (g_fcount == g_fail_at)
             return -EIO;
     }
+    if (g_fmode == FAIL_WRITE && g_fail_off >= 0 && off == g_fail_off)
+        return -EIO;
     return filsys_io_file.write(fs, buf, n, off);
 }
 static const filsys_io_t fault_io = { fault_read, fault_write };
@@ -840,6 +843,119 @@ static void stat_blocks_eio(void) {
 
     filsys_close(fs);
     unlink(img);
+}
+
+/* The four reproductions from docs/CODE_REVIEW.md, pinned as regressions so
+ * the fixes have something to turn green.  Each case makes its own scratch
+ * image. */
+static void review_regressions(void) {
+    /* 1: 2.11BSD dir read output-capacity overflow.  A one-letter name is an
+     * 8-byte record, but the old reader sized its output array by size/12+1,
+     * so 20 short names wrote past the end.  The fixed iterator counts records
+     * first; assert the directory reads back intact (an ASan build traps the
+     * regression here). */
+    {
+        char img[64] = "test_matrix_bsd211_dirs.img";
+        unlink(img);
+        if (mkfs_image(FILSYS_BSD211, img, 4000, NULL) != 0) { ok("review 1: mkfs", 0); return; }
+        filsys_t *fs;
+        if (filsys_open(&fs, FILSYS_BSD211, img, 0, 0, 0, 0, NULL)) { ok("review 1: open", 0); unlink(img); return; }
+        filsys_mkdir(fs, "/d", 0755, 0, 0);
+        char p[8] = "/d/x";
+        int created = 0;
+        for (int i = 0; i < 20; i++) {
+            p[3] = (char)('a' + i);
+            if (filsys_create(fs, p, 0644, 0, 0, NULL) == 0)
+                created++;
+        }
+        filsys_dirent_t *e = NULL;
+        size_t n = 0;
+        int drc = filsys_readdir(fs, "/d", &e, &n);
+        free(e);
+        ok("review 1: 20 short names read back", created == 20 && drc == 0 && n >= 20);
+        filsys_close(fs);
+        unlink(img);
+    }
+
+    /* 2: V6 chmod drops ILARG (silent data corruption) and create(0000) omits
+     * IALLOC (the inode reads back as free). */
+    {
+        char img[64] = "test_matrix_v6_mode.img";
+        unlink(img);
+        if (mkfs_image(FILSYS_V6, img, 2000, NULL) != 0) { ok("review 2: mkfs", 0); return; }
+        filsys_t *fs;
+        if (filsys_open(&fs, FILSYS_V6, img, 0, 0, 0, 0, NULL)) { ok("review 2: open", 0); unlink(img); return; }
+        enum { BIG = 5000 };
+        uint8_t buf[BIG], rb[BIG];
+        for (int i = 0; i < BIG; i++) buf[i] = (uint8_t)(i & 0xff);
+        filsys_create(fs, "/big", 0644, 0, 0, NULL);
+        filsys_write(fs, "/big", buf, BIG, 0);
+        filsys_chmod(fs, "/big", 0600);
+        ssize_t r = filsys_read(fs, "/big", rb, BIG, 0);
+        ok("review 2: chmod preserves ILARG (data unchanged)",
+           r == (ssize_t)BIG && memcmp(rb, buf, BIG) == 0);
+
+        uint32_t zino;
+        filsys_inode_t zip;
+        filsys_create(fs, "/zero", 0000, 0, 0, NULL);
+        filsys_lookup(fs, "/zero", &zino, &zip);
+        ok("review 2: create(mode 0000) sets IALLOC", zip.mode != 0);
+        filsys_close(fs);
+        unlink(img);
+    }
+
+    /* 3: a failed create (dir_add committed, inode write faulted) must not
+     * leave the name dangling on a freed inode for the next ialloc to alias. */
+    {
+        char img[64] = "test_matrix_v7_dangle.img";
+        unlink(img);
+        filsys_desc_t d = filsys_getformat(FILSYS_V7);
+        if (mkfs_image(FILSYS_V7, img, 2000, NULL) != 0) { ok("review 3: mkfs", 0); return; }
+        filsys_t *fs;
+        if (filsys_open(&fs, FILSYS_V7, img, 0, 0, 0, 0, NULL)) { ok("review 3: open", 0); unlink(img); return; }
+        filsys_create(fs, "/keep", 0644, 0, 0, NULL);
+        filsys_link(fs, "/keep", "/slot");
+        filsys_unlink(fs, "/slot");            /* free the slot; the inode survives */
+
+        g_fmode = FAIL_WRITE;
+        g_fail_at = 0;
+        g_fail_off = (off_t)(2 * d.bsize);     /* the i-list block holding ino 2 */
+        filsys_set_io(fs, &fault_io);
+        int rc = filsys_create(fs, "/new", 0644, 0, 0, NULL);
+        g_fmode = FAIL_NONE;
+        g_fail_off = -1;
+        filsys_set_io(fs, &filsys_io_file);
+
+        uint32_t x;
+        filsys_inode_t ip;
+        int lrc = filsys_lookup(fs, "/new", &x, &ip);
+        ok("review 3: failed create leaves no dangling /new",
+           rc != 0 && (lrc != 0 || ip.mode != 0));
+        filsys_close(fs);
+        unlink(img);
+    }
+
+    /* 4: namespace creation validation -- EEXIST on a duplicate name, ENOTDIR
+     * when the parent is a regular file, and mkdir refused over an existing
+     * name. */
+    {
+        char img[64] = "test_matrix_v7_ns.img";
+        unlink(img);
+        if (mkfs_image(FILSYS_V7, img, 2000, NULL) != 0) { ok("review 4: mkfs", 0); return; }
+        filsys_t *fs;
+        if (filsys_open(&fs, FILSYS_V7, img, 0, 0, 0, 0, NULL)) { ok("review 4: open", 0); unlink(img); return; }
+        uint32_t a, b;
+        int r1 = filsys_create(fs, "/same", 0644, 0, 0, &a);
+        int r2 = filsys_create(fs, "/same", 0644, 0, 0, &b);
+        ok("review 4: duplicate create -> -EEXIST", r1 == 0 && r2 == -EEXIST);
+        ok("review 4: mkdir over existing name refused",
+           filsys_mkdir(fs, "/same", 0755, 0, 0) == -EEXIST);
+        filsys_create(fs, "/plain", 0644, 0, 0, &a);
+        ok("review 4: create under a regular file -> -ENOTDIR",
+           filsys_create(fs, "/plain/child", 0644, 0, 0, &b) == -ENOTDIR);
+        filsys_close(fs);
+        unlink(img);
+    }
 }
 
 /* One mutator: setup builds the preconditions with the fault disabled, op is
@@ -1951,6 +2067,7 @@ int main(void) {
         findfs_self_detect();
         query_eof_declines();
         stat_blocks_eio();
+        review_regressions();
     }
     if (want_fault) fault_test();
     if (want_crash) crash_prefix_test();
