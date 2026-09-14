@@ -125,6 +125,28 @@ int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, si
     return 0;
 }
 
+int bsd211_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
+    uint8_t *buf = NULL;
+    size_t n = 0;
+    int rc = bsd211_slurp(fs, ip, &buf, &n);
+    if (rc)
+        return rc;
+    bsd211_iter_t it;
+    bsd211_iter_init(&it, &fs->desc, buf, n);
+    rc = -ENOENT;
+    while (bsd211_iter_next(&it)) {
+        if (it.ino == 0)
+            continue;
+        if ((size_t)it.namlen == strlen(name) && memcmp(it.name, name, it.namlen) == 0) {
+            *ino = it.ino;
+            rc = 0;
+            break;
+        }
+    }
+    free(buf);
+    return rc;
+}
+
 int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
     size_t namlen = strlen(name);
     if (namlen == 0 || namlen > fs->desc.max_namlen)

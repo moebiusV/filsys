@@ -58,22 +58,58 @@ void v7fs_dirents_free(v7_dirent_t *ents) {
     free(ents);
 }
 
-int filsys_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
-    v7_dirent_t *ents = NULL;
-    size_t count = 0;
-    int rc = fs->desc.ops->dir->dir_read(fs, ip, &ents, &count);
-    if (rc)
-        return rc;
-    rc = -ENOENT;
-    for (size_t i = 0; i < count; i++) {
-        if (strcmp(ents[i].name, name) == 0) {
-            *ino = ents[i].ino;
-            rc = 0;
-            break;
+/* Compare a stored fixed-format name (max_namlen bytes, zero-padded by the
+ * writer) against a NUL-terminated name.  A match requires the stored bytes to
+ * equal `name` up to its terminator and be zero beyond it -- the same test the
+ * old strcmp-over-a-copy performed. */
+static int fixed_name_eq(const uint8_t *stored, const char *name, size_t max) {
+    for (size_t i = 0; i < max; i++) {
+        if (name[i] == '\0')
+            return stored[i] == 0;
+        if (stored[i] != (uint8_t)name[i])
+            return 0;
+    }
+    return 1;
+}
+
+/* The directory is a flat array of dirent_size-byte entries, NOT block-aligned:
+ * V1's 10-byte entries straddle its 512-byte blocks (512 % 10 = 2).  Scan it in
+ * the largest dirent_size-aligned chunk that fits one block, so an entry never
+ * crosses a chunk boundary while the chunk stays about one block of I/O. */
+static size_t dir_chunk(const filsys_edition_t *fs) {
+    size_t c = fs->desc.bsize / fs->desc.dirent_size * fs->desc.dirent_size;
+    return c ? c : fs->desc.dirent_size;
+}
+
+/* Lookup, add and remove walk the directory one block at a time instead of
+ * reading the whole directory into a buffer and rewriting it.  A fixed entry is
+ * dirent_size bytes (ino at 0, name at 2), so a block-local scan is trivial and
+ * a mutation is a single dirent_size-byte write rather than an ip->size-byte
+ * rewrite: O(1) write amplification and no heap buffer sized by the directory.
+ * Reading block-by-block is also kinder to a damaged directory -- a bad block
+ * past the entry being looked for no longer aborts the whole operation. */
+
+int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
+    size_t esize = fs->desc.dirent_size;
+    size_t max = fs->desc.max_namlen;
+    uint8_t blk[V7_MAXBSIZE];
+    for (size_t off = 0; off < ip->size; off += dir_chunk(fs)) {
+        size_t n = dir_chunk(fs);
+        if (n > ip->size - off)
+            n = ip->size - off;
+        ssize_t got = filsys_file_read(fs, ip, blk, n, off);
+        if (got < 0)
+            return (int)got;
+        for (size_t b = 0; b + esize <= (size_t)got; b += esize) {
+            if (fs->desc.bo->get16(blk + b) == 0)
+                continue;
+            if (fixed_name_eq(blk + b + 2, name, max)) {
+                *ino = fs->desc.bo->get16(blk + b);
+                return 0;
+            }
         }
     }
-    v7fs_dirents_free(ents);
-    return rc;
+    return -ENOENT;
 }
 
 int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
@@ -83,64 +119,55 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
     if (strchr(name, '/'))
         return -EINVAL;
 
-    size_t newsize = ip->size + fs->desc.dirent_size;
-    uint8_t *buf = malloc(newsize);
-    if (!buf)
-        return -ENOMEM;
-    memset(buf, 0, newsize);
-    ssize_t n = filsys_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) {
-        free(buf);
-        return (int)n;
-    }
+    size_t esize = fs->desc.dirent_size;
+    uint8_t ent[V7_DIRENTSZ];
+    memset(ent, 0, sizeof ent);
+    fs->desc.bo->put16(ent, (uint16_t)ino);
+    memcpy(ent + 2, name, namelen);
 
-    /* find an empty slot, else append */
-    size_t slot = SIZE_MAX;
-    for (size_t off = 0; off + fs->desc.dirent_size <= (size_t)n; off += fs->desc.dirent_size) {
-        if (fs->desc.bo->get16(buf + off) == 0) {
-            slot = off;
-            break;
+    /* Reuse the first empty slot (ino == 0); else append at ip->size. */
+    uint8_t blk[V7_MAXBSIZE];
+    for (size_t off = 0; off < ip->size; off += dir_chunk(fs)) {
+        size_t n = dir_chunk(fs);
+        if (n > ip->size - off)
+            n = ip->size - off;
+        ssize_t got = filsys_file_read(fs, ip, blk, n, off);
+        if (got < 0)
+            return (int)got;
+        for (size_t b = 0; b + esize <= (size_t)got; b += esize) {
+            if (fs->desc.bo->get16(blk + b) == 0) {
+                ssize_t w = filsys_file_write(fs, ip, ent, esize, (off_t)(off + b));
+                return w < 0 ? (int)w : 0;
+            }
         }
     }
-    if (slot == SIZE_MAX) {
-        slot = (size_t)n;
-        n += fs->desc.dirent_size;
-    }
-
-    fs->desc.bo->put16(buf + slot, (uint16_t)ino);
-    memset(buf + slot + 2, 0, fs->desc.max_namlen);
-    memcpy(buf + slot + 2, name, namelen);
-
-    ssize_t w = filsys_file_write(fs, ip, buf, (size_t)n, 0);
-    free(buf);
+    ssize_t w = filsys_file_write(fs, ip, ent, esize, (off_t)ip->size);
     return w < 0 ? (int)w : 0;
 }
 
 int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
-    uint8_t *buf = malloc(ip->size);
-    if (!buf)
-        return -ENOMEM;
-    ssize_t n = filsys_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) {
-        free(buf);
-        return (int)n;
-    }
-    int rc = -ENOENT;
-    for (size_t off = 0; off + fs->desc.dirent_size <= (size_t)n; off += fs->desc.dirent_size) {
-        if (fs->desc.bo->get16(buf + off) == 0)
-            continue;
-        char ent[64];
-        memcpy(ent, buf + off + 2, fs->desc.max_namlen);
-        ent[fs->desc.max_namlen] = 0;
-        if (strcmp(ent, name) == 0) {
-            fs->desc.bo->put16(buf + off, 0);
-            memset(buf + off + 2, 0, fs->desc.max_namlen);
-            ssize_t w = filsys_file_write(fs, ip, buf, (size_t)n, 0);
-            rc = w < 0 ? (int)w : 0;
-            break;
+    size_t esize = fs->desc.dirent_size;
+    size_t max = fs->desc.max_namlen;
+    uint8_t blk[V7_MAXBSIZE];
+    for (size_t off = 0; off < ip->size; off += dir_chunk(fs)) {
+        size_t n = dir_chunk(fs);
+        if (n > ip->size - off)
+            n = ip->size - off;
+        ssize_t got = filsys_file_read(fs, ip, blk, n, off);
+        if (got < 0)
+            return (int)got;
+        for (size_t b = 0; b + esize <= (size_t)got; b += esize) {
+            if (fs->desc.bo->get16(blk + b) == 0)
+                continue;
+            if (!fixed_name_eq(blk + b + 2, name, max))
+                continue;
+            /* The reader only tests ino, but clear the whole entry so a freed
+             * slot does not retain its old name (as the old rewrite did). */
+            memset(blk + b, 0, esize);
+            ssize_t w = filsys_file_write(fs, ip, blk + b, esize, (off_t)(off + b));
+            return w < 0 ? (int)w : 0;
         }
     }
-    free(buf);
-    return rc;
+    return -ENOENT;
 }
 

@@ -145,6 +145,7 @@ struct filsys_dir_ops {
     int (*dir_read)(filsys_edition_t *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count);
     int (*dir_add)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name);
     int (*dir_remove)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name);
+    int (*dir_lookup)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino);
 };
 
 /* Inode-format sub-vtable: the ops that differ with the on-disk inode layout

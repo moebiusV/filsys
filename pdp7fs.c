@@ -562,6 +562,33 @@ int p7fs_dir_remove(p7fs_t *fs, p7_inode_t *ip, const char *name) {
     return -ENOENT;
 }
 
+int p7fs_dir_lookup(p7fs_t *fs, p7_inode_t *ip, const char *name, uint32_t *ino) {
+    /* "." and ".." are synthesized by dir_read; a lookup must agree. */
+    if (!strcmp(name, "."))  { *ino = ip->ino;      return 0; }
+    if (!strcmp(name, "..")) { *ino = P7_ROOTINO;   return 0; }
+    uint32_t nwords = ip->size / 2;
+    size_t ndirents = nwords / P7_DIRENTSZ;
+    for (size_t d = 0; d < ndirents; d++) {
+        uint32_t base = (uint32_t)(d * P7_DIRENTSZ);
+        uint32_t dino;
+        if (inode_read_word(fs, ip, base, &dino))
+            return -EIO;
+        if (dino == 0)
+            continue;
+        uint32_t namew[4];
+        for (uint32_t w = 0; w < 4; w++)
+            if (inode_read_word(fs, ip, base + 1 + w, &namew[w]))
+                return -EIO;
+        char ent[P7_DIRSIZ + 1];
+        unpack_name(namew, ent);
+        if (!strcmp(ent, name)) {
+            *ino = dino;
+            return 0;
+        }
+    }
+    return -ENOENT;
+}
+
 /* Rebuild the free list from the usage bitmap (icheck -s), chaining unused
  * data blocks back through the 9-per-node free-list allocator. */
 static uint32_t p7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
@@ -699,6 +726,7 @@ static const struct filsys_dir_ops dir_pdp7 = {
     .dir_read   = p7fs_dir_read,
     .dir_add    = p7fs_dir_add,
     .dir_remove = p7fs_dir_remove,
+    .dir_lookup = p7fs_dir_lookup,
 };
 static const struct filsys_inode_ops inode_pdp7 = {
     .read_inode  = p7fs_read_inode,

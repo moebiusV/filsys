@@ -495,7 +495,7 @@ int filsys_path_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7
         if (!fs_is_dir(fs, &dip))
             return -ENOTDIR;
         uint32_t next;
-        int rc = filsys_dir_lookup(fs, &dip, name, &next);
+        int rc = fs->desc.ops->dir->dir_lookup(fs, &dip, name, &next);
         if (rc)
             return rc;
         if (fs->desc.ops->inode->read_inode(fs, next, &dip))
@@ -1150,6 +1150,7 @@ const struct filsys_dir_ops dir_fixed = {
     .dir_read   = v7fs_dir_read,
     .dir_add    = v7fs_dir_add,
     .dir_remove = v7fs_dir_remove,
+    .dir_lookup = v7fs_dir_lookup,
 };
 static const struct filsys_inode_ops inode_64 = {
     .read_inode  = v7fs_read_inode,
@@ -1215,6 +1216,7 @@ static const struct filsys_dir_ops dir_variable = {
     .dir_read   = bsd211_dir_read,
     .dir_add    = bsd211_dir_add,
     .dir_remove = bsd211_dir_remove,
+    .dir_lookup = bsd211_dir_lookup,
 };
 static const struct filsys_inode_ops inode_64_32addr = {
     .read_inode  = v7fs_read_inode,

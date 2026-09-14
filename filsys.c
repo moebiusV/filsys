@@ -174,7 +174,7 @@ static int dir_read(filsys_t *fs, filsys_inode_t *ip, filsys_dirent_t **e, size_
     return fs->ops->dir->dir_read(fs->fs, ip, e, n);
 }
 static int dir_lookup(filsys_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino) {
-    return filsys_dir_lookup(fs->fs, ip, name, ino);
+    return fs->ops->dir->dir_lookup(fs->fs, ip, name, ino);
 }
 static int dir_add(filsys_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name) {
     int rc = fs->ops->dir->dir_add(fs->fs, ip, ino, name);
