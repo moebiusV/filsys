@@ -1,12 +1,12 @@
-DISTNAME=	filsys-1.9.4
+DISTNAME=	filsys-2.3.0
 CATEGORIES=	sysutils
-MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v1.9.4/
+MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v2.3.0/
 EXTRACT_SUFX=	.tar.gz
 
 MAINTAINER=	maintainer@example.com
 HOMEPAGE=	https://github.com/moebiusV/filsys
 COMMENT=	FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
-LICENSE=	isc AND caldera-license
+LICENSE=	isc
 
 GNU_CONFIGURE=	yes
 USE_TOOLS+=	gmake pkg-config
