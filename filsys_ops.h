@@ -206,16 +206,6 @@ struct filsys_ops {
     int  (*ialloc)(filsys_edition_t *fs, uint32_t *ino);
     void (*ifree)(filsys_edition_t *fs, uint32_t ino);
 
-    /* file data */
-    ssize_t (*file_read)(filsys_edition_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t size, off_t off);
-    ssize_t (*file_write)(filsys_edition_t *fs, filsys_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
-
-    /* directories (dir_read/add/remove live in the dir sub-vtable) */
-    int  (*dir_lookup)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino);
-
-    /* path lookup */
-    int  (*lookup)(filsys_edition_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip);
-
     /* integrity check; returns -1 if problems were found */
     int  (*check)(filsys_edition_t *fs);
 

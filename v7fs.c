@@ -495,7 +495,7 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
         if (!fs_is_dir(fs, &dip))
             return -ENOTDIR;
         uint32_t next;
-        int rc = fs->desc.ops->dir_lookup(fs, &dip, name, &next);
+        int rc = v7fs_dir_lookup(fs, &dip, name, &next);
         if (rc)
             return rc;
         if (fs->desc.ops->inode->read_inode(fs, next, &dip))
@@ -1176,10 +1176,6 @@ const struct filsys_ops v7fs_ops = {
     .blk_put     = v7fs_write_block,
     .ialloc      = v7fs_ialloc,
     .ifree       = v7fs_ifree,
-    .file_read   = v7fs_file_read,
-    .file_write  = v7fs_file_write,
-    .dir_lookup  = v7fs_dir_lookup,
-    .lookup      = v7fs_lookup,
     .check       = filsys_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
@@ -1245,10 +1241,6 @@ const struct filsys_ops bsd211fs_ops = {
     .blk_put     = v7fs_write_block,
     .ialloc      = v7fs_ialloc,
     .ifree       = v7fs_ifree,
-    .file_read   = v7fs_file_read,
-    .file_write  = v7fs_file_write,
-    .dir_lookup  = v7fs_dir_lookup,
-    .lookup      = v7fs_lookup,
     .check       = filsys_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,
@@ -1421,10 +1413,6 @@ const struct filsys_ops v6fs_ops = {
     .blk_put     = v7fs_write_block,
     .ialloc      = v7fs_ialloc,
     .ifree       = v7fs_ifree,
-    .file_read   = v7fs_file_read,
-    .file_write  = v7fs_file_write,
-    .dir_lookup  = v7fs_dir_lookup,
-    .lookup      = v7fs_lookup,
     .check       = filsys_check_op,
     .maxino      = v7_maxino,
     .data_start  = v7_data_start,

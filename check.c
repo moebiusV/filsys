@@ -391,7 +391,7 @@ void filsys_preen(filsys_edition_t *fs, const uint8_t *ecount, const uint8_t *st
     filsys_inode_t root;
     uint32_t lf_ino = 0;
     if (fs->desc.ops->inode->read_inode(fs, fs->desc.rootino, &root) == 0 &&
-        fs->desc.ops->dir_lookup(fs, &root, lfname, &lf_ino) != 0) {
+        v7fs_dir_lookup(fs, &root, lfname, &lf_ino) != 0) {
         filsys_inode_t lf;
         if (fs->desc.ops->ialloc(fs, &lf_ino) == 0) {
             memset(&lf, 0, sizeof(lf));

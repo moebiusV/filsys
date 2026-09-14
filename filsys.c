@@ -165,16 +165,16 @@ static int itrunc_from(filsys_t *fs, filsys_inode_t *ip, uint32_t first_blk,
     return filsys_itrunc_from(fs->fs, ip, first_blk, *bl);
 }
 static ssize_t file_read(filsys_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t sz, off_t off) {
-    return fs->ops->file_read(fs->fs, ip, buf, sz, off);
+    return v7fs_file_read(fs->fs, ip, buf, sz, off);
 }
 static ssize_t file_write(filsys_t *fs, filsys_inode_t *ip, const uint8_t *buf, size_t sz, off_t off) {
-    return fs->ops->file_write(fs->fs, ip, buf, sz, off);
+    return v7fs_file_write(fs->fs, ip, buf, sz, off);
 }
 static int dir_read(filsys_t *fs, filsys_inode_t *ip, filsys_dirent_t **e, size_t *n) {
     return fs->ops->dir->dir_read(fs->fs, ip, e, n);
 }
 static int dir_lookup(filsys_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino) {
-    return fs->ops->dir_lookup(fs->fs, ip, name, ino);
+    return v7fs_dir_lookup(fs->fs, ip, name, ino);
 }
 static int dir_add(filsys_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name) {
     int rc = fs->ops->dir->dir_add(fs->fs, ip, ino, name);
@@ -189,7 +189,7 @@ static int dir_remove(filsys_t *fs, filsys_inode_t *ip, const char *name) {
     return rc;
 }
 static int lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip) {
-    return fs->ops->lookup(fs->fs, path, ino, ip);
+    return v7fs_lookup(fs->fs, path, ino, ip);
 }
 static int bmap(filsys_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
     return fs->ops->inode->bmap(fs->fs, ip, lbn, create, bno);
