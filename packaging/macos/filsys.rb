@@ -7,7 +7,7 @@
 class Filsys < Formula
   desc "FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images"
   homepage "https://github.com/moebiusV/filsys"
-  url "https://github.com/moebiusV/filsys/releases/download/v4.1.1/filsys-4.1.1.tar.gz"
+  url "https://github.com/moebiusV/filsys/releases/download/v4.1.2/filsys-4.1.2.tar.gz"
   sha256 "0911a38beb9b13df6d4cbbcb99449b3e966e7e2c2ab8a4d25f95e43319677ab3"
   # ISC (see COPYING).
   license "ISC"

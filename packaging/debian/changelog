@@ -1,3 +1,15 @@
+filsys (4.1.2-1) unstable; urgency=medium
+
+  * New upstream release: fsck no longer leaks its autodetected byte-order
+    string; 2.11BSD directory records respect the 512-byte DIRBLKSIZ boundary;
+    V6 inode liveness is one predicate; six code-review findings (memory
+    safety, mode handling, mutation lifecycle) are fixed and regression-tested;
+    and the engine is consolidated (one authoritative descriptor, fewer vtable
+    slots, targeted directory updates, engine types split out of v7fs.h) with
+    no public API change.
+
+ -- David Walther <david@clearbrookdistillery.com>  Mon, 14 Sep 2026 00:00:00 +0000
+
 filsys (4.1.1-1) unstable; urgency=medium
 
   * fsck -i no longer spins on end-of-input, and stat now returns -EIO when an

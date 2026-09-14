@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        4.1.1
+Version:        4.1.2
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
 
@@ -49,6 +49,13 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Mon Sep 14 2026 David Walther <david@clearbrookdistillery.com> - 4.1.2-1
+- fsck no longer leaks its autodetected byte-order string; 2.11BSD directory
+  records respect the 512-byte DIRBLKSIZ boundary; V6 inode liveness is one
+  predicate; six code-review findings are fixed and regression-tested; and the
+  engine is consolidated (one descriptor, fewer vtable slots, targeted
+  directory updates, engine types split out of v7fs.h) with no API change.
+
 * Mon Sep 14 2026 David Walther <david@clearbrookdistillery.com> - 4.1.1-1
 - fsck -i no longer spins on end-of-input; stat returns -EIO when an indirect
   block is unreadable instead of silently reporting st_blocks == 0.

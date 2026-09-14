@@ -1,5 +1,23 @@
 2026-09-14  David Walther  <david@clearbrookdistillery.com>
 
+	* fsck.filsys.c: free the byteorder strdup made by the -v unix/-v v10
+	autodetect path, so fsck no longer leaks under LeakSanitizer.
+	* dir_bsd211.c, test_matrix.c: enforce the 2.11BSD DIRBLKSIZ framing --
+	no directory record spans a 512-byte boundary, the previous entry is
+	padded out to the chunk edge -- and add a framing regression.
+	* alloc_freelist.c: one inode_live() predicate, so the V6 allocator and
+	the free-inode counter agree on which inodes are live.
+	* filsys.c, filsys_ops.h, dir_fixed.c, dir_bsd211.c, pdp7fs.c, v7fs.c,
+	v1fs.c, check.c, filsys_mkfs.c, filsys_common.h, v7fs.h: consolidate the
+	engine -- one authoritative descriptor, the four never-varying vtable
+	slots removed, the generic file/path operations renamed, shared V7/V8
+	root-seeding, targeted single-entry directory updates, and the engine
+	types split out of v7fs.h.
+	* NEWS, configure.ac, configure, filsys.5, findfs.filsys.1,
+	fsck.filsys.1, mkfs.filsys.1, mount.filsys.1, packaging/*: release 4.1.2.
+
+2026-09-14  David Walther  <david@clearbrookdistillery.com>
+
 	* filsys_ops.h, filsys.c, fuse_core.c, filsys.h: filsys_fill_stat() now
 	returns an error and it propagates through filsys_stat_ino and the FUSE
 	getattr, so an unreadable indirect block fails the stat instead of silently

@@ -1,3 +1,27 @@
+filsys 4.1.2 (2026-09-14)
+=========================
+
+Bug fixes and an internal consolidation (no public API change).
+
+- fsck's autodetection path (`-v unix` / `-v v10`) no longer leaks the
+  byte-order string it strdup'd; the leak made an AddressSanitizer run exit
+  non-zero and hid the "clean" summary line from `test_matrix`.
+- 2.11BSD directory entries now respect the 512-byte DIRBLKSIZ boundary: an
+  entry that would straddle one pads the previous entry out to the chunk edge
+  instead of emitting a record a real 2.11BSD kernel would mis-read.
+- V6 inode allocation and the free-inode counter now agree on "live": one
+  `inode_live()` predicate, so a freed V6 inode can no longer be counted used
+  by one side and free by the other.
+- Six code-review findings, each now a regression test: the 2.11BSD directory
+  read overflow with short names, V6 chmod dropping ILARG and create omitting
+  IALLOC, a dangling name left by a failed create, and namespace validation
+  (EEXIST / ENOTDIR / mkdir over an existing name).
+- Internal consolidation: one authoritative descriptor (the duplicate copy in
+  `struct filsys` is gone), the four never-varying vtable slots removed, the
+  generic file/path operations renamed out of the `v7fs_*` namespace, shared
+  V7/V8 root-seeding, single-entry directory updates instead of whole-directory
+  rewrites, and the engine types split out of `v7fs.h` into `filsys_common.h`.
+
 filsys 4.1.1 (2026-09-14)
 =========================
 
