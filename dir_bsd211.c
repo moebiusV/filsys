@@ -61,6 +61,8 @@ static int bsd211_iter_next(bsd211_iter_t *it) {
         return 0;
     if ((uint32_t)namlen + 7u > reclen || namlen > it->desc->max_namlen)
         return 0;
+    if (off % BSD211_DIRBLKSIZ + reclen > BSD211_DIRBLKSIZ)
+        return 0;   /* a record may not span a 512-byte chunk boundary */
     it->off    = off;
     it->ino    = ino;
     it->reclen = reclen;
@@ -156,14 +158,34 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
 
     /* Append a new entry at the end (the directory grows).  The append offset
      * is the end of the last *valid* record, not ip->size: a directory whose
-     * tail is damaged must not have new records stacked behind the damage. */
-    size_t end = 0;
+     * tail is damaged must not have new records stacked behind the damage.
+     *
+     * 2.11BSD forbids a record from spanning a DIRBLKSIZ (512) boundary, so a
+     * new entry that would cross one first pads the previous record out to the
+     * chunk edge, and the new entry starts at the next 512-byte boundary. */
+    size_t end = 0, prev_off = 0;
     bsd211_iter_init(&it, &fs->desc, buf, n);
-    while (bsd211_iter_next(&it))
+    while (bsd211_iter_next(&it)) {
+        prev_off = it.off;
         end = it.off + it.reclen;
+    }
     free(buf);
     if (end & 3u)
         return -EIO;
+
+    size_t slot = end;
+    size_t in_chunk = end % BSD211_DIRBLKSIZ;
+    if (in_chunk != 0 && in_chunk + need > BSD211_DIRBLKSIZ) {
+        /* Extend the previous record's d_reclen so it fills its chunk, leaving
+         * the new record to start at the next boundary.  The padding bytes are
+         * skipped by every reader (they sit inside the padded record's reclen),
+         * so they need not be written out. */
+        slot = end + (BSD211_DIRBLKSIZ - in_chunk);
+        uint8_t reclen[2];
+        fs->desc.bo->put16(reclen, (uint16_t)(slot - prev_off));
+        if (v7fs_file_write(fs, ip, reclen, 2, (off_t)(prev_off + 2)) < 0)
+            return -EIO;
+    }
 
     uint8_t ent[BSD211_DIRHDRSZ + BSD211_MAXNAMLEN + 4];
     memset(ent, 0, sizeof ent);
@@ -171,7 +193,7 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
     fs->desc.bo->put16(ent + 2, (uint16_t)need);
     fs->desc.bo->put16(ent + 4, (uint16_t)namlen);
     memcpy(ent + BSD211_DIRHDRSZ, name, namlen);
-    ssize_t w = v7fs_file_write(fs, ip, ent, need, (off_t)end);
+    ssize_t w = v7fs_file_write(fs, ip, ent, need, (off_t)slot);
     return w < 0 ? (int)w : 0;
 }
 

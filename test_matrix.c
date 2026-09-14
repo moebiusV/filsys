@@ -1920,6 +1920,46 @@ static int dir_has(filsys_t *fs, const char *path, const char *name) {
     return 0;
 }
 
+/* 2.11BSD directory records must not span a 512-byte DIRBLKSIZ boundary: a new
+ * entry that would cross one pads the previous record to the chunk edge and
+ * starts the entry at the next boundary.  Grow a directory past several chunk
+ * boundaries with maximum-length names and require every name to round-trip
+ * plus fsck to stay clean -- a spanning record stops the iterator, so the names
+ * behind it would be lost and the link counts would read as missing. */
+static void bsd211_dir_framing(void) {
+    char img[64] = "test_matrix_bsd211_framing.img";
+    unlink(img);
+    if (mkfs_image(FILSYS_BSD211, img, 4000, NULL) != 0) { ok("bsd211 framing mkfs", 0); return; }
+    filsys_t *fs;
+    if (filsys_open(&fs, FILSYS_BSD211, img, 0, 0, 0, 0, NULL)) { ok("bsd211 framing open", 0); unlink(img); return; }
+
+    filsys_mkdir(fs, "/d", 0755, 0, 0);
+
+    /* 16 maximum-length names: each record is dirsiz(63)=72 bytes, so the 8th
+     * and later entries in a fresh 20-byte directory cross a 512-byte boundary. */
+    enum { N = 16 };
+    char name[BSD211_MAXNAMLEN + 1], path[80];
+    memset(name, 'x', BSD211_MAXNAMLEN);
+    name[BSD211_MAXNAMLEN] = 0;
+    for (int k = 0; k < N; k++) {
+        name[BSD211_MAXNAMLEN - 1] = "0123456789abcdef"[k];
+        snprintf(path, sizeof path, "/d/%s", name);
+        filsys_create(fs, path, 0644, 0, 0, NULL);
+    }
+
+    int all = 1;
+    for (int k = 0; k < N && all; k++) {
+        name[BSD211_MAXNAMLEN - 1] = "0123456789abcdef"[k];
+        if (!dir_has(fs, "/d", name))
+            all = 0;
+    }
+    ok("bsd211 dir framing: names survive chunk boundaries", all);
+
+    filsys_close(fs);
+    ok("bsd211 dir framing: fsck clean", fsck_is_clean("bsd211", img));
+    unlink(img);
+}
+
 /* A directory that spans many blocks and is mutated (unlink/rename) between
  * reads must keep a consistent listing: surviving names present, removed names
  * gone, and the longest legal name intact.  This is the area most exposed to
@@ -2057,6 +2097,7 @@ int main(void) {
         v6_large_file();
         v7_triple_indirect();
         bitmap_roundtrip();
+        bsd211_dir_framing();
         crash_consistency();
         durability_test();
         instrument_test();
