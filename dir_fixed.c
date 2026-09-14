@@ -31,7 +31,7 @@ int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size
         free(out);
         return -ENOMEM;
     }
-    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
+    ssize_t n = filsys_file_read(fs, ip, buf, ip->size, 0);
     if (n < 0) {
         free(buf);
         free(out);
@@ -58,7 +58,7 @@ void v7fs_dirents_free(v7_dirent_t *ents) {
     free(ents);
 }
 
-int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
+int filsys_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
     v7_dirent_t *ents = NULL;
     size_t count = 0;
     int rc = fs->desc.ops->dir->dir_read(fs, ip, &ents, &count);
@@ -88,7 +88,7 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
     if (!buf)
         return -ENOMEM;
     memset(buf, 0, newsize);
-    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
+    ssize_t n = filsys_file_read(fs, ip, buf, ip->size, 0);
     if (n < 0) {
         free(buf);
         return (int)n;
@@ -111,7 +111,7 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
     memset(buf + slot + 2, 0, fs->desc.max_namlen);
     memcpy(buf + slot + 2, name, namelen);
 
-    ssize_t w = v7fs_file_write(fs, ip, buf, (size_t)n, 0);
+    ssize_t w = filsys_file_write(fs, ip, buf, (size_t)n, 0);
     free(buf);
     return w < 0 ? (int)w : 0;
 }
@@ -120,7 +120,7 @@ int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
     uint8_t *buf = malloc(ip->size);
     if (!buf)
         return -ENOMEM;
-    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
+    ssize_t n = filsys_file_read(fs, ip, buf, ip->size, 0);
     if (n < 0) {
         free(buf);
         return (int)n;
@@ -135,7 +135,7 @@ int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
         if (strcmp(ent, name) == 0) {
             fs->desc.bo->put16(buf + off, 0);
             memset(buf + off + 2, 0, fs->desc.max_namlen);
-            ssize_t w = v7fs_file_write(fs, ip, buf, (size_t)n, 0);
+            ssize_t w = filsys_file_write(fs, ip, buf, (size_t)n, 0);
             rc = w < 0 ? (int)w : 0;
             break;
         }

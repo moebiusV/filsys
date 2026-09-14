@@ -402,7 +402,7 @@ int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
 
 /* ---- file data ---------------------------------------------------------- */
 
-ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off) {
+ssize_t filsys_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off) {
     if (off < 0)
         return -EINVAL;
     if ((uint64_t)off >= ip->size)
@@ -433,7 +433,7 @@ ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_
     return (ssize_t)done;
 }
 
-ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off) {
+ssize_t filsys_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off) {
     if (off < 0)
         return -EINVAL;
 
@@ -470,7 +470,7 @@ ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf
 
 /* ---- path lookup -------------------------------------------------------- */
 
-int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
+int filsys_path_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
     if (path[0] != '/')
         return -EINVAL;
     uint32_t cur = fs->desc.rootino;
@@ -495,7 +495,7 @@ int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_
         if (!fs_is_dir(fs, &dip))
             return -ENOTDIR;
         uint32_t next;
-        int rc = v7fs_dir_lookup(fs, &dip, name, &next);
+        int rc = filsys_dir_lookup(fs, &dip, name, &next);
         if (rc)
             return rc;
         if (fs->desc.ops->inode->read_inode(fs, next, &dip))

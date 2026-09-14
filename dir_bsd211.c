@@ -77,7 +77,7 @@ static int bsd211_slurp(filsys_edition_t *fs, v7_inode_t *ip, uint8_t **out, siz
     uint8_t *buf = malloc(ip->size ? ip->size : 1);
     if (!buf)
         return -ENOMEM;
-    ssize_t got = v7fs_file_read(fs, ip, buf, ip->size, 0);
+    ssize_t got = filsys_file_read(fs, ip, buf, ip->size, 0);
     if (got < 0) { free(buf); return (int)got; }
     *out = buf;
     *n = (size_t)got;
@@ -151,7 +151,7 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
         fs->desc.bo->put16(buf + it.off + 2, reclen);
         fs->desc.bo->put16(buf + it.off + 4, (uint16_t)namlen);
         memcpy(buf + it.off + BSD211_DIRHDRSZ, name, namlen);
-        ssize_t w = v7fs_file_write(fs, ip, buf, n, 0);
+        ssize_t w = filsys_file_write(fs, ip, buf, n, 0);
         free(buf);
         return w < 0 ? (int)w : 0;
     }
@@ -183,7 +183,7 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
         slot = end + (BSD211_DIRBLKSIZ - in_chunk);
         uint8_t reclen[2];
         fs->desc.bo->put16(reclen, (uint16_t)(slot - prev_off));
-        if (v7fs_file_write(fs, ip, reclen, 2, (off_t)(prev_off + 2)) < 0)
+        if (filsys_file_write(fs, ip, reclen, 2, (off_t)(prev_off + 2)) < 0)
             return -EIO;
     }
 
@@ -193,7 +193,7 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
     fs->desc.bo->put16(ent + 2, (uint16_t)need);
     fs->desc.bo->put16(ent + 4, (uint16_t)namlen);
     memcpy(ent + BSD211_DIRHDRSZ, name, namlen);
-    ssize_t w = v7fs_file_write(fs, ip, ent, need, (off_t)slot);
+    ssize_t w = filsys_file_write(fs, ip, ent, need, (off_t)slot);
     return w < 0 ? (int)w : 0;
 }
 
@@ -213,7 +213,7 @@ int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
         if (memcmp(it.name, name, namlen) != 0)
             continue;
         fs->desc.bo->put16(buf + it.off, 0);   /* mark free */
-        ssize_t w = v7fs_file_write(fs, ip, buf, n, 0);
+        ssize_t w = filsys_file_write(fs, ip, buf, n, 0);
         free(buf);
         return w < 0 ? (int)w : 0;
     }

@@ -610,15 +610,15 @@ int  v8_bitmap_sync(filsys_edition_t *fs);
 
 /* ---- file / directory data --------------------------------------------- */
 
-ssize_t v7fs_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off);
-ssize_t v7fs_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
+ssize_t filsys_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off);
+ssize_t filsys_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
 
 /* Read a directory's entries.  Caller frees with v7fs_dirents_free. */
 int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count);
 void v7fs_dirents_free(v7_dirent_t *ents);
 
 /* Look up name in a directory; returns 0 and *ino, or -ENOENT. */
-int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino);
+int filsys_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino);
 /* Add an entry (name must be <= V7_DIRSIZ, no '/'); 0 or -errno. */
 int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name);
 /* Remove an entry; 0 or -errno. */
@@ -630,7 +630,7 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
 int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name);
 
 /* Resolve a path into an inode number.  0 or -errno. */
-int v7fs_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip);
+int filsys_path_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip);
 
 /* ---- integrity check ---------------------------------------------------- */
 

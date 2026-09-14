@@ -122,8 +122,8 @@ void     p7_ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t i, uint32
 
 int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
 
-/* File data and path lookup are shared with the V7 engine (v7fs_file_read/
- * write, v7fs_lookup, v7fs_dir_lookup); only the word-addressed dirent codec
+/* File data and path lookup are shared with the V7 engine (filsys_file_read/
+ * write, filsys_path_lookup, filsys_dir_lookup); only the word-addressed dirent codec
  * (dir_read/add/remove) and the single-indirect bmap topology stay PDP-7. */
 int p7fs_dir_read(p7fs_t *fs, p7_inode_t *ip, p7_dirent_t **ents, size_t *count);
 void p7fs_dirents_free(p7_dirent_t *ents);

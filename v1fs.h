@@ -96,7 +96,7 @@ void v1fs_ifree(v1fs_t *fs, uint32_t ino);
 int v1fs_bmap(v1fs_t *fs, v1_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
 
 /* File/directory data and path lookup are shared with the V7 engine
- * (v7fs_file_read/write, the dirent codec, v7fs_lookup); only the inode codec,
+ * (filsys_file_read/write, the dirent codec, filsys_path_lookup); only the inode codec,
  * the ILARG bmap topology and the bitmap allocator stay V1-specific. */
 
 /* ---- integrity check ---------------------------------------------------- */

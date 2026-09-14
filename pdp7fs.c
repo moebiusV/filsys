@@ -439,7 +439,7 @@ void p7fs_ifree(p7fs_t *fs, uint32_t ino) {
 
 /* ---- file data ----------------------------------------------------------
  * Shared with the V7 engine: blk_get/blk_put unpack each block to bsize
- * logical bytes, so v7fs_file_read/write apply unchanged.
+ * logical bytes, so filsys_file_read/write apply unchanged.
  */
 
 /* ---- directories -------------------------------------------------------- */
