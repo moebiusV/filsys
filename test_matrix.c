@@ -163,6 +163,9 @@ struct fmt {
     int         edition;
     const char *name;
     int         blocks;
+    uint32_t    nblk;      /* ownership-table size: covers the whole data area
+                            * (PDP-7's mkfs `blocks` is 0, but its data area runs
+                            * to block P7_KDATA, so the two differ) */
     uint64_t    maxfile;
     uint64_t    direct;
     uint32_t    bsize;
@@ -184,6 +187,7 @@ static int fmt_at(size_t i, struct fmt *out) {
     out->edition = f->edition;
     out->name    = f->name;
     out->blocks  = (f->edition == FILSYS_PDP7) ? 0 : 4000;
+    out->nblk    = (f->edition == FILSYS_PDP7) ? P7_KDATA : (uint32_t)out->blocks;
     out->direct  = (uint64_t)desc.ndaddr * desc.bsize;
     out->bsize   = desc.bsize;
     out->iflnk   = desc.iflnk != 0;
@@ -867,7 +871,7 @@ static void fault_mutator(const struct fmt *f, const mutator_t *mut,
             ok("fault open", 0); unlink(img); return;
         }
         filsys_set_io(fs, &fault_io);
-        filsys_instr_reset(f->blocks);  /* track the mutations under test */
+        filsys_instr_reset(f->nblk);    /* track the mutations under test */
         mut->setup(fs);                 /* fault disabled */
 
         /* n == 0 is the success path: no injected failure, and the result must
@@ -1051,7 +1055,7 @@ static void crash_mutator(const struct fmt *f, const mutator_t *mut) {
             ok("crash open", 0); unlink(img); return;
         }
         filsys_set_io(fs, &crash_io);
-        filsys_instr_reset(f->blocks);  /* track the mutations under test */
+        filsys_instr_reset(f->nblk);    /* track the mutations under test */
         g_crash_at = 0;
         mut->setup(fs);
         g_crash_count = 0;
@@ -1150,7 +1154,7 @@ static void property_sequences(void) {
         if (filsys_open(&fs, f.edition, img, 0, 0, 0, 0, NULL)) {
             ok("prop open", 0); unlink(img); continue;
         }
-        filsys_instr_reset(f.blocks);   /* track the mutations under test */
+        filsys_instr_reset(f.nblk);     /* track the mutations under test */
         for (int j = 0; j < NMODEL; j++)
             g_model[j] = ~0ULL;
         g_prng = 0x9e3779b97f4a7c15ULL;
@@ -1752,7 +1756,7 @@ static void instrument_test(void) {
             ok("instr open", 0); unlink(img); continue;
         }
 
-        filsys_instr_reset(f.blocks);
+        filsys_instr_reset(f.nblk);
 
         /* Exercise allocator + directory transitions end to end. */
         uint8_t buf[8192];
