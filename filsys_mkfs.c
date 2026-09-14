@@ -92,10 +92,37 @@ static uint32_t isize_v8(uint32_t blocks, uint32_t ipb)
     return isz;                  /* s_isize is the first data block */
 }
 
-static uint32_t seed_v7(filsys_edition_t *fs)
+/* Write the root directory (a one-block directory holding "." and "..") and its
+ * inode.  Shared by seed_v7 (which also writes the bad-block inode) and seed_v8;
+ * the bootstrap block is allocated through the edition's allocator, but the
+ * entries are encoded here rather than through dir_add so mkfs writes the
+ * root before any namespace machinery exists. */
+static void seed_root(filsys_edition_t *fs)
 {
     filsys_inode_t ip;
     uint8_t db[V7_MAXBSIZE];
+
+    uint32_t bno;
+    fs->desc.alloc->balloc(fs, &bno);
+    memset(db, 0, fs->desc.bsize);
+    fs->desc.bo->put16(db, fs->desc.rootino);
+    memcpy(db + 2, ".", 1);
+    fs->desc.bo->put16(db + fs->desc.dirent_size, fs->desc.rootino);
+    memcpy(db + fs->desc.dirent_size + 2, "..", 2);
+    fs->desc.ops->write_block(fs, bno, db);
+
+    memset(&ip, 0, sizeof ip);
+    ip.ino = fs->desc.rootino;
+    ip.mode = fs->desc.ifdir | 0777;
+    ip.nlink = 2;
+    ip.size = 2 * fs->desc.dirent_size;
+    ip.addr[0] = bno;
+    fs->desc.ops->inode->write_inode(fs, fs->desc.rootino, &ip);
+}
+
+static uint32_t seed_v7(filsys_edition_t *fs)
+{
+    filsys_inode_t ip;
 
     /* inode 1: the (empty) bad-block file, as V7's mkfs writes */
     memset(&ip, 0, sizeof ip);
@@ -103,48 +130,14 @@ static uint32_t seed_v7(filsys_edition_t *fs)
     ip.mode = fs->desc.ifreg;
     fs->desc.ops->inode->write_inode(fs, 1, &ip);
 
-    /* root: a one-block directory with "." and ".." */
-    uint32_t bno;
-    fs->desc.alloc->balloc(fs, &bno);
-    memset(db, 0, fs->desc.bsize);
-    fs->desc.bo->put16(db, fs->desc.rootino);
-    memcpy(db + 2, ".", 1);
-    fs->desc.bo->put16(db + fs->desc.dirent_size, fs->desc.rootino);
-    memcpy(db + fs->desc.dirent_size + 2, "..", 2);
-    fs->desc.ops->write_block(fs, bno, db);
-
-    memset(&ip, 0, sizeof ip);
-    ip.ino = fs->desc.rootino;
-    ip.mode = fs->desc.ifdir | 0777;
-    ip.nlink = 2;
-    ip.size = 2 * fs->desc.dirent_size;
-    ip.addr[0] = bno;
-    fs->desc.ops->inode->write_inode(fs, fs->desc.rootino, &ip);
+    seed_root(fs);
     return 2;
 }
 
 /* V8-family: no bad-block inode; only the root directory is seeded. */
 static uint32_t seed_v8(filsys_edition_t *fs)
 {
-    filsys_inode_t ip;
-    uint8_t db[V7_MAXBSIZE];
-
-    uint32_t bno;
-    fs->desc.alloc->balloc(fs, &bno);
-    memset(db, 0, fs->desc.bsize);
-    fs->desc.bo->put16(db, fs->desc.rootino);
-    memcpy(db + 2, ".", 1);
-    fs->desc.bo->put16(db + fs->desc.dirent_size, fs->desc.rootino);
-    memcpy(db + fs->desc.dirent_size + 2, "..", 2);
-    fs->desc.ops->write_block(fs, bno, db);
-
-    memset(&ip, 0, sizeof ip);
-    ip.ino = fs->desc.rootino;
-    ip.mode = fs->desc.ifdir | 0777;
-    ip.nlink = 2;
-    ip.size = 2 * fs->desc.dirent_size;
-    ip.addr[0] = bno;
-    fs->desc.ops->inode->write_inode(fs, fs->desc.rootino, &ip);
+    seed_root(fs);
     return 1;
 }
 
