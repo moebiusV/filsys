@@ -90,6 +90,15 @@ void v7fs_bfree(filsys_edition_t *fs, uint32_t bno) {
     filsys_instr_bfree(bno);
 }
 
+/* A live inode: the edition's "allocated" bit is set if it has one (V6's
+ * IALLOC -- a freed V6 inode keeps its stale mode bits but has IALLOC clear),
+ * else the mode word is non-zero (V7/V8 free inodes read back as 0).  The
+ * allocator and the free-inode counters must agree here, or an inode one side
+ * treats as free is counted as used by the other. */
+static int inode_live(const filsys_edition_t *fs, uint16_t mode) {
+    return fs->desc.iallocated ? (mode & fs->desc.iallocated) != 0 : mode != 0;
+}
+
 int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
     uint32_t maxino = v7_maxinode(fs);
 
@@ -101,7 +110,7 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
             v7_inode_t ip;
             if (fs->desc.ops->inode->read_inode(fs, cand, &ip))
                 return -EIO;   /* read error, not "in use": don't reclassify */
-            if (ip.mode != 0)
+            if (inode_live(fs, ip.mode))
                 continue;   /* was already allocated; look again */
             memset(&ip, 0, sizeof(ip));
             ip.ino = cand;
@@ -118,7 +127,7 @@ int v7fs_ialloc(filsys_edition_t *fs, uint32_t *ino) {
             v7_inode_t ip;
             if (fs->desc.ops->inode->read_inode(fs, in, &ip))
                 return -EIO;   /* a mid-scan read error must propagate, not truncate */
-            if (ip.mode == 0)
+            if (!inode_live(fs, ip.mode))
                 fs->fl.inode[fs->fl.ninode++] = (uint16_t)in;
         }
         if (fs->fl.ninode == 0)
@@ -198,7 +207,7 @@ uint32_t v7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
     uint32_t maxino = v7_maxinode(f), used = 0;
     for (uint32_t ino = 1; ino <= maxino; ino++) {
         v7_inode_t ip;
-        if (v7fs_read_inode(f, ino, &ip) == 0 && ip.mode != 0)
+        if (v7fs_read_inode(f, ino, &ip) == 0 && inode_live(f, ip.mode))
             used++;
     }
     f->fl.tinode = maxino - used;
@@ -301,7 +310,7 @@ void v7_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
     uint32_t maxino = v7_maxinode(fs), used = 0;
     for (uint32_t ino = 1; ino <= maxino; ino++) {
         v7_inode_t ip;
-        if (v7fs_read_inode(fs, ino, &ip) == 0 && ip.mode != 0)
+        if (v7fs_read_inode(fs, ino, &ip) == 0 && inode_live(fs, ip.mode))
             used++;
     }
     *nino = maxino - used;
@@ -333,7 +342,7 @@ void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
     uint32_t maxino = v6_maxino(fs->isize), used = 0;
     for (uint32_t ino = 1; ino <= maxino; ino++) {
         v7_inode_t ip;
-        if (v6_read_inode(fs, ino, &ip) == 0 && (ip.mode & V6_IALLOC))
+        if (v6_read_inode(fs, ino, &ip) == 0 && inode_live(fs, ip.mode))
             used++;
     }
     *nino = maxino - used;
