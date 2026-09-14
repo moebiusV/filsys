@@ -199,7 +199,10 @@ int filsys_check(filsys_t *fs);
 int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino,
                   filsys_inode_t *ip);
 int filsys_read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip);
-void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st);
+/* Fill *st from *ip.  Returns 0, or -errno if st_blocks cannot be computed (an
+ * unreadable indirect block): st_blocks is then left 0 and the caller should
+ * treat the stat as failed rather than report a silently wrong block count. */
+int filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st);
 
 /* Read a directory's entries into *ents (malloc'd; free() it).  Returns the
  * entry count in *count, or -errno. */

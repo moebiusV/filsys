@@ -782,6 +782,66 @@ static int fault_write(filsys_edition_t *fs, const void *buf, size_t n, off_t of
 }
 static const filsys_io_t fault_io = { fault_read, fault_write };
 
+/* st_blocks error channel: an unreadable indirect block must make
+ * filsys_stat_ino fail with -EIO, not silently report st_blocks == 0.  Drive
+ * the indirect read through the fault-injection transport: count the reads a
+ * clean stat performs, then fail the last one (the indirect block is read
+ * last, after the inode) and require the error to propagate. */
+static void stat_blocks_eio(void) {
+    char img[64] = "test_matrix_stblk_eio.img";
+    unlink(img);
+    filsys_desc_t d = filsys_getformat(FILSYS_V7);
+    uint64_t direct = (uint64_t)d.ndaddr * d.bsize;
+    if (mkfs_image(FILSYS_V7, img, 4000, NULL) != 0) {
+        ok("st_blocks eio mkfs", 0);
+        return;
+    }
+    filsys_t *fs;
+    if (filsys_open(&fs, FILSYS_V7, img, 0, 0, 0, 0, NULL)) {
+        ok("st_blocks eio open", 0);
+        unlink(img);
+        return;
+    }
+
+    /* one byte past the direct slots forces a single indirect block */
+    uint8_t *buf = malloc(direct + 1);
+    memset(buf, 'b', direct + 1);
+    filsys_create(fs, "/f", 0644, 0, 0, NULL);
+    ssize_t wr = filsys_write(fs, "/f", buf, (size_t)(direct + 1), 0);
+    free(buf);
+    filsys_inode_t ip;
+    uint32_t ino;
+    if (wr != (ssize_t)(direct + 1) || filsys_lookup(fs, "/f", &ino, &ip)) {
+        ok("st_blocks eio setup", 0);
+        filsys_close(fs);
+        unlink(img);
+        return;
+    }
+
+    /* count the reads a clean stat performs (arm, never fail, then disarm) */
+    struct stat st;
+    g_fmode = FAIL_READ;
+    g_fail_at = 0x7fffffff;   /* count every read without failing */
+    g_fcount = 0;
+    filsys_set_io(fs, &fault_io);
+    int rc = filsys_stat_ino(fs, ino, &st);
+    int total = g_fcount;
+    g_fmode = FAIL_NONE;
+    ok("st_blocks eio: clean stat succeeds", rc == 0 && total > 0);
+
+    /* fail the last read -- the indirect block -- and require -EIO */
+    g_fmode = FAIL_READ;
+    g_fail_at = total;
+    g_fcount = 0;
+    filsys_set_io(fs, &fault_io);
+    rc = filsys_stat_ino(fs, ino, &st);
+    g_fmode = FAIL_NONE;
+    ok("st_blocks eio: unreadable indirect block -> -EIO", rc == -EIO);
+
+    filsys_close(fs);
+    unlink(img);
+}
+
 /* One mutator: setup builds the preconditions with the fault disabled, op is
  * the single mutation driven at each failing boundary, and max_class is the
  * worst failure class its crash/fault prefixes may legitimately produce (never
@@ -1890,6 +1950,7 @@ int main(void) {
         dir_link_semantics();
         findfs_self_detect();
         query_eof_declines();
+        stat_blocks_eio();
     }
     if (want_fault) fault_test();
     if (want_crash) crash_prefix_test();

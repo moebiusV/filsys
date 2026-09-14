@@ -17,8 +17,7 @@ int fuse_op_getattr(fuse_ctx_t *c, const char *path, struct stat *st)
     int rc = filsys_lookup(c->fs, path, &ino, &ip);
     if (rc)
         return rc;
-    filsys_fill_stat(c->fs, &ip, st);
-    return 0;
+    return filsys_fill_stat(c->fs, &ip, st);
 }
 
 int fuse_op_getattr_ino(fuse_ctx_t *c, uint64_t fh, struct stat *st)

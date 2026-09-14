@@ -516,7 +516,7 @@ int filsys_read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
     return read_inode(fs, ino, ip);
 }
 
-void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
+int filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     memset(st, 0, sizeof(*st));
     st->st_ino   = ip->ino;
     st->st_mode  = mode_to_posix(fs->fs, ip);
@@ -537,11 +537,14 @@ void filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
     /* POSIX: st_blocks counts 512-byte units, not filesystem blocks, and only
      * blocks actually allocated -- a hole (zero block address) is not counted,
      * so a sparse file reports less than st_size implies.  An unreadable
-     * indirect block makes the total unknowable; report zero rather than a
-     * guess, since fill_stat has no error channel. */
+     * indirect block makes the total unknowable; report the error rather than
+     * a guessed (zero) count. */
     uint64_t blocks = 0;
-    if (fs->ops->inode->allocated_blocks(fs->fs, ip, &blocks) == 0)
-        st->st_blocks = (blocks * blksize + 511) / 512;
+    int rc = fs->ops->inode->allocated_blocks(fs->fs, ip, &blocks);
+    if (rc)
+        return rc;
+    st->st_blocks = (blocks * blksize + 511) / 512;
+    return 0;
 }
 
 int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents, size_t *count) {
@@ -1267,8 +1270,7 @@ int filsys_stat_ino(filsys_t *fs, uint32_t ino, struct stat *st) {
     filsys_inode_t ip;
     int rc = read_inode(fs, ino, &ip);
     if (rc) return rc;
-    filsys_fill_stat(fs, &ip, st);
-    return 0;
+    return filsys_fill_stat(fs, &ip, st);
 }
 
 ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) {
