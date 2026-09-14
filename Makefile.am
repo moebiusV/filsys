@@ -73,7 +73,7 @@ fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
 
-EXTRA_DIST = test.sh fetch.sh \
+EXTRA_DIST = test.sh fetch.sh VERSIONING.md \
 	conformance/fuse-conformance.c conformance/fuse-conformance-fuse2.c \
 	conformance/conformance-client.c conformance/run.sh \
 	fuzz/filsys-fuzz.c
