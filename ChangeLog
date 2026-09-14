@@ -1,5 +1,18 @@
 2026-09-13  David Walther  <david@clearbrookdistillery.com>
 
+	* NEWS, configure.ac, configure, filsys.5, findfs.filsys.1,
+	fsck.filsys.1, mkfs.filsys.1, mount.filsys.1, packaging/*: release 4.1.0.
+	* filsys, filsys_detect, mount.filsys, fsck.filsys, v7fs, v1fs, pdp7fs:
+	probe confidence levels (MAGIC/STRUCTURAL/HEURISTIC) and a wrong-edition
+	guard on an explicit -v.
+	* blocktree, v7fs, v1fs, pdp7fs: fold the four allocated_blocks counters
+	into one shared walker.
+	* test_matrix: size the ownership table for PDP-7's fixed geometry, and
+	make the property driver reach the block-free path (its relative path
+	names had made the whole walk a silent no-op).
+
+2026-09-13  David Walther  <david@clearbrookdistillery.com>
+
 	* filsys: split filsys_edition_t into a static descriptor + runtime state.
 	* v7fs: split the file along its allocator and directory seams.
 	* bmap: unify the four per-backend bmaps into filsys_bmap.

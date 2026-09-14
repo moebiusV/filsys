@@ -1,3 +1,28 @@
+filsys 4.1.0 (2026-09-13)
+=========================
+
+A wrong-`-v` can no longer silently mount the wrong filesystem: probes now
+report a confidence level, and an explicit edition is verified before a
+read-write mount.
+
+- detection: every format probe reports a confidence level — `MAGIC` (a
+  superblock magic word matched), `STRUCTURAL` (a chain/root walk passed with
+  no magic), or `HEURISTIC` — surfaced through `filsys_detect()`.  A concrete
+  `-v <edition>` is now probed with that edition as the filter: a read-write
+  `mount.filsys` refuses a mismatch, while read-only mounts and `fsck.filsys`
+  warn and proceed (fsck must still run on a damaged volume).  The refusal
+  names what was actually found, e.g. "volume is v7, sysiii or sysvr1
+  (structural match), not the requested edition".
+- `st_blocks` is now counted by one shared walker in `blocktree.c` instead of
+  four per-edition counters, so it honours each edition's indirect-entry codec
+  (including PDP-7's 18-bit words) and reports 0 for a device inode rather
+  than counting its device number as a block.
+- test harness: the ownership table is now sized for PDP-7's fixed geometry
+  (it was tracking zero blocks, so PDP-7 was invisible to the instrumentation),
+  and the property-based driver actually exercises the block-free path — its
+  relative path names had made every operation fail with `-EINVAL`, turning
+  the whole walk into a silent no-op.
+
 filsys 4.0.0 (2026-09-12)
 =========================
 
