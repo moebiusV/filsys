@@ -680,7 +680,7 @@ GZIP_ENV = --best -n
 # internal per-format layer and stays uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h instrument.c instrument.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h dir_fixed.c dir_bsd211.c alloc_freelist.c alloc_v8bitmap.c
+libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_common.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h instrument.c instrument.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h dir_fixed.c dir_bsd211.c alloc_freelist.c alloc_v8bitmap.c
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h
@@ -713,11 +713,11 @@ fsck_filsys_SOURCES = fsck.filsys.c
 fsck_filsys_LDADD = libfilsys.a
 fsck_filsys_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 dist_man_MANS = filsys.5 mount.filsys.1 findfs.filsys.1 mkfs.filsys.1 fsck.filsys.1
-
-EXTRA_DIST = test.sh fetch.sh VERSIONING.md ROADMAP.md conformance/fuse-conformance.c \
-	conformance/fuse-conformance-fuse2.c \
+EXTRA_DIST = test.sh fetch.sh VERSIONING.md ROADMAP.md \
+	conformance/fuse-conformance.c conformance/fuse-conformance-fuse2.c \
 	conformance/conformance-client.c conformance/run.sh \
 	fuzz/filsys-fuzz.c
+
 test_matrix_SOURCES = test_matrix.c
 test_matrix_LDADD = libfilsys.a
 # test_matrix shells out to ./mkfs.filsys, ./fsck.filsys and ./findfs.filsys, so
@@ -1401,18 +1401,18 @@ test_fuse_unlink_open-test_fuse_unlink_open.obj: test_fuse_unlink_open.c
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_fuse_unlink_open_CFLAGS) $(CFLAGS) -c -o test_fuse_unlink_open-test_fuse_unlink_open.obj `if test -f 'test_fuse_unlink_open.c'; then $(CYGPATH_W) 'test_fuse_unlink_open.c'; else $(CYGPATH_W) '$(srcdir)/test_fuse_unlink_open.c'; fi`
 
 test_matrix-test_matrix.o: test_matrix.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(test_matrix_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -MT test_matrix-test_matrix.o -MD -MP -MF $(DEPDIR)/test_matrix-test_matrix.Tpo -c -o test_matrix-test_matrix.o `test -f 'test_matrix.c' || echo '$(srcdir)/'`test_matrix.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -MT test_matrix-test_matrix.o -MD -MP -MF $(DEPDIR)/test_matrix-test_matrix.Tpo -c -o test_matrix-test_matrix.o `test -f 'test_matrix.c' || echo '$(srcdir)/'`test_matrix.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/test_matrix-test_matrix.Tpo $(DEPDIR)/test_matrix-test_matrix.Po
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_matrix.c' object='test_matrix-test_matrix.o' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(test_matrix_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -c -o test_matrix-test_matrix.o `test -f 'test_matrix.c' || echo '$(srcdir)/'`test_matrix.c
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -c -o test_matrix-test_matrix.o `test -f 'test_matrix.c' || echo '$(srcdir)/'`test_matrix.c
 
 test_matrix-test_matrix.obj: test_matrix.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(test_matrix_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -MT test_matrix-test_matrix.obj -MD -MP -MF $(DEPDIR)/test_matrix-test_matrix.Tpo -c -o test_matrix-test_matrix.obj `if test -f 'test_matrix.c'; then $(CYGPATH_W) 'test_matrix.c'; else $(CYGPATH_W) '$(srcdir)/test_matrix.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -MT test_matrix-test_matrix.obj -MD -MP -MF $(DEPDIR)/test_matrix-test_matrix.Tpo -c -o test_matrix-test_matrix.obj `if test -f 'test_matrix.c'; then $(CYGPATH_W) 'test_matrix.c'; else $(CYGPATH_W) '$(srcdir)/test_matrix.c'; fi`
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/test_matrix-test_matrix.Tpo $(DEPDIR)/test_matrix-test_matrix.Po
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='test_matrix.c' object='test_matrix-test_matrix.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(test_matrix_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -c -o test_matrix-test_matrix.obj `if test -f 'test_matrix.c'; then $(CYGPATH_W) 'test_matrix.c'; else $(CYGPATH_W) '$(srcdir)/test_matrix.c'; fi`
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_matrix_CFLAGS) $(CFLAGS) -c -o test_matrix-test_matrix.obj `if test -f 'test_matrix.c'; then $(CYGPATH_W) 'test_matrix.c'; else $(CYGPATH_W) '$(srcdir)/test_matrix.c'; fi`
 
 test_oracle-test_oracle.o: test_oracle.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(test_oracle_CFLAGS) $(CFLAGS) -MT test_oracle-test_oracle.o -MD -MP -MF $(DEPDIR)/test_oracle-test_oracle.Tpo -c -o test_oracle-test_oracle.o `test -f 'test_oracle.c' || echo '$(srcdir)/'`test_oracle.c
