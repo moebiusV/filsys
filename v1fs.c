@@ -263,33 +263,6 @@ void v1fs_ifree(v1fs_t *fs, uint32_t ino) {
     filsys_instr_ifree(ino);
 }
 
-/* ---- block mapping ------------------------------------------------------ */
-
-/* Single indirect: *slot -> block, entry `idx` (2-byte entries). */
-static int v1fs_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip,
-                                 uint64_t *out) {
-    v1fs_t *f = fs;
-    uint64_t n = 0;
-    if (ip->mode & V1_ILARG) {
-        for (int i = 0; i < V1_NDADDR; i++) {   /* 8 single-indirect slots */
-            uint32_t blk = ip->addr[i];
-            if (blk == 0)
-                continue;
-            uint8_t buf[V1_BSIZE];
-            if (v1fs_read_block(f, blk, buf))
-                return -EIO;
-            n++;   /* the indirect block itself */
-            for (uint32_t j = 0; j < V1_NINDIR; j++)
-                if (bo_get16le(buf + 2 * j)) n++;
-        }
-    } else {
-        for (int i = 0; i < V1_NDADDR; i++)
-            if (ip->addr[i]) n++;
-    }
-    *out = n;
-    return 0;
-}
-
 /* Rebuild the free-block map from the usage bitmap (icheck -s).  Only the
  * data area can be free; the superblock, i-list and device slots stay used. */
 static uint32_t v1fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
@@ -391,7 +364,7 @@ static const struct filsys_inode_ops inode_v1 = {
     .write_inode = v1fs_write_inode,
     .bmap        = filsys_bmap,
     .inode_state = v1_inode_state,
-    .allocated_blocks = v1fs_allocated_blocks,
+    .allocated_blocks = filsys_allocated_blocks,
 };
 
 /* V1 superblock probe (blocks 0+1, dual bitmaps): no boot block, so the

@@ -444,3 +444,67 @@ int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_
     }
     return 0;
 }
+
+/* ---- st_blocks counting (the allocated_blocks op) --------------------------
+ *
+ * The count of allocated data + indirect blocks, for st_blocks: a zero address
+ * is a hole and contributes nothing.  This is the third walk over the same
+ * structure mark and truncate share, so it goes through the descriptor codec
+ * (ind_get) and slot topology (filsys_slot_level) rather than a per-edition
+ * hand-rolled count.  A device inode has no data blocks (addr[0] is a device
+ * number), so it is skipped exactly as filsys_itrunc skips it. */
+
+/* Count the blocks in the subtree rooted at the indirect block `blk`, which has
+ * `levels` more levels of indirection below it (0 = single indirect: the block
+ * holds data pointers; 1 = double; 2 = triple).  Counts the block itself. */
+static int count_indirect(filsys_edition_t *fs, uint32_t blk, int levels, uint64_t *out) {
+    if (blk == 0) {
+        *out = 0;
+        return 0;
+    }
+    uint8_t buf[V7_MAXBSIZE];
+    if (fs->desc.ops->read_block(fs, blk, buf))
+        return -EIO;   /* unreadable: the count cannot be trusted */
+    uint64_t n = 1;    /* the indirect block itself */
+    for (uint32_t i = 0; i < fs->desc.nindir; i++) {
+        uint32_t sub = ind_get(fs, buf, i);
+        if (sub == 0)
+            continue;
+        if (levels == 0) {
+            n++;
+        } else {
+            uint64_t subn;
+            int rc = count_indirect(fs, sub, levels - 1, &subn);
+            if (rc)
+                return rc;
+            n += subn;
+        }
+    }
+    *out = n;
+    return 0;
+}
+
+int filsys_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip, uint64_t *out) {
+    if (!is_data_inode(fs, ip)) {
+        *out = 0;
+        return 0;
+    }
+    uint64_t n = 0;
+    for (int i = 0; i < fs->desc.niaddr; i++) {
+        uint32_t a = ip->addr[i];
+        if (a == 0)
+            continue;
+        int level = filsys_slot_level(fs, ip->mode, i);
+        if (level < 0) {
+            n++;   /* direct block */
+        } else {
+            uint64_t sub;
+            int rc = count_indirect(fs, a, level, &sub);
+            if (rc)
+                return rc;
+            n += sub;
+        }
+    }
+    *out = n;
+    return 0;
+}

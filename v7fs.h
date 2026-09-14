@@ -681,6 +681,12 @@ int filsys_itrunc_from(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t first_
 int filsys_bmap(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t lbn, int create,
                 uint32_t *bno);
 
+/* Count the allocated data + indirect blocks of an inode (the shared
+ * allocated_blocks op, for st_blocks): direct slots count 1 each, indirect slots
+ * their whole subtree via ind_get; a device inode counts 0.  Returns 0/-errno. */
+int filsys_allocated_blocks(filsys_edition_t *fs, const filsys_inode_t *ip,
+                            uint64_t *out);
+
 /* ---- shared maintenance (check.c): ncheck / clri / preen / resolve-dups -- */
 
 int filsys_ncheck(filsys_edition_t *fs, uint32_t ino);
