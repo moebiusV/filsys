@@ -55,8 +55,8 @@ struct open_handle {
 
 struct filsys {
     const struct filsys_ops *ops;
-    filsys_desc_t               fmt;      /* the format descriptor (by value) */
-    filsys_edition_t *fs;                  /* backend state (filsys_edition_t / v1fs_t / p7fs_t) */
+    filsys_edition_t *fs;                  /* backend state (filsys_edition_t / v1fs_t / p7fs_t);
+                                             * its .desc is the one authoritative descriptor */
     int ver;
     uid_t uid;                 /* reported ownership (default: the mounting user) */
     gid_t gid;
@@ -323,7 +323,6 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
     if (!fs)
         return -ENOMEM;
     fs->ver = edition;
-    fs->fmt = fmt;
     fs->ops = fmt.ops;
     fs->uid = uid;
     fs->gid = gid;
@@ -640,7 +639,7 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
 static int resolve_parent(filsys_t *fs, const char *path,
                           uint32_t *dino, filsys_inode_t *ddir, char *name) {
     char dir[PATH_MAX];
-    int rc = split_path(path, dir, sizeof dir, name, fs->fmt.max_namlen + 1);
+    int rc = split_path(path, dir, sizeof dir, name, fs->fs->desc.max_namlen + 1);
     if (rc) return rc;
     return lookup(fs, dir, dino, ddir);
 }
@@ -959,7 +958,7 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
 
 int filsys_unlink(filsys_t *fs, const char *path) {
     char dir[PATH_MAX], name[64];
-    int rc = split_path(path, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
+    int rc = split_path(path, dir, sizeof(dir), name, fs->fs->desc.max_namlen + 1);
     if (rc) return rc;
     filsys_inode_t ip;
     uint32_t ino;
@@ -1023,7 +1022,7 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
  * Callers must fail closed: a negative result is not "safe", it is "unknown". */
 static int dir_ancestor(filsys_t *fs, uint32_t anc_ino, uint32_t dir_ino) {
     uint32_t cur = dir_ino, guard = 0;
-    while (cur != (uint32_t)fs->fmt.rootino && cur != 0 && guard++ < 65536) {
+    while (cur != (uint32_t)fs->fs->desc.rootino && cur != 0 && guard++ < 65536) {
         if (cur == anc_ino)
             return 1;
         filsys_inode_t ip;
@@ -1103,9 +1102,9 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     int isdir = mode_is_dir(fs->fs, &sip);
 
     char fdir[PATH_MAX], fname[64];
-    split_path(from, fdir, sizeof(fdir), fname, fs->fmt.max_namlen + 1);
+    split_path(from, fdir, sizeof(fdir), fname, fs->fs->desc.max_namlen + 1);
     char tdir[PATH_MAX], tname[64];
-    rc = split_path(to, tdir, sizeof(tdir), tname, fs->fmt.max_namlen + 1);
+    rc = split_path(to, tdir, sizeof(tdir), tname, fs->fs->desc.max_namlen + 1);
     if (rc) return rc;
 
     filsys_inode_t tdirip;
@@ -1344,13 +1343,13 @@ int filsys_stat_ino(filsys_t *fs, uint32_t ino, struct stat *st) {
 }
 
 ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) {
-    if (!fs->fmt.iflnk)
+    if (!fs->fs->desc.iflnk)
         return -ENOSYS;   /* this edition predates symlinks */
     filsys_inode_t ip;
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
     if (rc) return rc;
-    if ((ip.mode & fs->fmt.ifmt) != fs->fmt.iflnk)
+    if ((ip.mode & fs->fs->desc.ifmt) != fs->fs->desc.iflnk)
         return -EINVAL;
     size_t n = ip.size < size ? ip.size : size;
     if (n == 0)
@@ -1359,7 +1358,7 @@ ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) 
 }
 
 int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {
-    if (!fs->fmt.iflnk)
+    if (!fs->fs->desc.iflnk)
         return -ENOSYS;   /* this edition predates symlinks */
     int rc = uidgid_fit(fs->uid, fs->gid);
     if (rc) return rc;
@@ -1439,6 +1438,6 @@ int filsys_statfs(filsys_t *fs, struct statvfs *st) {
     memset(st, 0, sizeof(*st));
     st->f_bsize = st->f_frsize = fs->ops->blocksize(&fs->fs->desc);
     fs->ops->statfs(fs->fs, st);
-    st->f_namemax = fs->fmt.max_namlen;
+    st->f_namemax = fs->fs->desc.max_namlen;
     return 0;
 }
