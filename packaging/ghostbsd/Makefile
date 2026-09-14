@@ -4,7 +4,7 @@
 # GhostBSD build is pinned and checksummed alongside the other BSDs.
 
 PORTNAME=	filsys
-PORTVERSION=	4.1.0
+PORTVERSION=	4.1.1
 CATEGORIES=	sysutils
 MASTER_SITES=	https://github.com/moebiusV/filsys/releases/download/v${PORTVERSION}/
 

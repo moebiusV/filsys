@@ -1,3 +1,17 @@
+filsys 4.1.1 (2026-09-14)
+=========================
+
+Two bug fixes.
+
+- `fsck.filsys -i` no longer spins forever on end-of-input: `filsys_query()`
+  treated EOF as "read again", so a non-tty stdin (/dev/null or a closed pipe)
+  printed the prompt in a tight loop.  End-of-input now declines the repair.
+- A `stat` whose indirect block is unreadable now fails with `-EIO` instead of
+  silently reporting `st_blocks == 0`: `filsys_fill_stat()` had no error
+  channel, so the `-EIO` the `allocated_blocks` vtable already returned was
+  dropped.  The error now propagates through `filsys_stat_ino` and the FUSE
+  getattr.
+
 filsys 4.1.0 (2026-09-13)
 =========================
 

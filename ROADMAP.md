@@ -1,6 +1,6 @@
 # Roadmap
 
-filsys is at 4.1.0.  Version numbers follow [Semantic Versioning](https://semver.org/)
+filsys is at 4.1.1.  Version numbers follow [Semantic Versioning](https://semver.org/)
 per [VERSIONING.md](VERSIONING.md).
 
 ## Shipped

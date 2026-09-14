@@ -1,3 +1,10 @@
+filsys (4.1.1-1) unstable; urgency=medium
+
+  * fsck -i no longer spins on end-of-input, and stat now returns -EIO when an
+    indirect block is unreadable instead of silently reporting st_blocks == 0.
+
+ -- David Walther <david@clearbrookdistillery.com>  Mon, 14 Sep 2026 00:00:00 +0000
+
 filsys (4.1.0-1) unstable; urgency=medium
 
   * New upstream release: format probes report a confidence level and an

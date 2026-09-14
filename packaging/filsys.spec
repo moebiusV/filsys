@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        4.1.0
+Version:        4.1.1
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
 
@@ -49,6 +49,10 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Mon Sep 14 2026 David Walther <david@clearbrookdistillery.com> - 4.1.1-1
+- fsck -i no longer spins on end-of-input; stat returns -EIO when an indirect
+  block is unreadable instead of silently reporting st_blocks == 0.
+
 * Sun Sep 13 2026 David Walther <david@clearbrookdistillery.com> - 4.1.0-1
 - Format probes report a confidence level and an explicit -v is verified
   before a read-write mount, so a mis-decoded superblock is refused rather

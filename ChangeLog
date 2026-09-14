@@ -1,3 +1,13 @@
+2026-09-14  David Walther  <david@clearbrookdistillery.com>
+
+	* filsys_ops.h, filsys.c, fuse_core.c, filsys.h: filsys_fill_stat() now
+	returns an error and it propagates through filsys_stat_ino and the FUSE
+	getattr, so an unreadable indirect block fails the stat instead of silently
+	reporting st_blocks == 0.
+	* filsys_ops.h, test_matrix.c: filsys_query() declines on end-of-input
+	instead of re-reading EOF forever; regression pipes /dev/null into the
+	prompt, bounded by an alarm.
+
 2026-09-13  David Walther  <david@clearbrookdistillery.com>
 
 	* NEWS, configure.ac, configure, filsys.5, findfs.filsys.1,
