@@ -342,12 +342,15 @@ int main(int argc, char **argv)
         }
     } else if (have_det_geom) {
         int gerr = filsys_apply_geom(&fs.desc, edition, &det_geom, &errmsg);
-        free(det_geom.byteorder);
         if (gerr) {
             fprintf(stderr, "fsck.filsys: %s\n", errmsg ? errmsg : "bad geometry");
             return 2;
         }
     }
+    /* det_geom.byteorder is strdup'd by the -v unix/-v v10 detect path above and
+     * freed here regardless of which geometry branch applied (the -g branch does
+     * not own it).  Freeing NULL is a no-op for every other edition. */
+    free(det_geom.byteorder);
     int rc = filsys_resolve_byteorder(&fs.desc, path, offblock * fs.desc.bsize, arch,
                                       force_arch, &errmsg);
     if (rc < 0) {
