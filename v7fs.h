@@ -223,7 +223,17 @@ enum {
     BSD211_NINDIR     = 256,    /* 4-byte addresses per indirect block (1024/4) */
     BSD211_MAXNAMLEN  = 63,
     BSD211_DIRBLKSIZ  = 512,    /* directory framing (still 512 inside 1024 blocks) */
+    BSD211_DIRHDRSZ   = 6,      /* d_ino + d_reclen + d_namlen */
+    BSD211_DIRMINSZ   = 8,      /* dirsiz(0): the smallest legal record */
 };
+
+/* Rounded record length: the 6-byte header plus the name plus its NUL, padded
+ * to a 4-byte multiple (2.11BSD dirents are 4-byte aligned).  Shared by the
+ * directory codec (dir_bsd211.c) and mkfs's root seeding, which must agree on
+ * the encoding or one will mis-parse the other's records. */
+static inline uint32_t bsd211_dirsiz(uint16_t namlen) {
+    return (7u + namlen + 3u) & ~3u;
+}
 
 /* di_mode type/mode bits.  Note IFLNK (symlink) and IFSOCK. */
 enum {
@@ -363,6 +373,10 @@ typedef struct filsys_desc {
     uint8_t     isize_count;        /* s_isize counts i-list blocks (V6) vs first data block (V7) */
     uint32_t    nindir;             /* block pointers per indirect block */
     uint32_t    ilarg_mask;         /* mode bit marking a "large" file (0 = none) */
+    uint32_t    iallocated;         /* mode bit every live inode carries (0 = none).
+                                     * V6's IALLOC: a created inode without it reads
+                                     * back as free.  V1/PDP-7 set theirs inside their
+                                     * own to_disk_mode. */
     uint8_t     large_single;       /* single-indirect slots in the large layout */
     uint8_t     large_double;       /* double-indirect slots in the large layout (0/1) */
     uint8_t     badino;             /* bad-block inode (records bad i-list blocks; 0 = none).

@@ -13,10 +13,73 @@
 #include "check.h"
 #include "instrument.h"
 
-/* Rounded entry length: 7 bytes of fixed header + name, padded to a 4-byte
- * multiple (2.11BSD dirents are 4-byte aligned). */
-static inline uint32_t bsd211_dirsiz(uint16_t namlen) {
-    return (7u + namlen + 3u) & ~3u;
+/* ---- validated record iteration ------------------------------------------
+ *
+ * Every read/add/remove walk goes through this one iterator, so the bounds
+ * rules are stated once.  A record is accepted only if it is 4-byte aligned,
+ * its header is inside the buffer, its length is a legal multiple of four that
+ * does not run past the end, and its name (plus the NUL 2.11BSD stores) fits
+ * inside the record.  Anything else ends the walk: a truncated or foreign
+ * directory yields the entries up to the damage rather than a parse that reads
+ * or writes past the buffer.
+ *
+ * The name bound matters as much as the record bound: d_namlen is attacker-
+ * controlled on a foreign image and is what the copies below are sized by. */
+typedef struct {
+    const uint8_t       *buf;
+    size_t               n;
+    const filsys_desc_t *desc;
+    size_t               off;     /* offset of the record just returned */
+    uint16_t             ino;
+    uint16_t             reclen;
+    uint16_t             namlen;
+    const uint8_t       *name;
+} bsd211_iter_t;
+
+static void bsd211_iter_init(bsd211_iter_t *it, const filsys_desc_t *desc,
+                             const uint8_t *buf, size_t n) {
+    memset(it, 0, sizeof *it);
+    it->buf = buf;
+    it->n = n;
+    it->desc = desc;
+    it->off = 0;
+    it->reclen = 0;
+}
+
+/* Advance to the next valid record.  Returns 1 on a record, 0 at the end of the
+ * directory or at the first malformed record. */
+static int bsd211_iter_next(bsd211_iter_t *it) {
+    size_t off = it->off + it->reclen;      /* reclen is 0 before the first call */
+    if (off & 3u)
+        return 0;                            /* misaligned: stop */
+    if (off + BSD211_DIRHDRSZ > it->n)
+        return 0;
+    uint16_t ino    = it->desc->bo->get16(it->buf + off);
+    uint16_t reclen = it->desc->bo->get16(it->buf + off + 2);
+    uint16_t namlen = it->desc->bo->get16(it->buf + off + 4);
+    if (reclen < BSD211_DIRMINSZ || (reclen & 3u) || off + reclen > it->n)
+        return 0;
+    if ((uint32_t)namlen + 7u > reclen || namlen > it->desc->max_namlen)
+        return 0;
+    it->off    = off;
+    it->ino    = ino;
+    it->reclen = reclen;
+    it->namlen = namlen;
+    it->name   = it->buf + off + BSD211_DIRHDRSZ;
+    return 1;
+}
+
+/* Read the whole directory into a malloc'd buffer.  *n receives the byte count.
+ * The caller frees. */
+static int bsd211_slurp(filsys_edition_t *fs, v7_inode_t *ip, uint8_t **out, size_t *n) {
+    uint8_t *buf = malloc(ip->size ? ip->size : 1);
+    if (!buf)
+        return -ENOMEM;
+    ssize_t got = v7fs_file_read(fs, ip, buf, ip->size, 0);
+    if (got < 0) { free(buf); return (int)got; }
+    *out = buf;
+    *n = (size_t)got;
+    return 0;
 }
 
 int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count) {
@@ -24,29 +87,35 @@ int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, si
         return -ENOTDIR;
     if (ip->size > (uint64_t)(fs->fsize - fs->isize) * fs->desc.bsize)
         return -EFBIG;
-    size_t cap = ip->size / 12 + 1;
-    v7_dirent_t *out = calloc(cap, sizeof(*out));
-    if (!out)
-        return -ENOMEM;
-    uint8_t *buf = malloc(ip->size ? ip->size : 1);
-    if (!buf) { free(out); return -ENOMEM; }
-    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) { free(buf); free(out); return (int)n; }
+
+    uint8_t *buf = NULL;
+    size_t n = 0;
+    int rc = bsd211_slurp(fs, ip, &buf, &n);
+    if (rc)
+        return rc;
+
+    /* Count first, then allocate exactly.  The old code sized the array from
+     * size/12, but the smallest record this format can hold is eight bytes
+     * (dirsiz(1)), so a directory of short names overflowed it. */
+    bsd211_iter_t it;
+    size_t live = 0;
+    bsd211_iter_init(&it, &fs->desc, buf, n);
+    while (bsd211_iter_next(&it))
+        if (it.ino != 0)
+            live++;
+
+    v7_dirent_t *out = calloc(live + 1, sizeof *out);
+    if (!out) { free(buf); return -ENOMEM; }
 
     size_t cnt = 0;
-    for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t ino    = fs->desc.bo->get16(buf + off);
-        uint16_t reclen = fs->desc.bo->get16(buf + off + 2);
-        uint16_t namlen = fs->desc.bo->get16(buf + off + 4);
-        if (reclen < 6 || off + reclen > (size_t)n)
-            break;
-        if (ino != 0 && namlen <= fs->desc.max_namlen) {
-            out[cnt].ino = ino;
-            memcpy(out[cnt].name, buf + off + 6, namlen);
-            out[cnt].name[namlen] = 0;
-            cnt++;
-        }
-        off += reclen;
+    bsd211_iter_init(&it, &fs->desc, buf, n);
+    while (bsd211_iter_next(&it) && cnt < live) {
+        if (it.ino == 0)
+            continue;
+        out[cnt].ino = it.ino;
+        memcpy(out[cnt].name, it.name, it.namlen);
+        out[cnt].name[it.namlen] = 0;
+        cnt++;
     }
     free(buf);
     *ents = out;
@@ -56,70 +125,76 @@ int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, si
 
 int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name) {
     size_t namlen = strlen(name);
-    if (namlen > fs->desc.max_namlen)
+    if (namlen == 0 || namlen > fs->desc.max_namlen)
         return -ENAMETOOLONG;
+    if (strchr(name, '/'))
+        return -EINVAL;
     uint32_t need = bsd211_dirsiz((uint16_t)namlen);
 
-    uint8_t *buf = malloc(ip->size ? ip->size : 1);
-    if (!buf)
-        return -ENOMEM;
-    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) { free(buf); return (int)n; }
+    uint8_t *buf = NULL;
+    size_t n = 0;
+    int rc = bsd211_slurp(fs, ip, &buf, &n);
+    if (rc)
+        return rc;
 
     /* Reuse a free entry (d_ino == 0) that is big enough. */
-    for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t d_ino    = fs->desc.bo->get16(buf + off);
-        uint16_t reclen   = fs->desc.bo->get16(buf + off + 2);
-        if (reclen < 6 || off + reclen > (size_t)n)
-            break;
-        if (d_ino == 0 && reclen >= need) {
-            memset(buf + off, 0, reclen);
-            fs->desc.bo->put16(buf + off, (uint16_t)ino);
-            fs->desc.bo->put16(buf + off + 2, reclen);
-            fs->desc.bo->put16(buf + off + 4, (uint16_t)namlen);
-            memcpy(buf + off + 6, name, namlen);
-            ssize_t w = v7fs_file_write(fs, ip, buf, ip->size, 0);
-            free(buf);
-            return w < 0 ? (int)w : 0;
-        }
-        off += reclen;
+    bsd211_iter_t it;
+    bsd211_iter_init(&it, &fs->desc, buf, n);
+    while (bsd211_iter_next(&it)) {
+        if (it.ino != 0 || it.reclen < need)
+            continue;
+        uint16_t reclen = it.reclen;
+        memset(buf + it.off, 0, reclen);
+        fs->desc.bo->put16(buf + it.off, (uint16_t)ino);
+        fs->desc.bo->put16(buf + it.off + 2, reclen);
+        fs->desc.bo->put16(buf + it.off + 4, (uint16_t)namlen);
+        memcpy(buf + it.off + BSD211_DIRHDRSZ, name, namlen);
+        ssize_t w = v7fs_file_write(fs, ip, buf, n, 0);
+        free(buf);
+        return w < 0 ? (int)w : 0;
     }
 
-    /* Append a new entry at the end (the directory grows). */
-    uint8_t ent[80];
-    memset(ent, 0, sizeof(ent));
+    /* Append a new entry at the end (the directory grows).  The append offset
+     * is the end of the last *valid* record, not ip->size: a directory whose
+     * tail is damaged must not have new records stacked behind the damage. */
+    size_t end = 0;
+    bsd211_iter_init(&it, &fs->desc, buf, n);
+    while (bsd211_iter_next(&it))
+        end = it.off + it.reclen;
+    free(buf);
+    if (end & 3u)
+        return -EIO;
+
+    uint8_t ent[BSD211_DIRHDRSZ + BSD211_MAXNAMLEN + 4];
+    memset(ent, 0, sizeof ent);
     fs->desc.bo->put16(ent, (uint16_t)ino);
     fs->desc.bo->put16(ent + 2, (uint16_t)need);
     fs->desc.bo->put16(ent + 4, (uint16_t)namlen);
-    memcpy(ent + 6, name, namlen);
-    ssize_t w = v7fs_file_write(fs, ip, ent, need, n);
-    free(buf);
+    memcpy(ent + BSD211_DIRHDRSZ, name, namlen);
+    ssize_t w = v7fs_file_write(fs, ip, ent, need, (off_t)end);
     return w < 0 ? (int)w : 0;
 }
 
 int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
-    uint8_t *buf = malloc(ip->size ? ip->size : 1);
-    if (!buf)
-        return -ENOMEM;
-    ssize_t n = v7fs_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) { free(buf); return (int)n; }
+    size_t namlen = strlen(name);
+    uint8_t *buf = NULL;
+    size_t n = 0;
+    int rc = bsd211_slurp(fs, ip, &buf, &n);
+    if (rc)
+        return rc;
 
-    for (size_t off = 0; off + 6 <= (size_t)n; ) {
-        uint16_t d_ino    = fs->desc.bo->get16(buf + off);
-        uint16_t reclen   = fs->desc.bo->get16(buf + off + 2);
-        uint16_t namlen   = fs->desc.bo->get16(buf + off + 4);
-        if (reclen < 6 || off + reclen > (size_t)n)
-            break;
-        if (d_ino != 0 && namlen == strlen(name) &&
-            memcmp(buf + off + 6, name, namlen) == 0) {
-            fs->desc.bo->put16(buf + off, 0);   /* mark free */
-            ssize_t w = v7fs_file_write(fs, ip, buf, ip->size, 0);
-            free(buf);
-            return w < 0 ? (int)w : 0;
-        }
-        off += reclen;
+    bsd211_iter_t it;
+    bsd211_iter_init(&it, &fs->desc, buf, n);
+    while (bsd211_iter_next(&it)) {
+        if (it.ino == 0 || it.namlen != namlen)
+            continue;
+        if (memcmp(it.name, name, namlen) != 0)
+            continue;
+        fs->desc.bo->put16(buf + it.off, 0);   /* mark free */
+        ssize_t w = v7fs_file_write(fs, ip, buf, n, 0);
+        free(buf);
+        return w < 0 ? (int)w : 0;
     }
     free(buf);
     return -ENOENT;
 }
-

@@ -173,7 +173,8 @@ static uint32_t seed_v6(filsys_edition_t *fs)
     return 1;
 }
 
-static uint32_t bsd211_dirsiz(uint16_t namlen) { return (7u + namlen + 3u) & ~3u; }
+/* bsd211_dirsiz lives in v7fs.h: mkfs and the directory codec must encode
+ * records identically. */
 
 static uint32_t seed_bsd211(filsys_edition_t *fs)
 {

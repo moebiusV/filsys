@@ -165,7 +165,7 @@ static const filsys_desc_t v6 = {
     .nicfree = V6_NICFREE, .nicinod = V6_NICINOD,
     .inode_size = V6_INODESZ, .ndaddr = V6_NDADDR, .niaddr = V6_NIADDR,
     .daddr_wid = 2, .df_nfree_wid = 2, .nindir = V6_NINDIR, .isize_count = 1, .has_fmod = 1, .size_bits = 24, .rootino = V6_ROOTINO,
-    .ilarg_mask = V6_ILARG, .large_single = 7, .large_double = 1,
+    .ilarg_mask = V6_ILARG, .iallocated = V6_IALLOC, .large_single = 7, .large_double = 1,
     .max_namlen = V6_DIRSIZ, .dirent_size = 2 + V6_DIRSIZ,
     .ifmt = V6_IFMT, .ifdir = V6_IFDIR, .ifchr = V6_IFCHR, .ifblk = V6_IFBLK,
 };

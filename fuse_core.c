@@ -175,19 +175,27 @@ int fuse_op_access(fuse_ctx_t *c, const char *path, int mask)
         return rc;
     if ((mask & W_OK) && filsys_is_readonly(k))
         return -EROFS;
+    /* Check the same POSIX mode stat() reports, not the raw on-disk word: V1
+     * and PDP-7 lay their permission bits out differently (V1's owner-read is
+     * 010, not 0400), so shifting ip.mode made access() contradict stat(). */
+    struct stat st;
+    rc = filsys_fill_stat(k, &ip, &st);
+    if (rc)
+        return rc;
+    mode_t pm = st.st_mode;
     /* The whole image is reported as owned by the mounting user (fill_stat
      * st_uid/st_gid), so compare against that, not the on-disk V7 uids. */
     int bits;
     if (c->uid == 0) {
         /* root: R/W always allowed; X_OK needs at least one exec bit set */
-        return (mask & X_OK) && !(ip.mode & 0111) ? -EACCES : 0;
+        return (mask & X_OK) && !(pm & 0111) ? -EACCES : 0;
     }
     if (c->uid == filsys_uid(k))
-        bits = (ip.mode >> 6) & 7;          /* owner */
+        bits = (pm >> 6) & 7;               /* owner */
     else if (c->gid == filsys_gid(k))
-        bits = (ip.mode >> 3) & 7;          /* group (primary gid only) */
+        bits = (pm >> 3) & 7;               /* group (primary gid only) */
     else
-        bits = ip.mode & 7;                 /* other */
+        bits = pm & 7;                      /* other */
     if ((mask & R_OK) && !(bits & 4)) return -EACCES;
     if ((mask & W_OK) && !(bits & 2)) return -EACCES;
     if ((mask & X_OK) && !(bits & 1)) return -EACCES;

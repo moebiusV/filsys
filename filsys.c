@@ -106,7 +106,10 @@ static int mode_is_device(const filsys_edition_t *f, const filsys_inode_t *ip) {
 static uint32_t mode_to_disk(const filsys_edition_t *f, mode_t m, int type) {
     if (f->desc.to_disk_mode)
         return f->desc.to_disk_mode(f, m, type);
-    uint32_t base = (uint32_t)(m & 07777);
+    /* `iallocated` is V6's IALLOC: the editions whose regular-file type is 0
+     * still need a bit that distinguishes a live inode from a free one, or the
+     * allocator hands the new inode straight back out. */
+    uint32_t base = (uint32_t)(m & 07777) | f->desc.iallocated;
     switch (type) {
     case FILSYS_FT_DIR: return base | f->desc.ifdir;
     case FILSYS_FT_CHR: return base | f->desc.ifchr;
@@ -118,7 +121,12 @@ static uint32_t mode_to_disk(const filsys_edition_t *f, mode_t m, int type) {
 static uint32_t mode_chmod(const filsys_edition_t *f, uint32_t old, mode_t m) {
     if (f->desc.chmod_mode)
         return f->desc.chmod_mode(f, old, m);
-    return (old & f->desc.ifmt) | ((uint32_t)m & 07777);
+    /* Replace the permission bits and preserve everything else.  Masking with
+     * ifmt instead would drop the structural flags that live outside it -- V6's
+     * ILARG most damagingly, which reinterprets addr[] as indirect blocks, so a
+     * chmod on a large file silently changed which data it named. */
+    (void)f;
+    return (old & ~(uint32_t)07777) | ((uint32_t)m & 07777);
 }
 
 /* The on-disk uid/gid is 16-bit; a modern uid like 70000 would silently wrap
@@ -637,6 +645,58 @@ static int resolve_parent(filsys_t *fs, const char *path,
     return lookup(fs, dir, dino, ddir);
 }
 
+/* Preflight for every namespace-creating op (create, mkdir, mknod, symlink).
+ * Resolves the parent, then applies the two checks each op used to be missing:
+ * the parent must be a directory (otherwise a dirent gets written into the
+ * middle of a regular file), and the final name must be free (otherwise two
+ * entries with the same name end up pointing at different inodes, which no
+ * later fsck pass reports).  Read-only: nothing here writes, so a failure
+ * leaves the image untouched.  Lookup errors other than -ENOENT are preserved
+ * -- an -EIO reading the parent must not be mistaken for "the name is free". */
+static int prepare_create(filsys_t *fs, const char *path,
+                          uint32_t *dino, filsys_inode_t *ddir, char *name) {
+    int rc = resolve_parent(fs, path, dino, ddir, name);
+    if (rc) return rc;
+    if (!mode_is_dir(fs->fs, ddir))
+        return -ENOTDIR;
+    if (!strcmp(name, ".") || !strcmp(name, ".."))
+        return -EEXIST;
+    uint32_t present;
+    rc = dir_lookup(fs, ddir, name, &present);
+    if (rc == 0)
+        return -EEXIST;
+    return rc == -ENOENT ? 0 : rc;
+}
+
+/* Undo a name that a *failed* dir_add may nonetheless have left on disk.
+ *
+ * dir_add commits the directory's data blocks before the parent inode, so a
+ * failure at the inode write can still have made the name visible -- most
+ * plainly when the record reused a slot freed earlier, where no size change was
+ * needed.  Callers used to read a non-zero return as "the name never landed"
+ * and free the new inode, leaving a directory entry on a free inode that the
+ * next ialloc hands to an unrelated file (class D aliasing).
+ *
+ * So don't infer: re-read the parent from disk and look.  Returns 0 if the name
+ * is now definitely absent and the inode is safe to destroy, or -errno if it
+ * may still be reachable -- in which case the caller leaves the inode live, and
+ * the leftover is a file under a name the caller did not want (class C) rather
+ * than two names sharing one inode. */
+static int withdraw_name(filsys_t *fs, uint32_t dino, const char *name, uint32_t nino) {
+    filsys_inode_t fresh;
+    int rc = read_inode(fs, dino, &fresh);
+    if (rc) return rc;
+    uint32_t found;
+    rc = dir_lookup(fs, &fresh, name, &found);
+    if (rc == -ENOENT)
+        return 0;               /* the name never landed */
+    if (rc)
+        return rc;              /* can't tell: assume it did */
+    if (found != nino)
+        return 0;               /* not the entry we made */
+    return dir_remove(fs, &fresh, name);
+}
+
 /* Allocate a fresh inode of `type`, initialise its mode/ownership/timestamps,
  * and persist it.  nlink is 2 for a directory (its own "." plus the parent
  * entry), 1 otherwise; a device carries its packed (major<<8)|minor number in
@@ -731,21 +791,23 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
     char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    rc = resolve_parent(fs, path, &dino, &ddir, name);
+    rc = prepare_create(fs, path, &dino, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
     filsys_inode_t nip;
     rc = inode_create(fs, mode, uid, gid, FILSYS_FT_REG, 0, &nino, &nip);
     if (rc) return rc;
-    rc = dir_add(fs, &ddir, nino, name);
-    if (rc) {
-        /* rollback: the name never landed -- tear the inode down.  inode_destroy
-         * frees it only once the clear has persisted; a failed teardown leaves
-         * it allocated -- a recoverable leak (B), not live state returned to the
-         * allocator (D). */
-        (void)inode_destroy(fs, nino, &nip);
-        return rc;
+    int arc = dir_add(fs, &ddir, nino, name);
+    if (arc) {
+        /* rollback: confirm the name is gone before tearing the inode down.
+         * inode_destroy frees it only once the clear has persisted; a failed
+         * teardown leaves it allocated -- a recoverable leak (B), not live state
+         * returned to the allocator (D).  If the name cannot be withdrawn, keep
+         * the inode: a reachable file (C) beats a dangling entry (D). */
+        if (withdraw_name(fs, dino, name, nino) == 0)
+            (void)inode_destroy(fs, nino, &nip);
+        return arc;
     }
     if (ino)
         *ino = nino;
@@ -758,7 +820,7 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    rc = resolve_parent(fs, path, &dino, &ddir, name);
+    rc = prepare_create(fs, path, &dino, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
@@ -770,7 +832,14 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     rc = dir_add(fs, &nip, dino, "..");
     if (rc) goto fail;
     rc = dir_add(fs, &ddir, nino, name);
-    if (rc) goto fail;
+    if (rc) {
+        /* The entry may have landed even though dir_add failed; withdraw it
+         * before `fail` frees the inode (see withdraw_name).  If it cannot be
+         * withdrawn, the new directory stays live under that name (C). */
+        if (withdraw_name(fs, dino, name, nino) != 0)
+            return rc;
+        goto fail;
+    }
     ddir.nlink++;
     rc = write_inode(fs, dino, &ddir);
     if (rc) {
@@ -843,7 +912,7 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    int rc = resolve_parent(fs, path, &dino, &ddir, name);
+    int rc = prepare_create(fs, path, &dino, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
@@ -854,10 +923,11 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     if (rc) return rc;
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
-        /* rollback: the name never landed -- tear the inode down (see
+        /* rollback: withdraw the name first, then tear the inode down (see
          * filsys_create).  A failed teardown leaves a recoverable leak (B),
          * never state returned live to the free list (D). */
-        (void)inode_destroy(fs, nino, &nip);
+        if (withdraw_name(fs, dino, name, nino) == 0)
+            (void)inode_destroy(fs, nino, &nip);
     }
     return rc;
 }
@@ -1293,39 +1363,32 @@ int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {
         return -ENOSYS;   /* this edition predates symlinks */
     int rc = uidgid_fit(fs->uid, fs->gid);
     if (rc) return rc;
-    char dir[PATH_MAX], name[64];
-    rc = split_path(linkpath, dir, sizeof(dir), name, fs->fmt.max_namlen + 1);
-    if (rc) return rc;
+    char name[64];
     filsys_inode_t ddir;
     uint32_t dino;
-    rc = lookup(fs, dir, &dino, &ddir);
+    rc = prepare_create(fs, linkpath, &dino, &ddir, name);
     if (rc) return rc;
+    /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
-    rc = ialloc(fs, &nino);
-    if (rc) return rc;
     filsys_inode_t nip;
-    memset(&nip, 0, sizeof(nip));
-    nip.ino = nino;
-    nip.mode = mode_to_disk(fs->fs, 0777, FILSYS_FT_LNK);
-    nip.nlink = 1;
-    nip.uid = (int16_t)fs->uid;
-    nip.gid = (int16_t)fs->gid;
-    nip.atime = nip.mtime = nip.ctime = (uint32_t)time(NULL);
-    rc = write_inode(fs, nino, &nip);
-    if (rc) { ifree(fs, nino); return rc; }
+    rc = inode_create(fs, 0777, fs->uid, fs->gid, FILSYS_FT_LNK, 0, &nino, &nip);
+    if (rc) return rc;
     /* The target is the file's data (a "slow" symlink): a short write. */
     ssize_t w = file_write(fs, &nip, (const uint8_t *)target, strlen(target), 0);
     if (w != (ssize_t)strlen(target)) {
-        nip.mode = 0;
-        if (write_inode(fs, nino, &nip) == 0)
-            ifree(fs, nino);
+        /* rollback: inode_destroy truncates before clearing, so the target's
+         * blocks go back to the allocator.  The hand-rolled cleanup this
+         * replaced cleared the inode and freed its number while leaving the
+         * blocks referenced by nothing -- a leak (B) on every failed symlink. */
+        (void)inode_destroy(fs, nino, &nip);
         return w < 0 ? (int)w : -EIO;
     }
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
-        nip.mode = 0;
-        if (write_inode(fs, nino, &nip) == 0)
-            ifree(fs, nino);
+        /* rollback: same contract as filsys_create -- confirm the name is gone
+         * before freeing the inode, and keep the inode live if it isn't. */
+        if (withdraw_name(fs, dino, name, nino) == 0)
+            (void)inode_destroy(fs, nino, &nip);
     }
     return rc;
 }
