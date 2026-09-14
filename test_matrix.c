@@ -1137,7 +1137,7 @@ enum { NMODEL = 8, PROP_STEPS = 128 };
 static uint64_t g_model[NMODEL];   /* file size; ~0ULL = absent */
 
 static void property_sequences(void) {
-    static const char *names[] = { "a", "b", "c", "d", "e", "f", "g", "h" };
+    static const char *names[] = { "/a", "/b", "/c", "/d", "/e", "/f", "/g", "/h" };
     for (size_t i = 0; ; i++) {
         struct fmt f;
         int frc = fmt_at(i, &f);
@@ -1157,8 +1157,25 @@ static void property_sequences(void) {
         filsys_instr_reset(f.nblk);     /* track the mutations under test */
         for (int j = 0; j < NMODEL; j++)
             g_model[j] = ~0ULL;
+        /* Prologue: guarantee a couple of sized files exist before the walk, so
+         * inode_destroy's block-freeing path is reached — the uniform op-mix
+         * otherwise under-reaches it (unlink removes only zero-length files).
+         * Writing one block past the direct capacity forces the large-file /
+         * indirect path, so the indirect subtree free is exercised too. */
+        {
+            uint64_t psz = f.direct + f.bsize;
+            uint8_t *big = malloc((size_t)psz);
+            if (big) {
+                memset(big, 'a', (size_t)psz);
+                for (int p = 0; p < 2; p++) {
+                    filsys_create(fs, names[p], 0644, 0, 0, NULL);
+                    if (filsys_write(fs, names[p], big, (size_t)psz, 0) == (ssize_t)psz)
+                        g_model[p] = psz;
+                }
+                free(big);
+            }
+        }
         g_prng = 0x9e3779b97f4a7c15ULL;
-        int first_bad_step = -1;
         filsys_fail_class_t worst = FILSYS_CK_A;
 
         for (int step = 0; step < PROP_STEPS; step++) {
@@ -1187,12 +1204,20 @@ static void property_sequences(void) {
                     if (rc == 0) g_model[slot] = sz;
                 }
                 break;
-            case 2:  /* unlink */
-                if (g_model[slot] != ~0ULL) {
-                    rc = filsys_unlink(fs, nm);
-                    if (rc == 0) g_model[slot] = ~0ULL;
+            case 2:  /* unlink — prefer a sized file so blocks are actually freed */
+            {
+                int s = slot;
+                if (g_model[slot] == ~0ULL || g_model[slot] == 0)
+                    for (int j = 1; j < NMODEL; j++) {
+                        int k = (slot + j) % NMODEL;
+                        if (g_model[k] != ~0ULL && g_model[k] > 0) { s = k; break; }
+                    }
+                if (g_model[s] != ~0ULL) {
+                    rc = filsys_unlink(fs, names[s]);
+                    if (rc == 0) g_model[s] = ~0ULL;
                 }
                 break;
+            }
             case 3:  /* append one block past the current size */
                 if (g_model[slot] != ~0ULL) {
                     rc = filsys_write(fs, nm, buf, sizeof buf, (off_t)g_model[slot]);
@@ -1210,15 +1235,6 @@ static void property_sequences(void) {
                 break;
             }
             (void)rc;
-            /* Live-handle check: an attribution hint, not a verdict.  The
-             * in-core allocator state can disagree with the on-disk walk, so
-             * this only records which step first looked bad; the authoritative
-             * class comes from a freshly opened image (classify_image below). */
-            filsys_check_t rep;
-            filsys_invariants(fs, &rep);
-            filsys_fail_class_t cls = filsys_classify(&rep);
-            if (cls != FILSYS_CK_A && first_bad_step < 0)
-                first_bad_step = step;
 
             /* Close and reopen every 32 steps: a fresh open re-reads the
              * on-disk state, so a defect is attributed to this window and its
@@ -1264,9 +1280,6 @@ static void property_sequences(void) {
         int instr_ok = filsys_instr_violations() == 0;
         snprintf(what, sizeof what, "%s property-sequences (worst class %c)",
                  f.name, "ACBD"[worst]);
-        if (first_bad_step >= 0)
-            snprintf(what + strlen(what), sizeof what - strlen(what),
-                     " [live-check flagged step %d]", first_bad_step);
         if (!instr_ok)
             snprintf(what + strlen(what), sizeof what - strlen(what), " [instrument]");
         ok(what, clean && sizes_ok && instr_ok);
