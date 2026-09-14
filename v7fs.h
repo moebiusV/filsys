@@ -63,6 +63,7 @@ typedef struct {
     uint32_t    segs;       /* free-list segments followed (findfs report) */
     const char *why;        /* near-miss rejection reason, or NULL */
     uint64_t    base;       /* matched fs-start byte (PDP-7 surface; 0 elsewhere) */
+    filsys_probe_conf_t conf; /* how confident this match is (MAGIC/STRUCTURAL/...) */
 } filsys_probe_t;
 
 /* Map a CPU architecture name ("vax", "3b2", "68k", "pdp11", ...) to the byte

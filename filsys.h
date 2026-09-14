@@ -126,6 +126,17 @@ enum {
     FILSYS_FREEMAP_BIGMAP = 2,  /* out-of-superblock bitmap (V10 only) */
 };
 
+/* Confidence of a format probe result: how a detection was made.  MAGIC means
+ * a superblock magic word matched (byte order resolved by the word); STRUCTURAL
+ * means a full structural validation passed (free-list/bitmap, root inode) with
+ * no magic; HEURISTIC is a weaker, partial match. */
+typedef enum {
+    FILSYS_PROBE_NONE = 0,
+    FILSYS_PROBE_HEURISTIC,
+    FILSYS_PROBE_STRUCTURAL,
+    FILSYS_PROBE_MAGIC,
+} filsys_probe_conf_t;
+
 /* The result of filsys_detect(): a resolved edition and its geometry. */
 typedef struct {
     int         edition;      /* FILSYS_* selector (never FILSYS_UNIX) */
@@ -133,6 +144,7 @@ typedef struct {
     int         freemap;      /* -1 = derive; else a FILSYS_FREEMAP_* value */
     const char *byteorder;    /* "le"/"be", or NULL = edition default */
     const char *packing;      /* PDP-7 word container codec name, or NULL */
+    filsys_probe_conf_t conf; /* how the winning probe matched */
 } filsys_detect_t;
 
 /* Autodetect the filesystem whose block 0 sits at byte `offset`.  `fd` is an

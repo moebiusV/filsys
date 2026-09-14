@@ -411,6 +411,7 @@ static int v1_probe(filsys_edition_t *fmt, const filsys_io_t *io,
     res->fsize = fsz;
     res->blocksize = V1_BSIZE;
     res->bitmap = 1;
+    res->conf = FILSYS_PROBE_STRUCTURAL;
     return 1;
 }
 

@@ -778,6 +778,7 @@ static int p7_probe(filsys_edition_t *fmt, const filsys_io_t *io,
                 res->packing = containers[i].name;
                 res->segs = segs;
                 res->base = bb;
+                res->conf = FILSYS_PROBE_STRUCTURAL;
                 return 1;
             }
         }

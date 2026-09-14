@@ -204,6 +204,22 @@ int main(int argc, char **argv)
         det_geom.freemap = det.freemap;
         det_geom.byteorder = det.byteorder ? strdup(det.byteorder) : NULL;
         have_det_geom = (edition == FILSYS_V8 || edition == FILSYS_V9 || edition == FILSYS_V10);
+    } else if (!force_arch) {
+        /* Wrong-edition guard: warn (never refuse) so a repair isn't applied to
+         * a volume mis-decoded under the wrong -v.  fsck must still run on a
+         * damaged volume under an explicit -v, so this only warns. */
+        int dfd = open(path, O_RDONLY);
+        if (dfd >= 0) {
+            uint64_t sz = 0;
+            if (filsys_dev_size(dfd, &sz) == 0) {
+                filsys_detect_t det;
+                const char *why = NULL;
+                if (filsys_detect(&det, dfd, offblock * 512, sz, edition, &why) != 0)
+                    fprintf(stderr, "fsck.filsys: warning: %s: %s\n", path,
+                            why ? why : "no filesystem recognised");
+            }
+            close(dfd);
+        }
     }
 
     /* -s (salvage), -r (resolve dups), -N (ncheck) and -C (clri) all work on
