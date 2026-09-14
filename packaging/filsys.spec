@@ -1,5 +1,5 @@
 Name:           filsys
-Version:        3.1.1
+Version:        4.1.0
 Release:        1%{?dist}
 Summary:        FUSE driver for Research Unix (PDP-7 through V10, 32V, Coherent, Xenix, 2.9/2.11BSD, System III/V) filesystem images
 
@@ -49,6 +49,12 @@ are seen by a running kernel of that edition after the image is booted.
 %{_mandir}/man5/filsys.5*
 
 %changelog
+* Sun Sep 13 2026 David Walther <david@clearbrookdistillery.com> - 4.1.0-1
+- Format probes report a confidence level and an explicit -v is verified
+  before a read-write mount, so a mis-decoded superblock is refused rather
+  than silently corrupted; the per-edition st_blocks counters are folded
+  into one shared walker.
+
 * Wed Sep 09 2026 David Walther <david@clearbrookdistillery.com> - 3.1.1-1
 - filsys_close no longer reports success on a failed deferred free or flush;
   add FUSE-boundary ftruncate-on-unlinked-open and rename crash-prefix tests,

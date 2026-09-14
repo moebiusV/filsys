@@ -1,3 +1,12 @@
+filsys (4.1.0-1) unstable; urgency=medium
+
+  * New upstream release: format probes report a confidence level and an
+    explicit -v is verified before a read-write mount, so a mis-decoded
+    superblock is refused rather than silently corrupted; the per-edition
+    st_blocks counters are folded into one shared walker.
+
+ -- David Walther <david@clearbrookdistillery.com>  Sun, 13 Sep 2026 00:00:00 +0000
+
 filsys (3.1.1-1) unstable; urgency=medium
 
   * filsys_close no longer reports success when a deferred free or the final
