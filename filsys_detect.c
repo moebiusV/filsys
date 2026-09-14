@@ -20,6 +20,18 @@ static int edition_is_strong(const filsys_format_t *f) {
     return d.sb_decode != NULL || d.magic != 0;
 }
 
+static const char *conf_name(filsys_probe_conf_t c) {
+    switch (c) {
+    case FILSYS_PROBE_MAGIC:      return "magic";
+    case FILSYS_PROBE_STRUCTURAL: return "structural";
+    case FILSYS_PROBE_HEURISTIC:  return "heuristic";
+    default:                      return "unknown";
+    }
+}
+/* Static buffer for the "volume is <class> (<conf> match)" mismatch message,
+ * so the tools can tell the user what the volume actually is under a wrong -v. */
+static char mismatch_buf[160];
+
 /* Map a probe's equivalence class to a FILSYS_* edition + geometry, honouring
  * `filter` (FILSYS_UNIX/-1 = the canonical, earliest member; else must be one
  * of the class's candidate editions).  Returns 0 or -1 with *why. */
@@ -58,7 +70,10 @@ static int resolve_class(const char *class, const filsys_probe_t *res,
         for (int k = 0; k < 3 && candidates[k] >= 0; k++)
             if (candidates[k] == filter) { edition = filter; break; }
         if (edition < 0) {
-            *why = "not a match for the requested edition";
+            snprintf(mismatch_buf, sizeof mismatch_buf,
+                     "volume is %s (%s match), not the requested edition",
+                     class, conf_name(res->conf));
+            *why = mismatch_buf;
             return -1;
         }
     }
@@ -68,6 +83,7 @@ static int resolve_class(const char *class, const filsys_probe_t *res,
     out->freemap   = freemap;
     out->byteorder = byteorder;
     out->packing   = (edition == FILSYS_PDP7) ? res->packing : NULL;
+    out->conf      = res->conf;
     return 0;
 }
 

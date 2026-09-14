@@ -169,6 +169,37 @@ int main(int argc, char *argv[]) {
         if (det.freemap >= 0 && geom.freemap < 0) geom.freemap = det.freemap;
         if (det.byteorder && !geom.byteorder)   geom.byteorder = strdup(det.byteorder);
         if (det.packing && !packing)            packing = strdup(det.packing);
+    } else if (!force) {
+        /* Wrong-edition guard: a concrete -v skips autodetection, so probe with
+         * it as the filter and catch a mis-decoded volume before a read-write
+         * mount silently corrupts it.  Read-only mounts and -c warn and proceed;
+         * a read-write mount of the wrong edition is refused.  (-F skips this,
+         * as it skips the magic check below.) */
+        int dfd = open(image, O_RDONLY);
+        if (dfd < 0) {
+            fprintf(stderr, "%s: %s: %s\n", argv[0], image, strerror(errno));
+            return 1;
+        }
+        uint64_t sz = 0;
+        if (filsys_dev_size(dfd, &sz) != 0) {
+            fprintf(stderr, "%s: cannot size %s\n", argv[0], image);
+            close(dfd);
+            return 1;
+        }
+        filsys_detect_t det;
+        const char *why = NULL;
+        int drc = filsys_detect(&det, dfd, offset, sz, ver, &why);
+        close(dfd);
+        if (drc != 0) {
+            if (readonly || check)
+                fprintf(stderr, "%s: warning: %s: %s\n", argv[0], image,
+                        why ? why : "no filesystem recognised");
+            else {
+                fprintf(stderr, "filsys: %s: %s\n", image,
+                        why ? why : "no filesystem recognised");
+                return 1;
+            }
+        }
     }
 
     filsys_t *k = NULL;

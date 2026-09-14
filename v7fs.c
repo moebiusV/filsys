@@ -895,6 +895,7 @@ static int probe_v7_family(filsys_edition_t *fmt, const filsys_io_t *io,
                : fmt->desc.pack4 ? "32V or sysiii" : "v7, sysiii or sysvr1";
     res->isize = isz; res->fsize = fsz; res->segs = s;
     res->blocksize = bsize;
+    res->conf = FILSYS_PROBE_STRUCTURAL;
     return 1;
 }
 
@@ -911,6 +912,7 @@ static int probe_sysv(filsys_edition_t *fmt, const filsys_io_t *io,
     if (bo_get32le(sb + 504) == V7_SYSV_MAGIC)      le = 1;
     else if (bo_get32be(sb + 504) == V7_SYSV_MAGIC) le = 0;
     else return 0;
+    res->conf = FILSYS_PROBE_MAGIC;   /* the magic word matched */
 
     uint16_t (*g16)(const uint8_t *) = le ? bo_get16le : bo_get16be;
     uint32_t (*g32)(const uint8_t *) = le ? bo_get32le : bo_get32be;
@@ -965,6 +967,7 @@ static int probe_xenix(filsys_edition_t *fmt, const filsys_io_t *io,
         return 0;
     if (bo_get32le(sb + 0x3F8) != V7_XEN_MAGIC)
         return 0;
+    res->conf = FILSYS_PROBE_MAGIC;   /* the magic word matched */
     uint16_t isz = bo_get16le(sb + 0);
     uint32_t fsz = bo_get32le(sb + 2);
     uint16_t nfree = bo_get16le(sb + 6);
@@ -1037,6 +1040,7 @@ static int probe_bsd29(filsys_edition_t *fmt, const filsys_io_t *io,
     }
     res->class = probe_bsd211_root_dir(fmt, io, base, 1024) ? "2.11BSD" : "2.9BSD";
     res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 1024;
+    res->conf = FILSYS_PROBE_STRUCTURAL;
     return 1;
 }
 
@@ -1071,6 +1075,7 @@ static int probe_v8(filsys_edition_t *fmt, const filsys_io_t *io,
                      form == V8_FREEMAP_BITMAP ? "in-superblock bitmap" :
                      "out-of-superblock bitmap", le ? "LE" : "BE");
             res->note = note_buf;
+            res->conf = FILSYS_PROBE_STRUCTURAL;   /* v8_sb_decode validated the layout */
             return 1;
         }
         if (r == -1 && !miss_why) {
@@ -1119,6 +1124,7 @@ static int probe_v6(filsys_edition_t *fmt, const filsys_io_t *io,
     }
     res->class = "v4, v5, v6 or usgpg3";
     res->isize = isz; res->fsize = fsz; res->segs = s; res->blocksize = 512;
+    res->conf = FILSYS_PROBE_STRUCTURAL;
     return 1;
 }
 
