@@ -1824,6 +1824,28 @@ static void range_check_test(void) {
     ok("range: unknown size is unchecked", filsys_check_range(&fs, UINT64_MAX, 512) == 0);
 }
 
+/* A repair prompt with end-of-input stdin (a non-tty, e.g. /dev/null or a
+ * closed pipe) must decline rather than spin forever re-reading EOF.  Run the
+ * query in a child bounded by an alarm: if it regresses into a spin the child
+ * dies of SIGALRM and the wait reports it as a failure instead of hanging the
+ * whole suite. */
+static void query_eof_declines(void) {
+    pid_t pid = fork();
+    if (pid == 0) {
+        if (freopen("/dev/null", "r", stdin) == NULL)
+            _exit(2);
+        if (freopen("/dev/null", "w", stdout) == NULL)
+            _exit(2);
+        alarm(2);
+        _exit(filsys_query(FILSYS_CK_ASK, "test repair") ? 1 : 0);
+    }
+    int st = 0;
+    if (pid > 0)
+        waitpid(pid, &st, 0);
+    ok("interactive query declines on EOF (no spin)",
+       pid > 0 && WIFEXITED(st) && WEXITSTATUS(st) == 0);
+}
+
 int main(void) {
     /* The slow soak (fault injection x editions, exhaustive crash-prefix
      * enumeration, property-based op sequences) runs only when
@@ -1867,6 +1889,7 @@ int main(void) {
         rename_semantics();
         dir_link_semantics();
         findfs_self_detect();
+        query_eof_declines();
     }
     if (want_fault) fault_test();
     if (want_crash) crash_prefix_test();

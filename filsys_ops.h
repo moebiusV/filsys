@@ -38,8 +38,9 @@ enum {
 
 /* Prompt for a repair decision (BSD fsck's reply()/query()).  mode carries the
  * answer: FILSYS_CK_YES (or preen's FILSYS_CK_PREEN) auto-applies, FILSYS_CK_ASK
- * reads y/n from stdin, and anything else skips the repair.  Returns 1 to apply
- * the repair, 0 to skip it. */
+ * reads y/n from stdin, and anything else skips the repair.  End-of-input (a
+ * non-tty stdin such as /dev/null or a closed pipe) declines rather than
+ * re-prompting forever.  Returns 1 to apply the repair, 0 to skip it. */
 static inline int filsys_query(int mode, const char *fmt, ...) {
     char msg[256];
     va_list ap;
@@ -59,8 +60,10 @@ static inline int filsys_query(int mode, const char *fmt, ...) {
         printf("%s [yes/no]? ", msg);
         fflush(stdout);
         int c = getchar();
-        if (c == EOF || c == '\n')
-            continue;
+        if (c == EOF)
+            return 0;               /* end of input: decline, don't spin */
+        if (c == '\n')
+            continue;               /* empty line: ask again */
         while (getchar() != '\n' && !feof(stdin))
             ;                       /* drain the rest of the line */
         if (c == 'y' || c == 'Y') return 1;
