@@ -468,11 +468,13 @@ not re-litigated per section:
 
 ## Repository layout
 
-The engine lives in `src/`; the FUSE and native frontends each get their own
-directory, `fuse3/`, `fuse2/`, `openbsd/`, `netbsd/`, `freebsd/`, `linux/`,
-`beos/` (Haiku), `qnx/`, and `9front/`. Each frontend is thin: it maps the
-node-anchored core onto its own VFS or protocol, and the engine in `src/` is the
-only code they share, which is what keeps it vendorable (§5.1).
+The engine lives in `src/`, along with all the userspace tooling (`mkfs.unixfs`,
+`fsck.unixfs`, `findfs.unixfs`, `filsys_detect`, the test and fuzz harnesses).
+Each frontend gets its own directory, `fuse3/`, `fuse2/`, `openbsd/`, `netbsd/`,
+`freebsd/`, `linux/`, `beos/` (Haiku), `qnx/`, and `9front/`. Each frontend is
+thin: it maps the node-anchored core onto its own VFS or protocol, and the
+engine in `src/` is the only code they share, which is what keeps it vendorable
+(§5.1).
 
 ## What to leave alone
 
