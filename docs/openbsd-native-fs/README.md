@@ -48,8 +48,8 @@ own. Read in order; later sections build on earlier ones.
    vendorable C99, and expose `bmap`; resolves risks 1, 2, 6 and supersedes
    §4.3/§4.4.
 1. **[Context and motivation](01-context.md)**, what libfilsys already is, why a
-   native driver when FUSE2 works, non-goals, and the other six ports
-   (NetBSD/FreeBSD/Linux/Haiku/plan9/QNX) with their order.
+   native driver when FUSE2 works, non-goals, and the other ports
+   (NetBSD/FreeBSD/Linux/Haiku/plan9/QNX/macOS) with their order.
 2. **[Reference implementation: GEFS on OpenBSD](02-gefs-reference.md)**, the
    `sys/gefs/` layout, the five core-kernel edits, the two vtable contracts,
    device I/O, and the shortcuts we deliberately avoid.
@@ -67,8 +67,8 @@ own. Read in order; later sections build on earlier ones.
 7. **[Test strategy and appendices](07-tests-and-appendix.md)**, how to verify
    without regressing userspace; the exact diff shapes, vtable field lists, the
    libc-dependency inventory, and references.
-8. **[The other six ports](08-other-platforms.md)**, NetBSD, FreeBSD, Linux,
-   Haiku (`unixfs`), plan9, QNX: how each is implemented on the §0 backend
+8. **[The other ports](08-other-platforms.md)**, NetBSD, FreeBSD, Linux,
+   Haiku (`unixfs`), plan9, QNX, macOS: how each is implemented on the §0 backend
    shape, and why this order.
 
 ## How this was produced

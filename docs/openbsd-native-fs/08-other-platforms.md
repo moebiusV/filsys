@@ -1,4 +1,4 @@
-# 8. The other six ports: NetBSD, FreeBSD, Linux, Haiku, plan9, QNX
+# 8. The other ports: NetBSD, FreeBSD, Linux, Haiku, plan9, QNX, macOS
 
 The backend serves five native kernel drivers (the OpenBSD driver, this plan's
 subject §5-§6, plus NetBSD, FreeBSD, Linux, Haiku) and two userspace servers
@@ -184,3 +184,29 @@ kernel filesystem add-on, a `file_system_module_info` module providing
 (§0, refactoring 5), running as a `userlandfs` module, since Haiku's FUSE
 support is implemented through `userlandfs`. The add-on is `unixfs`; the FUSE
 mount is `mount.unixfs`.
+
+## 8.7 macOS (FUSE now, FSKit later, off the critical path)
+
+macOS ships through the FUSE frontend and stays off the critical path. macFUSE
+5.2.0 and FUSE-T both now mount through FSKit backends (`MFMount.framework` and
+`-o backend=fskit`), so the existing libfuse ABI reaches an FSKit mount on macOS
+26+ with no kext; ship it behind an option, not the default, since the
+third-party FSKit backends are not yet boring (VeraCrypt and FUSE-T both report
+byte-loss and cache-invalidation failures).
+
+The native path, if ever wanted, is FSKit, not a kext, and it is callback-family
+like Haiku, not message-family like QNX (it shares QNX's packaging, a signed
+framework-owned runtime, not its shape). The extension is an appex; `fskitd`
+opens the block device and hands back an `FSBlockDeviceResource`, which is a
+`filsys_io_t` in Apple's clothing: a read/write pair over a byte range, buffered
+or direct, with no `open()` in the backend. FSKit is `FSUnaryFileSystem` only,
+and the handler protocols are a version fork (`FSVolume.ReadWriteHandler` is
+macOS 27+, the 15.4-26 path is the older operations protocols).
+
+One hard requirement nobody else has: FSKit will not mount until the filesystem
+passes a check, and a block-device `FSUnaryFileSystem` must conform to
+`FSManageableResourceMaintenanceOperations` (check, repair, optionally format).
+So `filsys_check` and `filsys_mkfs` must be linkable as libraries, not only
+programs. `filsys_invariants` is already the read-only, no-stdio walk this
+needs; `check.c`'s interactive `filsys_query` and its stdio have to be
+separable at link time.

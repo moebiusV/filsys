@@ -51,7 +51,7 @@ libfilsys is the **backend**, one format engine that does the correct thing per
 edition, behind several **frontends** in two families: **callback** (FUSE,
 native drivers) and **message** (plan9, QNX), each mapping its own semantics
 onto it. This plan is the first callback-native driver (OpenBSD); the other
-six ports are §1.4. Where a frontend's semantics differ from the engine's,
+ports are §1.4. Where a frontend's semantics differ from the engine's,
 the frontend maps; the engine does not encode any one frontend's rules.
 
 | | FUSE2 (today) | native `sys/unixfs/` (this plan) |
@@ -78,7 +78,7 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
   rewrote it in place; this plan explicitly does the opposite.
 - **Not** FFS or Minix (already out of scope per `ROADMAP.md`).
 
-## 1.4 The other six ports, and their order
+## 1.4 The other ports, and their order
 
 The backend serves five native kernel drivers (the OpenBSD driver, this plan's
 subject §5-§6, plus NetBSD, FreeBSD, Linux, Haiku) and two userspace servers
@@ -104,6 +104,8 @@ implement" is §8.
   driver for these formats was removed as unused-and-unsafe, and the "boring"
   standard (§8.3) is how the replacement answers that. Out-of-tree first, then
   `fs/unixfs/`, default off.
+- **macOS**, FUSE-only for now (macFUSE/FUSE-T, both FSKit-backed); the native
+  path would be FSKit, off the critical path (§8.7).
 
 `unixfs` is the filesystem name on every frontend, native and FUSE alike, and
 `filsys` is the project, engine and library name. IPFS's "UnixFS" is an internal
