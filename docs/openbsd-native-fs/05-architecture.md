@@ -50,9 +50,10 @@ Because libfilsys's block sizes (128/256/512/1024/4096/8192) need not equal
 #define filsys_free(p, n)     km_free((p), (n), &kv_filsys, &kp_dirty)
 ```
 or `pool(9)` for the fixed-size hot paths. The engine's `malloc(n)` /
-`free(p)` are the *only* thing mapped; call sites are untouched. (This is the
-one place a `#define` is justified — there is no thread through the codecs to
-pass an allocator, and touching 300 call sites would be a fork.)
+`free(p)` are the *only* thing mapped; call sites are untouched. (§0 supersedes
+this shim with a build-selected `filsys_alloc`/`filsys_free`; the real count is
+eighteen allocation sites — `fs` in scope at fifteen — not the 300 this
+`#define` rationale was resting on.)
 
 ## 5.5 Locking and concurrency
 
@@ -66,6 +67,14 @@ driver must therefore serialize engine entry:
   every mutation, *à la* GEFS's `fs->mutlk`, plus per-node `rwlock`s only where
   profiling shows. Do not copy GEFS's *global* lock; make it per-mount so
   two filsys mounts are independent.
+
+The per-mount `rwlock` serialises *engine entry* (reentrancy). It does **not**
+stand in for the VFS's per-vnode lock protocol — `vop_lock`/`vop_unlock`/
+`vop_islocked` — which holds the parent vnode stable across a compound
+`namei` → `VOP_LOOKUP` → `VOP_CREATE`. Those three ops need real bodies: an
+`rrwlock` in `struct filsys_node` and three one-line implementations, *à la*
+`cd9660_lock`/`msdosfs_lock`. GEFS's nullop for them is one of the shortcuts
+§2.5 warns against.
 
 This is a deliberate, documented simplification: filsys's target images are
 small, historical, and usually mounted for copy-in/copy-out, not as a hot

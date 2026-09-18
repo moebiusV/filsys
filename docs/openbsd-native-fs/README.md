@@ -16,9 +16,12 @@ filesystem (`struct vfsops` + `struct vops` + five registration edits).
 
 The reference implementation is **GEFS-on-OpenBSD** (Ori Bernstein, announced
 2026-09-15): a copy-on-write Plan 9 filesystem ported into the kernel in
-~8,500 lines behind the exact same five-edit registration surface. GEFS proves
-the *recipe*; this plan borrows the recipe and swaps GEFS's hand-ported
-copy/paste engine for libfilsys compiled **as-is**.
+~8,500 lines behind the exact same five-edit registration surface. GEFS
+confirms the *integration surface* — the five registration edits are accurate —
+not the recipe: it is a "rough, buggy, issue-filled preview" that is not in
+master, and its `vfc_typenum` collides with `MOUNT_MSDOS` (§2.5). This plan
+borrows the five edits and swaps GEFS's hand-ported copy/paste engine for
+libfilsys compiled **as-is**.
 
 The key enabler is already in libfilsys: all raw block I/O flows through a
 two-function **`filsys_io_t` vtable** (`read`/`write` at a byte offset), whose
@@ -38,6 +41,9 @@ in the kernel. That layer is rebuilt kernel-side, thin, on top of the engine.
 Each section is a separate file so it can be read, reviewed, and revised on its
 own. Read in order; later sections build on earlier ones.
 
+0. **[Backend refactoring (first)](00-backend-refactoring.md)** — make the
+   libfilsys core node-anchored, POSIX-free, offset-resumable, and right-sized
+   before the driver; resolves risks 1, 2, 6 and supersedes §4.3/§4.4.
 1. **[Context and motivation](01-context.md)** — what libfilsys already is, why a
    native driver when FUSE2 works, non-goals.
 2. **[Reference implementation: GEFS on OpenBSD](02-gefs-reference.md)** — the

@@ -107,6 +107,10 @@ copy for a durable filsys driver:
 - **Many `printf`s** left in mount/unmount/statfs (bringup noise).
 - **Error handling commented out**, `access`/permissions stubbed, hardlinks and
   kqueue `eopnotsupp`.
+- **`vop_lock`/`vop_unlock`/`vop_islocked` are nullop** — GEFS does not
+  implement the VFS per-vnode lock protocol; filsys must (§5.5).
+- **`vfc_typenum` 4 collides with `MOUNT_MSDOS`** — GEFS's `vfsconflist` entry
+  reuses a number that is already taken in-tree.
 
 filsys's formats are far simpler than a CoW Bε tree: a static superblock, a
 free list or bitmap, and fixed inode tables. The driver should be a *smaller*

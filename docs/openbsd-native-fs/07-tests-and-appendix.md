@@ -67,18 +67,18 @@ vop_advlock vop_bwrite`.
 
 | symbol | count (engine) | kernel mapping |
 |---|---|---|
-| `free` | 285 | `km_free` / `pool_put` |
-| `printf` / `fprintf` | 52 | kernel `printf` (or drop in runtime subset) |
-| `strcmp`/`strncmp`/`memcmp` | 47 | libkern |
-| `open` / `close` | 84 | removed — driver opens the device; engine never opens |
-| `memset`/`memcpy`/`memmove` | 80 | libkern |
-| `snprintf`/`vsnprintf` | 21 | kernel `snprintf` |
-| `calloc`/`malloc`/`realloc` | 27 | `km_alloc`/`km_zalloc`/`krealloc` |
-| `strlen`/`strcpy`/`strlcpy` | 13 | libkern |
-| `fcntl` | 7 | dropped (userspace advisory-lock path only) |
-| `pread`/`pwrite` | 7 | `filsys_io_kern` (the default `filsys_io_file` is excluded) |
-| `stat` | 5 | dropped (driver maps inode → `vattr`) |
-| `fsync` | 4 | dropped (driver's `vfs_sync`/`VOP_FSYNC` handle flush) |
+| `free` | 45 | `filsys_free` (§0) |
+| `printf` / `fprintf` | 19 | kernel `printf` (or drop in runtime subset) |
+| `strcmp`/`strncmp`/`memcmp` | 31 | libkern |
+| `open` / `close` | 4 / 20 | removed — driver opens the device; engine never opens |
+| `memset`/`memcpy`/`memmove` | 53 | libkern |
+| `snprintf`/`vsnprintf` | 15 | kernel `snprintf` |
+| `calloc`/`malloc`/`realloc` | 18 | `filsys_alloc` (§0) |
+| `strlen`/`strcpy`/`strlcpy` | 11 | libkern |
+| `fcntl` | 2 | dropped (userspace advisory-lock path only) |
+| `pread`/`pwrite` | 3 | `filsys_io_kern` (the default `filsys_io_file` is excluded) |
+| `stat` | 0 | — dropped (driver maps inode → `vattr`) |
+| `fsync` | 2 | dropped (driver's `vfs_sync`/`VOP_FSYNC` handle flush) |
 | `getchar`/`feof`/`fflush` | (check.c) | **excluded** — interactive fsck stays userspace |
 
 `errno` values used by the engine (`EIO`, `EINVAL`, `EROFS`, `ENOSPC`, `ENOENT`,

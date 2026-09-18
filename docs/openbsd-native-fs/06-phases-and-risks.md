@@ -11,9 +11,13 @@ the engine's non-I/O libc surface is enumerated (§4.2, §A.3).
 ## Phase 1 — read-only mount, one edition (V7)
 
 - Implement `filsys_io_kern` (read path first), the alloc/log/time shims, and a
-  read-only `filsys_vfsops` + `filsys_vnops` with the read subset:
-  `lookup, open, close, access(→0 or generic), getattr, read, readdir,
-  readlink, bmap, inactive, reclaim, lock/unlock(nullop), islocked`.
+  read-only `filsys_vfsops` + `filsys_vnops` with the read subset: `lookup,
+  open, close, access(→0 or generic), getattr, read, readdir, readlink, bmap,
+  inactive, reclaim, lock/unlock/islocked` (real, `rrwlock`-based — §5.5), plus
+  the generic stubs `abortop, pathconf, strategy, print, revoke, bwrite`. A
+  NULL `vop_lock` makes `vn_lock` return `EOPNOTSUPP` and takes `namei` with
+  it, and the first several boots end in `ddb` on whichever slot is still NULL
+  — fill them here, not one panic at a time (§0).
 - Wire the five registration edits; add `sbin/mount_filsys/`.
 - Build a `GENERIC`-with-FILSYS kernel and boot it (or a `vnd(4)`-backed test
   in a VM).
@@ -67,11 +71,17 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    `filsys.h`. The former keeps the public header clean; the latter risks
    leaking kernel-isms into userspace. **Recommend:** a dedicated
    `filsys_kern.h`, no edits to `filsys.h`.
-2. **`malloc` shimming.** `#define malloc` is gross but touches 0 call sites.
-   The alternative (threading an allocator through the codecs) is a fork.
-   Decide early and document the macro shim as a deliberate seam (§5.4).
+2. **Allocation seam.** The engine has eighteen allocation sites (6 `malloc`,
+   10 `calloc`, 2 `realloc`) and 45 `free`s — an order of magnitude below the
+   old §A.3 estimate. `fs` is already in scope at fifteen of them. §0 resolves
+   this with a build-selected `filsys_alloc`/`filsys_free`, not a `#define`:
+   the two `realloc`s go away (one moves to the FUSE frontend, one becomes
+   alloc-copy-free) and the remaining sites gain a parameter they already have
+   in scope.
 3. **Detection in-kernel vs in-`mount_filsys`.** Prefer userspace detection to
-   keep `filsys_detect.c` (and its `open`/fd usage) out of the kernel (§5.7).
+   keep the kernel driver small, not to avoid fd usage — the probe is
+   transport-based and comes along free; only `filsys_detect.c`'s thin wrapper
+   is fd-bound (§5.7).
 4. **Concurrency correctness.** The engine is not reentrant; the big per-mount
    lock is correct but serial. Confirm the read path under shared lock never
    mutates engine state (the free-list cache is the thing to audit — reads must
