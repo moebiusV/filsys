@@ -7,14 +7,15 @@ boundary (§4), resolves the plan's risks 1, 2, and 6, and supersedes §4.3 and
 
 ## TL;DR
 
-libfilsys is the **backend** for seven **frontends** — FUSE3, FUSE2, native
-drivers on OpenBSD, NetBSD and Linux, a QNX resource manager, and 9front — but its
-core is today shaped like a *single* frontend (FUSE): the public API is
-path-based, POSIX-typed, whole-directory, and it carries the open-handle table
-that only FUSE needs. The seven fall into two families — **callback** (FUSE3,
-FUSE2, OpenBSD, NetBSD, Linux: the host calls you with resolved nodes) and
-**message** (9front, QNX: you answer a request stream with your own handle table) —
-and each family demands a different shape for the same backend capabilities. The
+libfilsys is the **backend** for seven **frontends** — FUSE (the `filsys`
+frontend: FUSE3, FUSE2, Haiku 2.9.9), native `unixfs` drivers on OpenBSD,
+NetBSD, FreeBSD and Linux, a QNX resource manager, and 9front — but its core is
+today shaped like a *single* frontend (FUSE): the public API is path-based,
+POSIX-typed, whole-directory, and it carries the open-handle table that only
+FUSE needs. The seven fall into two families — **callback** (FUSE, OpenBSD,
+NetBSD, FreeBSD, Linux: the host calls you with resolved nodes) and **message**
+(9front, QNX: you answer a request stream with your own handle table) — and each
+family demands a different shape for the same backend capabilities. The
 fix is to make the core **frontend-shaped** — node-anchored (resolves by inode
 number, not path string), POSIX-free (returns plain integers, not `struct
 stat`), offset-resumable (iterates a directory, does not slurp it), and
@@ -25,7 +26,7 @@ The argument is no longer line count: it is that each frontend writes its
 mapping **once per capability** instead of re-implementing the same logic against
 a FUSE-shaped core. The line-count side points the same way — a few hundred
 lines out, concentrated in `filsys.c`, the two `dir_*` codecs and the FUSE
-triplication — and the memory side is more decisive: ~3.6 KB off every mount,
+adapters — and the memory side is more decisive: ~3.6 KB off every mount,
 and directory reads that stop allocating proportionally to directory size.
 
 ## Measurements (HEAD)
@@ -54,26 +55,27 @@ families, distinguished by who drives the interaction:
 
 | family | members | shape |
 |---|---|---|
-| **callback** | FUSE3, FUSE2, OpenBSD, NetBSD, Linux | the host calls you with resolved nodes; you fill a host struct |
+| **callback** | FUSE, OpenBSD, NetBSD, FreeBSD, Linux | the host calls you with resolved nodes; you fill a host struct |
 | **message** | 9front, QNX | you answer a request stream, keeping your own fid/OCB table |
 
 Where the columns differ *within* a family is exactly what the backend must stop
 assuming:
 
-| demand | FUSE3/FUSE2 | BSD (OpenBSD, NetBSD) | Linux | 9front/QNX |
+| demand | FUSE (FUSE3/FUSE2/Haiku) | BSD (OpenBSD, NetBSD, FreeBSD) | Linux | 9front/QNX |
 |---|---|---|---|---|
 | name resolution | path string | `(dvp, cnp)` via `VOP_LOOKUP` | `(struct inode *, struct dentry *)` | `(fid/OCB, name)` |
 | attribute fill | `struct stat` | `struct vattr` | `struct kstat` | `Dir` (9front) / `struct stat` (QNX) |
 | readdir resume token | index | `uio` cookie (byte) | opaque `ctx->pos` | byte offset |
 | open-handle lifetime | engine-side table | `VOP_INACTIVE`/`VOP_RECLAIM` | dentry/inode lifetime | `Tclunk` / OCB release |
 
-Two columns — FUSE3 and FUSE2 — are **identical**: they demand the same thing on
-every axis that matters, and their differences (readdir's flags argument,
-macOS's `setvolname`, OpenBSD's `getattr` without `fuse_file_info` and `mknod`
-accepting `S_IFREG`) are adapter-level, not backend-level. That is the argument
-for §5 stated as a table: the variation is a quirk table, not a vtable. QNX is
-the POSIX member of the message family — it genuinely wants `struct stat`, so
-the FUSE filler is reused there rather than a new one written.
+The FUSE column's three OS variants — FUSE3, FUSE2, Haiku 2.9.9 — are
+**identical** at the backend level: they demand the same thing on every axis
+that matters, and their differences (FUSE3's `readdir` flags argument, macOS's
+`setvolname`, OpenBSD's `getattr` without `fuse_file_info` and `mknod` accepting
+`S_IFREG`, Haiku's 2.9.9 quirks) are adapter-level, not backend-level. That is
+the argument for §5 stated as a table: the variation is a quirk table, not a
+vtable. QNX is the POSIX member of the message family — it genuinely wants
+`struct stat`, so the FUSE filler is reused there rather than a new one written.
 
 Each refactoring below was once justified by "OpenBSD needs it." With the full
 frontend set, each is demanded by at least two and mostly by four:
@@ -198,13 +200,14 @@ V7 mount drops from 4,296 bytes to roughly 700. About 15 lines, no behaviour
 change, testable entirely in userspace — and it answers the plan's risk 6 (the
 in-kernel `pool(9)` sizing question) for free.
 
-### 5. Fold the three FUSE adapters into one
+### 5. Fold the FUSE adapters into one
 
 `fuseops.c`, `fuseops_macos.c`, and `fuseops_openbsd.c` each define the same 25
 vtable slots and 10–12 one-line wrappers. The real variation is small: FUSE3's
 `readdir` takes a flags argument, macOS has `setvolname` and its own mount
 options, OpenBSD's `getattr` has no `fuse_file_info` and its `mknod` has to
-accept `S_IFREG`.
+accept `S_IFREG`, and Haiku ships FUSE 2.9.9 — a fourth FUSE2-family entry
+whose quirk is pinned down when the Haiku adapter lands.
 
 Keep the build-system selection already used for editions — `configure` picks
 which `.c` links — but let it pick a small `const fuse_quirks_t` of behaviour
@@ -214,7 +217,8 @@ same pattern the descriptor table already uses for the fifteen editions: data
 varies, code doesn't.
 
 Do **not** merge FUSE2 and FUSE3 into one file behind `#ifdef`. The
-build-selected split is right; it is the triplication of the table that isn't.
+build-selected split is right; it is the duplication of the table across
+adapters that isn't.
 
 ### 6. Flatten the pointer chains (and hoist the loop calls)
 

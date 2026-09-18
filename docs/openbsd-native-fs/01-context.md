@@ -78,16 +78,19 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
   rewrote it in place; this plan explicitly does the opposite.
 - **Not** FFS or Minix (already out of scope per `ROADMAP.md`).
 
-## 1.4 The other four ports, and their order
+## 1.4 The other five ports, and their order
 
-The backend serves five platforms: the OpenBSD driver (this plan's subject,
-§5–§6) and four siblings — NetBSD, Linux, 9front, QNX. They are not four of the
-same thing, and the order is deliberate: OpenBSD first, NetBSD second, the
-message family (9front then QNX), Linux last. The per-platform "how to
-implement" is §9.
+The backend serves six native platforms — the OpenBSD driver (this plan's
+subject, §5–§6) plus NetBSD, FreeBSD, Linux, 9front, QNX — and one FUSE
+frontend (`filsys`), which also runs on Haiku's FUSE 2.9.9. The native six are
+not six of the same thing, and the order is deliberate: OpenBSD first, NetBSD
+second, the message family (9front then QNX), Linux last. The per-platform "how
+to implement" is §9.
 
 - **NetBSD** — the close cousin; `struct vnodeopv_entry_desc` arrays rather than
   a flat `vops`, and **rump kernels** as the cheap test loop.
+- **FreeBSD** — the other close cousin; a flat `struct vop_vector` (near
+  OpenBSD's `struct vops`), so the glue is closer to OpenBSD than NetBSD's.
 - **9front** — a userspace 9P server (message family); the fid is the handle;
   no kernel shims.
 - **QNX** — a resource manager (message family); the OCB is 9front's fid; done
@@ -98,5 +101,11 @@ implement" is §9.
   standard (§9.2) is how the replacement answers that. Out-of-tree first, then
   `fs/unixfs/`, default off.
 
+Haiku is a FUSE target, not a native driver: the `filsys` frontend runs there
+under Haiku's FUSE 2.9.9 (§0, refactoring 5). The naming split is deliberate —
+FUSE targets keep `filsys` (`mount.filsys`), and only the native in-tree drivers
+take `unixfs`, so the FUSE tool never sits next to IPFS's unrelated `unixfs`
+format.
+
 Each maps its own semantics onto the same backend shape §0 establishes; nothing
-here changes the OpenBSD driver, only the backend it shares with these four.
+here changes the OpenBSD driver, only the backend it shares with these five.

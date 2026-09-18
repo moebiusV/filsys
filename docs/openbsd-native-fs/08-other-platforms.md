@@ -20,18 +20,26 @@ The close cousin. Same VFS family, two differences that matter:
   finds engine- and glue-level bugs that cost a VM reboot each on OpenBSD.
 
 NetBSD goes second precisely because the BSD VFS knowledge is still fresh and
-rump makes it the cheapest of the four to iterate on. The transport is the same
-`filsys_io_kern`-shaped `bread`/`VOP_STRATEGY` path, and the per-vnode lock
+rump makes it the cheapest of the native set to iterate on. The transport is the
+same `filsys_io_kern`-shaped `bread`/`VOP_STRATEGY` path, and the per-vnode lock
 protocol is the same BSD-family `rrwlock` work (§5.5).
+
+FreeBSD is the same story with a flat `struct vop_vector` — the nearest of the
+three to OpenBSD — and a mature in-tree `fusefs`, so the FUSE frontend already
+works there and the native driver is the optional hardening step, not the
+gap-filler. Its specific VFS details (registration via `VFS_SET`, mount args,
+the vnode-lifecycle protocol) get their own pass when FreeBSD is scheduled.
 
 ## 9.2 Linux
 
 Call the in-tree filesystem **`unixfs`**. `filsys` is the project and the on-disk
 homage; Linux already burned the `sysv` name, and `unixfs` is what an admin
-expects in `fstab` and `/proc/filesystems`. The name is free in-tree, and the
-only other use of "unixfs" is IPFS's unrelated data format, so there is no
-functional collision. Keep the engine symbol prefix `filsys_` so the same
-objects compile into OpenBSD, NetBSD, and this module. One
+expects in `fstab` and `/proc/filesystems`. The name is free in-tree; the only other uses of "unixfs" are IPFS's unrelated
+data format and NetBSD's dead 1990s `arm32` RISC OS-ADFS mounter, so there is no
+functional collision. FUSE targets keep `filsys` (`mount.filsys`) precisely to
+avoid sitting next to IPFS's `unixfs` — `unixfs` is reserved for the native
+in-tree driver. Keep the engine symbol prefix `filsys_` so the same objects
+compile into OpenBSD, NetBSD, FreeBSD, and this module. One
 naming collision to avoid: `filsys` already uses `unix` as its autodetect
 pseudo-edition (`FILSYS_UNIX = 40`, `-v unix`). `mount -t unixfs -o edition=unix`
 meaning "detect" is confusing, so on the Linux side the option value is `auto`
