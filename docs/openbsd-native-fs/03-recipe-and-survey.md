@@ -16,7 +16,7 @@ A new local filesystem is, in full:
 7. **`sbin/mount_<name>/`**, a userspace `mount_<name>(8)` that parses options
    into `<name>_args` and calls `mount(2)`.
 
-Steps 1–6 are the driver; step 7 is the only *required* userspace piece (and it
+Steps 1-6 are the driver; step 7 is the only *required* userspace piece (and it
 is optional if `mount(8)` is hand-driven).
 
 ## 3.2 Survey of the other OpenBSD filesystems

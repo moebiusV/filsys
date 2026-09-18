@@ -1,7 +1,7 @@
 # 0. Backend refactoring (first): one backend, eight frontends
 
 This section describes a refactor of libfilsys itself that **happens first**,
-before the drivers in §4–§6. It is a prerequisite: it reshapes the "as-is"
+before the drivers in §4-§6. It is a prerequisite: it reshapes the "as-is"
 boundary (§4), resolves the plan's risks 1, 2, and 6, and supersedes §4.3 and
 §4.4 by doing their work properly in the backend rather than as a kernel shim.
 
@@ -204,7 +204,7 @@ in-kernel `pool(9)` sizing question) for free.
 ### 5. Fold the FUSE adapters into one
 
 `fuseops.c`, `fuseops_macos.c`, and `fuseops_openbsd.c` each define the same 25
-vtable slots and 10–12 one-line wrappers. The real variation is small: FUSE3's
+vtable slots and 10-12 one-line wrappers. The real variation is small: FUSE3's
 `readdir` takes a flags argument, macOS has `setvolname` and its own mount
 options, OpenBSD's `getattr` has no `fuse_file_info` and its `mknod` has to
 accept `S_IFREG`, and Haiku ships FUSE 2.9.9, a fourth FUSE2-family entry

@@ -81,7 +81,7 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
 ## 1.4 The other six ports, and their order
 
 The backend serves seven native platforms, the OpenBSD driver (this plan's
-subject, §5–§6) plus NetBSD, FreeBSD, Linux, Haiku, plan9, QNX, and one FUSE
+subject, §5-§6) plus NetBSD, FreeBSD, Linux, Haiku, plan9, QNX, and one FUSE
 frontend (`filsys`), which also runs on Haiku's FUSE 2.9.9. The native seven are
 not seven of the same thing, and the order is deliberate: OpenBSD first, NetBSD
 second, the message family (plan9 then QNX), Linux last. The per-platform "how

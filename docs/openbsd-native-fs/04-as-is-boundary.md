@@ -14,7 +14,7 @@ Concretely, the boundary splits libfilsys into two halves.
 
 | file | what it is | kernel status |
 |---|---|---|
-| `v7fs.c` | V7/V8-family/32V/Coherent/Xenix/2.9BSD/System III–V codec, superblock codec, `filsys_io_file` | **as-is** (the `filsys_io_file` *definition* may be `#ifdef`'d out; the driver supplies its own `filsys_io_t`) |
+| `v7fs.c` | V7/V8-family/32V/Coherent/Xenix/2.9BSD/System III-V codec, superblock codec, `filsys_io_file` | **as-is** (the `filsys_io_file` *definition* may be `#ifdef`'d out; the driver supplies its own `filsys_io_t`) |
 | `v1fs.c` | V1/V2/V3 codec | as-is |
 | `pdp7fs.c` | PDP-7 word-addressed codec + `rb09`/`packed18`/`rim` | as-is |
 | `alloc_freelist.c` | V6/V7 free-list allocator | as-is |

@@ -1,7 +1,7 @@
 # 9. The other six ports: NetBSD, FreeBSD, Linux, Haiku, plan9, QNX
 
 The backend serves seven native platforms: the OpenBSD driver (this plan's
-subject, §5–§6) and these six siblings. They are deliberately ordered, OpenBSD
+subject, §5-§6) and these six siblings. They are deliberately ordered, OpenBSD
 first, NetBSD second, the message family (plan9 then QNX), Linux last, because
 the six are not six of the same thing. Each section below is "how to implement
 on this platform," written against the backend shape §0 establishes, so the
@@ -58,7 +58,7 @@ Brauner.)
 
 Two facts make the filsys case stronger than "we miss the old driver." First,
 sysv covered exactly three formats, Xenix FS, SystemV/386 FS, and Coherent FS,
-and all three are filsys editions, alongside V1–V10, 32V, 2.9/2.11BSD, and
+and all three are filsys editions, alongside V1-V10, 32V, 2.9/2.11BSD, and
 PDP-7, so "replaces the removed driver and covers more" is literally true, not
 rhetorical. Second, the specific defect is *structurally excluded* by the
 backend shape already on the table: engine entry happens under a **sleepable**
