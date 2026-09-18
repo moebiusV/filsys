@@ -4,16 +4,16 @@
 
 A new local filesystem is, in full:
 
-1. **`sys/<name>/`** — self-contained `.c`/`.h`, including `struct vfsops` and
+1. **`sys/<name>/`**, self-contained `.c`/`.h`, including `struct vfsops` and
    one or more `struct vops`.
-2. **`sys/conf/files`** — `file <name>/<f>.c  <name>` per source, gated on the
+2. **`sys/conf/files`**, `file <name>/<f>.c  <name>` per source, gated on the
    config token.
-3. **`sys/conf/GENERIC`** (and `RAMDISK` etc. as wanted) — `option <NAME>`.
-4. **`sys/kern/vfs_init.c`** — a `vfsconflist[]` entry.
-5. **`sys/sys/mount.h`** — `struct <name>_args`, a `union mount_info` slot,
+3. **`sys/conf/GENERIC`** (and `RAMDISK` etc. as wanted), `option <NAME>`.
+4. **`sys/kern/vfs_init.c`**, a `vfsconflist[]` entry.
+5. **`sys/sys/mount.h`**, `struct <name>_args`, a `union mount_info` slot,
    `MOUNT_<NAME>` string, and the `_vfsops` extern.
-6. **`sys/sys/vnode.h`** — a `VT_<NAME>` vtag.
-7. **`sbin/mount_<name>/`** — a userspace `mount_<name>(8)` that parses options
+6. **`sys/sys/vnode.h`**, a `VT_<NAME>` vtag.
+7. **`sbin/mount_<name>/`**, a userspace `mount_<name>(8)` that parses options
    into `<name>_args` and calls `mount(2)`.
 
 Steps 1–6 are the driver; step 7 is the only *required* userspace piece (and it
@@ -48,12 +48,12 @@ Observations that bear on filsys:
   in which `vops` members are stubbed. This confirms the recipe in §3.1 is
   complete.
 - **tmpfs is the template for "no device".** Its `vfs_mount` takes no `fspec`
-  and does no `VOP_OPEN` — irrelevant for filsys (which is device-backed) but a
+  and does no `VOP_OPEN`, irrelevant for filsys (which is device-backed) but a
   reminder that `mount` argument shape is per-fs and free-form.
 
 ## 3.3 Where the comparison matters
 
-The single takeaway for this plan: **GEFS is not unique in structure — it is a
+The single takeaway for this plan: **GEFS is not unique in structure; it is a
 standard-issue OpenBSD filesystem that happens to be small.** Every fact the
 plan leans on (five registration edits, two vtable contracts, buf-cache device
 I/O, a `mount_<name>` tool) is the same across ffs, msdosfs, cd9660, tmpfs, and

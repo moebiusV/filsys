@@ -18,12 +18,12 @@ sys/unixfs/
 The engine sources have to be *vendored* into the kernel tree. `sys/conf/files`
 paths are `sys/`-relative and cannot name anything outside `src/sys`, and
 OpenBSD has no loadable kernel modules (LKM was removed in 5.7), so there is no
-"reference the libfilsys checkout" option. The real choice — made before §0's
+"reference the libfilsys checkout" option. The real choice, made before §0's
 file layout, since it decides whether the engine builds under a second, more
-restrictive build system — is a vendored snapshot under `sys/unixfs/` with a pin
+restrictive build system, is a vendored snapshot under `sys/unixfs/` with a pin
 and a sync script, or a patch against `-current` that people apply and rebuild.
 The sync script is **not optional**: the engine vendors into four kernel trees
-(OpenBSD, NetBSD, Linux, QNX — §1.4), so there are four copies to keep in step
+(OpenBSD, NetBSD, Linux, QNX, §1.4), so there are four copies to keep in step
 and "copy the files by hand" stops being a thing anyone can be trusted to do.
 
 ## 5.2 Per-mount state
@@ -46,7 +46,7 @@ Each `unixfs_node` (in `vp->v_data`) holds the inode number + a cached decoded
   `MNT_RDONLY` / `filsys_edition_t.readonly` flag.
 
 Because libfilsys's block sizes (128/256/512/1024/4096/8192) need not equal
-`DEV_BSIZE` (512), the transport does the sub-block assembly — the codec's
+`DEV_BSIZE` (512), the transport does the sub-block assembly; the codec's
 "logical block" abstraction is preserved unchanged.
 
 This byte-offset path covers `VOP_READ`/`VOP_WRITE` through the buf path. It
@@ -80,8 +80,8 @@ driver must therefore serialize engine entry:
   two filsys mounts are independent.
 
 The per-mount `rwlock` serialises *engine entry* (reentrancy). It does **not**
-stand in for the VFS's per-vnode lock protocol — `vop_lock`/`vop_unlock`/
-`vop_islocked` — which holds the parent vnode stable across a compound
+stand in for the VFS's per-vnode lock protocol, `vop_lock`/`vop_unlock`/
+`vop_islocked`, which holds the parent vnode stable across a compound
 `namei` → `VOP_LOOKUP` → `VOP_CREATE`. Those three ops need real bodies: an
 `rrwlock` in `struct unixfs_node` and three one-line implementations, *à la*
 `cd9660_lock`/`msdosfs_lock`. GEFS's nullop for them is one of the shortcuts
@@ -104,7 +104,7 @@ refined later without changing the on-disk behavior.
   (A tiny helper `unixfs_fill_vattr(fs, ip, struct vattr *)` lives in the
   kernel glue; it mirrors the userspace `filsys_fill_stat`.)
 - `VOP_SETATTR`: map `va_size/va_mode/va_uid/va_gid/va_atime/va_mtime` onto
-  `filsys_truncate_ino`/`filsys_chmod`/`filsys_chown`/`filsys_utimens` — but
+  `filsys_truncate_ino`/`filsys_chmod`/`filsys_chown`/`filsys_utimens`, but
   note the public chmod/chown/utimens are path-based; the inode-anchored
   exports from §4.3 cover this too.
 - `VOP_STATFS` (`vfs_statfs`): fill `f_bsize/f_iosize/f_blocks/f_bfree/
@@ -121,24 +121,24 @@ selector), `readonly`, `offset`, `arch`, and the V8-family `geom`
 `-o edition=v7`, `-o offset=0`, `-o arch=vax`, `-o readonly`, etc., into this
 struct. Two mount modes:
 
-- **explicit** — `-o edition=v7` (default for determinism, matches the FUSE
+- **explicit**, `-o edition=v7` (default for determinism, matches the FUSE
   tool's `-v`);
-- **autodetect** — `-o unix` (the `FILSYS_UNIX` pseudo-edition). The read-only
+- **autodetect**, `-o unix` (the `FILSYS_UNIX` pseudo-edition). The read-only
   probe already lives in the backends (`v7fs.c`/`v1fs.c`/`pdp7fs.c`, via each
   edition's `ops->probe`), so detection comes along free; only
   `filsys_detect.c`'s thin wrapper (fd, precedence order, class mapping) is
   userspace. With the transport build-selected (§0), `ops->probe` drops its
-  `filsys_io_t *` argument and reads through `filsys_read_bytes` directly — a
+  `filsys_io_t *` argument and reads through `filsys_read_bytes` directly, a
   signature change to one vtable slot, but the conclusion holds: in-kernel
   detection is still feasible and still wants no fd. Prefer `mount_unixfs`
-  probing in userspace and passing the resolved edition in `unixfs_args` — it
-  keeps the kernel driver small — but in-kernel detection is equally feasible.
+  probing in userspace and passing the resolved edition in `unixfs_args`, it
+  keeps the kernel driver small, but in-kernel detection is equally feasible.
   The choice is size, not feasibility.
 
 There is no third option: OpenBSD has no kernel-to-userspace helper (nothing
 like Linux's `call_usermodehelper`), so the driver cannot spawn `mount_unixfs`
-or any userspace process on its own behalf. Whatever runs in userspace —
-detection in `mount_unixfs`, `fsck`, `mkfs` — does so before `mount(2)` or
+or any userspace process on its own behalf. Whatever runs in userspace,
+detection in `mount_unixfs`, `fsck`, `mkfs`, does so before `mount(2)` or
 offline, driven by the admin, never called by the kernel.
 
 ## 5.8 The vnode payload and inode life cycle
@@ -149,7 +149,7 @@ offline, driven by the admin, never called by the kernel.
 - `VOP_RECLAIM`/`VOP_INACTIVE`: free the node's cached state; mirror GEFS's
   `gefs_clunkdent`/`gefs_reclaim`.
 - Hard-remove semantics (unlink of an open file): after §0 moves the
-  open-handle table to the FUSE frontend, the vnode *is* the pin — `VOP_REMOVE`
+  open-handle table to the FUSE frontend, the vnode *is* the pin, `VOP_REMOVE`
   must not free while `v_usecount > 0`, and `VOP_INACTIVE` does the `ifree` at
   nlink 0.
 - Device nodes: a `unixfs_devops` mirroring `spec_vops` (copy GEFS's
@@ -165,15 +165,15 @@ offline, driven by the admin, never called by the kernel.
 
 ## 5.9 The registration edits (the five diffs, unixfs edition)
 
-1. `sys/conf/files` — `file unixfs/unixfs_vfsops.c unixfs`, `file
+1. `sys/conf/files`, `file unixfs/unixfs_vfsops.c unixfs`, `file
    unixfs/unixfs_vnops.c unixfs`, `file unixfs/filsys_io_kern.c unixfs`, plus
    the libfilsys engine sources each tagged `unixfs`.
-2. `sys/conf/GENERIC` — `option UNIXFS`.
-3. `sys/kern/vfs_init.c` — `{ &unixfs_vfsops, MOUNT_UNIXFS, 20, 0, MNT_LOCAL,
+2. `sys/conf/GENERIC`, `option UNIXFS`.
+3. `sys/kern/vfs_init.c`, `{ &unixfs_vfsops, MOUNT_UNIXFS, 20, 0, MNT_LOCAL,
    sizeof(struct unixfs_args) }`.
-4. `sys/sys/mount.h` — `struct unixfs_args`, `union mount_info` slot,
+4. `sys/sys/mount.h`, `struct unixfs_args`, `union mount_info` slot,
    `#define MOUNT_UNIXFS "unixfs"`, `extern const struct vfsops unixfs_vfsops;`.
-5. `sys/sys/vnode.h` — `VT_UNIXFS` + `VTAG_NAMES`.
+5. `sys/sys/vnode.h`, `VT_UNIXFS` + `VTAG_NAMES`.
 
 Plus the one userspace tool `sbin/mount_unixfs/` (§3.1 step 7).
 
@@ -185,7 +185,7 @@ The engine holds a decoded copy of block 1 (`isize`, `fsize`, `fl.free[]`,
 who wins. The driver has to push the engine's in-core superblock into the buffer
 cache *before* `vfs_sync` or unmount flushes the buffer cache to the device, or
 sync writes a stale block 1 over a newer one. The engine already has this
-ordering — `fl_dirty` flushes the superblock before an inode that references a
+ordering, `fl_dirty` flushes the superblock before an inode that references a
 newly allocated block, "else a crash leaves the block both free and referenced"
-— and the kernel sync path must honour the same contract; `MNT_FORCE` needs a
+, and the kernel sync path must honour the same contract; `MNT_FORCE` needs a
 defined answer too.

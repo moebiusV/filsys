@@ -1,8 +1,8 @@
 # 9. The other six ports: NetBSD, FreeBSD, Linux, Haiku, 9front, QNX
 
 The backend serves seven native platforms: the OpenBSD driver (this plan's
-subject, §5–§6) and these six siblings. They are deliberately ordered — OpenBSD
-first, NetBSD second, the message family (9front then QNX), Linux last — because
+subject, §5–§6) and these six siblings. They are deliberately ordered, OpenBSD
+first, NetBSD second, the message family (9front then QNX), Linux last, because
 the six are not six of the same thing. Each section below is "how to implement
 on this platform," written against the backend shape §0 establishes, so the
 engine drops into each without re-doing the mapping.
@@ -13,7 +13,7 @@ The close cousin. Same VFS family, two differences that matter:
 
 - **Registration is a table of descriptors, not a flat struct.** NetBSD
   registers `struct vnodeopv_entry_desc` arrays (a name per op) rather than
-  OpenBSD's flat `struct vops`, so the glue is not copy-paste — it is a
+  OpenBSD's flat `struct vops`, so the glue is not copy-paste; it is a
   mechanical translation, and the op bodies themselves carry over.
 - **rump kernels are the test loop.** Rump runs the real NetBSD VFS with the
   filesystem linked in as a userspace process under a normal debugger. That
@@ -24,8 +24,8 @@ rump makes it the cheapest of the native set to iterate on. The transport is the
 same `filsys_io_kern`-shaped `bread`/`VOP_STRATEGY` path, and the per-vnode lock
 protocol is the same BSD-family `rrwlock` work (§5.5).
 
-FreeBSD is the same story with a flat `struct vop_vector` — the nearest of the
-three to OpenBSD — and a mature in-tree `fusefs`, so the FUSE frontend already
+FreeBSD is the same story with a flat `struct vop_vector`, the nearest of the
+three to OpenBSD, and a mature in-tree `fusefs`, so the FUSE frontend already
 works there and the native driver is the optional hardening step, not the
 gap-filler. Its specific VFS details (registration via `VFS_SET`, mount args,
 the vnode-lifecycle protocol) get their own pass when FreeBSD is scheduled.
@@ -35,10 +35,10 @@ the vnode-lifecycle protocol) get their own pass when FreeBSD is scheduled.
 Call the in-tree filesystem **`unixfs`**. `filsys` is the project and the on-disk
 homage; Linux already burned the `sysv` name, and `unixfs` is what an admin
 expects in `fstab` and `/proc/filesystems`. The name is free in-tree; the only other uses of "unixfs" are IPFS's internal
-UnixFS data format (a serialization format, not a mount name — IPFS mounts via
+UnixFS data format (a serialization format, not a mount name, IPFS mounts via
 `ipfs mount`, not `mount -t unixfs`) and NetBSD's dead 1990s `arm32` RISC
 OS-ADFS mounter, so there is no functional collision. `unixfs` is the filesystem
-name on every frontend — native and FUSE alike — while `filsys` stays the
+name on every frontend, native and FUSE alike, while `filsys` stays the
 project, engine and library name. Keep the engine symbol prefix `filsys_` so the
 same objects compile into OpenBSD, NetBSD, FreeBSD, and this module. One
 naming collision to avoid: `filsys` already uses `unix` as its autodetect
@@ -57,7 +57,7 @@ Just drop it." (Reviewed-by Jeff Layton and Darrick Wong, applied by Christian
 Brauner.)
 
 Two facts make the filsys case stronger than "we miss the old driver." First,
-sysv covered exactly three formats — Xenix FS, SystemV/386 FS, and Coherent FS —
+sysv covered exactly three formats, Xenix FS, SystemV/386 FS, and Coherent FS,
 and all three are filsys editions, alongside V1–V10, 32V, 2.9/2.11BSD, and
 PDP-7, so "replaces the removed driver and covers more" is literally true, not
 rhetorical. Second, the specific defect is *structurally excluded* by the
@@ -68,7 +68,7 @@ letter can assert it and a reviewer can check it in thirty seconds.
 
 The "why not FUSE?" question is sharper than it looks, and the honest answer
 concedes capability. At the same LSFMM session, Jan Kara floated FUSE versions
-of unwanted filesystems as the way to be rid of them — and filsys already *is*
+of unwanted filesystems as the way to be rid of them, and filsys already *is*
 that answer on Linux, shipping and CI-tested. So the cover letter cannot argue
 capability: FUSE does everything except root-fs and `/proc/filesystems`
 presence, and on Linux even root is reachable from an initramfs. The first
@@ -91,18 +91,18 @@ says a track record in other subsystems strengthens the case.
 - **`fs/unixfs/` as `tristate`, default `n`.** Not built-in, not in defconfigs.
 - **`fs_context` + `fs_parameter_spec` from day one.** No `->mount`.
 - **Metadata I/O through the existing block path without holding a spinlock or
-  rwlock across `submit_bio`** — the invariant above, enforced with lockdep and
+  rwlock across `submit_bio`**, the invariant above, enforced with lockdep and
   `might_sleep()`.
 - **`memalloc_nofs_save()`/`memalloc_nofs_restore()` scoping, not `GFP_NOFS` at
   call sites.** Call-site `GFP_NOFS` has been discouraged since 4.12
   (`Documentation/core-api/gfp_mask-from-fs-io.rst`): the flags get missed and
   can't be audited. The Linux frontend wraps engine entry in the scope, and the
-  Linux arm of `filsys_alloc` uses plain `GFP_KERNEL` — no allocation flag
+  Linux arm of `filsys_alloc` uses plain `GFP_KERNEL`, no allocation flag
   threaded through the eighteen sites, which is what the build-selected
   allocator exists to avoid.
 - **No page cache in the first merge.** `generic_file_read_iter` is a page-cache
   path and needs a `read_folio`, which for a block filesystem means buffer heads
-  or iomap — and `CONFIG_BUFFER_HEAD` is now optional and being phased out, so
+  or iomap, and `CONFIG_BUFFER_HEAD` is now optional and being phased out, so
   buffer heads are not the safe choice they used to be. The minimal honest
   option is a hand-written `->read_iter` that copies through `filsys_read_ino`
   into the iter with no page cache at all. Defensible for a read-mostly
@@ -111,13 +111,13 @@ says a track record in other subsystems strengthens the case.
   straight to iomap rather than through buffer heads.
 - **The inode cache is the VFS inode cache**, keyed by `(sb, ino)`. No second
   handle table.
-- **Userspace tools stay userspace** — `mkfs.filsys`/`fsck.filsys` already
+- **Userspace tools stay userspace**, `mkfs.unixfs`/`fsck.unixfs` already
   exist; `Documentation/filesystems/unixfs.rst` points at them.
 - **KUnit or a fstests slice** that mounts a checked-in V7 image. Syzbot
   readiness is closer than it looks: `fuzz/filsys-fuzz.c` already fuzzes
   `filsys_detect` → `filsys_open_arch` → `filsys_invariants`, which is most of
   what syzbot does to a filesystem (mount a corrupt image and see what falls
-  over). What is missing is the part after mount — driving `test_matrix`'s
+  over). What is missing is the part after mount, driving `test_matrix`'s
   operation sequences over fuzzer-produced images rather than mkfs-produced
   ones, plus the allocation-failure arm. Both are userspace work, worth having
   regardless, and "here is the fuzz harness and here is what it covers" is
@@ -129,8 +129,8 @@ says a track record in other subsystems strengthens the case.
 
 Out-of-tree first is the engineering order, not a holding pattern: prove the
 vnode/inode glue on OpenBSD/NetBSD, then wrap `inode_ops`/`file_ops`. Once the
-module is dull — `modprobe unixfs`, `mount -t unixfs -o edition=v7 /dev/loop0
-/mnt`, `ls` works, `fsck.filsys` clean — posting to `linux-fsdevel` is an
+module is dull, `modprobe unixfs`, `mount -t unixfs -o edition=v7 /dev/loop0
+/mnt`, `ls` works, `fsck.unixfs` clean, posting to `linux-fsdevel` is an
 ordinary review. This is the same shape as the OpenBSD advice: arrive with the
 engine already proven and only the glue in question.
 
@@ -144,8 +144,8 @@ callback can be derived from it if a consumer ever wants one.
 ## 9.3 9front
 
 9front (the maintained Plan 9 fork) has no callback VFS: a filesystem is a 9P
-server — conventionally a userspace program attached with `9fs`/`mount`, or a
-kernel `dev` driver — so this is the message family, and it needs none of the
+server, conventionally a userspace program attached with `9fs`/`mount`, or a
+kernel `dev` driver, so this is the message family, and it needs none of the
 kernel shims. The frontend maps the 9P request stream onto the node-anchored
 core:
 
@@ -155,7 +155,7 @@ core:
   iterator;
 - `Tstat`/`Twstat` → fill a `Dir` from the POSIX-free core.
 
-The fid table is the open-handle lifetime — `Tclunk` releases the pin, which is
+The fid table is the open-handle lifetime, `Tclunk` releases the pin, which is
 what §0's open-handle move leaves to the frontend. Do 9front before QNX: the two
 share the message-family mapping, and QNX's OCB is 9front's fid.
 
@@ -165,7 +165,7 @@ Not a kernel driver at all. QNX has no VFS: a filesystem is a **resource
 manager**, a userspace process that registers a pathname prefix with `procmgr`
 and answers `_IO_READ`/`_IO_WRITE`/`_IO_STAT`/`_IO_OPENFD` messages, usually via
 the `iofunc_*` helpers. It is message-shaped, runs in userspace, uses ordinary
-`malloc`, and needs none of the kernel shims — the same shape as 9front, which
+`malloc`, and needs none of the kernel shims, the same shape as 9front, which
 is why it follows 9front: the OCB is the fid, and the message-family mapping is
 largely already written. The one POSIX twist is that QNX genuinely wants
 `struct stat`, so the FUSE filler is reused there rather than a new one written.
@@ -174,8 +174,8 @@ largely already written. The one POSIX twist is that QNX genuinely wants
 
 Haiku is both a FUSE target and a native target. The FUSE path is the `filsys`
 frontend under Haiku's FUSE 2.9.9 (§0, refactoring 5). The native path is a
-kernel filesystem add-on — a `file_system_module_info` module providing
-`fs_volume_ops` and `fs_vnode_ops` — which is callback-shaped like the BSDs
+kernel filesystem add-on, a `file_system_module_info` module providing
+`fs_volume_ops` and `fs_vnode_ops`, which is callback-shaped like the BSDs
 (`lookup`, `read_dir` with an offset cookie, `read_stat` filling Haiku's
 `struct stat`). The add-on is `unixfs`; the FUSE mount is `mount.unixfs`. Haiku
 also ships `userlandfs` (a userspace filesystem framework), which is the FUSE

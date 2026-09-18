@@ -10,7 +10,7 @@
   not the format logic.
 - **vnd-backed mount in a VM.** `vnconfig(8)` a V7 image, `mount_unixfs`, run
   the FUSE `test.sh` read/write/rename/truncate/persistence sequence against the
-  native mount; then unmount and `fsck.filsys` the image.
+  native mount; then unmount and `fsck.unixfs` the image.
 - **Oracle diff.** Mount each edition read-only and diff a recursive copy
   against the userspace `mount.unixfs` result for the same image.
 - **Concurrency smoke.** Parallel `find`/`grep` (readers) and a writer loop,
@@ -70,25 +70,25 @@ vop_advlock vop_bwrite`.
 | `free` | 45 | `filsys_free` (§0) |
 | `printf` / `fprintf` | 19 | kernel `printf` (or drop in runtime subset) |
 | `strcmp`/`strncmp`/`memcmp` | 31 | libkern |
-| `open` / `close` | 4 / 20 | excluded — the codecs' own open/close path is not compiled in; the driver opens the device (§4.1) |
+| `open` / `close` | 4 / 20 | excluded, the codecs' own open/close path is not compiled in; the driver opens the device (§4.1) |
 | `memset`/`memcpy`/`memmove` | 53 | libkern |
 | `snprintf`/`vsnprintf` | 15 | kernel `snprintf` |
 | `calloc`/`malloc`/`realloc` | 18 | `filsys_alloc` (§0) |
 | `strlen`/`strcpy`/`strlcpy` | 11 | libkern |
 | `fcntl` | 2 | dropped (userspace advisory-lock path only) |
 | `pread`/`pwrite` | 3 | `filsys_io_kern` (the default `filsys_io_file` is excluded) |
-| `stat` | 0 | — dropped (driver maps inode → `vattr`) |
+| `stat` | 0 |, dropped (driver maps inode → `vattr`) |
 | `fsync` | 2 | dropped (driver's `vfs_sync`/`VOP_FSYNC` handle flush) |
-| `getchar`/`feof`/`fflush` | (check.c) | **excluded** — interactive fsck stays userspace |
+| `getchar`/`feof`/`fflush` | (check.c) | **excluded**, interactive fsck stays userspace |
 
 `errno` values used by the engine (`EIO`, `EINVAL`, `EROFS`, `ENOSPC`, `ENOENT`,
 `ENOTDIR`, `EEXIST`, …) are the same constants in the kernel.
 
 ## A.4 References
 
-- GEFS on OpenBSD announcement — https://marc.info/?l=openbsd-tech&m=178948744271633&w=2
-- GEFS paper — https://orib.dev/gefs.pdf  (patch: https://orib.dev/gefs.diff)
-- GEFS repo — `git://shithub.us/ori/openbsd`, branch `gefs`
-- Phoronix coverage — https://www.phoronix.com/news/OpenBSD-GEFS-File-System
-- filsys home — https://github.com/moebiusV/filsys
-- OpenBSD source — https://github.com/openbsd/src
+- GEFS on OpenBSD announcement, https://marc.info/?l=openbsd-tech&m=178948744271633&w=2
+- GEFS paper, https://orib.dev/gefs.pdf  (patch: https://orib.dev/gefs.diff)
+- GEFS repo, `git://shithub.us/ori/openbsd`, branch `gefs`
+- Phoronix coverage, https://www.phoronix.com/news/OpenBSD-GEFS-File-System
+- filsys home, https://github.com/moebiusV/filsys
+- OpenBSD source, https://github.com/openbsd/src

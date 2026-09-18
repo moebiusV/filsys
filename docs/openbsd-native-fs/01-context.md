@@ -6,8 +6,8 @@ libfilsys is a version-agnostic access layer for Research Unix filesystem
 images: PDP-7 through Tenth Edition, plus 32V, Coherent, early Xenix,
 2.9/2.11BSD, System III and System V. One engine handles 16-, 18-, 32- and
 64-bit word/block addressing in big-, little- and middle-endian order. It ships
-four userspace tools — `mount.unixfs` (FUSE), `mkfs.filsys`, `fsck.filsys`,
-`findfs.filsys` — plus a FUSE-free core (`test_matrix` + the mkfs/fsck
+four userspace tools, `mount.unixfs` (FUSE), `mkfs.unixfs`, `fsck.unixfs`,
+`findfs.unixfs`, plus a FUSE-free core (`test_matrix` + the mkfs/fsck
 subprocesses) that runs `make check` with no FUSE installed.
 
 The engine's internal shape (this is what makes the kernel port tractable):
@@ -30,7 +30,7 @@ The engine's internal shape (this is what makes the kernel port tractable):
 - **Per-mount state is a plain C struct.** `filsys_edition_t`
   (`filsys_common.h:158`) holds `fd`, `readonly`, `io`, `base`, `imgsize`, the
   in-core superblock, and a `union` of free-list/bitmap allocator state. It is
-  self-contained — no globals in the format engine.
+  self-contained, no globals in the format engine.
 
 - **The mutation ops decompose to inode-anchored primitives.** The public
   path-based API (`filsys_create`, `filsys_unlink`, `filsys_rename`, …) is a
@@ -40,15 +40,15 @@ The engine's internal shape (this is what makes the kernel port tractable):
   strings.
 
 - **Inode-based read/write already exist** as public API (`filsys_read_ino`,
-  `filsys_write_ino`, `filsys_stat_ino`, `filsys_truncate_ino`) — the exact
+  `filsys_write_ino`, `filsys_stat_ino`, `filsys_truncate_ino`), the exact
   shape a vnode-based driver wants, because the kernel already resolved the
   path to an inode. (`filsys_open_ino`/`filsys_close_ino` move to the FUSE
   frontend in §0; the kernel vnode itself is the pin.)
 
 ## 1.2 Why a native driver when FUSE2 already works
 
-libfilsys is the **backend** — one format engine that does the correct thing per
-edition — behind several **frontends** in two families: **callback** (FUSE,
+libfilsys is the **backend**, one format engine that does the correct thing per
+edition, behind several **frontends** in two families: **callback** (FUSE,
 native drivers) and **message** (9front, QNX), each mapping its own semantics
 onto it. This plan is the first callback-native driver (OpenBSD); the other
 four ports are §1.4. Where a frontend's semantics differ from the engine's,
@@ -63,14 +63,14 @@ the frontend maps; the engine does not encode any one frontend's rules.
 | crash/consistency semantics | FUSE's, not the fs's | owned by the driver |
 | dependency | base libfuse present | none beyond the driver |
 
-The native driver is not a rewrite of the format knowledge — that stays in
+The native driver is not a rewrite of the format knowledge; that stays in
 libfilsys. It is a **second frontend** for the same backend, beside FUSE.
 
 ## 1.3 Non-goals
 
-- **Not** a kernel port of `mkfs.filsys`, `fsck.filsys`, or `findfs.filsys`.
-  They stay userspace — they run *offline* on an unmounted image or block
-  device and need interactive prompts (`fsck -i`) and stdio — but they are not
+- **Not** a kernel port of `mkfs.unixfs`, `fsck.unixfs`, or `findfs.unixfs`.
+  They stay userspace; they run *offline* on an unmounted image or block
+  device and need interactive prompts (`fsck -i`) and stdio, but they are not
   dropped: the port ships them as userspace companions to the driver (they
   already size a raw block device via `filsys_dev_size`, §4.1). Only the
   *runtime* engine is ported *into the kernel*.
@@ -80,33 +80,33 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
 
 ## 1.4 The other six ports, and their order
 
-The backend serves seven native platforms — the OpenBSD driver (this plan's
-subject, §5–§6) plus NetBSD, FreeBSD, Linux, Haiku, 9front, QNX — and one FUSE
+The backend serves seven native platforms, the OpenBSD driver (this plan's
+subject, §5–§6) plus NetBSD, FreeBSD, Linux, Haiku, 9front, QNX, and one FUSE
 frontend (`filsys`), which also runs on Haiku's FUSE 2.9.9. The native seven are
 not seven of the same thing, and the order is deliberate: OpenBSD first, NetBSD
 second, the message family (9front then QNX), Linux last. The per-platform "how
 to implement" is §9.
 
-- **NetBSD** — the close cousin; `struct vnodeopv_entry_desc` arrays rather than
+- **NetBSD**, the close cousin; `struct vnodeopv_entry_desc` arrays rather than
   a flat `vops`, and **rump kernels** as the cheap test loop.
-- **FreeBSD** — the other close cousin; a flat `struct vop_vector` (near
+- **FreeBSD**, the other close cousin; a flat `struct vop_vector` (near
   OpenBSD's `struct vops`), so the glue is closer to OpenBSD than NetBSD's.
-- **Haiku** — a kernel filesystem add-on (`file_system_module_info` /
+- **Haiku**, a kernel filesystem add-on (`file_system_module_info` /
   `fs_vnode_ops`), callback-shaped; also a FUSE target (2.9.9) via the `filsys`
   frontend.
-- **9front** — a userspace 9P server (message family); the fid is the handle;
+- **9front**, a userspace 9P server (message family); the fid is the handle;
   no kernel shims.
-- **QNX** — a resource manager (message family); the OCB is 9front's fid; done
+- **QNX**, a resource manager (message family); the OCB is 9front's fid; done
   after 9front because the mapping is then largely written.
-- **Linux** — last, not because the rationale is weak but because the bar is
+- **Linux**, last, not because the rationale is weak but because the bar is
   highest and the argument is the kernel's own history: the in-tree `sysv`
   driver for these formats was removed as unused-and-unsafe, and the "boring"
   standard (§9.2) is how the replacement answers that. Out-of-tree first, then
   `fs/unixfs/`, default off.
 
-`unixfs` is the filesystem name on every frontend — native and FUSE alike — and
+`unixfs` is the filesystem name on every frontend, native and FUSE alike, and
 `filsys` is the project, engine and library name. IPFS's "UnixFS" is an internal
-data format, not a mount name, so there is nothing to avoid. Haiku runs both —
+data format, not a mount name, so there is nothing to avoid. Haiku runs both,
 a native `unixfs` add-on and a FUSE `unixfs` mount.
 
 Each maps its own semantics onto the same backend shape §0 establishes; nothing
