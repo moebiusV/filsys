@@ -11,7 +11,7 @@ the engine's non-I/O libc surface is enumerated (§4.2, §A.3).
 ## Phase 1 — read-only mount, one edition (V7)
 
 - Implement `filsys_io_kern` (read path first), the alloc/log/time shims, and a
-  read-only `unixfs_vfsops` + `unixfs_vnops` with the read subset: `lookup,
+  read-only `unixfs_vfsops` + `unixfs_vops` with the read subset: `lookup,
   open, close, access(→0 or generic), getattr, read, readdir, readlink, bmap,
   inactive, reclaim, lock/unlock/islocked` (real, `rrwlock`-based — §5.5), plus
   the generic stubs `abortop, pathconf, strategy, print, revoke, bwrite`. A
