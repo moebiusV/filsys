@@ -8,7 +8,7 @@ boundary (§4), resolves the plan's risks 1, 2, and 6, and supersedes §4.3 and
 ## TL;DR
 
 libfilsys is the **backend** for eight **frontends**, FUSE (FUSE3, FUSE2,
-Haiku 2.9.9), native `unixfs` drivers on OpenBSD,
+macFUSE, Haiku 2.9.9), native `unixfs` drivers on OpenBSD,
 NetBSD, FreeBSD, Linux and Haiku, a QNX resource manager, and plan9, but its
 core is today shaped like a *single* frontend (FUSE): the public API is
 path-based, POSIX-typed, whole-directory, and it carries the open-handle table
@@ -62,14 +62,14 @@ families, distinguished by who drives the interaction:
 Where the columns differ *within* a family is exactly what the backend must stop
 assuming:
 
-| demand | FUSE (FUSE3/FUSE2/Haiku) | BSD (OpenBSD, NetBSD, FreeBSD) | Linux | plan9/QNX |
+| demand | FUSE (FUSE3/FUSE2/macFUSE/Haiku) | BSD (OpenBSD, NetBSD, FreeBSD) | Linux | plan9/QNX |
 |---|---|---|---|---|
 | name resolution | path string | `(dvp, cnp)` via `VOP_LOOKUP` | `(struct inode *, struct dentry *)` | `(fid/OCB, name)` |
 | attribute fill | `struct stat` | `struct vattr` | `struct kstat` | `Dir` (plan9) / `struct stat` (QNX) |
 | readdir resume token | index | `uio` cookie (byte) | opaque `ctx->pos` | byte offset |
 | open-handle lifetime | engine-side table | `VOP_INACTIVE`/`VOP_RECLAIM` | dentry/inode lifetime | `Tclunk` / OCB release |
 
-The FUSE column's three OS variants, FUSE3, FUSE2, Haiku 2.9.9, are
+The FUSE column's four OS variants, FUSE3, FUSE2, macFUSE, Haiku 2.9.9, are
 **identical** at the backend level: they demand the same thing on every axis
 that matters, and their differences (FUSE3's `readdir` flags argument, macOS's
 `setvolname`, OpenBSD's `getattr` without `fuse_file_info` and `mknod` accepting
@@ -277,13 +277,15 @@ one-block-at-a-time shape, because iomap is where Linux is going and
 ```c
 int filsys_bmap_ino(filsys_t *fs, uint32_t ino,
                     uint64_t off, uint64_t len,       /* logical byte range */
-                    uint64_t *pblk, uint64_t *plen,   /* physical extent */
+                    uint64_t *paddr, uint64_t *plen,  /* physical byte extent */
                     int *type);                        /* mapped / hole */
 ```
 
 The extent form returns the contiguous run, `*plen` clamped to how far the
 physical mapping stays contiguous, which is what makes readahead work on both
-systems, and serves `iomap_begin` directly; a `get_block` callback can be
+systems. Both `*paddr` and `*plen` are in bytes, matching `iomap_begin`'s
+`addr`/`length`; OpenBSD's `vop_bmap` divides by `DEV_BSIZE` to get a block
+number. It serves `iomap_begin` directly, and a `get_block` callback can be
 derived from it if a consumer still wants one. This is the same kind of change
 as the directory iterator and belongs beside it: it is the difference between a
 Linux driver that is idiomatic and one that is merely tolerated.

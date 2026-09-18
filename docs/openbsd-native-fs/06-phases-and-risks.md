@@ -69,7 +69,7 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
 
 ---
 
-# 7. Risks and open questions
+## Risks and open questions
 
 1. **The public-header boundary.** `filsys.h` cannot be `#include`d in-kernel
    (`<sys/stat.h>` etc.). §0 resolves this: a POSIX-free `filsys.h` (plain

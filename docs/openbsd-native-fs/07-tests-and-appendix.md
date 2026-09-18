@@ -1,4 +1,4 @@
-# 8. Test strategy
+# 7. Test strategy
 
 - **Unchanged userspace suite is the safety net.** `make check` and `test.sh`
   must pass byte-for-byte after any engine change; the kernel driver must not

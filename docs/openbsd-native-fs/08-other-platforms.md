@@ -1,13 +1,14 @@
-# 9. The other six ports: NetBSD, FreeBSD, Linux, Haiku, plan9, QNX
+# 8. The other six ports: NetBSD, FreeBSD, Linux, Haiku, plan9, QNX
 
-The backend serves seven native platforms: the OpenBSD driver (this plan's
-subject, §5-§6) and these six siblings. They are deliberately ordered, OpenBSD
-first, NetBSD second, the message family (plan9 then QNX), Linux last, because
-the six are not six of the same thing. Each section below is "how to implement
-on this platform," written against the backend shape §0 establishes, so the
-engine drops into each without re-doing the mapping.
+The backend serves five native kernel drivers (the OpenBSD driver, this plan's
+subject §5-§6, plus NetBSD, FreeBSD, Linux, Haiku) and two userspace servers
+(plan9, QNX). They are deliberately ordered, OpenBSD first, NetBSD second,
+FreeBSD third, Haiku fourth, the message family (plan9 then QNX), Linux last,
+because the seven are not seven of the same thing. Each section below is "how to
+implement on this platform," written against the backend shape §0 establishes,
+so the engine drops into each without re-doing the mapping.
 
-## 9.1 NetBSD
+## 8.1 NetBSD
 
 The close cousin. Same VFS family, two differences that matter:
 
@@ -24,13 +25,16 @@ rump makes it the cheapest of the native set to iterate on. The transport is the
 same `filsys_io_kern`-shaped `bread`/`VOP_STRATEGY` path, and the per-vnode lock
 protocol is the same BSD-family `rrwlock` work (§5.5).
 
-FreeBSD is the same story with a flat `struct vop_vector`, the closest to
-OpenBSD, and a mature in-tree `fusefs`, so the FUSE frontend already
-works there and the native driver is the optional hardening step, not the
-gap-filler. Its specific VFS details (registration via `VFS_SET`, mount args,
+## 8.2 FreeBSD
+
+FreeBSD is the other close cousin, and the nearest to OpenBSD structurally: a
+flat `struct vop_vector` (nearly `struct vops` under another name) and
+registration via `VFS_SET`. It also ships a mature in-tree `fusefs`, so the FUSE
+frontend already works there and the native driver is the optional hardening
+step, not the gap-filler. Its specific VFS details (mount args, `vfs_modevent`,
 the vnode-lifecycle protocol) get their own pass when FreeBSD is scheduled.
 
-## 9.2 Linux
+## 8.3 Linux
 
 Call the in-tree filesystem **`unixfs`**. `filsys` is the project and the on-disk
 homage; Linux already burned the `sysv` name, and `unixfs` is what an admin
@@ -141,7 +145,7 @@ shape, not `get_block`'s: `iomap_begin` wants offset-and-length in and an extent
 shape to design for; the extent form serves iomap directly, and a `get_block`
 callback can be derived from it if a consumer ever wants one.
 
-## 9.3 plan9
+## 8.4 plan9
 
 plan9 has no callback VFS: a filesystem is a 9P
 server, conventionally a userspace program attached with `9fs`/`mount`, or a
@@ -159,7 +163,7 @@ The fid table is the open-handle lifetime, `Tclunk` releases the pin, which is
 what §0's open-handle move leaves to the frontend. Do plan9 before QNX: the two
 share the message-family mapping, and QNX's OCB is plan9's fid.
 
-## 9.4 QNX
+## 8.5 QNX
 
 Not a kernel driver at all. QNX has no VFS: a filesystem is a **resource
 manager**, a userspace process that registers a pathname prefix with `procmgr`
@@ -170,13 +174,13 @@ is why it follows plan9: the OCB is the fid, and the message-family mapping is
 largely already written. The one POSIX twist is that QNX genuinely wants
 `struct stat`, so the FUSE filler is reused there rather than a new one written.
 
-## 9.5 Haiku
+## 8.6 Haiku
 
-Haiku is both a FUSE target and a native target. The FUSE path is the `filsys`
-frontend under Haiku's FUSE 2.9.9 (§0, refactoring 5). The native path is a
+Haiku is both a FUSE target and a native target. The native path is a
 kernel filesystem add-on, a `file_system_module_info` module providing
 `fs_volume_ops` and `fs_vnode_ops`, which is callback-shaped like the BSDs
 (`lookup`, `read_dir` with an offset cookie, `read_stat` filling Haiku's
-`struct stat`). The add-on is `unixfs`; the FUSE mount is `mount.unixfs`. Haiku
-also ships `userlandfs` (a userspace filesystem framework), which is the FUSE
-analogue, not the native path.
+`struct stat`). The FUSE path is the `filsys` frontend under Haiku's FUSE 2.9.9
+(§0, refactoring 5), running as a `userlandfs` module, since Haiku's FUSE
+support is implemented through `userlandfs`. The add-on is `unixfs`; the FUSE
+mount is `mount.unixfs`.
