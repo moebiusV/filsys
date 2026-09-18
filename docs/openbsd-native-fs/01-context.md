@@ -40,9 +40,10 @@ The engine's internal shape (this is what makes the kernel port tractable):
   strings.
 
 - **Inode-based read/write already exist** as public API (`filsys_read_ino`,
-  `filsys_write_ino`, `filsys_stat_ino`, `filsys_truncate_ino`,
-  `filsys_open_ino`/`filsys_close_ino`) — the exact shape a vnode-based driver
-  wants, because the kernel already resolved the path to an inode.
+  `filsys_write_ino`, `filsys_stat_ino`, `filsys_truncate_ino`) — the exact
+  shape a vnode-based driver wants, because the kernel already resolved the
+  path to an inode. (`filsys_open_ino`/`filsys_close_ino` move to the FUSE
+  frontend in §0; the kernel vnode itself is the pin.)
 
 ## 1.2 Why a native driver when FUSE2 already works
 

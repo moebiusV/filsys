@@ -29,8 +29,9 @@ the engine's non-I/O libc surface is enumerated (§4.2, §A.3).
 
 - Add the mutating `vops`: `create, mkdir, mknod, remove, rmdir, rename,
   link, symlink, setattr, write, fsync, truncate`.
-- Per-mount exclusive `rwlock` for mutations; wire `filsys_open_ino`/`close_ino`
-  for hard-remove; superblock `mark_dirty`/`mark_clean` on mount/unmount.
+- Per-mount exclusive `rwlock` for mutations; the vnode is the open-file pin
+  (no `filsys_open_ino`/`close_ino` — §0 moved them to the FUSE frontend);
+  superblock `mark_dirty`/`mark_clean` on mount/unmount.
 - Write `VOP_RENAME` last: it is the ugliest op in the vnode interface (up to
   four vnodes with a locking and reference-dropping protocol the filesystem must
   release on every path, plus `..` fix-up), and filsys's rename is currently
@@ -86,10 +87,11 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    keep the kernel driver small, not to avoid fd usage — the probe reads through
    the build-selected transport and comes along free; only `filsys_detect.c`'s
    thin wrapper is fd-bound (§5.7).
-4. **Concurrency correctness.** The engine is not reentrant; the big per-mount
-   lock is correct but serial. Confirm the read path under shared lock never
-   mutates engine state (the free-list cache is the thing to audit — reads must
-   not touch it).
+4. **Concurrency correctness — CLOSED.** The engine is not reentrant; the big
+   per-mount lock is correct but serial. The read path under shared lock was
+   audited and does not mutate engine state: reads touch only the decoded inode
+   cache (write-invalidate on setattr/truncate) and never the free-list cache,
+   so shared-lock read-only is sound. Writers serialize on the exclusive lock.
 5. **Block-size vs `DEV_BSIZE`.** libfilsys block sizes ≠ 512; the transport's
    sub-block assembly is the one place bugs will concentrate. Fuzz it with the
    fault-injection transport (`filsys_set_io`) before the kernel build.
@@ -98,11 +100,12 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    it should be heap-allocated (a `pool`), not embedded, to keep `M_FILSYS`
    allocations bounded and pageable.
 7. **SemVer / distribution.** The engine is compiled from libfilsys source into
-   the kernel; decide pinning (vendor a pinned tarball revision vs. build the
-   kernel against the checkout). `ROADMAP.md`'s strict SemVer means the engine
-   API must stay source-stable — the additive inode-anchored exports (§4.3) and
-   the `ops->probe` signature change (the build-selected transport drops its
-   `filsys_io_t *` argument, §5.7) must land in the same MINOR, not a patch.
+   the kernel; decide pinning up front (§5.1) — a vendored snapshot under
+   `sys/filsys/` with a pin and a sync script, or a patch against `-current`.
+   `ROADMAP.md`'s strict SemVer means the engine API must stay source-stable —
+   the additive inode-anchored exports (§4.3) and the `ops->probe` signature
+   change (the build-selected transport drops its `filsys_io_t *` argument,
+   §5.7) must land in the same MINOR, not a patch.
 8. **Kernel allocation failure mode.** The directory readers allocate the whole
    directory in one `malloc`, bounded only by the superblock check
    `ip->size ≤ (fsize − data_start) × bsize ≤ imgsize` (`v7fs.c:180`). In-kernel

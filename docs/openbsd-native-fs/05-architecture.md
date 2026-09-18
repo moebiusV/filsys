@@ -15,10 +15,13 @@ sys/filsys/
   <engine, compiled as-is, via sys/conf/files pointing back at the libfilsys sources>
 ```
 
-The engine sources are *not* copied into the kernel tree. They are referenced
-from the libfilsys tree (or vendored at a pinned revision) by `sys/conf/files`
-entries; the only new files are the four above. This is what "as-is" buys: no
-second copy of `v7fs.c` to drift.
+The engine sources have to be *vendored* into the kernel tree. `sys/conf/files`
+paths are `sys/`-relative and cannot name anything outside `src/sys`, and
+OpenBSD has no loadable kernel modules (LKM was removed in 5.7), so there is no
+"reference the libfilsys checkout" option. The real choice — made before §0's
+file layout, since it decides whether the engine builds under a second, more
+restrictive build system — is a vendored snapshot under `sys/filsys/` with a pin
+and a sync script, or a patch against `-current` that people apply and rebuild.
 
 ## 5.2 Per-mount state
 
@@ -132,10 +135,10 @@ offline, driven by the admin, never called by the kernel.
   &filsys_vops, vpp)` and cache the decoded inode in `vp->v_data`.
 - `VOP_RECLAIM`/`VOP_INACTIVE`: free the node's cached state; mirror GEFS's
   `gefs_clunkdent`/`gefs_reclaim`.
-- Hard-remove semantics (unlink of an open file) are already modeled by
-  `filsys_open_ino`/`filsys_close_ino`; the driver's `VOP_REMOVE` bumps the
-  handle and `VOP_INACTIVE`/`VOP_RECLAIM` drops it — the same deferred-free
-  the FUSE adapter does today.
+- Hard-remove semantics (unlink of an open file): after §0 moves the
+  open-handle table to the FUSE frontend, the vnode *is* the pin — `VOP_REMOVE`
+  must not free while `v_usecount > 0`, and `VOP_INACTIVE` does the `ifree` at
+  nlink 0.
 - Device nodes: a `filsys_devops` mirroring `spec_vops` (copy GEFS's
   `gefs_devops` pattern) for V6/V7 char/block specials; FIFOs via
   `filsys_fifoops` only if `option FIFO` is on (Coherent pipes).
@@ -153,10 +156,23 @@ offline, driven by the admin, never called by the kernel.
    filsys/filsys_vnops.c filsys`, `file filsys/filsys_io_kern.c filsys`, plus
    the libfilsys engine sources each tagged `filsys`.
 2. `sys/conf/GENERIC` — `option FILSYS`.
-3. `sys/kern/vfs_init.c` — `{ &filsys_vfsops, MOUNT_FILSYS, 0, 0, MNT_LOCAL,
+3. `sys/kern/vfs_init.c` — `{ &filsys_vfsops, MOUNT_FILSYS, 20, 0, MNT_LOCAL,
    sizeof(struct filsys_args) }`.
 4. `sys/sys/mount.h` — `struct filsys_args`, `union mount_info` slot,
    `#define MOUNT_FILSYS "filsys"`, `extern const struct vfsops filsys_vfsops;`.
 5. `sys/sys/vnode.h` — `VT_FILSYS` + `VTAG_NAMES`.
 
 Plus the one userspace tool `sbin/mount_filsys/` (§3.1 step 7).
+
+## 5.10 Superblock and the buffer cache
+
+The engine holds a decoded copy of block 1 (`isize`, `fsize`, `fl.free[]`,
+`fl.inode[]`, `time`, `fmod`) in `filsys_edition_t`, flushed once in
+`v7fs_close`. In the kernel, `bread` also caches block 1, and the plan must say
+who wins. The driver has to push the engine's in-core superblock into the buffer
+cache *before* `vfs_sync` or unmount flushes the buffer cache to the device, or
+sync writes a stale block 1 over a newer one. The engine already has this
+ordering — `fl_dirty` flushes the superblock before an inode that references a
+newly allocated block, "else a crash leaves the block both free and referenced"
+— and the kernel sync path must honour the same contract; `MNT_FORCE` needs a
+defined answer too.

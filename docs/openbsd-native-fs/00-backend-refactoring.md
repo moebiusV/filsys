@@ -298,8 +298,12 @@ filsys_io_inject.c   --enable-fault-injection, default off
 ```
 
 The engine calls `filsys_read_bytes(fs, buf, n, off)` unconditionally; which
-object supplies it is a link-time question. `filsys_io_t`, `filsys_set_io`, and
-the `io` member of `filsys_edition_t` disappear from the production build.
+object supplies it is a link-time question. The `io` member of
+`filsys_edition_t`, `filsys_set_io`, and the nine `test_matrix.c` call sites go
+away from the production build. `filsys_io_t` itself stays — the inject arm,
+the kernel transport, and `filsys_mkfs` (which takes a `filsys_io_t *` for the
+device it writes) still use it; it is only the *leaf* that becomes a direct
+call.
 
 The win is not speed — fourteen indirect calls behind a `pread`/`bread` are
 unmeasurable. It is two other things. **Hardening:** a writable function-pointer
@@ -350,10 +354,28 @@ Phase 1 rather than discovering them one panic at a time.
 
 Changes 1, 3, 5, and the open-handle move are each net-negative on lines; 2 is
 net-positive by the literal count but net-negative once the guards it deletes
-are counted; 4 is about neutral. The estimate is **400–500 lines out** of the
-tree, against a starting point of ~11,800 excluding tests. The memory side is
-more decisive: per-mount footprint drops by roughly 3.6 KB, and directory reads
-stop allocating proportional to directory size on every frontend at once.
+are counted; 4 is about neutral. The direction is confidently *out* — a few
+hundred lines, concentrated in `filsys.c`, the two `dir_*` codecs, and the FUSE
+triplication — but the exact number is a forecast, not an acceptance criterion;
+the behavioural criteria above are. The memory side is more decisive: per-mount
+footprint drops by roughly 3.6 KB, and directory reads stop allocating
+proportional to directory size on every frontend at once.
+
+## Sequence
+
+Two ordering decisions the rest of this plan assumes, stated once so they are
+not re-litigated per section:
+
+- **Right-size the caches first (refactoring 4), not last.** It is the cheapest
+  change — ~15 lines, no behaviour change, testable entirely in userspace — and
+  it answers risk 6 (the kernel `pool(9)` sizing) for free, which the other
+  refactorings and the driver both lean on. Do it as the opener so the
+  per-edition `.nicfree`/`.nicinod` numbers are already being honoured when the
+  kernel arm allocates `FILSYS_AL_MOUNT`.
+- **Pick vendored-vs-patch (§5.1) before writing any of it.** It decides whether
+  the engine builds under a second, more restrictive build system, which is a
+  constraint on everything from the public-header boundary to the file layout —
+  not something to discover after the code exists.
 
 ## What to leave alone
 
