@@ -7,8 +7,10 @@ Audience: filsys maintainers; assumes the reader knows the OpenBSD VFS and the l
 ## TL;DR
 
 filsys already mounts on OpenBSD today through **FUSE2** (OpenBSD's in-base
-`libfuse`, 2.6-era — `fuseops_openbsd.c`). This plan is about the *next* step:
-a **native in-kernel filesystem driver**, `sys/filsys/`, that links the libfilsys
+`libfuse`, 2.6-era — `fuseops_openbsd.c`). libfilsys is the **backend** — one
+format engine — behind several **frontends**: FUSE (today), the native kernel
+driver (this plan), and 9P (planned, out of scope here). This plan is the
+native frontend: an in-kernel driver, `sys/filsys/`, that links the libfilsys
 format engine **unmodified** and only adds the thin glue OpenBSD demands of a
 filesystem (`struct vfsops` + `struct vops` + five registration edits).
 
@@ -45,8 +47,8 @@ own. Read in order; later sections build on earlier ones.
    the distilled 7-step recipe; a size/role table of FFS, ext2fs, msdosfs,
    tmpfs, cd9660, udf, ntfs, FUSE, GEFS.
 4. **[What "using libfilsys as-is" means](04-as-is-boundary.md)** — the precise
-   engine-vs-shim split, the `filsys_io_t` seam, and the one genuine gap
-   (path-based mutation).
+   engine-vs-shim split, the `filsys_io_t` seam, and how the frontend maps its
+   semantics to the backend (path vs. inode).
 5. **[Proposed architecture: `sys/filsys/`](05-architecture.md)** — file layout,
    per-mount state, the I/O transport, the allocation/logging/stat shims,
    locking, edition selection, and the five registration diffs.

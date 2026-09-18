@@ -59,13 +59,16 @@ entry point carries the device size in via `DIOCGDINFO` instead (§4.2).
    `filsys_inode_t` (plain `uint32_t` fields) directly into `struct vattr`
    and `struct statfs`; times come from `nanotime(9)` (§5.6).
 
-## 4.3 The one genuine gap: path-based mutation
+## 4.3 The frontend maps its semantics to the backend
 
 The public mutation API takes **paths** (`filsys_create(path, …)`), but the
-kernel VFS hands the driver **`(parent-vnode, name)`**. The path-based
-functions are thin wrappers over inode-anchored internals (`dir_lookup`,
-`dir_add`, `dir_remove`, `ialloc`, `ifree`, `bmap`, `read_inode`,
-`write_inode`). Two options:
+kernel VFS hands the driver **`(parent-vnode, name)`**. This is the ordinary
+frontend-to-backend mapping, not a gap: the engine does the correct thing
+(inode-anchored `dir_lookup`, `dir_add`, `dir_remove`, `ialloc`, `ifree`,
+`bmap`, `read_inode`, `write_inode`), and the frontend maps its own semantics
+onto those primitives — the VFS frontend maps `(parent-vnode, name)` to
+`(parent-inode, name)`, just as the FUSE frontend maps path strings today. The
+path-based functions are thin wrappers over those internals. Two options:
 
 - **(Preferred) Export the inode-anchored primitives.** Add a small additive,
   behavior-preserving internal API — e.g. `filsys_dir_lookup_in(fs,

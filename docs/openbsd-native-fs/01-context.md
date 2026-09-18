@@ -46,6 +46,12 @@ The engine's internal shape (this is what makes the kernel port tractable):
 
 ## 1.2 Why a native driver when FUSE2 already works
 
+libfilsys is the **backend** — one format engine that does the correct thing per
+edition — behind several **frontends** that each map their own semantics onto
+it: FUSE (today), a native kernel driver (this plan), and 9P (planned, out of
+scope here). Where a frontend's semantics differ from the engine's, the frontend
+maps; the engine does not encode any one frontend's rules.
+
 | | FUSE2 (today) | native `sys/filsys/` (this plan) |
 |---|---|---|
 | kernel/user round-trip per op | yes | no |
@@ -56,7 +62,7 @@ The engine's internal shape (this is what makes the kernel port tractable):
 | dependency | base libfuse present | none beyond the driver |
 
 The native driver is not a rewrite of the format knowledge — that stays in
-libfilsys. It is a **second transport** for the same engine, beside FUSE.
+libfilsys. It is a **second frontend** for the same backend, beside FUSE.
 
 ## 1.3 Non-goals
 
