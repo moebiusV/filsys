@@ -206,7 +206,13 @@ macOS 27+, the 15.4-26 path is the older operations protocols).
 One hard requirement nobody else has: FSKit will not mount until the filesystem
 passes a check, and a block-device `FSUnaryFileSystem` must conform to
 `FSManageableResourceMaintenanceOperations` (check, repair, optionally format).
-So `filsys_check` and `filsys_mkfs` must be linkable as libraries, not only
-programs. `filsys_invariants` is already the read-only, no-stdio walk this
-needs; `check.c`'s interactive `filsys_query` and its stdio have to be
-separable at link time.
+The check half is already met: `filsys_check` and `filsys_mkfs` are library
+functions (`libfilsys_a_SOURCES` already builds `check.c`, `filsys_mkfs.c`,
+`filsys_detect.c`), and `filsys_invariants` is the read-only, no-stdio walk
+FSKit's check wants, so an appex can call it today. What is missing is a
+reporting and decision sink: `check.c`'s findings go to `printf`, and
+`filsys_query` owns the tty for its repair decisions, but FSKit wants those
+through its reply handlers, not stdout (in the sandboxed appex stdout goes to a
+log, so the module runs but cannot tell the framework what it found or fixed).
+That is a build-selected log/decision sink (§0), not library-ification, with
+`filsys_query` turned into a callback.

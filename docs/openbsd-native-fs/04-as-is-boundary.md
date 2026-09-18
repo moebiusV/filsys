@@ -52,8 +52,11 @@ entry point carries the device size in via `DIOCGDINFO` instead (§4.2).
    hot fixed-size `filsys_inode_t`/`filsys_dirent_t`/block buffers). Prefer a
    small `unixfs_kern.h` with wrappers over `#define malloc …` (§5.4).
 3. **Logging shim**, `printf`/`fprintf`/`snprintf`/`vsnprintf` → kernel
-   `printf`/`snprintf`. The interactive `filsys_query()` (`getchar` on stdin)
-   is *not* ported: it lives in `check.c`, which is excluded.
+   `printf`/`snprintf`. This is the kernel arm of the §0 log/decision sink, the
+   same seam that carries FSKit's reply handlers and userspace stdout. The
+   interactive `filsys_query()` (a `static inline` in `filsys_ops.h`, `getchar`
+   on stdin) becomes a callback in that seam; the kernel arm never asks, so
+   `check.c` stays out of the kernel build (§4.1).
 4. **Stat/time shim**, `struct stat`/`struct statvfs`/`struct timespec` from
    the public header are userspace-only. The driver decodes the already-typed
    `filsys_inode_t` (plain `uint32_t` fields) directly into `struct vattr`

@@ -412,6 +412,19 @@ since it produced the dangling-entry reproduction and the slow suite is already
 skipped by default. (`filsys_invariants` stays as-is: the fuzzer calls it and it
 is the same walk `filsys_check` drives, not a transport concern.)
 
+## The log and decision sink, too
+
+A third seam with the same shape. `check.c` reports its findings through
+`printf`, and `filsys_query` owns the tty for the five repair decisions; both are
+frontend concerns, not format knowledge. The kernel wants `printf(9)`, FSKit
+wants reply handlers (§8.7), and userspace wants stdout. So the reporting and
+decision channel is build-selected exactly like the allocator and the transport:
+the engine calls a `filsys_log`/`filsys_decide` pair (or `filsys_query` made a
+callback) without knowing which sink answers. This is one more row in the seam
+table, not a new capability: `filsys_check`, `filsys_invariants`, and
+`filsys_mkfs` are already library functions, and `filsys_invariants` under
+`FILSYS_CK_QUIET` is the read-only walk both the fuzzer and FSKit's check call.
+
 ## Testing: keep it in userspace
 
 `fuzz/filsys-fuzz.c` is a libFuzzer harness over `filsys_detect` →
@@ -482,10 +495,10 @@ engine in `src/` is the only code they share, which is what keeps it vendorable
 
 The edition descriptor table, the allocator and directory-format vtables, and
 the byte-order vtable are all carrying real variation and are already the right
-shape; they are why this port is tractable at all. The two build-selected
-seams, allocation and I/O, carry the per-build variation (userspace vs
-kernel); the I/O one still has to carry the device size alongside the
-byte-offset read/write, as §4.2 says.
+shape; they are why this port is tractable at all. The three build-selected
+seams, allocation, I/O, and reporting/decisions, carry the per-build variation
+(userspace vs kernel); the I/O one still has to carry the device size alongside
+the byte-offset read/write, as §4.2 says.
 
 ## How this revises the rest of this plan
 
