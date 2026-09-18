@@ -78,3 +78,15 @@ path-based functions are thin wrappers over those internals. Two options:
   already exists visible to a second caller (the kernel driver, beside FUSE).
 - (Alternative) Have the driver maintain parent pointers and synthesize paths;
   rejected as fragile and wasteful.
+
+## 4.4 Directory iteration (readdir)
+
+The kernel `VOP_READDIR` is incremental and offset-based; the backend's only
+whole-directory primitive is `dir_read`, which allocates the whole directory
+and returns it as an array (`filsys_dir_ops`). A `VOP_READDIR` wants one entry
+per call, so the engine gains a `readdir`-style iterator — advance-by-offset
+over the directory records, which the per-record walks inside `dir_lookup`/
+`dir_add`/`dir_remove` already embody — and the frontend streams entries. Where
+an edition has no natural stream (V1's fixed 10-byte slots, PDP-7's
+word-addressed entries), the backend synthesises a stable index and the
+frontend maps to that.

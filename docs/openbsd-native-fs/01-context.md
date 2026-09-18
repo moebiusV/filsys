@@ -67,9 +67,11 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
 ## 1.3 Non-goals
 
 - **Not** a kernel port of `mkfs.filsys`, `fsck.filsys`, or `findfs.filsys`.
-  Those stay userspace: they run *offline* on an unmounted image or block
-  device, they need interactive prompts (`fsck -i`) and stdio, and there is no
-  reason to carry that into the kernel. Only the *runtime* engine is ported.
+  They stay userspace — they run *offline* on an unmounted image or block
+  device and need interactive prompts (`fsck -i`) and stdio — but they are not
+  dropped: the port ships them as userspace companions to the driver (they
+  already size a raw block device via `filsys_dev_size`, §4.1). Only the
+  *runtime* engine is ported *into the kernel*.
 - **Not** a fork of libfilsys's format code. GEFS copy/pasted Plan 9 code and
   rewrote it in place; this plan explicitly does the opposite.
 - **Not** FFS or Minix (already out of scope per `ROADMAP.md`).

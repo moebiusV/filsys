@@ -50,7 +50,9 @@ mount each edition on a VM and diff against the userspace result).
 - NFS re-export (fill `vfs_fhtovp`/`vfs_vptofh` — the inode number is a natural
   file handle) if desired; otherwise leave `NULL` like GEFS.
 - Manpage `mount_filsys(8)`, `GENERIC`/`RAMDISK` entries, and a packaging
-  follow-up in `packaging/openbsd/` (the port that today ships the FUSE2 build).
+  follow-up in `packaging/openbsd/` that ships the native `mount_filsys(8)` plus
+  the userspace `fsck.filsys`/`mkfs.filsys`/`findfs.filsys` — a mount driver
+  alone is not enough; the companion tools have to be in the port too.
 
 **Acceptance:** `./configure && make && make install` still yields the FUSE
 toolchain untouched; the kernel driver is a separate, documented artifact.

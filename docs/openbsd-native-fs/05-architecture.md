@@ -98,12 +98,14 @@ struct. Two mount modes:
 
 - **explicit** — `-o edition=v7` (default for determinism, matches the FUSE
   tool's `-v`);
-- **autodetect** — `-o autodetect` calls `filsys_detect()` at mount; but
-  `filsys_detect.c` is currently an offline, userspace file (it opens an fd),
-  so the probe must either be pulled into the runtime subset or done by
-  `mount_filsys` in userspace before `mount(2)`. Prefer the latter: keep
-  detection in userspace, pass the resolved edition in `filssys_args`. (This
-  keeps the kernel driver small and the probe logic out of the kernel.)
+- **autodetect** — `-o autodetect`. The read-only probe already lives in the
+  backends (`v7fs.c`/`v1fs.c`/`pdp7fs.c`, via each edition's `ops->probe`,
+  which takes a `filsys_io_t` transport, not an fd), so detection comes along
+  free; only `filsys_detect.c`'s thin wrapper (fd, precedence order, class
+  mapping) is userspace. Prefer `mount_filsys` probing in userspace and passing
+  the resolved edition in `filsys_args` — it keeps the kernel driver small —
+  but in-kernel detection is equally feasible by calling `ops->probe` with the
+  kernel transport. The choice is size, not feasibility.
 
 ## 5.8 The vnode payload and inode life cycle
 
