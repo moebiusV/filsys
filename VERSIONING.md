@@ -23,7 +23,7 @@ Releases before this policy were numbered under a looser scheme.  They were
 re-numbered in 2026-09 to this mapping (the three releases marked with a
 backward-incompatible change are the ones that should have bumped MAJOR):
 
-| old       | current | reason |
+| pre-policy | current SemVer | reason |
 |-----------|---------|--------|
 | 1.2.3     | 1.2.3   | baseline |
 | 1.2.4     | 1.2.4   | bug fix |
@@ -49,6 +49,12 @@ backward-incompatible change are the ones that should have bumped MAJOR):
 | 2.1.0     | 3.2.1   | docs/test only |
 | 2.2.0     | 4.0.0   | **`filsys_create` gained `uint32_t *ino`** |
 | 2.3.0     | 4.1.0   | + probe-confidence enum / `filsys_detect_t.conf` |
+
+The `pre-policy` column is a historical label only — it is not a live version
+number, and the `current SemVer` column is what each release is now tagged.
+The mapping ends at 4.1.0 because every later release (4.1.1, 4.1.2) was
+already cut under this policy; the live version is the one in `configure.ac`,
+`ROADMAP.md` and `NEWS`, currently 4.1.2.
 
 Versions 1.0.0–1.2.2 predate the current git history (tarballs only) and are
 not re-tagged.
