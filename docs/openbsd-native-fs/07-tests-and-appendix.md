@@ -28,7 +28,7 @@ file unixfs/unixfs_vfsops.c	unixfs
 file unixfs/unixfs_vnops.c	unixfs
 file unixfs/filsys_io_kern.c	unixfs
 file unixfs/unixfs_vnode.h		# not compiled; header
-# + the libfilsys engine sources, each gated on `unixfs`
+# + the vendored engine sources under unixfs/engine/, each gated on `unixfs`
 
 /* sys/conf/GENERIC */
 option		UNIXFS		# Research Unix (V1..V10, 2.11BSD, SysIII/V) filesystems

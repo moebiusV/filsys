@@ -5,25 +5,38 @@ threads.
 
 ## 5.1 File layout
 
+`sys/unixfs/` holds two things side by side: the frontend, from `src/openbsd/`,
+and the engine, from `src/engine/`, as a subdirectory.
+
 ```
 sys/unixfs/
   unixfs_vfsops.c     # struct vfsops: mount/unmount/root/statfs/sync/vget  (~mirrors gefs load.c)
   unixfs_vnops.c      # struct vops: lookup/create/.../reclaim            (~mirrors gefs vnops.c)
   unixfs_vnode.h      # struct unixfs_node { filsys_inode_t ino; ... }  (v_data payload)
   unixfs_kern.h       # the shim: alloc/log/time + filsys_io_kern declaration
-  filsys_io_kern.c    # filsys_io_t over bread/VOP_STRATEGY
-  <engine, vendored as-is, via sys/conf/files>
+  filsys_io_kern.c    # filsys_io_t over bread/VOP_STRATEGY              (from src/openbsd/)
+  engine/             # the vendored engine, from src/engine/, via sys/conf/files
 ```
+
+The `unixfs_*` files are the frontend (`src/openbsd/`); the `engine/` directory
+is the vendored core (`src/engine/`). `filsys_io_kern.c` rides with the
+frontend, not the engine snapshot, so the kernel never compiles a
+`filsys_io_file.o` (pread) and `/usr/lib` never carries a `filsys_io_kern.o`
+(bread): each production transport lives beside its consumer.
 
 The engine sources have to be *vendored* into the kernel tree. `sys/conf/files`
 paths are `sys/`-relative and cannot name anything outside `src/sys`, and
 OpenBSD has no loadable kernel modules (LKM was removed in 5.7), so there is no
-"reference the libfilsys checkout" option. The real choice, made before §0's
-file layout, since it decides whether the engine builds under a second, more
-restrictive build system, is a vendored snapshot under `sys/unixfs/` with a pin
-and a sync script, or a patch against `-current` that people apply and rebuild.
-The sync script is **not optional**: the engine vendors into four kernel trees
-(OpenBSD, NetBSD, Linux, QNX, §1.4), so there are four copies to keep in step
+"reference the libfilsys checkout" option. The same `src/engine/` sources are
+compiled twice: once into `GENERIC` under `sys/unixfs/engine/`, and once into
+`lib/libfilsys/` for `/usr/lib/libfilsys.a` + `/usr/include/filsys.h`, which
+userland (`mount_unixfs`, `fsck_unixfs`, `test_matrix`) links; that archive is
+the only `/usr/lib` story. The real choice, made before §0's file layout, since
+it decides whether the engine builds under a second, more restrictive build
+system, is a vendored snapshot under `sys/unixfs/engine/` with a pin and a sync
+script, or a patch against `-current` that people apply and rebuild. The sync
+script is **not optional**: the engine vendors into five kernel trees (OpenBSD,
+NetBSD, FreeBSD, Linux, Haiku, §1.4), so there are five copies to keep in step,
 and "copy the files by hand" stops being a thing anyone can be trusted to do.
 
 ## 5.2 Per-mount state
@@ -167,7 +180,7 @@ offline, driven by the admin, never called by the kernel.
 
 1. `sys/conf/files`, `file unixfs/unixfs_vfsops.c unixfs`, `file
    unixfs/unixfs_vnops.c unixfs`, `file unixfs/filsys_io_kern.c unixfs`, plus
-   the libfilsys engine sources each tagged `unixfs`.
+   the vendored engine sources under `unixfs/engine/`, each tagged `unixfs`.
 2. `sys/conf/GENERIC`, `option UNIXFS`.
 3. `sys/kern/vfs_init.c`, `{ &unixfs_vfsops, MOUNT_UNIXFS, 20, 0, MNT_LOCAL,
    sizeof(struct unixfs_args) }`.
@@ -175,7 +188,9 @@ offline, driven by the admin, never called by the kernel.
    `#define MOUNT_UNIXFS "unixfs"`, `extern const struct vfsops unixfs_vfsops;`.
 5. `sys/sys/vnode.h`, `VT_UNIXFS` + `VTAG_NAMES`.
 
-Plus the one userspace tool `sbin/mount_unixfs/` (§3.1 step 7).
+Plus the four userspace tools from `src/utils/` (§0 Repository layout):
+`sbin/mount_unixfs/`, `usr.sbin/newfs_unixfs/`, `usr.sbin/fsck_unixfs/`,
+`usr.sbin/findfs_unixfs/`.
 
 ## 5.10 Superblock and the buffer cache
 

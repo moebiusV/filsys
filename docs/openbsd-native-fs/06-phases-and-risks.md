@@ -18,7 +18,9 @@ the engine's non-I/O libc surface is enumerated (§4.2, §A.3).
   NULL `vop_lock` makes `vn_lock` return `EOPNOTSUPP` and takes `namei` with
   it, and the first several boots end in `ddb` on whichever slot is still NULL
  , fill them here, not one panic at a time (§0).
-- Wire the five registration edits; add `sbin/mount_unixfs/`.
+- Wire the five registration edits; add the four userspace tools
+  (`sbin/mount_unixfs/`, `usr.sbin/newfs_unixfs/`, `usr.sbin/fsck_unixfs/`,
+  `usr.sbin/findfs_unixfs/`).
 - Build a `GENERIC`-with-UNIXFS kernel and boot it (or a `vnd(4)`-backed test
   in a VM).
 
@@ -61,8 +63,8 @@ mount each edition on a VM and diff against the userspace result).
   file handle) if desired; otherwise leave `NULL` like GEFS.
 - Manpage `mount_unixfs(8)`, `GENERIC`/`RAMDISK` entries, and a packaging
   follow-up in `packaging/openbsd/` that ships the native `mount_unixfs(8)` plus
-  the userspace `fsck.unixfs`/`mkfs.unixfs`/`findfs.unixfs`, a mount driver
-  alone is not enough; the companion tools have to be in the port too.
+  `newfs_unixfs(8)`/`fsck_unixfs(8)`/`findfs_unixfs(8)`, a mount driver alone
+  is not enough; the companion tools have to be in the port too.
 
 **Acceptance:** `./configure && make && make install` still yields the FUSE
 toolchain untouched; the kernel driver is a separate, documented artifact.
@@ -101,7 +103,8 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    allocations bounded and pageable.
 7. **SemVer / distribution.** The engine is compiled from libfilsys source into
    the kernel; decide pinning up front (§5.1), a vendored snapshot under
-   `sys/unixfs/` with a pin and a sync script, or a patch against `-current`.
+   `sys/unixfs/engine/` with a pin and a sync script, or a patch against
+   `-current`.
    `ROADMAP.md`'s strict SemVer means the engine API must stay source-stable,
    the additive inode-anchored exports (§4.3) and the `ops->probe` signature
    change (the build-selected transport drops its `filsys_io_t *` argument,

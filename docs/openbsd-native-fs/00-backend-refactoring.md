@@ -303,14 +303,15 @@ HAVE_SYS_SYSMACROS_H      (major/minor in the mknod path)
 Both are userspace concerns, so the `#include <config.h>` lines in the codecs
 are vestigial. Dropping them, and confining those two macros to the tools/FUSE
 side, makes the engine directory plain C99 with no generated header, so it
-vendors into `sys/unixfs/`, `fs/unixfs/`, a NetBSD `sys/fs/unixfs/`, and a QNX
-build with no autoconf anywhere.
+vendors into OpenBSD's `sys/unixfs/engine/`, Linux's `fs/unixfs/`, NetBSD's
+`sys/fs/unixfs/`, FreeBSD's `sys/fs/unixfs/`, and a Haiku
+`file_systems/unixfs/` add-on with no autoconf anywhere.
 
 This is what makes vendorability a first-class property rather than a hope:
-four kernel trees, none with a stable internal API, and only OpenBSD refuses
+five kernel trees, none with a stable internal API, and only OpenBSD refuses
 out-of-tree builds, so the engine has to drop cleanly into a foreign build
-system four times. The sync script the second review asked for stops being
-optional once there are four copies.
+system five times. The sync script the second review asked for stops being
+optional once there are five copies.
 
 ## The open-handle table moves to FUSE
 
@@ -385,6 +386,11 @@ filsys_io_file.c     production, userspace   -> direct call
 filsys_io_kern.c     production, kernel      -> direct call
 filsys_io_inject.c   --enable-fault-injection, default off
 ```
+
+Where the two production leaves live is also fixed: `filsys_io_file.c` rides
+with the tools in `src/utils/`, `filsys_io_kern.c` with the frontend in
+`src/openbsd/`, so the engine snapshot never carries a pread transport into the
+kernel or a bread transport into `/usr/lib` (Repository layout).
 
 The engine calls `filsys_read_bytes(fs, buf, n, off)` unconditionally; which
 object supplies it is a link-time question. The `io` member of
@@ -483,13 +489,52 @@ not re-litigated per section:
 
 ## Repository layout
 
-The engine lives in `src/`, along with all the userspace tooling (`mkfs.unixfs`,
-`fsck.unixfs`, `findfs.unixfs`, `filsys_detect`, the test and fuzz harnesses).
-Each frontend gets its own directory, `fuse3/`, `fuse2/`, `openbsd/`, `netbsd/`,
-`freebsd/`, `linux/`, `beos/` (Haiku), `qnx/`, and `plan9/`. Each frontend is
-thin: it maps the node-anchored core onto its own VFS or protocol, and the
-engine in `src/` is the only code they share, which is what keeps it vendorable
-(§5.1).
+One tree, one `src/` prefix:
+
+```
+src/
+  engine/          the only directory a kernel copies
+  utils/           mkfs/fsck/findfs/detect/check/tests/fuzz
+  fuse2/
+  fuse3/
+  openbsd/
+  netbsd/
+  freebsd/
+  linux/
+  beos/            Haiku native + UserlandFS entry
+  plan9/
+  qnx/
+  macos/           FSKit appex later; FUSE stays fuse2/fuse3
+```
+
+`src/engine/` is the vendorable core, the only directory a kernel copies.
+`src/utils/` never leaves this repo. Each frontend is thin: it maps the
+node-anchored core onto its own VFS or protocol, and `src/engine/` is the only
+code they share, which is what keeps it vendorable (§5.1). `configure` still
+picks one FUSE directory and one alloc/I/O/log pair; native builds ignore
+`src/fuse*`.
+
+The OpenBSD build lands `src/engine/` in two places at once, because the kernel
+cannot use the userspace archive (`sys/conf/files` only sees paths under
+`src/sys`, and there are no LKMs):
+
+| this repo | OpenBSD `src` | installed |
+|---|---|---|
+| `src/engine/` | `lib/libfilsys/` | `/usr/lib/libfilsys.a`, `/usr/include/filsys.h` |
+| `src/utils/` | `sbin/mount_unixfs/`, `usr.sbin/newfs_unixfs/`, `usr.sbin/fsck_unixfs/`, `usr.sbin/findfs_unixfs/` | `/sbin`, `/usr/sbin` |
+| `src/openbsd/` | `sys/unixfs/` | in the kernel |
+| `src/engine/` (again) | `sys/unixfs/engine/` | in the kernel |
+
+Userland (`mount_unixfs`, `fsck_unixfs`, `test_matrix`) links
+`/usr/lib/libfilsys`; that is the only `/usr/lib` story. The kernel compiles the
+same `src/engine/` sources a second time into `GENERIC`, next to `src/openbsd/`;
+two build products, one source directory, and the sync script copies `engine/`
+to both `lib/libfilsys/` and `sys/unixfs/engine/`.
+
+The transport `.c` files do not ride with the engine snapshot: `filsys_io_file.c`
+(pread) lives in `src/utils/` with the tools, and `filsys_io_kern.c` (bread)
+lives in `src/openbsd/` with the frontend, so neither a `filsys_io_file.o` lands
+in the kernel copy nor a `filsys_io_kern.o` in `/usr/lib`.
 
 ## What to leave alone
 
