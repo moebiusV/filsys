@@ -49,7 +49,7 @@ The engine's internal shape (this is what makes the kernel port tractable):
 
 libfilsys is the **backend**, one format engine that does the correct thing per
 edition, behind several **frontends** in two families: **callback** (FUSE,
-native drivers) and **message** (9front, QNX), each mapping its own semantics
+native drivers) and **message** (plan9, QNX), each mapping its own semantics
 onto it. This plan is the first callback-native driver (OpenBSD); the other
 four ports are §1.4. Where a frontend's semantics differ from the engine's,
 the frontend maps; the engine does not encode any one frontend's rules.
@@ -81,10 +81,10 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
 ## 1.4 The other six ports, and their order
 
 The backend serves seven native platforms, the OpenBSD driver (this plan's
-subject, §5–§6) plus NetBSD, FreeBSD, Linux, Haiku, 9front, QNX, and one FUSE
+subject, §5–§6) plus NetBSD, FreeBSD, Linux, Haiku, plan9, QNX, and one FUSE
 frontend (`filsys`), which also runs on Haiku's FUSE 2.9.9. The native seven are
 not seven of the same thing, and the order is deliberate: OpenBSD first, NetBSD
-second, the message family (9front then QNX), Linux last. The per-platform "how
+second, the message family (plan9 then QNX), Linux last. The per-platform "how
 to implement" is §9.
 
 - **NetBSD**, the close cousin; `struct vnodeopv_entry_desc` arrays rather than
@@ -94,10 +94,10 @@ to implement" is §9.
 - **Haiku**, a kernel filesystem add-on (`file_system_module_info` /
   `fs_vnode_ops`), callback-shaped; also a FUSE target (2.9.9) via the `filsys`
   frontend.
-- **9front**, a userspace 9P server (message family); the fid is the handle;
+- **plan9**, a userspace 9P server (message family); the fid is the handle;
   no kernel shims.
-- **QNX**, a resource manager (message family); the OCB is 9front's fid; done
-  after 9front because the mapping is then largely written.
+- **QNX**, a resource manager (message family); the OCB is plan9's fid; done
+  after plan9 because the mapping is then largely written.
 - **Linux**, last, not because the rationale is weak but because the bar is
   highest and the argument is the kernel's own history: the in-tree `sysv`
   driver for these formats was removed as unused-and-unsafe, and the "boring"

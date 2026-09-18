@@ -1,8 +1,8 @@
-# 9. The other six ports: NetBSD, FreeBSD, Linux, Haiku, 9front, QNX
+# 9. The other six ports: NetBSD, FreeBSD, Linux, Haiku, plan9, QNX
 
 The backend serves seven native platforms: the OpenBSD driver (this plan's
 subject, §5–§6) and these six siblings. They are deliberately ordered, OpenBSD
-first, NetBSD second, the message family (9front then QNX), Linux last, because
+first, NetBSD second, the message family (plan9 then QNX), Linux last, because
 the six are not six of the same thing. Each section below is "how to implement
 on this platform," written against the backend shape §0 establishes, so the
 engine drops into each without re-doing the mapping.
@@ -141,9 +141,9 @@ shape, not `get_block`'s: `iomap_begin` wants offset-and-length in and an extent
 shape to design for; the extent form serves iomap directly, and a `get_block`
 callback can be derived from it if a consumer ever wants one.
 
-## 9.3 9front
+## 9.3 plan9
 
-9front (the maintained Plan 9 fork) has no callback VFS: a filesystem is a 9P
+plan9 has no callback VFS: a filesystem is a 9P
 server, conventionally a userspace program attached with `9fs`/`mount`, or a
 kernel `dev` driver, so this is the message family, and it needs none of the
 kernel shims. The frontend maps the 9P request stream onto the node-anchored
@@ -156,8 +156,8 @@ core:
 - `Tstat`/`Twstat` → fill a `Dir` from the POSIX-free core.
 
 The fid table is the open-handle lifetime, `Tclunk` releases the pin, which is
-what §0's open-handle move leaves to the frontend. Do 9front before QNX: the two
-share the message-family mapping, and QNX's OCB is 9front's fid.
+what §0's open-handle move leaves to the frontend. Do plan9 before QNX: the two
+share the message-family mapping, and QNX's OCB is plan9's fid.
 
 ## 9.4 QNX
 
@@ -165,8 +165,8 @@ Not a kernel driver at all. QNX has no VFS: a filesystem is a **resource
 manager**, a userspace process that registers a pathname prefix with `procmgr`
 and answers `_IO_READ`/`_IO_WRITE`/`_IO_STAT`/`_IO_OPENFD` messages, usually via
 the `iofunc_*` helpers. It is message-shaped, runs in userspace, uses ordinary
-`malloc`, and needs none of the kernel shims, the same shape as 9front, which
-is why it follows 9front: the OCB is the fid, and the message-family mapping is
+`malloc`, and needs none of the kernel shims, the same shape as plan9, which
+is why it follows plan9: the OCB is the fid, and the message-family mapping is
 largely already written. The one POSIX twist is that QNX genuinely wants
 `struct stat`, so the FUSE filler is reused there rather than a new one written.
 

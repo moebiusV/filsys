@@ -5,7 +5,7 @@ Patch: `https://orib.dev/gefs.diff` (9,094 lines). Paper:
 `https://orib.dev/gefs.pdf`.
 
 GEFS ("Good Enough File System") is a crash-safe, snapshotting, copy-on-write
-filesystem built on Bε trees, originally for 9front. The OpenBSD port was
+filesystem built on Bε trees, originally for plan9. The OpenBSD port was
 announced 2026-09-15 on `openbsd-tech` as "a rough, buggy, issue-filled
 preview", not production-ready, data loss expected on error.
 

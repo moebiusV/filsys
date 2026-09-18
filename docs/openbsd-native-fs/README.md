@@ -10,7 +10,7 @@ filsys already mounts on OpenBSD today through **FUSE2** (OpenBSD's in-base
 `libfuse`, 2.6-era, `fuseops_openbsd.c`). libfilsys is the **backend**, one
 format engine, behind **eight frontends** in two families: **callback** (FUSE,
 and native `unixfs` drivers on OpenBSD/NetBSD/FreeBSD/Linux/Haiku) and
-**message** (9front, QNX).
+**message** (plan9, QNX).
 This plan is the first callback-native driver: an in-kernel OpenBSD driver,
 `sys/unixfs/`, that links the libfilsys format engine **unmodified** and only
 adds the thin glue OpenBSD demands of a filesystem (`struct vfsops` +
@@ -49,7 +49,7 @@ own. Read in order; later sections build on earlier ones.
    §4.3/§4.4.
 1. **[Context and motivation](01-context.md)**, what libfilsys already is, why a
    native driver when FUSE2 works, non-goals, and the other six ports
-   (NetBSD/FreeBSD/Linux/Haiku/9front/QNX) with their order.
+   (NetBSD/FreeBSD/Linux/Haiku/plan9/QNX) with their order.
 2. **[Reference implementation: GEFS on OpenBSD](02-gefs-reference.md)**, the
    `sys/gefs/` layout, the five core-kernel edits, the two vtable contracts,
    device I/O, and the shortcuts we deliberately avoid.
@@ -68,7 +68,7 @@ own. Read in order; later sections build on earlier ones.
    without regressing userspace; the exact diff shapes, vtable field lists, the
    libc-dependency inventory, and references.
 8. **[The other six ports](08-other-platforms.md)**, NetBSD, FreeBSD, Linux,
-   Haiku (`unixfs`), 9front, QNX: how each is implemented on the §0 backend
+   Haiku (`unixfs`), plan9, QNX: how each is implemented on the §0 backend
    shape, and why this order.
 
 ## How this was produced

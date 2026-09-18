@@ -9,12 +9,12 @@ boundary (§4), resolves the plan's risks 1, 2, and 6, and supersedes §4.3 and
 
 libfilsys is the **backend** for eight **frontends**, FUSE (FUSE3, FUSE2,
 Haiku 2.9.9), native `unixfs` drivers on OpenBSD,
-NetBSD, FreeBSD, Linux and Haiku, a QNX resource manager, and 9front, but its
+NetBSD, FreeBSD, Linux and Haiku, a QNX resource manager, and plan9, but its
 core is today shaped like a *single* frontend (FUSE): the public API is
 path-based, POSIX-typed, whole-directory, and it carries the open-handle table
 that only FUSE needs. The eight fall into two families, **callback** (FUSE,
 OpenBSD, NetBSD, FreeBSD, Linux, Haiku: the host calls you with resolved nodes)
-and **message** (9front, QNX: you answer a request stream with your own handle
+and **message** (plan9, QNX: you answer a request stream with your own handle
 table), and each family demands a different shape for the same backend
 capabilities. The
 fix is to make the core **frontend-shaped**, node-anchored (resolves by inode
@@ -48,24 +48,24 @@ A few non-line measurements that shape the argument:
   expressing three identical 25-entry vtables.
 - The public API has **17 path-taking functions**.
 
-## What the frontends actually demand: two families, not a FUSE/VFS/9front axis
+## What the frontends actually demand: two families, not a FUSE/VFS/plan9 axis
 
 The backend exposes a small set of capabilities; each frontend demands a
-different shape for them. The frontends are not "FUSE / VFS / 9front"; they are two
+different shape for them. The frontends are not "FUSE / VFS / plan9"; they are two
 families, distinguished by who drives the interaction:
 
 | family | members | shape |
 |---|---|---|
 | **callback** | FUSE, OpenBSD, NetBSD, FreeBSD, Linux, Haiku | the host calls you with resolved nodes; you fill a host struct |
-| **message** | 9front, QNX | you answer a request stream, keeping your own fid/OCB table |
+| **message** | plan9, QNX | you answer a request stream, keeping your own fid/OCB table |
 
 Where the columns differ *within* a family is exactly what the backend must stop
 assuming:
 
-| demand | FUSE (FUSE3/FUSE2/Haiku) | BSD (OpenBSD, NetBSD, FreeBSD) | Linux | 9front/QNX |
+| demand | FUSE (FUSE3/FUSE2/Haiku) | BSD (OpenBSD, NetBSD, FreeBSD) | Linux | plan9/QNX |
 |---|---|---|---|---|
 | name resolution | path string | `(dvp, cnp)` via `VOP_LOOKUP` | `(struct inode *, struct dentry *)` | `(fid/OCB, name)` |
-| attribute fill | `struct stat` | `struct vattr` | `struct kstat` | `Dir` (9front) / `struct stat` (QNX) |
+| attribute fill | `struct stat` | `struct vattr` | `struct kstat` | `Dir` (plan9) / `struct stat` (QNX) |
 | readdir resume token | index | `uio` cookie (byte) | opaque `ctx->pos` | byte offset |
 | open-handle lifetime | engine-side table | `VOP_INACTIVE`/`VOP_RECLAIM` | dentry/inode lifetime | `Tclunk` / OCB release |
 
@@ -85,18 +85,18 @@ frontend set, each is demanded by at least two and mostly by four:
   `(struct inode *, struct dentry *)`, NetBSD gets `(dvp, cnp)`, QNX gets a
   resolved path component against an attribute. None of them has a path string.
 - **offset-resumable iterator**, Linux `iterate_shared` (opaque `ctx->pos`),
-  9front `Tread` (byte offset), QNX `_IO_READ` (byte offset), OpenBSD `uio` cookie:
+  plan9 `Tread` (byte offset), QNX `_IO_READ` (byte offset), OpenBSD `uio` cookie:
   four different resume tokens, one `next_off`.
 - **POSIX-free core**, Linux wants `struct inode`/`struct kstat`, the BSDs want
   `struct vattr`; QNX is the exception and genuinely wants `struct stat`.
 - **build-selected alloc**, four allocators: `kmalloc`/`kmem_cache` (Linux),
   `km_alloc`/`pool` (the BSDs), plain `malloc` (QNX, which runs in userspace).
 
-The message family, 9front and QNX, is the cheapest to satisfy once the core is
+The message family, plan9 and QNX, is the cheapest to satisfy once the core is
 node-anchored and offset-resumable. `Twalk` carries up to sixteen name elements
 against a fid, which is a loop over a node-anchored walk; `Tread` on a directory
 resumes at a byte offset, which an offset-resumable iterator serves directly.
-QNX's OCB is 9front's fid, so the message-family mapping is written once and reused.
+QNX's OCB is plan9's fid, so the message-family mapping is written once and reused.
 Building a path string just so the core can re-split it is work in both
 directions, so the node-anchored core is what makes the message family cheap
 rather than awkward.
@@ -115,9 +115,9 @@ int filsys_walk(filsys_t *fs, uint32_t ino, const char *name, uint32_t *out);
 ```
 
 , and a small path helper moves into the FUSE frontend. FUSE calls the helper;
-the kernel driver and 9front do not.
+the kernel driver and plan9 do not.
 
-This is the change that makes 9front natural rather than a second path
+This is the change that makes plan9 natural rather than a second path
 re-implementation, and it is the one §4.3 was reaching for. Net: about 150
 lines out of `filsys.c`, ~40 back into the FUSE frontend, and the ~200 lines
 the plan would otherwise add never gets written.
@@ -130,7 +130,7 @@ separate `unixfs_kern.h` and `#ifdef UNIXFS_KERNEL` guards. The core already
 stores everything as plain integers in `filsys_inode_t` (84 bytes, all
 `uint32_t`/`uint16_t`); export that plus a `filsys_statfs_t` of plain integers,
 and let each frontend fill its own type, `struct stat` for FUSE, `struct
-vattr` for the kernel, a `Dir` for 9front. `filsys_fill_stat` becomes FUSE's, not
+vattr` for the kernel, a `Dir` for plan9. `filsys_fill_stat` becomes FUSE's, not
 the core's.
 
 Count this one carefully: it is a **saving**, not a cost. The alternative is
@@ -156,7 +156,7 @@ for (size_t i = 0; i < count; i++) { ... filsys_read_inode(...); emit(...); }
 
 A 1,000-entry directory allocates a 66 KB array plus the raw directory buffer,
 and reads 1,000 inodes, before emitting the first name. FUSE resumes by index,
-so an interrupted readdir does it all again; 9front is worse, resuming at a byte
+so an interrupted readdir does it all again; plan9 is worse, resuming at a byte
 offset into the marshalled stream, which index-based resumption cannot map at
 all without re-walking.
 
@@ -169,7 +169,7 @@ int filsys_dir_next(filsys_iter_t *it, uint32_t *ino, const char **name,
 int filsys_dir_release(filsys_iter_t *it);
 ```
 
-It serves the FUSE index, the kernel `uio` cookie, and 9front's byte offset, each
+It serves the FUSE index, the kernel `uio` cookie, and plan9's byte offset, each
 frontend computes its own resume token from `next_off`. It deletes both
 `dir_read` implementations (40 lines in `dir_fixed.c`, 45 in `dir_bsd211.c`)
 and deletes `filsys_dirent_t` from the hot path: the iterator hands back a
@@ -315,7 +315,7 @@ optional once there are four copies.
 `struct filsys` carries the open-handle table (`opens`, `nopen`, `nopen_cap`,
 plus `filsys_open_ino`/`filsys_close_ino` and a `realloc`). It exists to pin an
 inode across unlink-while-open. The kernel gets that free from
-`VOP_INACTIVE`/`VOP_RECLAIM`, and 9front gets it free from `Tclunk`; only FUSE needs
+`VOP_INACTIVE`/`VOP_RECLAIM`, and plan9 gets it free from `Tclunk`; only FUSE needs
 it, because only FUSE has no handle lifetime the engine can see. Move it into
 the FUSE frontend and the core loses a growable allocation and two public
 functions.
@@ -398,7 +398,7 @@ pair reachable from every block read is a redirect target, and in a kernel
 driver that is a live concern OpenBSD treats as one; a direct call has nothing
 to overwrite. **Shipped API surface:** `filsys_set_io` is "Internal, not part of
 the public filsys.h API" only as a comment; removing it from production makes
-that real, and it is one fewer knob for the 9front server and the kernel driver to
+that real, and it is one fewer knob for the plan9 server and the kernel driver to
 reason about.
 
 The cost is that the tested binary is not quite the shipped binary. It is
@@ -471,7 +471,7 @@ not re-litigated per section:
 The engine lives in `src/`, along with all the userspace tooling (`mkfs.unixfs`,
 `fsck.unixfs`, `findfs.unixfs`, `filsys_detect`, the test and fuzz harnesses).
 Each frontend gets its own directory, `fuse3/`, `fuse2/`, `openbsd/`, `netbsd/`,
-`freebsd/`, `linux/`, `beos/` (Haiku), `qnx/`, and `9front/`. Each frontend is
+`freebsd/`, `linux/`, `beos/` (Haiku), `qnx/`, and `plan9/`. Each frontend is
 thin: it maps the node-anchored core onto its own VFS or protocol, and the
 engine in `src/` is the only code they share, which is what keeps it vendorable
 (§5.1).
