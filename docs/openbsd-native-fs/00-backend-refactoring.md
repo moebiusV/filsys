@@ -130,21 +130,30 @@ all without re-walking.
 Replace it with one offset-resumable iterator:
 
 ```c
-int filsys_dir_seek(filsys_t *fs, uint32_t ino, uint64_t off);
+int filsys_dir_seek(filsys_t *fs, uint32_t ino, uint64_t off, filsys_iter_t *it);
 int filsys_dir_next(filsys_iter_t *it, uint32_t *ino, const char **name,
                     uint16_t *namlen, uint64_t *next_off);
+int filsys_dir_release(filsys_iter_t *it);
 ```
 
 It serves the FUSE index, the kernel `uio` cookie, and 9P's byte offset — each
 frontend computes its own resume token from `next_off`. It deletes both
 `dir_read` implementations (40 lines in `dir_fixed.c`, 45 in `dir_bsd211.c`)
-and, importantly, deletes `filsys_dirent_t` from the hot path: the iterator
-hands back a pointer into the block buffer, so there is no 66-byte struct per
-entry at all. The per-record machinery already exists — `353578e` gave
-`dir_lookup`/`dir_add`/`dir_remove` chunked scans with fixed stack buffers —
-and this is the fourth caller of the same walk. It is the same change as the
-plan's risk 8: the iterator removes the allocation rather than bounding it,
-and serves `VOP_READDIR` in one move.
+and deletes `filsys_dirent_t` from the hot path: the iterator hands back a
+pointer into its buffer, so there is no 66-byte struct per entry at all.
+
+Three contracts must be explicit. **Ownership:** the iterator owns a buffer up
+to `V7_MAXBSIZE` (8192), which cannot sit on a kernel stack; in the kernel the
+iterator holds the `struct buf *` from `bread`, points into `bp->b_data`, and
+releases with `brelse` on `filsys_dir_release` — no copy, and the natural fit
+for `VOP_READDIR`. **Termination:** on-disk names are fixed-width fields with no
+NUL (V7/V6 are 14 bytes), so `*name` is *not* terminated and the caller must
+use `*namlen`, not `strcmp`. **Lifetime:** the pointer is valid only until the
+next `filsys_dir_next` or the release. The per-record machinery already exists —
+`353578e` gave `dir_lookup`/`dir_add`/`dir_remove` chunked scans — and this is
+the fourth caller of the same walk. It is the same change as the plan's risk 8:
+the iterator removes the allocation rather than bounding it, and serves
+`VOP_READDIR` in one move.
 
 ### 4. Right-size the allocator caches
 
@@ -364,9 +373,12 @@ plan's open risks rather than competing with them:
   there is no `filsys_kern.h` and no `#ifdef FILSYS_KERNEL` matrix.
 - **Risk 2 (`malloc` shimming)** is gone: after the core is node-anchored and
   POSIX-free, the eighteen allocation sites are the last libc dependency
-  standing, `fs` is already in scope at fifteen of them, and the two bootstrap
-  `calloc`s in `filsys.c` are in code the kernel frontend replaces. The
-  build-selected `filsys_alloc` is one arm per build, not a fork — and no
+  standing, `fs` is already in scope at fifteen of them. Of the two bootstrap
+  `calloc`s in `filsys.c`, one allocates the `filsys_t` wrapper (which the
+  kernel frontend replaces with `struct filsys_mount`) and one allocates
+  `fmt.state_size` — the `filsys_edition_t` itself, which the kernel still needs
+  and which is exactly `FILSYS_AL_MOUNT`. So it is one replaced, one converted.
+  The build-selected `filsys_alloc` is one arm per build, not a fork — and no
   `#define`.
 - **Risk 6 (allocator union sizing)** is answered by §4 (right-size the caches):
   the caches become per-mount, per-edition, which is both the userspace saving

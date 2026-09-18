@@ -71,11 +71,10 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
 # 7. Risks and open questions
 
 1. **The public-header boundary.** `filsys.h` cannot be `#include`d in-kernel
-   (`<sys/stat.h>` etc.). Decide: a separate `filsys_kern.h` that includes only
-   `filsys_common.h` + backend headers, or `#ifdef FILSYS_KERNEL` guards in
-   `filsys.h`. The former keeps the public header clean; the latter risks
-   leaking kernel-isms into userspace. **Recommend:** a dedicated
-   `filsys_kern.h`, no edits to `filsys.h`.
+   (`<sys/stat.h>` etc.). §0 resolves this: a POSIX-free `filsys.h` (plain
+   integer `filsys_inode_t`/`filsys_statfs_t`, each frontend filling its own
+   type) removes the need for both a separate `filsys_kern.h` and `#ifdef
+   FILSYS_KERNEL` guards.
 2. **Allocation seam.** The engine has eighteen allocation sites (6 `malloc`,
    10 `calloc`, 2 `realloc`) and 45 `free`s — an order of magnitude below the
    old §A.3 estimate. `fs` is already in scope at fifteen of them. §0 resolves
@@ -84,9 +83,9 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    alloc-copy-free) and the remaining sites gain a parameter they already have
    in scope.
 3. **Detection in-kernel vs in-`mount_filsys`.** Prefer userspace detection to
-   keep the kernel driver small, not to avoid fd usage — the probe is
-   transport-based and comes along free; only `filsys_detect.c`'s thin wrapper
-   is fd-bound (§5.7).
+   keep the kernel driver small, not to avoid fd usage — the probe reads through
+   the build-selected transport and comes along free; only `filsys_detect.c`'s
+   thin wrapper is fd-bound (§5.7).
 4. **Concurrency correctness.** The engine is not reentrant; the big per-mount
    lock is correct but serial. Confirm the read path under shared lock never
    mutates engine state (the free-list cache is the thing to audit — reads must
@@ -101,8 +100,9 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
 7. **SemVer / distribution.** The engine is compiled from libfilsys source into
    the kernel; decide pinning (vendor a pinned tarball revision vs. build the
    kernel against the checkout). `ROADMAP.md`'s strict SemVer means the engine
-   API must stay source-stable — the additive inode-anchored exports (§4.3) must
-   land in a MINOR, not a patch.
+   API must stay source-stable — the additive inode-anchored exports (§4.3) and
+   the `ops->probe` signature change (the build-selected transport drops its
+   `filsys_io_t *` argument, §5.7) must land in the same MINOR, not a patch.
 8. **Kernel allocation failure mode.** The directory readers allocate the whole
    directory in one `malloc`, bounded only by the superblock check
    `ip->size ≤ (fsize − data_start) × bsize ≤ imgsize` (`v7fs.c:180`). In-kernel

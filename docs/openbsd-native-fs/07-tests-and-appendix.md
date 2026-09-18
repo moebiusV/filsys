@@ -70,7 +70,7 @@ vop_advlock vop_bwrite`.
 | `free` | 45 | `filsys_free` (§0) |
 | `printf` / `fprintf` | 19 | kernel `printf` (or drop in runtime subset) |
 | `strcmp`/`strncmp`/`memcmp` | 31 | libkern |
-| `open` / `close` | 4 / 20 | removed — driver opens the device; engine never opens |
+| `open` / `close` | 4 / 20 | excluded — the codecs' own open/close path is not compiled in; the driver opens the device (§4.1) |
 | `memset`/`memcpy`/`memmove` | 53 | libkern |
 | `snprintf`/`vsnprintf` | 15 | kernel `snprintf` |
 | `calloc`/`malloc`/`realloc` | 18 | `filsys_alloc` (§0) |

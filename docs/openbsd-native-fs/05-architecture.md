@@ -43,17 +43,17 @@ Because libfilsys's block sizes (128/256/512/1024/4096/8192) need not equal
 `DEV_BSIZE` (512), the transport does the sub-block assembly — the codec's
 "logical block" abstraction is preserved unchanged.
 
-## 5.4 Allocation shim (`filsys_kern.h`)
+## 5.4 Allocation seam
 
 ```
-#define filsys_malloc(n)      km_alloc((n), &kv_filsys, &kp_dirty, &kd_waitok)
-#define filsys_free(p, n)     km_free((p), (n), &kv_filsys, &kp_dirty)
+void *filsys_alloc(filsys_alloc_kind_t kind, size_t n, int zero);
+void  filsys_free(filsys_alloc_kind_t kind, void *p, size_t n);
 ```
-or `pool(9)` for the fixed-size hot paths. The engine's `malloc(n)` /
-`free(p)` are the *only* thing mapped; call sites are untouched. (§0 supersedes
-this shim with a build-selected `filsys_alloc`/`filsys_free`; the real count is
-eighteen allocation sites — `fs` in scope at fifteen — not the 300 this
-`#define` rationale was resting on.)
+Build-selected (§0): `configure` picks `filsys_alloc_user.c` or
+`filsys_alloc_kern.c`. The kernel arm routes `FILSYS_AL_BLOCK` and
+`FILSYS_AL_MOUNT` to a `pool(9)` each and the rest to `km_alloc(M_FILSYS)` with
+`kd_nowait`; the userspace arm is `malloc`/`calloc` and `free` with `kind`
+ignored. Eighteen allocation sites, `fs` in scope at fifteen.
 
 ## 5.5 Locking and concurrency
 
@@ -109,12 +109,15 @@ struct. Two mount modes:
   tool's `-v`);
 - **autodetect** — `-o unix` (the `FILSYS_UNIX` pseudo-edition). The read-only
   probe already lives in the backends (`v7fs.c`/`v1fs.c`/`pdp7fs.c`, via each
-  edition's `ops->probe`, which takes a `filsys_io_t` transport, not an fd), so
-  detection comes along free; only `filsys_detect.c`'s thin wrapper (fd,
-  precedence order, class mapping) is userspace. Prefer `mount_filsys` probing
-  in userspace and passing the resolved edition in `filsys_args` — it keeps the
-  kernel driver small — but in-kernel detection is equally feasible by calling
-  `ops->probe` with the kernel transport. The choice is size, not feasibility.
+  edition's `ops->probe`), so detection comes along free; only
+  `filsys_detect.c`'s thin wrapper (fd, precedence order, class mapping) is
+  userspace. With the transport build-selected (§0), `ops->probe` drops its
+  `filsys_io_t *` argument and reads through `filsys_read_bytes` directly — a
+  signature change to one vtable slot, but the conclusion holds: in-kernel
+  detection is still feasible and still wants no fd. Prefer `mount_filsys`
+  probing in userspace and passing the resolved edition in `filsys_args` — it
+  keeps the kernel driver small — but in-kernel detection is equally feasible.
+  The choice is size, not feasibility.
 
 There is no third option: OpenBSD has no kernel-to-userspace helper (nothing
 like Linux's `call_usermodehelper`), so the driver cannot spawn `mount_filsys`
