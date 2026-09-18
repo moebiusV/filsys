@@ -48,10 +48,11 @@ The engine's internal shape (this is what makes the kernel port tractable):
 ## 1.2 Why a native driver when FUSE2 already works
 
 libfilsys is the **backend** — one format engine that does the correct thing per
-edition — behind several **frontends** that each map their own semantics onto
-it: FUSE (today), a native kernel driver (this plan), and 9P (planned, out of
-scope here). Where a frontend's semantics differ from the engine's, the frontend
-maps; the engine does not encode any one frontend's rules.
+edition — behind several **frontends** in two families: **callback** (FUSE,
+native drivers) and **message** (9P, QNX), each mapping its own semantics onto
+it. This plan is the first callback-native driver (OpenBSD); the other three
+native ports are §1.4. Where a frontend's semantics differ from the engine's,
+the frontend maps; the engine does not encode any one frontend's rules.
 
 | | FUSE2 (today) | native `sys/filsys/` (this plan) |
 |---|---|---|
@@ -76,3 +77,35 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
 - **Not** a fork of libfilsys's format code. GEFS copy/pasted Plan 9 code and
   rewrote it in place; this plan explicitly does the opposite.
 - **Not** FFS or Minix (already out of scope per `ROADMAP.md`).
+
+## 1.4 The other three ports, and their order
+
+The backend serves more than OpenBSD; the native-driver story is four ports, and
+the four are not four of the same thing. The order below is deliberate —
+OpenBSD first, the others only after the backend shape (§0) is proven.
+
+- **NetBSD** — the close cousin, and second. Two differences matter: NetBSD
+  registers `struct vnodeopv_entry_desc` arrays rather than OpenBSD's flat
+  `struct vops`, so the glue is not copy-paste; and it offers **rump kernels**,
+  which run the real NetBSD VFS with the filesystem linked in as a userspace
+  process under a normal debugger. Rump is the best test loop of the four by a
+  wide margin — better than the QEMU story for OpenBSD — so NetBSD goes second
+  because the BSD VFS knowledge is still fresh and rump finds engine- and
+  glue-level bugs that cost a VM reboot each on OpenBSD.
+- **QNX** — not a kernel driver at all. QNX has no VFS: a filesystem is a
+  resource manager, a userspace process that registers a pathname prefix with
+  `procmgr` and answers `_IO_READ`/`_IO_WRITE`/`_IO_STAT`/`_IO_OPENFD` messages,
+  usually via the `iofunc_*` helpers. It is message-shaped, runs in userspace,
+  uses ordinary `malloc`, and needs none of the kernel shims. Its OCB is 9P's
+  fid, so doing QNX after 9P means the message-family mapping is largely already
+  written.
+- **Linux** — last, and the one with the weakest rationale. Linux's FUSE is
+  mature, fast, mounts from `/etc/fstab` via `mount.fuse`, and can serve as root
+  from an initramfs. For read-mostly historical images a Linux native driver
+  buys very little over the FUSE frontend already present, and costs a permanent
+  tracking burden against an API that changes every release. This is not an
+  argument against doing it — "V7 filesystems mount natively on Linux" is worth
+  wanting, and the §0 work is what makes it small — it is an argument for not
+  letting Linux set the schedule: OpenBSD has the real gap (base libfuse is
+  2.6-era and slow), NetBSD has the cheap test loop, QNX rides on 9P, and Linux
+  can wait until the other three have proven the backend shape.

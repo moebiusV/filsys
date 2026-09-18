@@ -22,6 +22,9 @@ OpenBSD has no loadable kernel modules (LKM was removed in 5.7), so there is no
 file layout, since it decides whether the engine builds under a second, more
 restrictive build system — is a vendored snapshot under `sys/filsys/` with a pin
 and a sync script, or a patch against `-current` that people apply and rebuild.
+The sync script is **not optional**: the engine vendors into four kernel trees
+(OpenBSD, NetBSD, Linux, QNX — §1.4), so there are four copies to keep in step
+and "copy the files by hand" stops being a thing anyone can be trusted to do.
 
 ## 5.2 Per-mount state
 
@@ -45,6 +48,11 @@ Each `filsys_node` (in `vp->v_data`) holds the inode number + a cached decoded
 Because libfilsys's block sizes (128/256/512/1024/4096/8192) need not equal
 `DEV_BSIZE` (512), the transport does the sub-block assembly — the codec's
 "logical block" abstraction is preserved unchanged.
+
+This byte-offset path covers `VOP_READ`/`VOP_WRITE` through the buf path. It
+does **not** cover `vop_bmap`/`vop_strategy`, which Phase 1 lists and which want
+logical-block→physical-block, not a byte range. That comes from the new
+`filsys_bmap_ino` primitive (§0, refactoring 7), not from `filsys_read_bytes`.
 
 ## 5.4 Allocation seam
 
@@ -78,6 +86,11 @@ stand in for the VFS's per-vnode lock protocol — `vop_lock`/`vop_unlock`/
 `rrwlock` in `struct filsys_node` and three one-line implementations, *à la*
 `cd9660_lock`/`msdosfs_lock`. GEFS's nullop for them is one of the shortcuts
 §2.5 warns against.
+
+This per-vnode lock protocol is **BSD-family**, not a general "kernel" claim:
+Linux's VFS holds `i_rwsem` on the parent across create/unlink itself, so a
+Linux driver implements no lock ops and this subsection does not transfer there
+(§1.4).
 
 This is a deliberate, documented simplification: filsys's target images are
 small, historical, and usually mounted for copy-in/copy-out, not as a hot

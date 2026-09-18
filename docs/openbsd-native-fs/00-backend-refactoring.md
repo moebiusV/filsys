@@ -1,26 +1,32 @@
-# 0. Backend refactoring (first): one backend, four frontends
+# 0. Backend refactoring (first): one backend, seven frontends
 
 This section describes a refactor of libfilsys itself that **happens first**,
-before the driver in §4–§6. It is a prerequisite: it reshapes the "as-is"
+before the drivers in §4–§6. It is a prerequisite: it reshapes the "as-is"
 boundary (§4), resolves the plan's risks 1, 2, and 6, and supersedes §4.3 and
 §4.4 by doing their work properly in the backend rather than as a kernel shim.
 
 ## TL;DR
 
-libfilsys is the **backend** for four **frontends** — FUSE3, FUSE2, a native
-OpenBSD kernel driver, and 9P — but its core is today shaped like a *single*
-frontend (FUSE): the public API is path-based, POSIX-typed, whole-directory,
-and it carries the open-handle table that only FUSE needs. The four frontends
-demand four different shapes for the same four backend capabilities, so the fix
-is to make the core **frontend-shaped** — node-anchored (resolves by inode
+libfilsys is the **backend** for seven **frontends** — FUSE3, FUSE2, native
+drivers on OpenBSD, NetBSD and Linux, a QNX resource manager, and 9P — but its
+core is today shaped like a *single* frontend (FUSE): the public API is
+path-based, POSIX-typed, whole-directory, and it carries the open-handle table
+that only FUSE needs. The seven fall into two families — **callback** (FUSE3,
+FUSE2, OpenBSD, NetBSD, Linux: the host calls you with resolved nodes) and
+**message** (9P, QNX: you answer a request stream with your own handle table) —
+and each family demands a different shape for the same backend capabilities. The
+fix is to make the core **frontend-shaped** — node-anchored (resolves by inode
 number, not path string), POSIX-free (returns plain integers, not `struct
 stat`), offset-resumable (iterates a directory, does not slurp it), and
 right-sized (allocates its caches per edition, not for the worst case) — and let
 each frontend map itself onto it.
 
-Net effect: roughly 400–500 lines out of the tree, ~3.6 KB off every mount, and
-directory reads that stop allocating proportionally to directory size on all
-four frontends at once.
+The argument is no longer line count: it is that each frontend writes its
+mapping **once per capability** instead of re-implementing the same logic against
+a FUSE-shaped core. The line-count side points the same way — a few hundred
+lines out, concentrated in `filsys.c`, the two `dir_*` codecs and the FUSE
+triplication — and the memory side is more decisive: ~3.6 KB off every mount,
+and directory reads that stop allocating proportionally to directory size.
 
 ## Measurements (HEAD)
 
@@ -40,33 +46,57 @@ A few non-line measurements that shape the argument:
   expressing three identical 25-entry vtables.
 - The public API has **17 path-taking functions**.
 
-## What the four frontends actually demand
+## What the frontends actually demand: two families, not a FUSE/VFS/9P axis
 
 The backend exposes a small set of capabilities; each frontend demands a
-different shape for them. Where the columns differ is exactly what the backend
-must stop assuming.
+different shape for them. The frontends are not "FUSE / VFS / 9P" — they are two
+families, distinguished by who drives the interaction:
 
-| demand | FUSE3 | FUSE2 | native kernel | 9P |
+| family | members | shape |
+|---|---|---|
+| **callback** | FUSE3, FUSE2, OpenBSD, NetBSD, Linux | the host calls you with resolved nodes; you fill a host struct |
+| **message** | 9P, QNX | you answer a request stream, keeping your own fid/OCB table |
+
+Where the columns differ *within* a family is exactly what the backend must stop
+assuming:
+
+| demand | FUSE3/FUSE2 | BSD (OpenBSD, NetBSD) | Linux | 9P/QNX |
 |---|---|---|---|---|
-| name resolution | path string | path string | `(parent-vnode, name)` via `VOP_LOOKUP` | `(fid, name)` via `Twalk` |
-| attribute fill | `struct stat` | `struct stat` | `struct vattr` | `Dir` |
-| readdir resume token | index | index | `uio` cookie (byte) | byte offset into the marshalled stream |
-| open-handle lifetime | engine-side table | engine-side table | `VOP_INACTIVE`/`VOP_RECLAIM` | `Tclunk` |
+| name resolution | path string | `(dvp, cnp)` via `VOP_LOOKUP` | `(struct inode *, struct dentry *)` | `(fid/OCB, name)` |
+| attribute fill | `struct stat` | `struct vattr` | `struct kstat` | `Dir` (9P) / `struct stat` (QNX) |
+| readdir resume token | index | `uio` cookie (byte) | opaque `ctx->pos` | byte offset |
+| open-handle lifetime | engine-side table | `VOP_INACTIVE`/`VOP_RECLAIM` | dentry/inode lifetime | `Tclunk` / OCB release |
 
-Two columns — FUSE3 and FUSE2 — are **identical**. They demand the same thing
-from the backend on every axis that matters; their only differences (readdir's
-flags argument, macOS's `setvolname`, OpenBSD's `getattr` without
-`fuse_file_info` and `mknod` accepting `S_IFREG`) are adapter-level, not
-backend-level. That is the argument for §5 stated as a table: the variation is
-a quirk table, not a vtable.
+Two columns — FUSE3 and FUSE2 — are **identical**: they demand the same thing on
+every axis that matters, and their differences (readdir's flags argument,
+macOS's `setvolname`, OpenBSD's `getattr` without `fuse_file_info` and `mknod`
+accepting `S_IFREG`) are adapter-level, not backend-level. That is the argument
+for §5 stated as a table: the variation is a quirk table, not a vtable. QNX is
+the POSIX member of the message family — it genuinely wants `struct stat`, so
+the FUSE filler is reused there rather than a new one written.
 
-The one column that is genuinely new — 9P — is the cheapest to satisfy once the
-core is node-anchored and offset-resumable. `Twalk` carries up to sixteen name
-elements against a fid, which is a loop over a node-anchored walk; `Tread` on a
-directory resumes at a byte offset, which an offset-resumable iterator serves
-directly. Building a path string just so the core can re-split it is work in
-both directions, so the node-anchored core is what makes 9P cheap rather than
-awkward.
+Each refactoring below was once justified by "OpenBSD needs it." With the full
+frontend set, each is demanded by at least two and mostly by four:
+
+- **node-anchored core** — every non-FUSE frontend: Linux `lookup` gets
+  `(struct inode *, struct dentry *)`, NetBSD gets `(dvp, cnp)`, QNX gets a
+  resolved path component against an attribute. None of them has a path string.
+- **offset-resumable iterator** — Linux `iterate_shared` (opaque `ctx->pos`),
+  9P `Tread` (byte offset), QNX `_IO_READ` (byte offset), OpenBSD `uio` cookie:
+  four different resume tokens, one `next_off`.
+- **POSIX-free core** — Linux wants `struct inode`/`struct kstat`, the BSDs want
+  `struct vattr`; QNX is the exception and genuinely wants `struct stat`.
+- **build-selected alloc** — four allocators: `kmalloc`/`kmem_cache` (Linux),
+  `km_alloc`/`pool` (the BSDs), plain `malloc` (QNX, which runs in userspace).
+
+The message family — 9P and QNX — is the cheapest to satisfy once the core is
+node-anchored and offset-resumable. `Twalk` carries up to sixteen name elements
+against a fid, which is a loop over a node-anchored walk; `Tread` on a directory
+resumes at a byte offset, which an offset-resumable iterator serves directly.
+QNX's OCB is 9P's fid, so the message-family mapping is written once and reused.
+Building a path string just so the core can re-split it is work in both
+directions, so the node-anchored core is what makes the message family cheap
+rather than awkward.
 
 ## The refactorings
 
@@ -223,6 +253,51 @@ vtable, and do not chase devirtualization via single-edition builds — the
 flattening and the hoists are free and more readable; anything past them is
 nanoseconds behind a disk read.
 
+### 7. Expose `bmap` as a public primitive
+
+Linux reads file data through the page cache; the idiomatic path is
+`read_folio`/`readahead` over `block_read_full_folio` with a `get_block_t`
+callback — logical block in, physical block out. You *can* write a `read_folio`
+that does byte-range reads into the page, but you lose readahead and mmap
+efficiency and no Linux reviewer will like it. OpenBSD wants the same thing for
+`vop_bmap` + `vop_strategy` — which Phase 1 lists but §5.3 does not supply,
+because everything there goes through byte-offset `filsys_read_bytes`.
+
+The engine already does the mapping — `blocktree.c` translates logical to
+physical for every read — it just is not a public primitive. Make it one:
+
+```c
+int filsys_bmap_ino(filsys_t *fs, uint32_t ino, uint64_t lblk,
+                    uint64_t *pblk, uint32_t *nblks);
+```
+
+`nblks` matters because it returns the run length — "and the next 7 blocks are
+contiguous" is what makes readahead work on both systems. This is the same kind
+of change as the directory iterator and belongs beside it: it is the difference
+between a Linux driver that is idiomatic and one that is merely tolerated.
+
+### 8. Drop `config.h` from the engine: make it vendorable C99
+
+Ten engine files `#include <config.h>`, but the engine uses exactly two things
+from it:
+
+```
+HAVE_DECL_F_OFD_SETLK     (filsys.c advisory locking — excluded from kernel builds)
+HAVE_SYS_SYSMACROS_H      (major/minor in the mknod path)
+```
+
+Both are userspace concerns, so the `#include <config.h>` lines in the codecs
+are vestigial. Dropping them, and confining those two macros to the tools/FUSE
+side, makes the engine directory plain C99 with no generated header — so it
+vendors into `sys/filsys/`, `fs/filsys/`, a NetBSD `sys/fs/filsys/`, and a QNX
+build with no autoconf anywhere.
+
+This is what makes vendorability a first-class property rather than a hope:
+four kernel trees, none with a stable internal API, and only OpenBSD refuses
+out-of-tree builds — so the engine has to drop cleanly into a foreign build
+system four times. The sync script the second review asked for stops being
+optional once there are four copies.
+
 ## The open-handle table moves to FUSE
 
 `struct filsys` carries the open-handle table (`opens`, `nopen`, `nopen_cap`,
@@ -352,14 +427,16 @@ Phase 1 rather than discovering them one panic at a time.
 
 ## Rough totals
 
-Changes 1, 3, 5, and the open-handle move are each net-negative on lines; 2 is
-net-positive by the literal count but net-negative once the guards it deletes
-are counted; 4 is about neutral. The direction is confidently *out* — a few
-hundred lines, concentrated in `filsys.c`, the two `dir_*` codecs, and the FUSE
-triplication — but the exact number is a forecast, not an acceptance criterion;
-the behavioural criteria above are. The memory side is more decisive: per-mount
-footprint drops by roughly 3.6 KB, and directory reads stop allocating
-proportional to directory size on every frontend at once.
+Changes 1, 3, 5, 8, and the open-handle move are each net-negative on lines; 2
+is net-positive by the literal count but net-negative once the guards it deletes
+are counted; 4 is about neutral; 7 exposes code that already exists (`blocktree`
+is doing the logical→physical mapping today) and is a small net add. The
+direction is confidently *out* — a few hundred lines, concentrated in
+`filsys.c`, the two `dir_*` codecs, and the FUSE triplication — but the exact
+number is a forecast, not an acceptance criterion; the behavioural criteria
+above are. The memory side is more decisive: per-mount footprint drops by
+roughly 3.6 KB, and directory reads stop allocating proportional to directory
+size on every frontend at once.
 
 ## Sequence
 

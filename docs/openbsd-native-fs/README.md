@@ -8,11 +8,12 @@ Audience: filsys maintainers; assumes the reader knows the OpenBSD VFS and the l
 
 filsys already mounts on OpenBSD today through **FUSE2** (OpenBSD's in-base
 `libfuse`, 2.6-era — `fuseops_openbsd.c`). libfilsys is the **backend** — one
-format engine — behind several **frontends**: FUSE (today), the native kernel
-driver (this plan), and 9P (planned, out of scope here). This plan is the
-native frontend: an in-kernel driver, `sys/filsys/`, that links the libfilsys
-format engine **unmodified** and only adds the thin glue OpenBSD demands of a
-filesystem (`struct vfsops` + `struct vops` + five registration edits).
+format engine — behind **seven frontends** in two families: **callback** (FUSE3,
+FUSE2, and native drivers on OpenBSD/NetBSD/Linux) and **message** (9P, QNX).
+This plan is the first callback-native driver: an in-kernel OpenBSD driver,
+`sys/filsys/`, that links the libfilsys format engine **unmodified** and only
+adds the thin glue OpenBSD demands of a filesystem (`struct vfsops` +
+`struct vops` + five registration edits).
 
 The reference implementation is **GEFS-on-OpenBSD** (Ori Bernstein, announced
 2026-09-15): a copy-on-write Plan 9 filesystem ported into the kernel in
@@ -42,10 +43,12 @@ Each section is a separate file so it can be read, reviewed, and revised on its
 own. Read in order; later sections build on earlier ones.
 
 0. **[Backend refactoring (first)](00-backend-refactoring.md)** — make the
-   libfilsys core node-anchored, POSIX-free, offset-resumable, and right-sized
-   before the driver; resolves risks 1, 2, 6 and supersedes §4.3/§4.4.
+   libfilsys core node-anchored, POSIX-free, offset-resumable, right-sized, and
+   vendorable C99, and expose `bmap`; resolves risks 1, 2, 6 and supersedes
+   §4.3/§4.4.
 1. **[Context and motivation](01-context.md)** — what libfilsys already is, why a
-   native driver when FUSE2 works, non-goals.
+   native driver when FUSE2 works, non-goals, and the other three ports
+   (NetBSD/Linux/QNX) with their order.
 2. **[Reference implementation: GEFS on OpenBSD](02-gefs-reference.md)** — the
    `sys/gefs/` layout, the five core-kernel edits, the two vtable contracts,
    device I/O, and the shortcuts we deliberately avoid.
