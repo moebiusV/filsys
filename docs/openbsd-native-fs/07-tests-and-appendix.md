@@ -34,7 +34,7 @@ file filsys/filsys_vnode.h		# not compiled; header
 option		FILSYS		# Research Unix (V1..V10, 2.11BSD, SysIII/V) filesystems
 
 /* sys/kern/vfs_init.c */
-{ &filsys_vfsops, MOUNT_FILSYS, 0, 0, MNT_LOCAL, sizeof(struct filsys_args) },
+{ &filsys_vfsops, MOUNT_FILSYS, 20, 0, MNT_LOCAL, sizeof(struct filsys_args) },
 
 /* sys/sys/mount.h */
 struct filsys_args {
@@ -51,12 +51,12 @@ extern const struct vfsops filsys_vfsops;
 enum vtagtype { ..., VT_FILSYS, };
 ```
 
-## A.2 The `struct vfsops` / `struct vnodeops` field lists (current OpenBSD)
+## A.2 The `struct vfsops` / `struct vops` field lists (current OpenBSD)
 
 `vfsops`: `vfs_mount vfs_start vfs_unmount vfs_root vfs_quotactl vfs_statfs
 vfs_sync vfs_vget vfs_fhtovp vfs_vptofh vfs_init vfs_sysctl vfs_checkexp`.
 
-`vnodeops`: `vop_lookup vop_create vop_mknod vop_open vop_close vop_access
+`vops`: `vop_lookup vop_create vop_mknod vop_open vop_close vop_access
 vop_getattr vop_setattr vop_read vop_write vop_ioctl vop_kqfilter vop_revoke
 vop_fsync vop_remove vop_link vop_rename vop_mkdir vop_rmdir vop_symlink
 vop_readdir vop_readlink vop_abortop vop_inactive vop_reclaim vop_lock

@@ -71,7 +71,7 @@ const struct vfsops gefs_vfsops = {
 };
 ```
 
-`struct vnodeops` (per-file; `vnops.c:1640`) — the full `gefs_vops` table
+`struct vops` (per-file; `vnops.c:1640`) — the full `gefs_vops` table
 implements `lookup create mknod open close access getattr setattr read write
 ioctl kqfilter revoke fsync remove link rename mkdir rmdir symlink readdir
 readlink abortop inactive reclaim lock unlock bmap strategy print islocked

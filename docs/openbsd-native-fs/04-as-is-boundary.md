@@ -30,12 +30,22 @@ the findfs/fsck drivers (they are offline tools, §1.3), and omits the FUSE
 adapter (`fuseops*.c`, `fuse_core.c`). This is the same split the FUSE-free
 `test_matrix` build already makes.
 
+One caveat to "as-is": the codecs open and size their own backing store —
+`open()`/`close()` and `filsys_dev_size(fs->fd, …)`, which `fstat`s an fd
+(`filsys.h:27`, at `v7fs.c:180`, `v1fs.c:66`, `pdp7fs.c:186`). The kernel has
+no fd, so those calls are excluded (or routed through the transport); the mount
+entry point carries the device size in via `DIOCGDINFO` instead (§4.2).
+
 ## 4.2 The shim half — new, thin, kernel-only
 
 1. **`filsys_io_kern`** — a `filsys_io_t` whose `read`/`write` translate a
    byte offset + length into `bread`/`getblk`/`VOP_STRATEGY` on the block
    device vnode (§5.3 in [05-architecture.md]). This is the single most
-   important piece, and it is the reason the codecs need no change.
+   important piece, and it is the reason the codecs need no change. It also
+   carries the device **size**: the codecs' `open`/`close`/`filsys_dev_size`
+   are excluded, and the mount entry point supplies the size from `DIOCGDINFO`
+   on the partition — the transport seam is size + I/O vtable, not the vtable
+   alone.
 2. **Allocation shim** — map `malloc`/`calloc`/`realloc`/`free` (≈27 alloc /
    285 free call sites in the engine) onto the kernel allocator
    (`km_alloc`/`km_free` with a dedicated `M_FILSYS` type, or `pool(9)` for the

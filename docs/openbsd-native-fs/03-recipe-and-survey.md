@@ -5,7 +5,7 @@
 A new local filesystem is, in full:
 
 1. **`sys/<name>/`** — self-contained `.c`/`.h`, including `struct vfsops` and
-   one or more `struct vnodeops`.
+   one or more `struct vops`.
 2. **`sys/conf/files`** — `file <name>/<f>.c  <name>` per source, gated on the
    config token.
 3. **`sys/conf/GENERIC`** (and `RAMDISK` etc. as wanted) — `option <NAME>`.
@@ -38,14 +38,14 @@ Sizes (`.c`+`.h` under `src/sys/…`, current `openbsd/src`):
 Observations that bear on filsys:
 
 - **A read-only driver is the smallest honest first step.** cd9660 and ntfs
-  implement only a read subset of `vnodeops` (`read`, `getattr`, `readdir`,
+  implement only a read subset of `vops` (`read`, `getattr`, `readdir`,
   `lookup`, `readlink`, `bmap`, `inactive`, `reclaim`); everything mutating is
   `vop_generic_badop` or absent. filsys's V7/V6/etc. images are exactly the
   kind of thing one mounts read-only to copy files off (§6 in
   [06-phases-and-risks.md] phases the driver this way).
 - **The vfsops surface is uniform.** Every one of ffs/ext2fs/msdosfs/tmpfs/
   ntfs/cd9660/udf/gefs fills the *same* `struct vfsops`; the variation is only
-  in which `vnodeops` members are stubbed. This confirms the recipe in §3.1 is
+  in which `vops` members are stubbed. This confirms the recipe in §3.1 is
   complete.
 - **tmpfs is the template for "no device".** Its `vfs_mount` takes no `fspec`
   and does no `VOP_OPEN` — irrelevant for filsys (which is device-backed) but a

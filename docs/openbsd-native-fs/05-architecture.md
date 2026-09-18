@@ -8,7 +8,7 @@ threads.
 ```
 sys/filsys/
   filsys_vfsops.c     # struct vfsops: mount/unmount/root/statfs/sync/vget  (~mirrors gefs load.c)
-  filsys_vnops.c      # struct vnodeops: lookup/create/.../reclaim            (~mirrors gefs vnops.c)
+  filsys_vnops.c      # struct vops: lookup/create/.../reclaim            (~mirrors gefs vnops.c)
   filsys_vnode.h      # struct filsys_node { filsys_inode_t ino; ... }  (v_data payload)
   filsys_kern.h       # the shim: alloc/log/time + filsys_io_kern declaration
   filsys_io_kern.c    # filsys_io_t over bread/VOP_STRATEGY

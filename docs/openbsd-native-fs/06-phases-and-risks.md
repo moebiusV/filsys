@@ -23,7 +23,7 @@ the engine's non-I/O libc surface is enumerated (§4.2, §A.3).
 
 ## Phase 2 — read-write, one edition (V7)
 
-- Add the mutating `vnodeops`: `create, mkdir, mknod, remove, rmdir, rename,
+- Add the mutating `vops`: `create, mkdir, mknod, remove, rmdir, rename,
   link, symlink, setattr, write, fsync, truncate`.
 - Per-mount exclusive `rwlock` for mutations; wire `filsys_open_ino`/`close_ino`
   for hard-remove; superblock `mark_dirty`/`mark_clean` on mount/unmount.
@@ -86,3 +86,19 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    kernel against the checkout). `ROADMAP.md`'s strict SemVer means the engine
    API must stay source-stable — the additive inode-anchored exports (§4.3) must
    land in a MINOR, not a patch.
+8. **Kernel allocation failure mode.** The directory readers allocate the whole
+   directory in one `malloc`, bounded only by the superblock check
+   `ip->size ≤ (fsize − data_start) × bsize ≤ imgsize` (`v7fs.c:180`). In-kernel
+   `km_alloc(kd_waitok)` sleeps where `malloc` returns NULL, so a corrupt
+   `di_size` that passes the bound hangs instead of failing with `-ENOMEM`. The
+   shim wants either an absolute cap on top of the relative one, or `dir_read`
+   extended to the chunked scan that `dir_lookup`/`dir_add`/`dir_remove` already
+   use — which removes the allocation rather than bounding it.
+9. **The device case loosens the size bound.** A V7 image file is a few MB and
+   `fstat` says so; a partition is whatever the disklabel says, so `fsize` can
+   legitimately be declared much larger and a corrupt `di_size` has more room.
+   This is robustness, not security — mount is root-only (no `kern.usermount`).
+   But the engine's corrupt-media guards must be *kept*, not assumed away by
+   "device-backed means well-formed": the normal input is `vnd(4)` over a file
+   of unknown provenance (§6's "`rp06-0.disk` mounted read-only" is `vnconfig`,
+   not physical media).

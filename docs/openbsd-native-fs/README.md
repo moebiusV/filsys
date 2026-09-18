@@ -10,7 +10,7 @@ filsys already mounts on OpenBSD today through **FUSE2** (OpenBSD's in-base
 `libfuse`, 2.6-era — `fuseops_openbsd.c`). This plan is about the *next* step:
 a **native in-kernel filesystem driver**, `sys/filsys/`, that links the libfilsys
 format engine **unmodified** and only adds the thin glue OpenBSD demands of a
-filesystem (`struct vfsops` + `struct vnodeops` + five registration edits).
+filesystem (`struct vfsops` + `struct vops` + five registration edits).
 
 The reference implementation is **GEFS-on-OpenBSD** (Ori Bernstein, announced
 2026-09-15): a copy-on-write Plan 9 filesystem ported into the kernel in
