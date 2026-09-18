@@ -208,11 +208,11 @@ for (i = 0; i < nicfree; i++)
 
 Same move in the superblock free/inode cache decode and encode, the inode-table
 walks, the checker's block-list decode, `dir_bsd211.c`'s record scan, and
-`alloc_freelist.c`. Leave `fs->io->read` alone (the one pointer swapped at
-runtime, for fault injection), leave the byte-order vtable a vtable, and do not
-chase devirtualization via single-edition builds — the flattening and the hoists
-are free and more readable; anything past them is nanoseconds behind a disk
-read.
+`alloc_freelist.c`. The transport becomes a build-selected direct call (below),
+so there is no `fs->io` pointer left to flatten. Leave the byte-order vtable a
+vtable, and do not chase devirtualization via single-edition builds — the
+flattening and the hoists are free and more readable; anything past them is
+nanoseconds behind a disk read.
 
 ## The open-handle table moves to FUSE
 
@@ -269,9 +269,46 @@ Two properties that matter in the kernel:
 `filsys_free` taking the size is not decoration — `km_free(9)` requires it, so
 the signature carries it from the start or every call site gets touched twice.
 
-Keep a settable override pointer next to `filsys_alloc`, the way `filsys_set_io`
-sits next to `filsys_io_file`, purely so the test build can inject allocation
-failures. Sixteen call sites gain a parameter they already have in scope.
+Keep a settable override next to `filsys_alloc` — an inject arm beside the
+production arm, exactly as the transport does below — purely so the test build
+can inject allocation failures. Sixteen call sites gain a parameter they already
+have in scope.
+
+## The transport, too: build-selected
+
+`filsys_set_io` has nine call sites and every one is in `test_matrix.c` — zero
+production users. The transport is build-time known in every shipping
+configuration (`filsys_io_file` in userspace, `filsys_io_kern` in the kernel),
+so by the same rule as the allocator it should be a build-selected direct call,
+not a pointer:
+
+```
+filsys_io_file.c     production, userspace   -> direct call
+filsys_io_kern.c     production, kernel      -> direct call
+filsys_io_inject.c   --enable-fault-injection, default off
+```
+
+The engine calls `filsys_read_bytes(fs, buf, n, off)` unconditionally; which
+object supplies it is a link-time question. `filsys_io_t`, `filsys_set_io`, and
+the `io` member of `filsys_edition_t` disappear from the production build.
+
+The win is not speed — fourteen indirect calls behind a `pread`/`bread` are
+unmeasurable. It is two other things. **Hardening:** a writable function-pointer
+pair reachable from every block read is a redirect target, and in a kernel
+driver that is a live concern OpenBSD treats as one; a direct call has nothing
+to overwrite. **Shipped API surface:** `filsys_set_io` is "Internal, not part of
+the public filsys.h API" only as a comment; removing it from production makes
+that real, and it is one fewer knob for the 9P server and the kernel driver to
+reason about.
+
+The cost is that the tested binary is not quite the shipped binary. It is
+containable because the divergence is only in *how the leaf is reached*, not
+what it does — `filsys_io_inject.c` calls the same `filsys_read_bytes` body when
+unarmed, so the format code under test is byte-identical. Build both in CI and
+run the matrix against each; the fault-injection build must stay first-class,
+since it produced the dangling-entry reproduction and the slow suite is already
+skipped by default. (`filsys_invariants` stays as-is: the fuzzer calls it and it
+is the same walk `filsys_check` drives, not a transport concern.)
 
 ## Testing: keep it in userspace
 
@@ -313,11 +350,10 @@ stop allocating proportional to directory size on every frontend at once.
 
 The edition descriptor table, the allocator and directory-format vtables, and
 the byte-order vtable are all carrying real variation and are already the right
-shape — they are why this port is tractable at all. The `filsys_io_t` seam is
-right too; it just needs to carry the device size alongside the two function
-pointers, as §4.2 says. (The allocator, unlike `filsys_io_t`, does **not**
-become a runtime-swappable vtable — it is build-selected, with a test-only
-override; the only runtime seam is I/O.)
+shape — they are why this port is tractable at all. The two build-selected
+seams — allocation and I/O — carry the per-build variation (userspace vs
+kernel); the I/O one still has to carry the device size alongside the
+byte-offset read/write, as §4.2 says.
 
 ## How this revises the rest of this plan
 
