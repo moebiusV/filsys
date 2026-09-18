@@ -1,0 +1,67 @@
+# 4. What "using libfilsys as-is" means, precisely
+
+The phrase needs to be nailed down, because "link the userspace library into
+the kernel" is impossible (no libc, no `struct statvfs`, no `open(2)`). The
+workable and honest reading is:
+
+> **The on-disk format engine is compiled into the kernel byte-for-byte
+> unchanged; only the userspace convenience layer is replaced by a thin
+> kernel-side shim.**
+
+Concretely, the boundary splits libfilsys into two halves.
+
+## 4.1 The engine half — compiled as-is
+
+| file | what it is | kernel status |
+|---|---|---|
+| `v7fs.c` | V7/V8-family/32V/Coherent/Xenix/2.9BSD/System III–V codec, superblock codec, `filsys_io_file` | **as-is** (the `filsys_io_file` *definition* may be `#ifdef`'d out; the driver supplies its own `filsys_io_t`) |
+| `v1fs.c` | V1/V2/V3 codec | as-is |
+| `pdp7fs.c` | PDP-7 word-addressed codec + `rb09`/`packed18`/`rim` | as-is |
+| `alloc_freelist.c` | V6/V7 free-list allocator | as-is |
+| `alloc_v8bitmap.c` | V8-family bitmap allocator | as-is |
+| `blocktree.c` | shared indirect-block walker | as-is |
+| `dir_fixed.c` / `dir_bsd211.c` | directory codecs | as-is |
+| `byteorder.c` | `bo_le`/`bo_be`/`bo_me` vtable | as-is |
+| `filsys_format.c` / `filsys_names.c` | edition table + name/alias resolution | as-is (or trimmed to the runtime subset) |
+| `filsys.c` | runtime open/read/write/lookup/create/rename/… + the shared `filsys_ops` router | runtime subset as-is |
+
+The kernel build **omits** `filsys_mkfs.c`, `filsys_detect.c`, `check.c`, and
+the findfs/fsck drivers (they are offline tools, §1.3), and omits the FUSE
+adapter (`fuseops*.c`, `fuse_core.c`). This is the same split the FUSE-free
+`test_matrix` build already makes.
+
+## 4.2 The shim half — new, thin, kernel-only
+
+1. **`filsys_io_kern`** — a `filsys_io_t` whose `read`/`write` translate a
+   byte offset + length into `bread`/`getblk`/`VOP_STRATEGY` on the block
+   device vnode (§5.3 in [05-architecture.md]). This is the single most
+   important piece, and it is the reason the codecs need no change.
+2. **Allocation shim** — map `malloc`/`calloc`/`realloc`/`free` (≈27 alloc /
+   285 free call sites in the engine) onto the kernel allocator
+   (`km_alloc`/`km_free` with a dedicated `M_FILSYS` type, or `pool(9)` for the
+   hot fixed-size `filsys_inode_t`/`filsys_dirent_t`/block buffers). Prefer a
+   small `filsys_kern.h` with wrappers over `#define malloc …` (§5.4).
+3. **Logging shim** — `printf`/`fprintf`/`snprintf`/`vsnprintf` → kernel
+   `printf`/`snprintf`. The interactive `filsys_query()` (`getchar` on stdin)
+   is *not* ported: it lives in `check.c`, which is excluded.
+4. **Stat/time shim** — `struct stat`/`struct statvfs`/`struct timespec` from
+   the public header are userspace-only. The driver decodes the already-typed
+   `filsys_inode_t` (plain `uint32_t` fields) directly into `struct vattr`
+   and `struct statfs`; times come from `nanotime(9)` (§5.6).
+
+## 4.3 The one genuine gap: path-based mutation
+
+The public mutation API takes **paths** (`filsys_create(path, …)`), but the
+kernel VFS hands the driver **`(parent-vnode, name)`**. The path-based
+functions are thin wrappers over inode-anchored internals (`dir_lookup`,
+`dir_add`, `dir_remove`, `ialloc`, `ifree`, `bmap`, `read_inode`,
+`write_inode`). Two options:
+
+- **(Preferred) Export the inode-anchored primitives.** Add a small additive,
+  behavior-preserving internal API — e.g. `filsys_dir_lookup_in(fs,
+  parent_ino, name, &ino)`, `filsys_create_in(fs, parent_ino, name, mode, uid,
+  gid, &ino)`, `filsys_unlink_in(fs, parent_ino, name)`, etc. — by hoisting the
+  existing static helpers. This is *not* a rewrite; it is making the seam that
+  already exists visible to a second caller (the kernel driver, beside FUSE).
+- (Alternative) Have the driver maintain parent pointers and synthesize paths;
+  rejected as fragile and wasteful.
