@@ -51,7 +51,7 @@ libfilsys is the **backend**, one format engine that does the correct thing per
 edition, behind several **frontends** in two families: **callback** (FUSE,
 native drivers) and **message** (plan9, QNX), each mapping its own semantics
 onto it. This plan is the first callback-native driver (OpenBSD); the other
-four ports are §1.4. Where a frontend's semantics differ from the engine's,
+six ports are §1.4. Where a frontend's semantics differ from the engine's,
 the frontend maps; the engine does not encode any one frontend's rules.
 
 | | FUSE2 (today) | native `sys/unixfs/` (this plan) |

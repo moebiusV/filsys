@@ -95,7 +95,7 @@ no bespoke I/O path.
 ## 2.5 What GEFS took shortcuts on (and this plan avoids)
 
 GEFS's port is deliberately minimal, and several choices are *not* things to
-copy for a durable filsys driver:
+copy for a durable unixfs driver:
 
 - **Global single-instance state**, `Gefs *fs` is a file-scope global;
   `gefs_mount` returns `ENODEV` if `fs != NULL` ("only one gefs at a time").

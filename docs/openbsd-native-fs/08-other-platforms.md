@@ -24,8 +24,8 @@ rump makes it the cheapest of the native set to iterate on. The transport is the
 same `filsys_io_kern`-shaped `bread`/`VOP_STRATEGY` path, and the per-vnode lock
 protocol is the same BSD-family `rrwlock` work (§5.5).
 
-FreeBSD is the same story with a flat `struct vop_vector`, the nearest of the
-three to OpenBSD, and a mature in-tree `fusefs`, so the FUSE frontend already
+FreeBSD is the same story with a flat `struct vop_vector`, the closest to
+OpenBSD, and a mature in-tree `fusefs`, so the FUSE frontend already
 works there and the native driver is the optional hardening step, not the
 gap-filler. Its specific VFS details (registration via `VFS_SET`, mount args,
 the vnode-lifecycle protocol) get their own pass when FreeBSD is scheduled.
