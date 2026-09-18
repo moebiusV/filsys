@@ -49,12 +49,12 @@ The engine's internal shape (this is what makes the kernel port tractable):
 
 libfilsys is the **backend** — one format engine that does the correct thing per
 edition — behind several **frontends** in two families: **callback** (FUSE,
-native drivers) and **message** (9P, QNX), each mapping its own semantics onto
-it. This plan is the first callback-native driver (OpenBSD); the other three
-native ports are §1.4. Where a frontend's semantics differ from the engine's,
+native drivers) and **message** (9front, QNX), each mapping its own semantics
+onto it. This plan is the first callback-native driver (OpenBSD); the other
+four ports are §1.4. Where a frontend's semantics differ from the engine's,
 the frontend maps; the engine does not encode any one frontend's rules.
 
-| | FUSE2 (today) | native `sys/filsys/` (this plan) |
+| | FUSE2 (today) | native `sys/unixfs/` (this plan) |
 |---|---|---|
 | kernel/user round-trip per op | yes | no |
 | mount at boot / in `/etc/fstab` | no (userspace daemon) | yes |
@@ -78,34 +78,25 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
   rewrote it in place; this plan explicitly does the opposite.
 - **Not** FFS or Minix (already out of scope per `ROADMAP.md`).
 
-## 1.4 The other three ports, and their order
+## 1.4 The other four ports, and their order
 
-The backend serves more than OpenBSD; the native-driver story is four ports, and
-the four are not four of the same thing. The order below is deliberate —
-OpenBSD first, the others only after the backend shape (§0) is proven.
+The backend serves five platforms: the OpenBSD driver (this plan's subject,
+§5–§6) and four siblings — NetBSD, Linux, 9front, QNX. They are not four of the
+same thing, and the order is deliberate: OpenBSD first, NetBSD second, the
+message family (9front then QNX), Linux last. The per-platform "how to
+implement" is §9.
 
-- **NetBSD** — the close cousin, and second. Two differences matter: NetBSD
-  registers `struct vnodeopv_entry_desc` arrays rather than OpenBSD's flat
-  `struct vops`, so the glue is not copy-paste; and it offers **rump kernels**,
-  which run the real NetBSD VFS with the filesystem linked in as a userspace
-  process under a normal debugger. Rump is the best test loop of the four by a
-  wide margin — better than the QEMU story for OpenBSD — so NetBSD goes second
-  because the BSD VFS knowledge is still fresh and rump finds engine- and
-  glue-level bugs that cost a VM reboot each on OpenBSD.
-- **QNX** — not a kernel driver at all. QNX has no VFS: a filesystem is a
-  resource manager, a userspace process that registers a pathname prefix with
-  `procmgr` and answers `_IO_READ`/`_IO_WRITE`/`_IO_STAT`/`_IO_OPENFD` messages,
-  usually via the `iofunc_*` helpers. It is message-shaped, runs in userspace,
-  uses ordinary `malloc`, and needs none of the kernel shims. Its OCB is 9P's
-  fid, so doing QNX after 9P means the message-family mapping is largely already
-  written.
-- **Linux** — last, and the one with the weakest rationale. Linux's FUSE is
-  mature, fast, mounts from `/etc/fstab` via `mount.fuse`, and can serve as root
-  from an initramfs. For read-mostly historical images a Linux native driver
-  buys very little over the FUSE frontend already present, and costs a permanent
-  tracking burden against an API that changes every release. This is not an
-  argument against doing it — "V7 filesystems mount natively on Linux" is worth
-  wanting, and the §0 work is what makes it small — it is an argument for not
-  letting Linux set the schedule: OpenBSD has the real gap (base libfuse is
-  2.6-era and slow), NetBSD has the cheap test loop, QNX rides on 9P, and Linux
-  can wait until the other three have proven the backend shape.
+- **NetBSD** — the close cousin; `struct vnodeopv_entry_desc` arrays rather than
+  a flat `vops`, and **rump kernels** as the cheap test loop.
+- **9front** — a userspace 9P server (message family); the fid is the handle;
+  no kernel shims.
+- **QNX** — a resource manager (message family); the OCB is 9front's fid; done
+  after 9front because the mapping is then largely written.
+- **Linux** — last, not because the rationale is weak but because the bar is
+  highest and the argument is the kernel's own history: the in-tree `sysv`
+  driver for these formats was removed as unused-and-unsafe, and the "boring"
+  standard (§9.2) is how the replacement answers that. Out-of-tree first, then
+  `fs/unixfs/`, default off.
+
+Each maps its own semantics onto the same backend shape §0 establishes; nothing
+here changes the OpenBSD driver, only the backend it shares with these four.

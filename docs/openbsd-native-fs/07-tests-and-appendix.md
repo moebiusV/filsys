@@ -8,7 +8,7 @@
   `filsys_set_io` hook already exists for exactly this). If the codecs pass
   over the new transport, the remaining risk is confined to the vnode/vfs glue,
   not the format logic.
-- **vnd-backed mount in a VM.** `vnconfig(8)` a V7 image, `mount_filsys`, run
+- **vnd-backed mount in a VM.** `vnconfig(8)` a V7 image, `mount_unixfs`, run
   the FUSE `test.sh` read/write/rename/truncate/persistence sequence against the
   native mount; then unmount and `fsck.filsys` the image.
 - **Oracle diff.** Mount each edition read-only and diff a recursive copy
@@ -20,35 +20,35 @@
 
 # Appendix A. Reference material
 
-## A.1 The five registration diffs (filsys edition, exact shape)
+## A.1 The five registration diffs (unixfs edition, exact shape)
 
 ```c
 /* sys/conf/files */
-file filsys/filsys_vfsops.c	filsys
-file filsys/filsys_vnops.c	filsys
-file filsys/filsys_io_kern.c	filsys
-file filsys/filsys_vnode.h		# not compiled; header
-# + the libfilsys engine sources, each gated on `filsys`
+file unixfs/unixfs_vfsops.c	unixfs
+file unixfs/unixfs_vnops.c	unixfs
+file unixfs/filsys_io_kern.c	unixfs
+file unixfs/unixfs_vnode.h		# not compiled; header
+# + the libfilsys engine sources, each gated on `unixfs`
 
 /* sys/conf/GENERIC */
-option		FILSYS		# Research Unix (V1..V10, 2.11BSD, SysIII/V) filesystems
+option		UNIXFS		# Research Unix (V1..V10, 2.11BSD, SysIII/V) filesystems
 
 /* sys/kern/vfs_init.c */
-{ &filsys_vfsops, MOUNT_FILSYS, 20, 0, MNT_LOCAL, sizeof(struct filsys_args) },
+{ &unixfs_vfsops, MOUNT_UNIXFS, 20, 0, MNT_LOCAL, sizeof(struct unixfs_args) },
 
 /* sys/sys/mount.h */
-struct filsys_args {
+struct unixfs_args {
     char   *fspec;          /* block special device to mount */
     int     edition;        /* FILSYS_* selector */
     uint64_t offset;        /* byte offset of the fs within the device */
     int     readonly;
     char   *arch;           /* "vax"/"x86"/"3b2"/"68k", or NULL */
 };
-#define MOUNT_FILSYS	"filsys"
-extern const struct vfsops filsys_vfsops;
+#define MOUNT_UNIXFS	"unixfs"
+extern const struct vfsops unixfs_vfsops;
 
 /* sys/sys/vnode.h */
-enum vtagtype { ..., VT_FILSYS, };
+enum vtagtype { ..., VT_UNIXFS, };
 ```
 
 ## A.2 The `struct vfsops` / `struct vops` field lists (current OpenBSD)

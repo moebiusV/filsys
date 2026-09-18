@@ -9,9 +9,9 @@ Audience: filsys maintainers; assumes the reader knows the OpenBSD VFS and the l
 filsys already mounts on OpenBSD today through **FUSE2** (OpenBSD's in-base
 `libfuse`, 2.6-era — `fuseops_openbsd.c`). libfilsys is the **backend** — one
 format engine — behind **seven frontends** in two families: **callback** (FUSE3,
-FUSE2, and native drivers on OpenBSD/NetBSD/Linux) and **message** (9P, QNX).
+FUSE2, and native drivers on OpenBSD/NetBSD/Linux) and **message** (9front, QNX).
 This plan is the first callback-native driver: an in-kernel OpenBSD driver,
-`sys/filsys/`, that links the libfilsys format engine **unmodified** and only
+`sys/unixfs/`, that links the libfilsys format engine **unmodified** and only
 adds the thin glue OpenBSD demands of a filesystem (`struct vfsops` +
 `struct vops` + five registration edits).
 
@@ -58,7 +58,7 @@ own. Read in order; later sections build on earlier ones.
 4. **[What "using libfilsys as-is" means](04-as-is-boundary.md)** — the precise
    engine-vs-shim split, the `filsys_io_t` seam, and how the frontend maps its
    semantics to the backend (path vs. inode).
-5. **[Proposed architecture: `sys/filsys/`](05-architecture.md)** — file layout,
+5. **[Proposed architecture: `sys/unixfs/`](05-architecture.md)** — file layout,
    per-mount state, the I/O transport, the allocation/logging/stat shims,
    locking, edition selection, and the five registration diffs.
 6. **[Phased plan, risks, and open questions](06-phases-and-risks.md)** — four
@@ -66,6 +66,9 @@ own. Read in order; later sections build on earlier ones.
 7. **[Test strategy and appendices](07-tests-and-appendix.md)** — how to verify
    without regressing userspace; the exact diff shapes, vtable field lists, the
    libc-dependency inventory, and references.
+8. **[The other four ports](08-other-platforms.md)** — NetBSD, Linux (`unixfs`),
+   9front, QNX: how each is implemented on the §0 backend shape, and why this
+   order.
 
 ## How this was produced
 

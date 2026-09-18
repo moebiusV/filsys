@@ -11,15 +11,15 @@ the engine's non-I/O libc surface is enumerated (§4.2, §A.3).
 ## Phase 1 — read-only mount, one edition (V7)
 
 - Implement `filsys_io_kern` (read path first), the alloc/log/time shims, and a
-  read-only `filsys_vfsops` + `filsys_vnops` with the read subset: `lookup,
+  read-only `unixfs_vfsops` + `unixfs_vnops` with the read subset: `lookup,
   open, close, access(→0 or generic), getattr, read, readdir, readlink, bmap,
   inactive, reclaim, lock/unlock/islocked` (real, `rrwlock`-based — §5.5), plus
   the generic stubs `abortop, pathconf, strategy, print, revoke, bwrite`. A
   NULL `vop_lock` makes `vn_lock` return `EOPNOTSUPP` and takes `namei` with
   it, and the first several boots end in `ddb` on whichever slot is still NULL
   — fill them here, not one panic at a time (§0).
-- Wire the five registration edits; add `sbin/mount_filsys/`.
-- Build a `GENERIC`-with-FILSYS kernel and boot it (or a `vnd(4)`-backed test
+- Wire the five registration edits; add `sbin/mount_unixfs/`.
+- Build a `GENERIC`-with-UNIXFS kernel and boot it (or a `vnd(4)`-backed test
   in a VM).
 
 **Acceptance:** a V7 `rp06-0.disk` mounted read-only; `ls`, `cat`, `cp` out,
@@ -59,8 +59,8 @@ mount each edition on a VM and diff against the userspace result).
 - SMP smoke tests (concurrent readers; concurrent writers under the big lock).
 - NFS re-export (fill `vfs_fhtovp`/`vfs_vptofh` — the inode number is a natural
   file handle) if desired; otherwise leave `NULL` like GEFS.
-- Manpage `mount_filsys(8)`, `GENERIC`/`RAMDISK` entries, and a packaging
-  follow-up in `packaging/openbsd/` that ships the native `mount_filsys(8)` plus
+- Manpage `mount_unixfs(8)`, `GENERIC`/`RAMDISK` entries, and a packaging
+  follow-up in `packaging/openbsd/` that ships the native `mount_unixfs(8)` plus
   the userspace `fsck.filsys`/`mkfs.filsys`/`findfs.filsys` — a mount driver
   alone is not enough; the companion tools have to be in the port too.
 
@@ -74,8 +74,8 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
 1. **The public-header boundary.** `filsys.h` cannot be `#include`d in-kernel
    (`<sys/stat.h>` etc.). §0 resolves this: a POSIX-free `filsys.h` (plain
    integer `filsys_inode_t`/`filsys_statfs_t`, each frontend filling its own
-   type) removes the need for both a separate `filsys_kern.h` and `#ifdef
-   FILSYS_KERNEL` guards.
+   type) removes the need for both a separate `unixfs_kern.h` and `#ifdef
+   UNIXFS_KERNEL` guards.
 2. **Allocation seam.** The engine has eighteen allocation sites (6 `malloc`,
    10 `calloc`, 2 `realloc`) and 45 `free`s — an order of magnitude below the
    old §A.3 estimate. `fs` is already in scope at fifteen of them. §0 resolves
@@ -83,7 +83,7 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    the two `realloc`s go away (one moves to the FUSE frontend, one becomes
    alloc-copy-free) and the remaining sites gain a parameter they already have
    in scope.
-3. **Detection in-kernel vs in-`mount_filsys`.** Prefer userspace detection to
+3. **Detection in-kernel vs in-`mount_unixfs`.** Prefer userspace detection to
    keep the kernel driver small, not to avoid fd usage — the probe reads through
    the build-selected transport and comes along free; only `filsys_detect.c`'s
    thin wrapper is fd-bound (§5.7).
@@ -101,7 +101,7 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    allocations bounded and pageable.
 7. **SemVer / distribution.** The engine is compiled from libfilsys source into
    the kernel; decide pinning up front (§5.1) — a vendored snapshot under
-   `sys/filsys/` with a pin and a sync script, or a patch against `-current`.
+   `sys/unixfs/` with a pin and a sync script, or a patch against `-current`.
    `ROADMAP.md`'s strict SemVer means the engine API must stay source-stable —
    the additive inode-anchored exports (§4.3) and the `ops->probe` signature
    change (the build-selected transport drops its `filsys_io_t *` argument,

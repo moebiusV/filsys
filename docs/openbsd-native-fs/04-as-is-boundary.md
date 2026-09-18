@@ -50,7 +50,7 @@ entry point carries the device size in via `DIOCGDINFO` instead (§4.2).
    285 free call sites in the engine) onto the kernel allocator
    (`km_alloc`/`km_free` with a dedicated `M_FILSYS` type, or `pool(9)` for the
    hot fixed-size `filsys_inode_t`/`filsys_dirent_t`/block buffers). Prefer a
-   small `filsys_kern.h` with wrappers over `#define malloc …` (§5.4).
+   small `unixfs_kern.h` with wrappers over `#define malloc …` (§5.4).
 3. **Logging shim** — `printf`/`fprintf`/`snprintf`/`vsnprintf` → kernel
    `printf`/`snprintf`. The interactive `filsys_query()` (`getchar` on stdin)
    is *not* ported: it lives in `check.c`, which is excluded.

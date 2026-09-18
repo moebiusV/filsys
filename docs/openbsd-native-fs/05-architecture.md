@@ -1,4 +1,4 @@
-# 5. Proposed architecture: `sys/filsys/`
+# 5. Proposed architecture: `sys/unixfs/`
 
 Mirror `sys/gefs/` but with a per-mount instance (no global) and no background
 threads.
@@ -6,13 +6,13 @@ threads.
 ## 5.1 File layout
 
 ```
-sys/filsys/
-  filsys_vfsops.c     # struct vfsops: mount/unmount/root/statfs/sync/vget  (~mirrors gefs load.c)
-  filsys_vnops.c      # struct vops: lookup/create/.../reclaim            (~mirrors gefs vnops.c)
-  filsys_vnode.h      # struct filsys_node { filsys_inode_t ino; ... }  (v_data payload)
-  filsys_kern.h       # the shim: alloc/log/time + filsys_io_kern declaration
+sys/unixfs/
+  unixfs_vfsops.c     # struct vfsops: mount/unmount/root/statfs/sync/vget  (~mirrors gefs load.c)
+  unixfs_vnops.c      # struct vops: lookup/create/.../reclaim            (~mirrors gefs vnops.c)
+  unixfs_vnode.h      # struct unixfs_node { filsys_inode_t ino; ... }  (v_data payload)
+  unixfs_kern.h       # the shim: alloc/log/time + filsys_io_kern declaration
   filsys_io_kern.c    # filsys_io_t over bread/VOP_STRATEGY
-  <engine, compiled as-is, via sys/conf/files pointing back at the libfilsys sources>
+  <engine, vendored as-is, via sys/conf/files>
 ```
 
 The engine sources have to be *vendored* into the kernel tree. `sys/conf/files`
@@ -20,7 +20,7 @@ paths are `sys/`-relative and cannot name anything outside `src/sys`, and
 OpenBSD has no loadable kernel modules (LKM was removed in 5.7), so there is no
 "reference the libfilsys checkout" option. The real choice — made before §0's
 file layout, since it decides whether the engine builds under a second, more
-restrictive build system — is a vendored snapshot under `sys/filsys/` with a pin
+restrictive build system — is a vendored snapshot under `sys/unixfs/` with a pin
 and a sync script, or a patch against `-current` that people apply and rebuild.
 The sync script is **not optional**: the engine vendors into four kernel trees
 (OpenBSD, NetBSD, Linux, QNX — §1.4), so there are four copies to keep in step
@@ -28,10 +28,10 @@ and "copy the files by hand" stops being a thing anyone can be trusted to do.
 
 ## 5.2 Per-mount state
 
-Replace GEFS's global `Gefs *fs` with a `struct filsys_mount` embedded in
+Replace GEFS's global `Gefs *fs` with a `struct unixfs_mount` embedded in
 `mp->mnt_data`, holding one `filsys_edition_t` (already self-contained), the
 device vnode, the resolved edition/geometry, and a single per-mount `rwlock`.
-Each `filsys_node` (in `vp->v_data`) holds the inode number + a cached decoded
+Each `unixfs_node` (in `vp->v_data`) holds the inode number + a cached decoded
 `filsys_inode_t`.
 
 ## 5.3 I/O transport (`filsys_io_kern.c`)
@@ -83,7 +83,7 @@ The per-mount `rwlock` serialises *engine entry* (reentrancy). It does **not**
 stand in for the VFS's per-vnode lock protocol — `vop_lock`/`vop_unlock`/
 `vop_islocked` — which holds the parent vnode stable across a compound
 `namei` → `VOP_LOOKUP` → `VOP_CREATE`. Those three ops need real bodies: an
-`rrwlock` in `struct filsys_node` and three one-line implementations, *à la*
+`rrwlock` in `struct unixfs_node` and three one-line implementations, *à la*
 `cd9660_lock`/`msdosfs_lock`. GEFS's nullop for them is one of the shortcuts
 §2.5 warns against.
 
@@ -101,7 +101,7 @@ refined later without changing the on-disk behavior.
 
 - `VOP_GETATTR`: `vattr_null` + fill from `filsys_read_inode` into
   `va_mode/va_nlink/va_uid/va_gid/va_size/va_atime/va_mtime/va_ctime/va_blocks`.
-  (A tiny helper `filsys_fill_vattr(fs, ip, struct vattr *)` lives in the
+  (A tiny helper `unixfs_fill_vattr(fs, ip, struct vattr *)` lives in the
   kernel glue; it mirrors the userspace `filsys_fill_stat`.)
 - `VOP_SETATTR`: map `va_size/va_mode/va_uid/va_gid/va_atime/va_mtime` onto
   `filsys_truncate_ino`/`filsys_chmod`/`filsys_chown`/`filsys_utimens` — but
@@ -115,9 +115,9 @@ refined later without changing the on-disk behavior.
 
 ## 5.7 Edition selection and geometry
 
-`struct filsys_args` (in `mount.h`) carries: `fspec`, `edition` (a `FILSYS_*`
+`struct unixfs_args` (in `mount.h`) carries: `fspec`, `edition` (a `FILSYS_*`
 selector), `readonly`, `offset`, `arch`, and the V8-family `geom`
-(blocksize/freemap/byteorder). The `mount_filsys(8)` tool parses
+(blocksize/freemap/byteorder). The `mount_unixfs(8)` tool parses
 `-o edition=v7`, `-o offset=0`, `-o arch=vax`, `-o readonly`, etc., into this
 struct. Two mount modes:
 
@@ -130,31 +130,31 @@ struct. Two mount modes:
   userspace. With the transport build-selected (§0), `ops->probe` drops its
   `filsys_io_t *` argument and reads through `filsys_read_bytes` directly — a
   signature change to one vtable slot, but the conclusion holds: in-kernel
-  detection is still feasible and still wants no fd. Prefer `mount_filsys`
-  probing in userspace and passing the resolved edition in `filsys_args` — it
+  detection is still feasible and still wants no fd. Prefer `mount_unixfs`
+  probing in userspace and passing the resolved edition in `unixfs_args` — it
   keeps the kernel driver small — but in-kernel detection is equally feasible.
   The choice is size, not feasibility.
 
 There is no third option: OpenBSD has no kernel-to-userspace helper (nothing
-like Linux's `call_usermodehelper`), so the driver cannot spawn `mount_filsys`
+like Linux's `call_usermodehelper`), so the driver cannot spawn `mount_unixfs`
 or any userspace process on its own behalf. Whatever runs in userspace —
-detection in `mount_filsys`, `fsck`, `mkfs` — does so before `mount(2)` or
+detection in `mount_unixfs`, `fsck`, `mkfs` — does so before `mount(2)` or
 offline, driven by the admin, never called by the kernel.
 
 ## 5.8 The vnode payload and inode life cycle
 
 - `VOP_LOOKUP`: `filsys_lookup`-equivalent on the parent inode (via the
-  inode-anchored `dir_lookup`), then `getnewvnode(VT_FILSYS, mp,
-  &filsys_vops, vpp)` and cache the decoded inode in `vp->v_data`.
+  inode-anchored `dir_lookup`), then `getnewvnode(VT_UNIXFS, mp,
+  &unixfs_vops, vpp)` and cache the decoded inode in `vp->v_data`.
 - `VOP_RECLAIM`/`VOP_INACTIVE`: free the node's cached state; mirror GEFS's
   `gefs_clunkdent`/`gefs_reclaim`.
 - Hard-remove semantics (unlink of an open file): after §0 moves the
   open-handle table to the FUSE frontend, the vnode *is* the pin — `VOP_REMOVE`
   must not free while `v_usecount > 0`, and `VOP_INACTIVE` does the `ifree` at
   nlink 0.
-- Device nodes: a `filsys_devops` mirroring `spec_vops` (copy GEFS's
+- Device nodes: a `unixfs_devops` mirroring `spec_vops` (copy GEFS's
   `gefs_devops` pattern) for V6/V7 char/block specials; FIFOs via
-  `filsys_fifoops` only if `option FIFO` is on (Coherent pipes).
+  `unixfs_fifoops` only if `option FIFO` is on (Coherent pipes).
 - Directory hard-links: OpenBSD forbids them at the syscall layer (`dolinkat`
   returns `EPERM` for `VDIR`, unconditionally, before `VOP_LINK`), so `vop_link`
   need not police directories. V7 images are built *out* of the construct (`..`
@@ -163,19 +163,19 @@ offline, driven by the admin, never called by the kernel.
   this (`filsys_mkdir` adds `..`, `filsys_rename` rewrites it, `do_link` guards
   the cycle).
 
-## 5.9 The registration edits (the five diffs, filsys edition)
+## 5.9 The registration edits (the five diffs, unixfs edition)
 
-1. `sys/conf/files` — `file filsys/filsys_vfsops.c filsys`, `file
-   filsys/filsys_vnops.c filsys`, `file filsys/filsys_io_kern.c filsys`, plus
-   the libfilsys engine sources each tagged `filsys`.
-2. `sys/conf/GENERIC` — `option FILSYS`.
-3. `sys/kern/vfs_init.c` — `{ &filsys_vfsops, MOUNT_FILSYS, 20, 0, MNT_LOCAL,
-   sizeof(struct filsys_args) }`.
-4. `sys/sys/mount.h` — `struct filsys_args`, `union mount_info` slot,
-   `#define MOUNT_FILSYS "filsys"`, `extern const struct vfsops filsys_vfsops;`.
-5. `sys/sys/vnode.h` — `VT_FILSYS` + `VTAG_NAMES`.
+1. `sys/conf/files` — `file unixfs/unixfs_vfsops.c unixfs`, `file
+   unixfs/unixfs_vnops.c unixfs`, `file unixfs/filsys_io_kern.c unixfs`, plus
+   the libfilsys engine sources each tagged `unixfs`.
+2. `sys/conf/GENERIC` — `option UNIXFS`.
+3. `sys/kern/vfs_init.c` — `{ &unixfs_vfsops, MOUNT_UNIXFS, 20, 0, MNT_LOCAL,
+   sizeof(struct unixfs_args) }`.
+4. `sys/sys/mount.h` — `struct unixfs_args`, `union mount_info` slot,
+   `#define MOUNT_UNIXFS "unixfs"`, `extern const struct vfsops unixfs_vfsops;`.
+5. `sys/sys/vnode.h` — `VT_UNIXFS` + `VTAG_NAMES`.
 
-Plus the one userspace tool `sbin/mount_filsys/` (§3.1 step 7).
+Plus the one userspace tool `sbin/mount_unixfs/` (§3.1 step 7).
 
 ## 5.10 Superblock and the buffer cache
 
