@@ -98,14 +98,20 @@ struct. Two mount modes:
 
 - **explicit** — `-o edition=v7` (default for determinism, matches the FUSE
   tool's `-v`);
-- **autodetect** — `-o autodetect`. The read-only probe already lives in the
-  backends (`v7fs.c`/`v1fs.c`/`pdp7fs.c`, via each edition's `ops->probe`,
-  which takes a `filsys_io_t` transport, not an fd), so detection comes along
-  free; only `filsys_detect.c`'s thin wrapper (fd, precedence order, class
-  mapping) is userspace. Prefer `mount_filsys` probing in userspace and passing
-  the resolved edition in `filsys_args` — it keeps the kernel driver small —
-  but in-kernel detection is equally feasible by calling `ops->probe` with the
-  kernel transport. The choice is size, not feasibility.
+- **autodetect** — `-o unix` (the `FILSYS_UNIX` pseudo-edition). The read-only
+  probe already lives in the backends (`v7fs.c`/`v1fs.c`/`pdp7fs.c`, via each
+  edition's `ops->probe`, which takes a `filsys_io_t` transport, not an fd), so
+  detection comes along free; only `filsys_detect.c`'s thin wrapper (fd,
+  precedence order, class mapping) is userspace. Prefer `mount_filsys` probing
+  in userspace and passing the resolved edition in `filsys_args` — it keeps the
+  kernel driver small — but in-kernel detection is equally feasible by calling
+  `ops->probe` with the kernel transport. The choice is size, not feasibility.
+
+There is no third option: OpenBSD has no kernel-to-userspace helper (nothing
+like Linux's `call_usermodehelper`), so the driver cannot spawn `mount_filsys`
+or any userspace process on its own behalf. Whatever runs in userspace —
+detection in `mount_filsys`, `fsck`, `mkfs` — does so before `mount(2)` or
+offline, driven by the admin, never called by the kernel.
 
 ## 5.8 The vnode payload and inode life cycle
 
