@@ -136,6 +136,13 @@ offline, driven by the admin, never called by the kernel.
 - Device nodes: a `filsys_devops` mirroring `spec_vops` (copy GEFS's
   `gefs_devops` pattern) for V6/V7 char/block specials; FIFOs via
   `filsys_fifoops` only if `option FIFO` is on (Coherent pipes).
+- Directory hard-links: OpenBSD forbids them at the syscall layer (`dolinkat`
+  returns `EPERM` for `VDIR`, unconditionally, before `VOP_LINK`), so `vop_link`
+  need not police directories. V7 images are built *out* of the construct (`..`
+  is a genuine hard link, so every directory carries `nlink ≥ 2`), so the driver
+  owns `.`/`..` in `VOP_MKDIR`/`VOP_RMDIR`/`VOP_RENAME`; the engine already does
+  this (`filsys_mkdir` adds `..`, `filsys_rename` rewrites it, `do_link` guards
+  the cycle).
 
 ## 5.9 The registration edits (the five diffs, filsys edition)
 

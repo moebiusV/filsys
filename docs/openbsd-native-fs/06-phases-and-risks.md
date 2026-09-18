@@ -31,6 +31,11 @@ the engine's non-I/O libc surface is enumerated (§4.2, §A.3).
   link, symlink, setattr, write, fsync, truncate`.
 - Per-mount exclusive `rwlock` for mutations; wire `filsys_open_ino`/`close_ino`
   for hard-remove; superblock `mark_dirty`/`mark_clean` on mount/unmount.
+- Write `VOP_RENAME` last: it is the ugliest op in the vnode interface (up to
+  four vnodes with a locking and reference-dropping protocol the filesystem must
+  release on every path, plus `..` fix-up), and filsys's rename is currently
+  path-based and re-resolves both parents — the one op where the node-anchored
+  core (§0) pays for itself.
 
 **Acceptance:** the existing FUSE `test.sh` matrix (read/write/mkdir/rename/
 truncate/persistence) passes against the *native* mount on a V7 image; the

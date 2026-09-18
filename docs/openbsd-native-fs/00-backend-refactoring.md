@@ -177,6 +177,43 @@ varies, code doesn't.
 Do **not** merge FUSE2 and FUSE3 into one file behind `#ifdef`. The
 build-selected split is right; it is the triplication of the table that isn't.
 
+### 6. Flatten the pointer chains (and hoist the loop calls)
+
+The public layer reaches the per-edition machinery through two-hop chains —
+`fs->ops->dir->dir_lookup(...)`, `fs->ops->inode->read_inode(...)` — and the
+engine reaches the byte-order vtable through `fs->desc.bo->get16(...)` inside
+loops the compiler cannot hoist (it can't prove the indirect callee doesn't
+rewrite the pointer). `struct filsys` already caches `ops` (`filsys.c:326`);
+extend that to the two leaves the public layer reaches:
+
+```c
+struct filsys {
+    const struct filsys_ops       *ops;    /* already there */
+    const struct filsys_dir_ops   *dir;    /* was fs->ops->dir   */
+    const struct filsys_inode_ops *inode;  /* was fs->ops->inode */
+};
+```
+
+Assigned once in `filsys_open`; `fs->ops->dir->dir_lookup(...)` becomes
+`fs->dir->dir_lookup(...)` and reads better besides. Then hoist the loop calls
+into a local — `v7fs.c:102` decodes up to 946 free-block entries and reloads
+the `bo` pointer plus the `get16` slot every iteration; one hoist takes 1,892
+loads to 2:
+
+```c
+uint16_t (*get16)(const uint8_t *) = fs->desc.bo->get16;
+for (i = 0; i < nicfree; i++)
+    fs->fl.free[i] = get16(sb + 6 + 2 * i);
+```
+
+Same move in the superblock free/inode cache decode and encode, the inode-table
+walks, the checker's block-list decode, `dir_bsd211.c`'s record scan, and
+`alloc_freelist.c`. Leave `fs->io->read` alone (the one pointer swapped at
+runtime, for fault injection), leave the byte-order vtable a vtable, and do not
+chase devirtualization via single-edition builds — the flattening and the hoists
+are free and more readable; anything past them is nanoseconds behind a disk
+read.
+
 ## The open-handle table moves to FUSE
 
 `struct filsys` carries the open-handle table (`opens`, `nopen`, `nopen_cap`,
