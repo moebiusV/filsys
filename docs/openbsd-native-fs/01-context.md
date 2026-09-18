@@ -6,7 +6,7 @@ libfilsys is a version-agnostic access layer for Research Unix filesystem
 images: PDP-7 through Tenth Edition, plus 32V, Coherent, early Xenix,
 2.9/2.11BSD, System III and System V. One engine handles 16-, 18-, 32- and
 64-bit word/block addressing in big-, little- and middle-endian order. It ships
-three userspace tools — `mount.filsys` (FUSE), `mkfs.filsys`, `fsck.filsys`,
+four userspace tools — `mount.unixfs` (FUSE), `mkfs.filsys`, `fsck.filsys`,
 `findfs.filsys` — plus a FUSE-free core (`test_matrix` + the mkfs/fsck
 subprocesses) that runs `make check` with no FUSE installed.
 
@@ -78,12 +78,12 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
   rewrote it in place; this plan explicitly does the opposite.
 - **Not** FFS or Minix (already out of scope per `ROADMAP.md`).
 
-## 1.4 The other five ports, and their order
+## 1.4 The other six ports, and their order
 
-The backend serves six native platforms — the OpenBSD driver (this plan's
-subject, §5–§6) plus NetBSD, FreeBSD, Linux, 9front, QNX — and one FUSE
-frontend (`filsys`), which also runs on Haiku's FUSE 2.9.9. The native six are
-not six of the same thing, and the order is deliberate: OpenBSD first, NetBSD
+The backend serves seven native platforms — the OpenBSD driver (this plan's
+subject, §5–§6) plus NetBSD, FreeBSD, Linux, Haiku, 9front, QNX — and one FUSE
+frontend (`filsys`), which also runs on Haiku's FUSE 2.9.9. The native seven are
+not seven of the same thing, and the order is deliberate: OpenBSD first, NetBSD
 second, the message family (9front then QNX), Linux last. The per-platform "how
 to implement" is §9.
 
@@ -91,6 +91,9 @@ to implement" is §9.
   a flat `vops`, and **rump kernels** as the cheap test loop.
 - **FreeBSD** — the other close cousin; a flat `struct vop_vector` (near
   OpenBSD's `struct vops`), so the glue is closer to OpenBSD than NetBSD's.
+- **Haiku** — a kernel filesystem add-on (`file_system_module_info` /
+  `fs_vnode_ops`), callback-shaped; also a FUSE target (2.9.9) via the `filsys`
+  frontend.
 - **9front** — a userspace 9P server (message family); the fid is the handle;
   no kernel shims.
 - **QNX** — a resource manager (message family); the OCB is 9front's fid; done
@@ -101,11 +104,10 @@ to implement" is §9.
   standard (§9.2) is how the replacement answers that. Out-of-tree first, then
   `fs/unixfs/`, default off.
 
-Haiku is a FUSE target, not a native driver: the `filsys` frontend runs there
-under Haiku's FUSE 2.9.9 (§0, refactoring 5). The naming split is deliberate —
-FUSE targets keep `filsys` (`mount.filsys`), and only the native in-tree drivers
-take `unixfs`, so the FUSE tool never sits next to IPFS's unrelated `unixfs`
-format.
+`unixfs` is the filesystem name on every frontend — native and FUSE alike — and
+`filsys` is the project, engine and library name. IPFS's "UnixFS" is an internal
+data format, not a mount name, so there is nothing to avoid. Haiku runs both —
+a native `unixfs` add-on and a FUSE `unixfs` mount.
 
 Each maps its own semantics onto the same backend shape §0 establishes; nothing
-here changes the OpenBSD driver, only the backend it shares with these five.
+here changes the OpenBSD driver, only the backend it shares with these six.

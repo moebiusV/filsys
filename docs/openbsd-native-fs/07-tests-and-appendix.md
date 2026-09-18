@@ -12,7 +12,7 @@
   the FUSE `test.sh` read/write/rename/truncate/persistence sequence against the
   native mount; then unmount and `fsck.filsys` the image.
 - **Oracle diff.** Mount each edition read-only and diff a recursive copy
-  against the userspace `mount.filsys` result for the same image.
+  against the userspace `mount.unixfs` result for the same image.
 - **Concurrency smoke.** Parallel `find`/`grep` (readers) and a writer loop,
   checking for corruption under the big lock, then `fsck` clean.
 

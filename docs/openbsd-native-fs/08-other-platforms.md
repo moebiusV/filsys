@@ -1,11 +1,11 @@
-# 9. The other four ports: NetBSD, Linux, 9front, QNX
+# 9. The other six ports: NetBSD, FreeBSD, Linux, Haiku, 9front, QNX
 
-The backend serves five platforms: the OpenBSD driver (this plan's subject,
-§5–§6) and these four siblings. They are deliberately ordered — OpenBSD first,
-NetBSD second, the message family (9front then QNX), Linux last — because the
-four are not four of the same thing. Each section below is "how to implement on
-this platform," written against the backend shape §0 establishes, so the engine
-drops into each without re-doing the mapping.
+The backend serves seven native platforms: the OpenBSD driver (this plan's
+subject, §5–§6) and these six siblings. They are deliberately ordered — OpenBSD
+first, NetBSD second, the message family (9front then QNX), Linux last — because
+the six are not six of the same thing. Each section below is "how to implement
+on this platform," written against the backend shape §0 establishes, so the
+engine drops into each without re-doing the mapping.
 
 ## 9.1 NetBSD
 
@@ -34,12 +34,13 @@ the vnode-lifecycle protocol) get their own pass when FreeBSD is scheduled.
 
 Call the in-tree filesystem **`unixfs`**. `filsys` is the project and the on-disk
 homage; Linux already burned the `sysv` name, and `unixfs` is what an admin
-expects in `fstab` and `/proc/filesystems`. The name is free in-tree; the only other uses of "unixfs" are IPFS's unrelated
-data format and NetBSD's dead 1990s `arm32` RISC OS-ADFS mounter, so there is no
-functional collision. FUSE targets keep `filsys` (`mount.filsys`) precisely to
-avoid sitting next to IPFS's `unixfs` — `unixfs` is reserved for the native
-in-tree driver. Keep the engine symbol prefix `filsys_` so the same objects
-compile into OpenBSD, NetBSD, FreeBSD, and this module. One
+expects in `fstab` and `/proc/filesystems`. The name is free in-tree; the only other uses of "unixfs" are IPFS's internal
+UnixFS data format (a serialization format, not a mount name — IPFS mounts via
+`ipfs mount`, not `mount -t unixfs`) and NetBSD's dead 1990s `arm32` RISC
+OS-ADFS mounter, so there is no functional collision. `unixfs` is the filesystem
+name on every frontend — native and FUSE alike — while `filsys` stays the
+project, engine and library name. Keep the engine symbol prefix `filsys_` so the
+same objects compile into OpenBSD, NetBSD, FreeBSD, and this module. One
 naming collision to avoid: `filsys` already uses `unix` as its autodetect
 pseudo-edition (`FILSYS_UNIX = 40`, `-v unix`). `mount -t unixfs -o edition=unix`
 meaning "detect" is confusing, so on the Linux side the option value is `auto`
@@ -168,3 +169,14 @@ the `iofunc_*` helpers. It is message-shaped, runs in userspace, uses ordinary
 is why it follows 9front: the OCB is the fid, and the message-family mapping is
 largely already written. The one POSIX twist is that QNX genuinely wants
 `struct stat`, so the FUSE filler is reused there rather than a new one written.
+
+## 9.5 Haiku
+
+Haiku is both a FUSE target and a native target. The FUSE path is the `filsys`
+frontend under Haiku's FUSE 2.9.9 (§0, refactoring 5). The native path is a
+kernel filesystem add-on — a `file_system_module_info` module providing
+`fs_volume_ops` and `fs_vnode_ops` — which is callback-shaped like the BSDs
+(`lookup`, `read_dir` with an offset cookie, `read_stat` filling Haiku's
+`struct stat`). The add-on is `unixfs`; the FUSE mount is `mount.unixfs`. Haiku
+also ships `userlandfs` (a userspace filesystem framework), which is the FUSE
+analogue, not the native path.

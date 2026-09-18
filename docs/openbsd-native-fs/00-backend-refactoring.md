@@ -1,4 +1,4 @@
-# 0. Backend refactoring (first): one backend, seven frontends
+# 0. Backend refactoring (first): one backend, eight frontends
 
 This section describes a refactor of libfilsys itself that **happens first**,
 before the drivers in §4–§6. It is a prerequisite: it reshapes the "as-is"
@@ -7,15 +7,16 @@ boundary (§4), resolves the plan's risks 1, 2, and 6, and supersedes §4.3 and
 
 ## TL;DR
 
-libfilsys is the **backend** for seven **frontends** — FUSE (the `filsys`
-frontend: FUSE3, FUSE2, Haiku 2.9.9), native `unixfs` drivers on OpenBSD,
-NetBSD, FreeBSD and Linux, a QNX resource manager, and 9front — but its core is
-today shaped like a *single* frontend (FUSE): the public API is path-based,
-POSIX-typed, whole-directory, and it carries the open-handle table that only
-FUSE needs. The seven fall into two families — **callback** (FUSE, OpenBSD,
-NetBSD, FreeBSD, Linux: the host calls you with resolved nodes) and **message**
-(9front, QNX: you answer a request stream with your own handle table) — and each
-family demands a different shape for the same backend capabilities. The
+libfilsys is the **backend** for eight **frontends** — FUSE (FUSE3, FUSE2,
+Haiku 2.9.9), native `unixfs` drivers on OpenBSD,
+NetBSD, FreeBSD, Linux and Haiku, a QNX resource manager, and 9front — but its
+core is today shaped like a *single* frontend (FUSE): the public API is
+path-based, POSIX-typed, whole-directory, and it carries the open-handle table
+that only FUSE needs. The eight fall into two families — **callback** (FUSE,
+OpenBSD, NetBSD, FreeBSD, Linux, Haiku: the host calls you with resolved nodes)
+and **message** (9front, QNX: you answer a request stream with your own handle
+table) — and each family demands a different shape for the same backend
+capabilities. The
 fix is to make the core **frontend-shaped** — node-anchored (resolves by inode
 number, not path string), POSIX-free (returns plain integers, not `struct
 stat`), offset-resumable (iterates a directory, does not slurp it), and
@@ -55,7 +56,7 @@ families, distinguished by who drives the interaction:
 
 | family | members | shape |
 |---|---|---|
-| **callback** | FUSE, OpenBSD, NetBSD, FreeBSD, Linux | the host calls you with resolved nodes; you fill a host struct |
+| **callback** | FUSE, OpenBSD, NetBSD, FreeBSD, Linux, Haiku | the host calls you with resolved nodes; you fill a host struct |
 | **message** | 9front, QNX | you answer a request stream, keeping your own fid/OCB table |
 
 Where the columns differ *within* a family is exactly what the backend must stop
