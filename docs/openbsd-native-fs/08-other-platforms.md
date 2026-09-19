@@ -1,13 +1,14 @@
 # 8. The other ports: NetBSD, FreeBSD, Linux, Haiku, plan9, QNX, macOS
 
 The backend serves five native kernel drivers (the OpenBSD driver, this plan's
-subject §5-§6, plus NetBSD, FreeBSD, Linux, Haiku) and two userspace servers
-(plan9, QNX); macOS (§8.7) rides the FUSE frontend and is off the critical
-path. The seven are deliberately ordered, OpenBSD first, NetBSD second,
-FreeBSD third, Haiku fourth, the message family (plan9 then QNX), Linux last,
-because they are not seven of the same thing. Each section below is "how to
-implement on this platform," written against the backend shape §0 establishes,
-so the engine drops into each without re-doing the mapping.
+subject §5-§6, plus NetBSD, FreeBSD, Linux, Haiku), one native userspace
+extension (macOS FSKit, §8.7), and two userspace servers
+(plan9, QNX). The eight are deliberately ordered, OpenBSD first, NetBSD second,
+FreeBSD third, Haiku fourth, the message family (plan9 then QNX), Linux,
+and macOS FSKit last, because they are not eight of the same thing. Each
+section below is "how to implement on this platform," written
+against the backend shape §0 establishes, so the engine drops into each without
+re-doing the mapping.
 
 ## 8.1 NetBSD
 
@@ -186,23 +187,23 @@ kernel filesystem add-on, a `file_system_module_info` module providing
 support is implemented through `userlandfs`. The add-on is `unixfs`; the FUSE
 mount is `mount.unixfs`.
 
-## 8.7 macOS (FUSE now, FSKit later, off the critical path)
+## 8.7 macOS (FUSE now, native FSKit later)
 
-macOS ships through the FUSE frontend and stays off the critical path. macFUSE
+macOS ships through the FUSE frontend first, then the native FSKit driver. macFUSE
 5.2.0 and FUSE-T both now mount through FSKit backends (`MFMount.framework` and
 `-o backend=fskit`), so the existing libfuse ABI reaches an FSKit mount on macOS
 26+ with no kext; ship it behind an option, not the default, since the
 third-party FSKit backends are not yet boring (VeraCrypt and FUSE-T both report
 byte-loss and cache-invalidation failures).
 
-The native path, if ever wanted, is FSKit, not a kext, and it is callback-family
+The native driver is FSKit, not a kext, and it is callback-family
 like Haiku, not message-family like QNX (it shares QNX's packaging, a signed
 framework-owned runtime, not its shape). The extension is an appex; `fskitd`
 opens the block device and hands back an `FSBlockDeviceResource`, which is a
 `filsys_io_t` in Apple's clothing: a read/write pair over a byte range, buffered
 or direct, with no `open()` in the backend. FSKit is `FSUnaryFileSystem` only,
-and the handler protocols are a version fork (`FSVolume.ReadWriteHandler` is
-macOS 27+, the 15.4-26 path is the older operations protocols).
+and we target macOS 27+ so the handler is `FSVolume.ReadWriteHandler`; the
+older operations protocols on 15.4-26 are out of scope.
 
 One hard requirement nobody else has: FSKit will not mount until the filesystem
 passes a check, and a block-device `FSUnaryFileSystem` must conform to

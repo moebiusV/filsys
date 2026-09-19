@@ -81,12 +81,13 @@ libfilsys. It is a **second frontend** for the same backend, beside FUSE.
 ## 1.4 The other ports, and their order
 
 The backend serves five native kernel drivers (the OpenBSD driver, this plan's
-subject §5-§6, plus NetBSD, FreeBSD, Linux, Haiku) and two userspace servers
+subject §5-§6, plus NetBSD, FreeBSD, Linux, Haiku), one native userspace
+extension (macOS FSKit, §8.7), and two userspace servers
 (plan9, QNX), plus one FUSE frontend (`filsys`), which also runs on Haiku's
-FUSE 2.9.9. The seven are not seven of the same thing, and the order is
-deliberate: OpenBSD first, NetBSD second, FreeBSD third, Haiku fourth, the
-message family (plan9 then QNX), Linux last. The per-platform "how to
-implement" is §8.
+FUSE 2.9.9 and is macOS's shipping path today. The eight are not eight of the
+same thing, and the order is deliberate: OpenBSD first, NetBSD second, FreeBSD
+third, Haiku fourth, the message family (plan9 then QNX), Linux, and macOS
+FSKit last. The per-platform "how to implement" is §8.
 
 - **NetBSD**, the close cousin; `struct vnodeopv_entry_desc` arrays rather than
   a flat `vops`, and **rump kernels** as the cheap test loop.
@@ -99,13 +100,13 @@ implement" is §8.
   no kernel shims.
 - **QNX**, a resource manager (message family); the OCB is plan9's fid; done
   after plan9 because the mapping is then largely written.
-- **Linux**, last, not because the rationale is weak but because the bar is
+- **Linux**, last of the kernel drivers, not because the rationale is weak but because the bar is
   highest and the argument is the kernel's own history: the in-tree `sysv`
   driver for these formats was removed as unused-and-unsafe, and the "boring"
   standard (§8.3) is how the replacement answers that. Out-of-tree first, then
   `fs/unixfs/`, default off.
-- **macOS**, FUSE-only for now (macFUSE/FUSE-T, both FSKit-backed); the native
-  path would be FSKit, off the critical path (§8.7).
+- **macOS**, FUSE first (macFUSE/FUSE-T, both FSKit-backed), then a native
+  FSKit driver on macOS 27+ (§8.7).
 
 `unixfs` is the filesystem name on every frontend, native and FUSE alike, and
 `filsys` is the project, engine and library name. IPFS's "UnixFS" is an internal

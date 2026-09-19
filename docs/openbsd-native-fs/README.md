@@ -8,9 +8,9 @@ Audience: filsys maintainers; assumes the reader knows the OpenBSD VFS and the l
 
 filsys already mounts on OpenBSD today through **FUSE2** (OpenBSD's in-base
 `libfuse`, 2.6-era, `fuseops_openbsd.c`). libfilsys is the **backend**, one
-format engine, behind **eight frontends** in two families: **callback** (FUSE,
-and native `unixfs` drivers on OpenBSD/NetBSD/FreeBSD/Linux/Haiku) and
-**message** (plan9, QNX).
+format engine, behind **nine frontends** in two families: **callback** (FUSE,
+native `unixfs` drivers on OpenBSD/NetBSD/FreeBSD/Linux/Haiku, and a native
+FSKit extension on macOS) and **message** (plan9, QNX).
 This plan is the first callback-native driver: an in-kernel OpenBSD driver,
 `sys/unixfs/`, that links the libfilsys format engine **unmodified** and only
 adds the thin glue OpenBSD demands of a filesystem (`struct vfsops` +

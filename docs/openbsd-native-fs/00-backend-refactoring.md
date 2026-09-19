@@ -1,4 +1,4 @@
-# 0. Backend refactoring (first): one backend, eight frontends
+# 0. Backend refactoring (first): one backend, nine frontends
 
 This section describes a refactor of libfilsys itself that **happens first**,
 before the drivers in §4-§6. It is a prerequisite: it reshapes the "as-is"
@@ -7,16 +7,17 @@ boundary (§4), resolves the plan's risks 1, 2, and 6, and supersedes §4.3 and
 
 ## TL;DR
 
-libfilsys is the **backend** for eight **frontends**, FUSE (FUSE3, FUSE2,
+libfilsys is the **backend** for nine **frontends**, FUSE (FUSE3, FUSE2,
 macFUSE, Haiku 2.9.9), native `unixfs` drivers on OpenBSD,
-NetBSD, FreeBSD, Linux and Haiku, a QNX resource manager, and plan9, but its
+NetBSD, FreeBSD, Linux and Haiku, a native FSKit extension on macOS, a QNX
+resource manager, and plan9, but its
 core is today shaped like a *single* frontend (FUSE): the public API is
 path-based, POSIX-typed, whole-directory, and it carries the open-handle table
-that only FUSE needs. The eight fall into two families, **callback** (FUSE,
-OpenBSD, NetBSD, FreeBSD, Linux, Haiku: the host calls you with resolved nodes)
-and **message** (plan9, QNX: you answer a request stream with your own handle
-table), and each family demands a different shape for the same backend
-capabilities. The
+that only FUSE needs. The nine fall into two families, **callback** (FUSE,
+OpenBSD, NetBSD, FreeBSD, Linux, Haiku, macOS FSKit: the host calls you with
+resolved nodes) and **message** (plan9, QNX: you answer a request stream with
+your own handle table), and each family demands a different shape for the same
+backend capabilities. The
 fix is to make the core **frontend-shaped**, node-anchored (resolves by inode
 number, not path string), POSIX-free (returns plain integers, not `struct
 stat`), offset-resumable (iterates a directory, does not slurp it), and
