@@ -4,7 +4,7 @@ includedir=@includedir@
 libdir=@libdir@
 
 Name: filsys
-Description: Research Unix (V4-V7/32V) filesystem image access library
+Description: Research Unix (PDP-7 through Tenth Edition, plus 32V, Coherent, early Xenix, 2.9/2.11BSD, System III and System V) filesystem image access library
 Version: @PACKAGE_VERSION@
 Libs: -L${libdir} -lfilsys
 Cflags: -I${includedir}/filsys

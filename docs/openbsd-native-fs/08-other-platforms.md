@@ -2,9 +2,10 @@
 
 The backend serves five native kernel drivers (the OpenBSD driver, this plan's
 subject §5-§6, plus NetBSD, FreeBSD, Linux, Haiku) and two userspace servers
-(plan9, QNX). They are deliberately ordered, OpenBSD first, NetBSD second,
+(plan9, QNX); macOS (§8.7) rides the FUSE frontend and is off the critical
+path. The seven are deliberately ordered, OpenBSD first, NetBSD second,
 FreeBSD third, Haiku fourth, the message family (plan9 then QNX), Linux last,
-because the seven are not seven of the same thing. Each section below is "how to
+because they are not seven of the same thing. Each section below is "how to
 implement on this platform," written against the backend shape §0 establishes,
 so the engine drops into each without re-doing the mapping.
 

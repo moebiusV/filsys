@@ -311,7 +311,7 @@ This is what makes vendorability a first-class property rather than a hope:
 five kernel trees, none with a stable internal API, and only OpenBSD refuses
 out-of-tree builds, so the engine has to drop cleanly into a foreign build
 system five times. The sync script the second review asked for stops being
-optional once there are five copies.
+optional once there are five drops.
 
 ## The open-handle table moves to FUSE
 
@@ -387,10 +387,11 @@ filsys_io_kern.c     production, kernel      -> direct call
 filsys_io_inject.c   --enable-fault-injection, default off
 ```
 
-Where the two production leaves live is also fixed: `filsys_io_file.c` rides
-with the tools in `src/utils/`, `filsys_io_kern.c` with the frontend in
-`src/openbsd/`, so the engine snapshot never carries a pread transport into the
-kernel or a bread transport into `/usr/lib` (Repository layout).
+Where the two production leaves live is also fixed: `filsys_io_file.c` (and the
+log sink's stdout arm) stay in `src/engine/` so the installed archive is
+self-contained, and `filsys_io_kern.c` lives in `src/openbsd/`; the kernel never
+compiles the pread leaf and the tools never compile the bread leaf, by what each
+`SRCS` names, not by source location (Repository layout).
 
 The engine calls `filsys_read_bytes(fs, buf, n, off)` unconditionally; which
 object supplies it is a link-time question. The `io` member of
@@ -493,8 +494,8 @@ One tree, one `src/` prefix:
 
 ```
 src/
-  engine/          the only directory a kernel copies
-  utils/           mkfs/fsck/findfs/detect/check/tests/fuzz
+  engine/          the public library; the manifest superset
+  utils/           the main()s and test/fuzz harnesses
   fuse2/
   fuse3/
   openbsd/
@@ -507,34 +508,92 @@ src/
   macos/           FSKit appex later; FUSE stays fuse2/fuse3
 ```
 
-`src/engine/` is the vendorable core, the only directory a kernel copies.
-`src/utils/` never leaves this repo. Each frontend is thin: it maps the
-node-anchored core onto its own VFS or protocol, and `src/engine/` is the only
-code they share, which is what keeps it vendorable (§5.1). `configure` still
-picks one FUSE directory and one alloc/I/O/log pair; native builds ignore
-`src/fuse*`.
+The split is "what the public library must contain" versus "what is a program,"
+not "what the kernel needs" versus "everything else." `src/engine/` is the
+runtime core plus `check.c`, `filsys_detect.c`, `filsys_mkfs.c`,
+`filsys_names.c`, and `filsys_io_file.c`: everything the installed `filsys.h`
+and `filsys_ops.h` declare (`filsys_check`, `filsys_detect`, `filsys_mkfs`,
+`filsys_edition_by_name`, the pread transport). `src/utils/` is the `main()`s
+(`mkfs.filsys.c`, `fsck.filsys.c`, `findfs.filsys.c`, `mount.filsys.c`) plus
+`test_matrix.c`, `fuzz/`, and `instrument.c`; it never leaves the repo because
+it is programs, not library. `configure` still picks one FUSE directory and one
+alloc/I/O/log pair; native builds ignore `src/fuse*`.
 
-The OpenBSD build lands `src/engine/` in two places at once, because the kernel
-cannot use the userspace archive (`sys/conf/files` only sees paths under
-`src/sys`, and there are no LKMs):
+The transports stay in `src/engine/` because the installed `libfilsys.a` must be
+self-contained: it is a public, pkg-config-advertised library, so the pread leaf
+and the log sink's stdout arm have to be in the archive, not in `src/utils/`
+(which would leave an undefined `filsys_read_bytes`). `filsys_io_kern.c` (bread)
+is the one frontend-specific leaf and lives in `src/openbsd/`; it is simply never
+named in a userspace `SRCS`.
+
+On OpenBSD the four tools land in `sbin/`, not `usr.sbin/`, because `/usr` may
+itself be a separate filesystem and `mount`/`fsck` have to exist before it is
+mounted; they compile the engine files they need out of `sys/unixfs/engine/`
+through `.PATH`, the mechanism `sbin/fsck_ffs` already uses to compile
+`sys/ufs/ffs` (and `sbin/newfs` to compile `mount`/`disklabel`). There is no
+`libffs`, no second copy, and no `lib/libfilsys/`: OpenBSD's `lib/` is a short
+curated list with no filesystem entry, and a base library on top of `option
+UNIXFS` doubles the argument for no benefit.
 
 | this repo | OpenBSD `src` | installed |
 |---|---|---|
-| `src/engine/` | `lib/libfilsys/` | `/usr/lib/libfilsys.a`, `/usr/include/filsys.h` |
-| `src/utils/` | `sbin/mount_unixfs/`, `usr.sbin/newfs_unixfs/`, `usr.sbin/fsck_unixfs/`, `usr.sbin/findfs_unixfs/` | `/sbin`, `/usr/sbin` |
+| `src/engine/` (per the manifest) | `sys/unixfs/engine/` | in the kernel |
 | `src/openbsd/` | `sys/unixfs/` | in the kernel |
-| `src/engine/` (again) | `sys/unixfs/engine/` | in the kernel |
+| `src/utils/` | `sbin/mount_unixfs/`, `sbin/newfs_unixfs/`, `sbin/fsck_unixfs/`, `sbin/findfs_unixfs/` | `/sbin` |
 
-Userland (`mount_unixfs`, `fsck_unixfs`, `test_matrix`) links
-`/usr/lib/libfilsys`; that is the only `/usr/lib` story. The kernel compiles the
-same `src/engine/` sources a second time into `GENERIC`, next to `src/openbsd/`;
-two build products, one source directory, and the sync script copies `engine/`
-to both `lib/libfilsys/` and `sys/unixfs/engine/`.
+## Vendoring: two manifests, one generated drop
 
-The transport `.c` files do not ride with the engine snapshot: `filsys_io_file.c`
-(pread) lives in `src/utils/` with the tools, and `filsys_io_kern.c` (bread)
-lives in `src/openbsd/` with the frontend, so neither a `filsys_io_file.o` lands
-in the kernel copy nor a `filsys_io_kern.o` in `/usr/lib`.
+The engine only ever gets asked two questions: does this run in a kernel, and
+does it have libc. So there are two manifests, not seven:
+
+| | targets | contents |
+|---|---|---|
+| `MANIFEST.lib` | FUSE3, FUSE2, Haiku-FUSE, plan9, QNX, macOS/FSKit, the tools | everything: libc present, the full public API including check/detect/mkfs |
+| `MANIFEST.kernel` | OpenBSD, NetBSD, FreeBSD, Linux, Haiku native | the runtime codecs only |
+
+`MANIFEST.kernel` is the codecs (`v7fs.c`, `v1fs.c`, `pdp7fs.c`), the allocators
+(`alloc_freelist.c`, `alloc_v8bitmap.c`), the two directory codecs (`dir_fixed.c`,
+`dir_bsd211.c`), `blocktree.c`, `byteorder.c`, `filsys.c`, and `filsys_format.c`,
+and nothing else: not `filsys_names.c` (its symbols are reached only from the
+tool `main()`s, `test_matrix.c`, and `filsys_detect.c`, never from the runtime
+path), nor `check.c`, `filsys_detect.c`, `filsys_mkfs.c`, `instrument.c`, or
+`filsys_io_file.c`. Everything that actually varies per target already lives
+outside the engine (the three seam leaves, alloc/I/O/log-decide, and the
+frontend directory), so a drop is just `manifest ∪ src/<target>/`, and a change
+to the engine file list is reviewed once instead of five times.
+
+One genuine delta. OpenBSD has `mount_unixfs(8)`, so `filsys_detect.c` stays out
+of its kernel. Linux's `mount -t unixfs` goes straight into the kernel unless
+`/sbin/mount.unixfs` exists, which util-linux will exec if it does, so the plan
+ships that helper: detection stays in userspace, the Linux manifest stays
+`MANIFEST.kernel` (no `filsys_detect.c`), and the module stays smaller, which is
+the answer a Linux reviewer would rather see.
+
+A drop is easy to take because of four planned properties:
+
+- **The manifest is a plain file list in the repo**, reviewed as content. A
+  fifteen-line list is auditable; a shell script's exclusion logic is not.
+- **`make drop-openbsd` generates the directory reproducibly** and writes a
+  stamp naming the upstream commit and version, so the second import is a diff,
+  not archaeology, the same reason OpenBSD records vendor branches.
+- **Each drop builds standalone in CI.** The kernel class compiles with only the
+  allowlisted external symbols available and fails on anything undefined,
+  catching a stray `filsys_query`, `filsys_dev_size`, or `printf` at commit time
+  instead of in a mail to `tech@`.
+- **No generated headers in any drop.** With `config.h` gone (refactoring 8) the
+  same sources compile under `sys/conf/files`, Kbuild, Haiku's jam, or a QNX
+  makefile with no autoconf anywhere.
+
+The licensing half is already right and goes in without discussion: per-file
+`SPDX-License-Identifier: ISC` on the engine sources, ISC in `COPYING`, the
+license OpenBSD prefers. Two small things: the drop carries `COPYING` so the
+license travels with the code rather than being inferred, and the Linux frontend
+needs a `MODULE_LICENSE()` tag (ISC is GPL-compatible; "Dual BSD/GPL" is the
+conventional string).
+
+Finally: drops are generated, never edited in place. A maintainer's fix comes
+back upstream and re-drops; otherwise there are five diverging copies of
+`v7fs.c`, which is the exact outcome the whole plan exists to prevent.
 
 ## What to leave alone
 

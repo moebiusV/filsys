@@ -14,7 +14,7 @@ Concretely, the boundary splits libfilsys into two halves.
 
 | file | what it is | kernel status |
 |---|---|---|
-| `v7fs.c` | V7/V8-family/32V/Coherent/Xenix/2.9BSD/System III-V codec, superblock codec | **as-is** (the transport is a build-selected leaf, §0; the pread arm lives in `src/utils/`, the kernel arm in `src/openbsd/`) |
+| `v7fs.c` | V7/V8-family/32V/Coherent/Xenix/2.9BSD/System III-V codec, superblock codec | **as-is** (the transport is a build-selected leaf, §0; the pread arm stays in `src/engine/`, the kernel arm in `src/openbsd/`) |
 | `v1fs.c` | V1/V2/V3 codec | as-is |
 | `pdp7fs.c` | PDP-7 word-addressed codec + `rb09`/`packed18`/`rim` | as-is |
 | `alloc_freelist.c` | V6/V7 free-list allocator | as-is |
@@ -22,13 +22,14 @@ Concretely, the boundary splits libfilsys into two halves.
 | `blocktree.c` | shared indirect-block walker | as-is |
 | `dir_fixed.c` / `dir_bsd211.c` | directory codecs | as-is |
 | `byteorder.c` | `bo_le`/`bo_be`/`bo_me` vtable | as-is |
-| `filsys_format.c` / `filsys_names.c` | edition table + name/alias resolution | as-is (or trimmed to the runtime subset) |
+| `filsys_format.c` | edition table | as-is |
+| `filsys_names.c` | name/alias resolution | omitted (its symbols are reached only from the tool `main()`s and `filsys_detect.c`, §0) |
 | `filsys.c` | runtime open/read/write/lookup/create/rename/… + the shared `filsys_ops` router | runtime subset as-is |
 
-The kernel build **omits** `filsys_mkfs.c`, `filsys_detect.c`, `check.c`, and
-the findfs/fsck drivers (they are offline tools, §1.3), and omits the FUSE
-adapter (`fuseops*.c`, `fuse_core.c`). This is the same split the FUSE-free
-`test_matrix` build already makes.
+The kernel manifest **omits** `filsys_mkfs.c`, `filsys_detect.c`, `check.c`,
+`filsys_names.c`, `instrument.c`, and `filsys_io_file.c` (library- and
+tool-side, not on the runtime path, §0), and omits the FUSE adapter
+(`fuseops*.c`, `fuse_core.c`).
 
 One caveat to "as-is": the codecs open and size their own backing store,
 `open()`/`close()` and `filsys_dev_size(fs->fd, …)`, which `fstat`s an fd

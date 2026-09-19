@@ -19,25 +19,26 @@ sys/unixfs/
 ```
 
 The `unixfs_*` files are the frontend (`src/openbsd/`); the `engine/` directory
-is the vendored core (`src/engine/`). `filsys_io_kern.c` rides with the
-frontend, not the engine snapshot, so the kernel never compiles a
-`filsys_io_file.o` (pread) and `/usr/lib` never carries a `filsys_io_kern.o`
-(bread): each production transport lives beside its consumer.
+is the vendored core (`src/engine/`). `filsys_io_kern.c` is the one
+frontend-specific leaf and lives in the frontend, but `filsys_io_file.c` (pread)
+and the log sink's stdout arm stay in `src/engine/`, because the installed
+`libfilsys.a` must be self-contained (§0). Which leaf each build compiles is a
+property of what its `SRCS` names, not of where the source sits.
 
 The engine sources have to be *vendored* into the kernel tree. `sys/conf/files`
 paths are `sys/`-relative and cannot name anything outside `src/sys`, and
 OpenBSD has no loadable kernel modules (LKM was removed in 5.7), so there is no
-"reference the libfilsys checkout" option. The same `src/engine/` sources are
-compiled twice: once into `GENERIC` under `sys/unixfs/engine/`, and once into
-`lib/libfilsys/` for `/usr/lib/libfilsys.a` + `/usr/include/filsys.h`, which
-userland (`mount_unixfs`, `fsck_unixfs`, `test_matrix`) links; that archive is
-the only `/usr/lib` story. The real choice, made before §0's file layout, since
+"reference the libfilsys checkout" option. The userspace tools compile the same
+engine files out of `sys/unixfs/engine/` through `.PATH` (§0), exactly as
+`sbin/fsck_ffs` compiles `sys/ufs/ffs`; there is no `lib/libfilsys/` and no
+`/usr/lib` story. The real choice, made before §0's file layout, since
 it decides whether the engine builds under a second, more restrictive build
-system, is a vendored snapshot under `sys/unixfs/engine/` with a pin and a sync
+system, is a vendored manifest under `sys/unixfs/engine/` with a pin and a sync
 script, or a patch against `-current` that people apply and rebuild. The sync
-script is **not optional**: the engine vendors into five kernel trees (OpenBSD,
-NetBSD, FreeBSD, Linux, Haiku, §1.4), so there are five copies to keep in step,
-and "copy the files by hand" stops being a thing anyone can be trusted to do.
+script is **not optional**: `MANIFEST.kernel` (§0) drops into five kernel trees
+(OpenBSD, NetBSD, FreeBSD, Linux, Haiku, §1.4), so there are five drops to keep
+in step, and "copy the files by hand" stops being a thing anyone can be trusted
+to do.
 
 ## 5.2 Per-mount state
 
@@ -188,9 +189,8 @@ offline, driven by the admin, never called by the kernel.
    `#define MOUNT_UNIXFS "unixfs"`, `extern const struct vfsops unixfs_vfsops;`.
 5. `sys/sys/vnode.h`, `VT_UNIXFS` + `VTAG_NAMES`.
 
-Plus the four userspace tools from `src/utils/` (§0 Repository layout):
-`sbin/mount_unixfs/`, `usr.sbin/newfs_unixfs/`, `usr.sbin/fsck_unixfs/`,
-`usr.sbin/findfs_unixfs/`.
+Plus the four userspace tools from `src/utils/` (§0 Repository layout), all in
+`sbin/`: `mount_unixfs/`, `newfs_unixfs/`, `fsck_unixfs/`, `findfs_unixfs/`.
 
 ## 5.10 Superblock and the buffer cache
 

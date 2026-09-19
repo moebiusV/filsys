@@ -18,9 +18,8 @@ the engine's non-I/O libc surface is enumerated (§4.2, §A.3).
   NULL `vop_lock` makes `vn_lock` return `EOPNOTSUPP` and takes `namei` with
   it, and the first several boots end in `ddb` on whichever slot is still NULL
  , fill them here, not one panic at a time (§0).
-- Wire the five registration edits; add the four userspace tools
-  (`sbin/mount_unixfs/`, `usr.sbin/newfs_unixfs/`, `usr.sbin/fsck_unixfs/`,
-  `usr.sbin/findfs_unixfs/`).
+- Wire the five registration edits; add the four userspace tools, all in
+  `sbin/` (`mount_unixfs/`, `newfs_unixfs/`, `fsck_unixfs/`, `findfs_unixfs/`).
 - Build a `GENERIC`-with-UNIXFS kernel and boot it (or a `vnd(4)`-backed test
   in a VM).
 
@@ -102,7 +101,7 @@ toolchain untouched; the kernel driver is a separate, documented artifact.
    it should be heap-allocated (a `pool`), not embedded, to keep `M_FILSYS`
    allocations bounded and pageable.
 7. **SemVer / distribution.** The engine is compiled from libfilsys source into
-   the kernel; decide pinning up front (§5.1), a vendored snapshot under
+   the kernel; decide pinning up front (§5.1), a vendored manifest under
    `sys/unixfs/engine/` with a pin and a sync script, or a patch against
    `-current`.
    `ROADMAP.md`'s strict SemVer means the engine API must stay source-stable,
