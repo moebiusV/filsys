@@ -1415,7 +1415,7 @@ int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid) {
     return write_inode(fs, ino, &ip);
 }
 
-int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]) {
+int filsys_utimens(filsys_t *fs, const char *path, const int64_t tv[2]) {
     filsys_inode_t ip;
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
@@ -1424,10 +1424,10 @@ int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]) 
     if (!tv) {
         ip.atime = ip.mtime = now;
     } else {
-        if (tv[0].tv_nsec != UTIME_OMIT)
-            ip.atime = (tv[0].tv_nsec == UTIME_NOW) ? now : (uint32_t)tv[0].tv_sec;
-        if (tv[1].tv_nsec != UTIME_OMIT)
-            ip.mtime = (tv[1].tv_nsec == UTIME_NOW) ? now : (uint32_t)tv[1].tv_sec;
+        if (tv[0] != FILSYS_UTIME_OMIT)
+            ip.atime = (tv[0] == FILSYS_UTIME_NOW) ? now : (uint32_t)tv[0];
+        if (tv[1] != FILSYS_UTIME_OMIT)
+            ip.mtime = (tv[1] == FILSYS_UTIME_NOW) ? now : (uint32_t)tv[1];
     }
     ip.ctime = now;
     return write_inode(fs, ino, &ip);

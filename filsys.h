@@ -15,7 +15,6 @@
 #include <stdint.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "filsys_engine.h"   /* on-disk types: filsys_inode_t, filsys_dirent_t, ... */
@@ -159,7 +158,16 @@ int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath);
 int filsys_truncate(filsys_t *fs, const char *path, off_t size);
 int filsys_chmod(filsys_t *fs, const char *path, mode_t mode);
 int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid);
-int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]);
+/* Sentinels for filsys_utimens: a frontend maps the POSIX UTIME_NOW / UTIME_OMIT
+ * special nsec values onto these plain-second marks. */
+enum {
+    FILSYS_UTIME_NOW  = -1,  /* set this timestamp to the current time */
+    FILSYS_UTIME_OMIT = -2,  /* leave this timestamp unchanged */
+};
+/* Set atime/mtime on `path`.  tv may be NULL (set both to now); each entry is a
+ * second count since the epoch, or FILSYS_UTIME_NOW / FILSYS_UTIME_OMIT.  ctime
+ * is always set to the current time. */
+int filsys_utimens(filsys_t *fs, const char *path, const int64_t tv[2]);
 int filsys_statfs(filsys_t *fs, filsys_statfs_t *st);
 
 #ifdef __cplusplus

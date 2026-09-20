@@ -193,7 +193,18 @@ int fuse_op_truncate_ino(fuse_ctx_t *c, uint64_t fh, off_t size)
 int fuse_op_utimens(fuse_ctx_t *c, const char *path,
                       const struct timespec tv[2])
 {
-    return filsys_utimens(c->fs, path, tv);
+    int64_t t[2];
+    if (!tv)
+        return filsys_utimens(c->fs, path, NULL);
+    for (int i = 0; i < 2; i++) {
+        if (tv[i].tv_nsec == UTIME_NOW)
+            t[i] = FILSYS_UTIME_NOW;
+        else if (tv[i].tv_nsec == UTIME_OMIT)
+            t[i] = FILSYS_UTIME_OMIT;
+        else
+            t[i] = (int64_t)tv[i].tv_sec;
+    }
+    return filsys_utimens(c->fs, path, t);
 }
 
 int fuse_op_statfs(fuse_ctx_t *c, struct statvfs *st)
