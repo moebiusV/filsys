@@ -1,3 +1,22 @@
+filsys 5.0.0 (unreleased)
+=========================
+
+Breaking: the engine's public surface is now POSIX-free.  The on-disk types
+moved out of `filsys.h` into a new `filsys_engine.h`, and the POSIX struct
+fillers moved to the FUSE frontend.
+
+- `filsys.h` no longer includes `<sys/statvfs.h>` or `<time.h>`; the on-disk
+  types (`filsys_inode_t`, `filsys_dirent_t`, the edition selectors,
+  `filsys_geom_t`, `filsys_detect_t`) now live in `filsys_engine.h`.
+- `filsys_statfs` now fills a plain-integer `filsys_statfs_t` instead of
+  `struct statvfs`.
+- `filsys_stat_ino` now fills a plain-integer `filsys_stat_t` instead of
+  `struct stat`, and `filsys_fill_stat` is removed; the FUSE frontend fills
+  `struct stat` itself.
+- `filsys_utimens` now takes plain seconds (`int64_t`) with
+  `FILSYS_UTIME_NOW` / `FILSYS_UTIME_OMIT` sentinels instead of
+  `struct timespec`.
+
 filsys 4.1.2 (2026-09-14)
 =========================
 

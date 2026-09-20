@@ -54,7 +54,7 @@ The `pre-policy` column is a historical label only — it is not a live version
 number, and the `current SemVer` column is what each release is now tagged.
 The mapping ends at 4.1.0 because every later release (4.1.1, 4.1.2) was
 already cut under this policy; the live version is the one in `configure.ac`,
-`ROADMAP.md` and `NEWS`, currently 4.1.2.
+`ROADMAP.md` and `NEWS`, currently 5.0.0 (unreleased).
 
 Versions 1.0.0–1.2.2 predate the current git history (tarballs only) and are
 not re-tagged.
