@@ -22,6 +22,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 
 /* major()/minor(): glibc >= 2.28 moved them from <sys/types.h> (which filsys.h
@@ -523,34 +524,32 @@ int filsys_read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
     return read_inode(fs, ino, ip);
 }
 
-int filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st) {
+int filsys_stat_inode(filsys_t *fs, const filsys_inode_t *ip, filsys_stat_t *st) {
     memset(st, 0, sizeof(*st));
-    st->st_ino   = ip->ino;
-    st->st_mode  = mode_to_posix(fs->fs, ip);
-    st->st_nlink = (nlink_t)ip->nlink;
-    st->st_uid   = fs->uid;
-    st->st_gid   = fs->gid;
-    st->st_size  = ip->size;
+    st->ino   = ip->ino;
+    st->mode  = (uint32_t)mode_to_posix(fs->fs, ip);
+    st->nlink = (uint32_t)ip->nlink;
+    st->uid   = (uint32_t)fs->uid;
+    st->gid   = (uint32_t)fs->gid;
+    st->size  = ip->size;
     if (mode_is_device(fs->fs, ip))
-        /* V7 packs 8-bit major + 8-bit minor into one word; makedev() re-encodes
-         * into the host's dev_t layout (Linux's is the same, the BSDs'/macOS's
-         * differ). */
-        st->st_rdev = makedev(ip->addr[0] >> 8, ip->addr[0] & 0xff);
-    st->st_atime   = ip->atime;
-    st->st_mtime   = ip->mtime;
-    st->st_ctime   = ip->ctime;
+        /* V7 packs 8-bit major + 8-bit minor into one word; the frontend
+         * re-encodes it with its own makedev into the host dev_t layout. */
+        st->rdev = ip->addr[0];
+    st->atime = ip->atime;
+    st->mtime = ip->mtime;
+    st->ctime = ip->ctime;
     uint32_t blksize = fs->ops->blocksize(&fs->fs->desc);
-    st->st_blksize = blksize;
-    /* POSIX: st_blocks counts 512-byte units, not filesystem blocks, and only
-     * blocks actually allocated -- a hole (zero block address) is not counted,
-     * so a sparse file reports less than st_size implies.  An unreadable
-     * indirect block makes the total unknowable; report the error rather than
-     * a guessed (zero) count. */
+    st->blksize = blksize;
+    /* Only blocks actually allocated are counted -- a hole (zero block address)
+     * is not, so a sparse file reports fewer bytes than size implies.  An
+     * unreadable indirect block makes the total unknowable; report the error
+     * rather than a guessed (zero) count. */
     uint64_t blocks = 0;
     int rc = fs->ops->inode->allocated_blocks(fs->fs, ip, &blocks);
     if (rc)
         return rc;
-    st->st_blocks = (blocks * blksize + 511) / 512;
+    st->bytes = blocks * blksize;
     return 0;
 }
 
@@ -1335,11 +1334,11 @@ int filsys_truncate_ino(filsys_t *fs, uint32_t ino, off_t size) {
     return truncate_inode(fs, ino, &ip, size);
 }
 
-int filsys_stat_ino(filsys_t *fs, uint32_t ino, struct stat *st) {
+int filsys_stat_ino(filsys_t *fs, uint32_t ino, filsys_stat_t *st) {
     filsys_inode_t ip;
     int rc = read_inode(fs, ino, &ip);
     if (rc) return rc;
-    return filsys_fill_stat(fs, &ip, st);
+    return filsys_stat_inode(fs, &ip, st);
 }
 
 ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) {

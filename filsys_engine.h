@@ -106,6 +106,23 @@ typedef struct {
     filsys_probe_conf_t conf; /* how the winning probe matched */
 } filsys_detect_t;
 
+/* One file's attributes as plain integers, the POSIX-free stand-in for struct
+ * stat.  A frontend fills its own type from this (struct stat for FUSE, struct
+ * vattr for a kernel).  rdev is the raw on-disk device word (major<<8 | minor)
+ * so the frontend re-encodes it with its own makedev, and bytes is the
+ * allocated byte count so the frontend converts to 512-byte st_blocks units. */
+typedef struct {
+    uint32_t ino;
+    uint32_t mode;      /* POSIX mode: type bits + permissions */
+    uint32_t nlink;
+    uint32_t uid, gid;  /* the mounting user */
+    uint64_t size;
+    uint32_t rdev;      /* raw device word (major<<8|minor), 0 if not a device */
+    uint64_t atime, mtime, ctime;
+    uint32_t blksize;
+    uint64_t bytes;     /* allocated bytes (holes not counted) */
+} filsys_stat_t;
+
 /* Plain-integer filesystem totals, the POSIX-free stand-in for struct statvfs.
  * The frontend fills its own type from this (struct statvfs for FUSE, struct
  * statfs for a kernel).  bsize doubles as frsize; bavail equals bfree here

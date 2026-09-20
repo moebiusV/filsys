@@ -65,7 +65,7 @@ int filsys_detect(filsys_detect_t *out, int fd, uint64_t offset, uint64_t size,
                   int filter, const char **why);
 
 /* Open an image.  Returns 0 and *out, or -errno.  uid/gid are the ownership
- * reported by filsys_fill_stat (the "mounting user").  packing selects the
+ * reported by filsys_stat_inode (the "mounting user").  packing selects the
  * PDP-7 word container codec ("rb09", "packed18", "rim"); NULL = the edition's
  * default, and it is ignored for byte-addressed editions. */
 int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
@@ -95,7 +95,7 @@ int filsys_close_ino(filsys_t *fs, uint32_t ino);
 int filsys_sync(filsys_t *fs);
 int filsys_is_readonly(const filsys_t *fs);
 int filsys_edition(const filsys_t *fs);
-/* The ownership filsys_fill_stat reports for every file (the "mounting
+/* The ownership filsys_stat_inode reports for every file (the "mounting
  * user").  Permission checks compare the caller against these, not the on-disk
  * V7 uids, which are meaningless on the host. */
 uid_t filsys_uid(const filsys_t *fs);
@@ -109,10 +109,14 @@ int filsys_check(filsys_t *fs);
 int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino,
                   filsys_inode_t *ip);
 int filsys_read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip);
-/* Fill *st from *ip.  Returns 0, or -errno if st_blocks cannot be computed (an
- * unreadable indirect block): st_blocks is then left 0 and the caller should
- * treat the stat as failed rather than report a silently wrong block count. */
-int filsys_fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st);
+/* Fill plain-integer attributes from *ip: the POSIX mode (type bits +
+ * permissions), the mounting-user ownership, the raw device word (major<<8 |
+ * minor) for device files, the logical block size, and the allocated byte
+ * count.  Returns 0, or -errno if the block count cannot be computed (an
+ * unreadable indirect block); the caller should treat the stat as failed rather
+ * than report a silently wrong count.  A frontend fills its own type (struct
+ * stat, struct vattr) from this. */
+int filsys_stat_inode(filsys_t *fs, const filsys_inode_t *ip, filsys_stat_t *st);
 
 /* Read a directory's entries into *ents (malloc'd; free() it).  Returns the
  * entry count in *count, or -errno. */
@@ -132,7 +136,7 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
 /* Stat / truncate an open inode by number, for a handle whose name was unlinked
  * while open (hard_remove): the directory entry is gone but the handle still
  * names the inode, so these bypass the path lookup that would return ENOENT. */
-int filsys_stat_ino(filsys_t *fs, uint32_t ino, struct stat *st);
+int filsys_stat_ino(filsys_t *fs, uint32_t ino, filsys_stat_t *st);
 int filsys_truncate_ino(filsys_t *fs, uint32_t ino, off_t size);
 /* Read a symlink's target (no trailing NUL) into buf; returns the byte count.
  * -ENOSYS if the edition predates symlinks, -EINVAL if path is not a symlink. */

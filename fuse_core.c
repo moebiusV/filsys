@@ -9,6 +9,42 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef HAVE_SYS_SYSMACROS_H
+#include <sys/sysmacros.h>
+#endif
+
+/* Fill a POSIX struct stat from the engine's plain-integer attributes. */
+static int fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st)
+{
+    filsys_stat_t s;
+    int rc = filsys_stat_inode(fs, ip, &s);
+    if (rc)
+        return rc;
+    memset(st, 0, sizeof(*st));
+    st->st_ino   = s.ino;
+    st->st_mode  = s.mode;
+    st->st_nlink = s.nlink;
+    st->st_uid   = s.uid;
+    st->st_gid   = s.gid;
+    st->st_size  = s.size;
+    if (s.rdev)
+        st->st_rdev = makedev(s.rdev >> 8, s.rdev & 0xff);
+    st->st_atime   = s.atime;
+    st->st_mtime   = s.mtime;
+    st->st_ctime   = s.ctime;
+    st->st_blksize = s.blksize;
+    st->st_blocks  = (s.bytes + 511) / 512;
+    return 0;
+}
+
+static int fill_stat_ino(filsys_t *fs, uint32_t ino, struct stat *st)
+{
+    filsys_inode_t ip;
+    int rc = filsys_read_inode(fs, ino, &ip);
+    if (rc)
+        return rc;
+    return fill_stat(fs, &ip, st);
+}
 
 int fuse_op_getattr(fuse_ctx_t *c, const char *path, struct stat *st)
 {
@@ -17,12 +53,12 @@ int fuse_op_getattr(fuse_ctx_t *c, const char *path, struct stat *st)
     int rc = filsys_lookup(c->fs, path, &ino, &ip);
     if (rc)
         return rc;
-    return filsys_fill_stat(c->fs, &ip, st);
+    return fill_stat(c->fs, &ip, st);
 }
 
 int fuse_op_getattr_ino(fuse_ctx_t *c, uint64_t fh, struct stat *st)
 {
-    return filsys_stat_ino(c->fs, (uint32_t)fh, st);
+    return fill_stat_ino(c->fs, (uint32_t)fh, st);
 }
 
 int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit,
@@ -37,7 +73,7 @@ int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit,
         struct stat st;
         filsys_inode_t eip;
         if (filsys_read_inode(c->fs, ents[i].ino, &eip) == 0)
-            filsys_fill_stat(c->fs, &eip, &st);
+            fill_stat(c->fs, &eip, &st);
         else
             memset(&st, 0, sizeof(st));
         if (emit(arg, ents[i].name, &st, i))
@@ -55,7 +91,7 @@ int fuse_op_open(fuse_ctx_t *c, const char *path, int flags, uint64_t *fh)
     if (rc)
         return rc;
     struct stat st;
-    filsys_fill_stat(c->fs, &ip, &st);
+    fill_stat(c->fs, &ip, &st);
     if (S_ISDIR(st.st_mode))
         return -EISDIR;
     if ((flags & O_ACCMODE) != O_RDONLY && filsys_is_readonly(c->fs))
@@ -191,7 +227,7 @@ int fuse_op_access(fuse_ctx_t *c, const char *path, int mask)
      * and PDP-7 lay their permission bits out differently (V1's owner-read is
      * 010, not 0400), so shifting ip.mode made access() contradict stat(). */
     struct stat st;
-    rc = filsys_fill_stat(k, &ip, &st);
+    rc = fill_stat(k, &ip, &st);
     if (rc)
         return rc;
     mode_t pm = st.st_mode;

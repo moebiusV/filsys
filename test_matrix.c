@@ -223,25 +223,24 @@ static int write_verify(filsys_t *fs, const char *path, uint64_t size) {
 
     uint32_t ino;
     filsys_inode_t ip;
-    struct stat st;
     if (filsys_lookup(fs, path, &ino, &ip) != 0) {
         free(buf); free(back);
         return 0;
     }
-    filsys_fill_stat(fs, &ip, &st);
     free(buf); free(back);
-    return (uint64_t)st.st_size == size;
+    return (uint64_t)ip.size == size;
 }
 
 /* st_blocks (512-byte units) for `path`, or -1 on lookup failure. */
 static long stat_blocks(filsys_t *fs, const char *path) {
     uint32_t ino;
     filsys_inode_t ip;
-    struct stat st;
+    filsys_stat_t st;
     if (filsys_lookup(fs, path, &ino, &ip))
         return -1;
-    filsys_fill_stat(fs, &ip, &st);
-    return (long)st.st_blocks;
+    if (filsys_stat_inode(fs, &ip, &st))
+        return -1;
+    return (long)((st.bytes + 511) / 512);
 }
 
 static void run(const struct fmt *f) {
@@ -822,7 +821,7 @@ static void stat_blocks_eio(void) {
     }
 
     /* count the reads a clean stat performs (arm, never fail, then disarm) */
-    struct stat st;
+    filsys_stat_t st;
     g_fmode = FAIL_READ;
     g_fail_at = 0x7fffffff;   /* count every read without failing */
     g_fcount = 0;
