@@ -11,6 +11,11 @@ and runs on modern 32- and 64-bit hosts, big- and little-endian alike, and reads
 filesystems that are 16-, 18-, 32- and 64-bit (word- and block-addressed) in
 big-, little- and middle-endian byte order.
 
+**filsys 4.1.2 is FUSE-only.**  Native filesystem drivers (kernel drivers for
+OpenBSD, NetBSD, FreeBSD, Linux and Haiku, a plan9 server, a QNX resource
+manager, and a macOS FSKit extension) are a post-5.0 plan, designed in
+`docs/openbsd-native-fs/` but not yet built.
+
 One binary, every edition we care about: the on-disk format is understood
 (middle-endian, little-endian, and big-endian byte orders, and the kernel's own
 free-list and bitmap allocation disciplines), so files staged with it are seen
