@@ -17,7 +17,7 @@
 #include <sys/types.h>
 #include <errno.h>
 
-#include "filsys.h"       /* public types: filsys_inode_t, filsys_dirent_t, ... */
+#include "filsys_engine.h"  /* on-disk types: filsys_inode_t, filsys_dirent_t, ... */
 #include "byteorder.h"    /* byte_order_ops_t, bo_* */
 #include "check.h"        /* filsys_check_t, alloc_ops_t, bitmap_state, ... */
 

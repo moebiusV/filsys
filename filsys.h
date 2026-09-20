@@ -19,6 +19,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "filsys_engine.h"   /* on-disk types: filsys_inode_t, filsys_dirent_t, ... */
+
 /* Size in bytes of the image backing fd.  A regular file reports its st_size;
  * a block device reports 0 in st_size but its real size via lseek(SEEK_END),
  * so the device path falls through to the seek.  Returns 0 with *sz set, or -1
@@ -44,36 +46,6 @@ static inline int filsys_dev_size(int fd, uint64_t *sz)
 extern "C" {
 #endif
 
-/* Edition selectors passed to filsys_open(). */
-enum {
-    FILSYS_PDP7 = 0,   /* the PDP-7 filesystem (predates V1) */
-    FILSYS_V1   = 1,
-    FILSYS_V6   = 6,
-    FILSYS_V7   = 7,
-    FILSYS_V8   = 8,    /* Eighth Edition: V7 inode/dir, V8-family superblock, 1K list / 4K bitmap */
-    FILSYS_V9   = 9,    /* Ninth Edition: Sun-3 port, 8K blocks, big-endian */
-    FILSYS_V10  = 10,   /* Tenth Edition: V8-family + S_flag + out-of-superblock bitmap */
-    FILSYS_32V  = 32,
-    FILSYS_COHERENT = 33, /* Coherent (Mark Williams): V7-family, middle-endian, NICFREE=64 */
-    FILSYS_XENIX = 34,   /* Xenix (SCO): V7-family, little-endian 2-byte, NICFREE=100 */
-    FILSYS_BSD29 = 35,   /* 2.9BSD: V7 inode, 1024-byte blocks, 4 direct + 3 indirect */
-    FILSYS_BSD211 = 36,   /* 2.11BSD: 32-bit-address inode, variable 63-char dirs */
-    FILSYS_SYSIII = 37,   /* System III s5fs: VAX (little-endian, 4-byte-aligned) by default; -o arch=pdp11 for the packed PDP-11 form */
-    FILSYS_SVR2   = 38,   /* System V Release 2 s5fs: 2-byte-aligned; byte order from -o arch */
-    FILSYS_SVR4   = 39,   /* System V Release 4 s5fs: 4-byte-aligned + s_pad2; byte order from -o arch */
-    FILSYS_UNIX   = 40    /* not a format: autodetect across every edition (a -v mode) */
-};
-
-/* One row of the edition name table (defined in filsys_format.c): the canonical
- * "-v" spelling, its alternates, and the FILSYS_* selector.  The tools and the
- * test matrix resolve and list editions through this table rather than their own
- * strcmp chains, so the spellings live in one place and cannot drift. */
-typedef struct {
-    int         edition;           /* FILSYS_* selector */
-    const char *name;              /* canonical spelling: "pdp7", "v1", ... */
-    const char *const *aliases;    /* NULL-terminated alternates: "0", "p7", ... */
-} filsys_format_t;
-
 /* Iterate the edition name table (returns NULL past the end). */
 const filsys_format_t *filsys_format_nth(size_t i);
 /* Resolve a canonical name or alias to a FILSYS_* selector, or -1.  Accepts a
@@ -85,67 +57,6 @@ int filsys_edition_by_name(const char *name);
 int filsys_parse_edition(const char *tool, const char *name);
 /* The canonical edition names joined by "|", for usage strings. */
 const char *filsys_editions_usage(void);
-
-/* Decoded inode -- one shape for every edition (V1, V6, V7/32V, PDP-7).  Each
- * backend decodes its own on-disk inode (V1/V6 32 bytes, V7 64 bytes, PDP-7
- * 12 words) field-by-field into this struct.  mode is 32 bits so PDP-7's
- * 18-bit flag word fits (V1/V6/V7 modes are only 16 bits). */
-typedef struct {
-    uint32_t ino;
-    uint32_t mode;               /* on-disk mode bits (edition-specific type) */
-    int16_t  nlink;
-    int16_t  uid;
-    int16_t  gid;
-    uint32_t size;               /* bytes; 32-bit by decision -- every edition's
-                                  * on-disk size field is <= 32 bits (V7-family 32,
-                                  * V6 24, V1 16), so a wider field would never fill */
-    uint32_t addr[13];           /* block numbers (device number in addr[0]) */
-    uint32_t atime, mtime, ctime;
-} filsys_inode_t;
-
-/* One directory entry. */
-typedef struct {
-    uint16_t ino;
-    char     name[64];           /* name + NUL (14 for V6/V7; 63 for 2.11BSD) */
-} filsys_dirent_t;
-
-typedef struct filsys filsys_t;  /* opaque */
-
-/* Geometry overrides (the V8-family's `-o` options).  All zero/-1/NULL means
- * "use the edition's default".  Applies only to the V8/V9/V10 editions. */
-typedef struct {
-    uint32_t    blocksize;      /* 0 = edition default (1024/4096/8192) */
-    int         freemap;        /* -1 = derive; else a FILSYS_FREEMAP_* value */
-    char        *byteorder;      /* "le"/"be", or NULL = edition default (owned) */
-} filsys_geom_t;
-
-/* filsys_geom_t.freemap values: the V8-family free-space representation. */
-enum {
-    FILSYS_FREEMAP_LIST   = 0,  /* free list */
-    FILSYS_FREEMAP_BITMAP = 1,  /* in-superblock bitmap */
-    FILSYS_FREEMAP_BIGMAP = 2,  /* out-of-superblock bitmap (V10 only) */
-};
-
-/* Confidence of a format probe result: how a detection was made.  MAGIC means
- * a superblock magic word matched (byte order resolved by the word); STRUCTURAL
- * means a full structural validation passed (free-list/bitmap, root inode) with
- * no magic; HEURISTIC is a weaker, partial match. */
-typedef enum {
-    FILSYS_PROBE_NONE = 0,
-    FILSYS_PROBE_HEURISTIC,
-    FILSYS_PROBE_STRUCTURAL,
-    FILSYS_PROBE_MAGIC,
-} filsys_probe_conf_t;
-
-/* The result of filsys_detect(): a resolved edition and its geometry. */
-typedef struct {
-    int         edition;      /* FILSYS_* selector (never FILSYS_UNIX) */
-    uint32_t    blocksize;    /* 0 = edition default */
-    int         freemap;      /* -1 = derive; else a FILSYS_FREEMAP_* value */
-    const char *byteorder;    /* "le"/"be", or NULL = edition default */
-    const char *packing;      /* PDP-7 word container codec name, or NULL */
-    filsys_probe_conf_t conf; /* how the winning probe matched */
-} filsys_detect_t;
 
 /* Autodetect the filesystem whose block 0 sits at byte `offset`.  `fd` is an
  * open read-only descriptor, `size` the image's total byte size, and `filter`
