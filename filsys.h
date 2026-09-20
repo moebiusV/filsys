@@ -105,6 +105,13 @@ int filsys_check(filsys_t *fs);
 
 /* ---- inspection ---------------------------------------------------------- */
 
+/* Resolve one path component: look up `name` in directory `ino` and return the
+ * child's inode number.  This is the node-anchored core primitive; a frontend
+ * resolves a path by walking it one component at a time from the root inode.
+ * Returns 0, or -errno (ENOTDIR if `ino` is not a directory, ENAMETOOLONG if
+ * `name` exceeds the edition's limit). */
+int filsys_walk(filsys_t *fs, uint32_t ino, const char *name, uint32_t *out);
+
 int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino,
                   filsys_inode_t *ip);
 int filsys_read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip);

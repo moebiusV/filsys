@@ -516,6 +516,17 @@ int filsys_invariants(filsys_t *fs, filsys_check_t *rep) {
     return filsys_check_common(&fs->fs->desc, fs->fs, rep, FILSYS_CK_FORCE | FILSYS_CK_QUIET);
 }
 
+int filsys_walk(filsys_t *fs, uint32_t ino, const char *name, uint32_t *out) {
+    if (strlen(name) > fs->fs->desc.max_namlen)
+        return -ENAMETOOLONG;
+    filsys_inode_t dip;
+    int rc = read_inode(fs, ino, &dip);
+    if (rc) return rc;
+    if (!mode_is_dir(fs->fs, &dip))
+        return -ENOTDIR;
+    return dir_lookup(fs, &dip, name, out);
+}
+
 int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t *ip) {
     return lookup(fs, path, ino, ip);
 }
