@@ -563,12 +563,12 @@ static uint32_t v7fs_blocksize_op(const filsys_desc_t *fs) {
 
 
 
-static void v7fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
+static void v7fs_statfs_op(filsys_edition_t *fs, filsys_statfs_t *st) {
     filsys_edition_t *v7 = fs;
-    st->f_blocks = v7->fsize;
-    st->f_bfree = st->f_bavail = v7->fl.tfree;
-    st->f_files = (v7->isize - 2) * v7_inopb(v7);
-    st->f_ffree = v7->fl.tinode;
+    st->blocks = v7->fsize;
+    st->bfree = st->bavail = v7->fl.tfree;
+    st->files = (v7->isize - 2) * v7_inopb(v7);
+    st->ffree = v7->fl.tinode;
 }
 /* ---- read-only superblock probes (Fold 1) ---------------------------------
  * Moved from findfs.filsys.c and reworked to read through `io` and to derive

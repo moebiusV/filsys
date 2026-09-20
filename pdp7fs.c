@@ -715,12 +715,12 @@ static uint64_t p7fs_max_file_op(const filsys_desc_t *fs) {
     return (uint64_t)P7_NIADDR * P7_NINDIR * P7_WSIZE * 2;   /* 7*64*64*2 bytes */
 }
 
-static void p7fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
+static void p7fs_statfs_op(filsys_edition_t *fs, filsys_statfs_t *st) {
     p7fs_t *p7 = fs;
-    st->f_blocks = P7_NBLOCKS;
-    st->f_bfree = st->f_bavail = p7->fl.tfree;
-    st->f_files = P7_MAXINO;
-    st->f_ffree = 0;   /* not tracked (read-only) */
+    st->blocks = P7_NBLOCKS;
+    st->bfree = st->bavail = p7->fl.tfree;
+    st->files = P7_MAXINO;
+    st->ffree = 0;   /* not tracked (read-only) */
 }
 static const struct filsys_dir_ops dir_pdp7 = {
     .dir_read   = p7fs_dir_read,

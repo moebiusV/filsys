@@ -162,7 +162,19 @@ int fuse_op_utimens(fuse_ctx_t *c, const char *path,
 
 int fuse_op_statfs(fuse_ctx_t *c, struct statvfs *st)
 {
-    return filsys_statfs(c->fs, st);
+    filsys_statfs_t s;
+    int rc = filsys_statfs(c->fs, &s);
+    if (rc)
+        return rc;
+    memset(st, 0, sizeof(*st));
+    st->f_bsize = st->f_frsize = s.bsize;
+    st->f_blocks = s.blocks;
+    st->f_bfree = s.bfree;
+    st->f_bavail = s.bavail;
+    st->f_files = s.files;
+    st->f_ffree = s.ffree;
+    st->f_namemax = s.namemax;
+    return 0;
 }
 
 int fuse_op_access(fuse_ctx_t *c, const char *path, int mask)

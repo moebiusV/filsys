@@ -352,12 +352,12 @@ static uint32_t v1fs_blocksize_op(const filsys_desc_t *fs) { (void)fs; return V1
 
 
 
-static void v1fs_statfs_op(filsys_edition_t *fs, struct statvfs *st) {
+static void v1fs_statfs_op(filsys_edition_t *fs, filsys_statfs_t *st) {
     v1fs_t *v1 = fs;
-    st->f_blocks = v1->fsize;
-    st->f_bfree = st->f_bavail = v1->bm.tfree;
-    st->f_files = v1->maxino;
-    st->f_ffree = v1->bm.tinode;
+    st->blocks = v1->fsize;
+    st->bfree = st->bavail = v1->bm.tfree;
+    st->files = v1->maxino;
+    st->ffree = v1->bm.tinode;
 }
 static const struct filsys_inode_ops inode_v1 = {
     .read_inode  = v1fs_read_inode,

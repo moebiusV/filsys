@@ -1434,10 +1434,10 @@ int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]) 
     return write_inode(fs, ino, &ip);
 }
 
-int filsys_statfs(filsys_t *fs, struct statvfs *st) {
+int filsys_statfs(filsys_t *fs, filsys_statfs_t *st) {
     memset(st, 0, sizeof(*st));
-    st->f_bsize = st->f_frsize = fs->ops->blocksize(&fs->fs->desc);
+    st->bsize = fs->ops->blocksize(&fs->fs->desc);
     fs->ops->statfs(fs->fs, st);
-    st->f_namemax = fs->fs->desc.max_namlen;
+    st->namemax = fs->fs->desc.max_namlen;
     return 0;
 }

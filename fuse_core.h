@@ -11,6 +11,7 @@
 #define FUSE_CORE_H
 
 #include "filsys.h"
+#include <sys/statvfs.h>
 
 typedef struct {
     filsys_t *fs;

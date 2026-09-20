@@ -14,7 +14,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -157,7 +156,7 @@ int filsys_truncate(filsys_t *fs, const char *path, off_t size);
 int filsys_chmod(filsys_t *fs, const char *path, mode_t mode);
 int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid);
 int filsys_utimens(filsys_t *fs, const char *path, const struct timespec tv[2]);
-int filsys_statfs(filsys_t *fs, struct statvfs *st);
+int filsys_statfs(filsys_t *fs, filsys_statfs_t *st);
 
 #ifdef __cplusplus
 }

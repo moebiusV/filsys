@@ -106,4 +106,18 @@ typedef struct {
     filsys_probe_conf_t conf; /* how the winning probe matched */
 } filsys_detect_t;
 
+/* Plain-integer filesystem totals, the POSIX-free stand-in for struct statvfs.
+ * The frontend fills its own type from this (struct statvfs for FUSE, struct
+ * statfs for a kernel).  bsize doubles as frsize; bavail equals bfree here
+ * (every frontend treats the mounting user as privileged). */
+typedef struct {
+    uint64_t bsize;    /* filesystem block size (f_bsize / f_frsize) */
+    uint64_t blocks;   /* total blocks */
+    uint64_t bfree;    /* free blocks */
+    uint64_t bavail;   /* free blocks available to a non-root user */
+    uint64_t files;    /* total inodes */
+    uint64_t ffree;    /* free inodes */
+    uint32_t namemax;  /* longest filename */
+} filsys_statfs_t;
+
 #endif /* FILSYS_ENGINE_H */

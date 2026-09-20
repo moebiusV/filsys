@@ -223,7 +223,7 @@ struct filsys_ops {
     int      (*is_clean)(filsys_edition_t *fs);            /* 1 = superblock marked clean (fmod==0) */
 
     /* fill the edition-specific statvfs totals (blocks / free / files / free) */
-    void (*statfs)(filsys_edition_t *fs, struct statvfs *st);
+    void (*statfs)(filsys_edition_t *fs, filsys_statfs_t *st);
 
     /* largest addressable file, in bytes */
     uint64_t (*max_file)(const filsys_desc_t *fs);

@@ -439,7 +439,7 @@ static void run(const struct fmt *f) {
      * the last open handle closes -- the data must stay readable after the
      * unlink and be freed on the final release, not before. */
     {
-        struct statvfs st0;
+        filsys_statfs_t st0;
         filsys_statfs(fs, &st0);   /* free blocks before (for the leak check) */
         uint8_t wbuf[32], rbuf[32] = {0};
         for (int i = 0; i < 32; i++) wbuf[i] = (uint8_t)(i + 1);
@@ -453,9 +453,9 @@ static void run(const struct fmt *f) {
            filsys_read_ino(fs, ino, rbuf, sizeof rbuf, 0) == (ssize_t)sizeof rbuf &&
            memcmp(wbuf, rbuf, sizeof wbuf) == 0);
         ok("close_ino frees", filsys_close_ino(fs, ino) == 0);
-        struct statvfs st1;
+        filsys_statfs_t st1;
         filsys_statfs(fs, &st1);
-        ok("unlink-open blocks freed", st1.f_bfree == st0.f_bfree);
+        ok("unlink-open blocks freed", st1.bfree == st0.bfree);
     }
 
     /* open -> rename-over -> read (hard_remove): renaming /b over the open /a
@@ -1813,7 +1813,7 @@ static void statfs_fsck_agreement(void) {
             unlink(img);
             continue;
         }
-        struct statvfs st;
+        filsys_statfs_t st;
         rc = filsys_statfs(fs, &st);
         filsys_close(fs);
         if (rc) {
@@ -1831,7 +1831,7 @@ static void statfs_fsck_agreement(void) {
             continue;
         }
         snprintf(what, sizeof what, "%s statfs free blocks == fsck", f.name);
-        ok(what, (uint64_t)st.f_bfree == fb);
+        ok(what, (uint64_t)st.bfree == fb);
         /* V1 and PDP-7 reserve inode numbers outside their allocatable range (V1's
          * inode map starts at inode 41; PDP-7 reserves the low inodes), so fsck's
          * all-inodes walk counts those reserved slots as free while statfs reports
@@ -1840,7 +1840,7 @@ static void statfs_fsck_agreement(void) {
          * is a single contiguous allocatable range. */
         if (f.edition != FILSYS_V1 && f.edition != FILSYS_PDP7) {
             snprintf(what, sizeof what, "%s statfs free inodes == fsck", f.name);
-            ok(what, (uint64_t)st.f_ffree == fi);
+            ok(what, (uint64_t)st.ffree == fi);
         }
         unlink(img);
     }
