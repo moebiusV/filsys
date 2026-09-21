@@ -662,16 +662,13 @@ static int resolve_parent(filsys_t *fs, const char *path,
  * later fsck pass reports).  Read-only: nothing here writes, so a failure
  * leaves the image untouched.  Lookup errors other than -ENOENT are preserved
  * -- an -EIO reading the parent must not be mistaken for "the name is free". */
-static int prepare_create(filsys_t *fs, const char *path,
-                          uint32_t *dino, filsys_inode_t *ddir, char *name) {
-    int rc = resolve_parent(fs, path, dino, ddir, name);
-    if (rc) return rc;
+static int preflight_create(filsys_t *fs, filsys_inode_t *ddir, const char *name) {
     if (!mode_is_dir(fs->fs, ddir))
         return -ENOTDIR;
     if (!strcmp(name, ".") || !strcmp(name, ".."))
         return -EEXIST;
     uint32_t present;
-    rc = dir_lookup(fs, ddir, name, &present);
+    int rc = dir_lookup(fs, ddir, name, &present);
     if (rc == 0)
         return -EEXIST;
     return rc == -ENOENT ? 0 : rc;
@@ -793,14 +790,14 @@ static int remove_name(filsys_t *fs, filsys_inode_t *ddir, const char *name,
  * be made safe, leave a leak (B) or an inconsistency (C) -- fsck repairs both
  * -- rather than free state that is still reachable. */
 
-int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid,
-                  uint32_t *ino) {
+int filsys_create_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
+                     uid_t uid, gid_t gid, uint32_t *ino) {
     int rc = uidgid_fit(uid, gid);
     if (rc) return rc;
-    char name[64];
     filsys_inode_t ddir;
-    uint32_t dino;
-    rc = prepare_create(fs, path, &dino, &ddir, name);
+    rc = read_inode(fs, dir, &ddir);
+    if (rc) return rc;
+    rc = preflight_create(fs, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
@@ -814,7 +811,7 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
          * teardown leaves it allocated -- a recoverable leak (B), not live state
          * returned to the allocator (D).  If the name cannot be withdrawn, keep
          * the inode: a reachable file (C) beats a dangling entry (D). */
-        if (withdraw_name(fs, dino, name, nino) == 0)
+        if (withdraw_name(fs, dir, name, nino) == 0)
             (void)inode_destroy(fs, nino, &nip);
         return arc;
     }
@@ -823,13 +820,24 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t 
     return 0;
 }
 
-int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
+int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid,
+                  uint32_t *ino) {
+    char name[64];
+    uint32_t dino;
+    filsys_inode_t ddir;
+    int rc = resolve_parent(fs, path, &dino, &ddir, name);
+    if (rc) return rc;
+    return filsys_create_in(fs, dino, name, mode, uid, gid, ino);
+}
+
+int filsys_mkdir_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
+                    uid_t uid, gid_t gid) {
     int rc = uidgid_fit(uid, gid);
     if (rc) return rc;
-    char name[64];
     filsys_inode_t ddir;
-    uint32_t dino;
-    rc = prepare_create(fs, path, &dino, &ddir, name);
+    rc = read_inode(fs, dir, &ddir);
+    if (rc) return rc;
+    rc = preflight_create(fs, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
@@ -838,19 +846,19 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     if (rc) return rc;
     rc = dir_add(fs, &nip, nino, ".");
     if (rc) goto fail;
-    rc = dir_add(fs, &nip, dino, "..");
+    rc = dir_add(fs, &nip, dir, "..");
     if (rc) goto fail;
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {
         /* The entry may have landed even though dir_add failed; withdraw it
          * before `fail` frees the inode (see withdraw_name).  If it cannot be
          * withdrawn, the new directory stays live under that name (C). */
-        if (withdraw_name(fs, dino, name, nino) != 0)
+        if (withdraw_name(fs, dir, name, nino) != 0)
             return rc;
         goto fail;
     }
     ddir.nlink++;
-    rc = write_inode(fs, dino, &ddir);
+    rc = write_inode(fs, dir, &ddir);
     if (rc) {
         /* rollback: the nlink bump didn't persist, but dir_remove rewrites the
          * parent from the in-memory ddir (whose nlink is now bumped), so undo
@@ -892,8 +900,17 @@ fail:
     return rc;
 }
 
-int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
-                 uid_t uid, gid_t gid) {
+int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t gid) {
+    char name[64];
+    uint32_t dino;
+    filsys_inode_t ddir;
+    int rc = resolve_parent(fs, path, &dino, &ddir, name);
+    if (rc) return rc;
+    return filsys_mkdir_in(fs, dino, name, mode, uid, gid);
+}
+
+int filsys_mknod_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
+                    dev_t rdev, uid_t uid, gid_t gid) {
     if (uidgid_fit(uid, gid))
         return -EINVAL;
     /* V1 has no device type bits: devices are the fixed inodes 1..40, wired up
@@ -911,17 +928,17 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
     if (!ischr && !isblk && !isreg)
         return -EPERM;
     if (isreg)
-        return filsys_create(fs, path, mode & 07777, uid, gid, NULL);
+        return filsys_create_in(fs, dir, name, mode & 07777, uid, gid, NULL);
     /* V7 device numbers are 8-bit major + 8-bit minor packed into one word.
      * Reject rather than mask: a modern major like 300 would otherwise
      * silently become 44. */
     if (major(rdev) > 255 || minor(rdev) > 255)
         return -EINVAL;
 
-    char name[64];
     filsys_inode_t ddir;
-    uint32_t dino;
-    int rc = prepare_create(fs, path, &dino, &ddir, name);
+    int rc = read_inode(fs, dir, &ddir);
+    if (rc) return rc;
+    rc = preflight_create(fs, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
@@ -935,16 +952,27 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
         /* rollback: withdraw the name first, then tear the inode down (see
          * filsys_create).  A failed teardown leaves a recoverable leak (B),
          * never state returned live to the free list (D). */
-        if (withdraw_name(fs, dino, name, nino) == 0)
+        if (withdraw_name(fs, dir, name, nino) == 0)
             (void)inode_destroy(fs, nino, &nip);
     }
     return rc;
 }
 
-static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
-    filsys_inode_t ddir;
+int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
+                 uid_t uid, gid_t gid) {
+    if ((mode & S_IFMT) == S_IFREG)
+        return filsys_create(fs, path, mode & 07777, uid, gid, NULL);
+    char name[64];
     uint32_t dino;
-    int rc = lookup(fs, dirpath, &dino, &ddir);
+    filsys_inode_t ddir;
+    int rc = resolve_parent(fs, path, &dino, &ddir, name);
+    if (rc) return rc;
+    return filsys_mknod_in(fs, dino, name, mode, rdev, uid, gid);
+}
+
+int filsys_unlink_in(filsys_t *fs, uint32_t dir, const char *name) {
+    filsys_inode_t ddir;
+    int rc = read_inode(fs, dir, &ddir);
     if (rc) return rc;
     uint32_t ino;
     rc = dir_lookup(fs, &ddir, name, &ino);
@@ -966,6 +994,14 @@ static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
     return 0;
 }
 
+static int do_unlink(filsys_t *fs, const char *dirpath, const char *name) {
+    filsys_inode_t ddir;
+    uint32_t dino;
+    int rc = lookup(fs, dirpath, &dino, &ddir);
+    if (rc) return rc;
+    return filsys_unlink_in(fs, dino, name);
+}
+
 int filsys_unlink(filsys_t *fs, const char *path) {
     char dir[PATH_MAX], name[64];
     int rc = split_path(path, dir, sizeof(dir), name, fs->fs->desc.max_namlen + 1);
@@ -978,11 +1014,9 @@ int filsys_unlink(filsys_t *fs, const char *path) {
     return do_unlink(fs, dir, name);
 }
 
-int filsys_rmdir(filsys_t *fs, const char *path) {
-    char name[64];
+int filsys_rmdir_in(filsys_t *fs, uint32_t dir, const char *name) {
     filsys_inode_t ddir;
-    uint32_t dino;
-    int rc = resolve_parent(fs, path, &dino, &ddir, name);
+    int rc = read_inode(fs, dir, &ddir);
     if (rc) return rc;
     uint32_t ino;
     rc = dir_lookup(fs, &ddir, name, &ino);
@@ -1022,6 +1056,15 @@ int filsys_rmdir(filsys_t *fs, const char *path) {
     return inode_destroy(fs, ino, &tip);   /* orphaned: truncate, clear, free */
 }
 
+int filsys_rmdir(filsys_t *fs, const char *path) {
+    char name[64];
+    uint32_t dino;
+    filsys_inode_t ddir;
+    int rc = resolve_parent(fs, path, &dino, &ddir, name);
+    if (rc) return rc;
+    return filsys_rmdir_in(fs, dino, name);
+}
+
 /* Is `anc_ino` an ancestor of directory `dir_ino` (does dir_ino sit in
  * anc_ino's subtree)?  Walk ".." from dir_ino up to the root.  A directory
  * linked or renamed into its own subtree would make a cycle that lookup and
@@ -1050,18 +1093,16 @@ static int dir_ancestor(filsys_t *fs, uint32_t anc_ino, uint32_t dir_ino) {
     return 0;
 }
 
-static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
-    char name[64];
+int filsys_link_in(filsys_t *fs, uint32_t src_ino, uint32_t dir, const char *name) {
     filsys_inode_t ddir;
-    uint32_t dino;
-    int rc = resolve_parent(fs, dst, &dino, &ddir, name);
+    int rc = read_inode(fs, dir, &ddir);
     if (rc) return rc;
     filsys_inode_t ip;
     if (read_inode(fs, src_ino, &ip)) return -EIO;
     /* A directory may be hard-linked (V7 lets the superuser do it), but never
      * into its own subtree -- that would form a cycle. */
     if (mode_is_dir(fs->fs, &ip)) {
-        int a = dir_ancestor(fs, src_ino, dino);
+        int a = dir_ancestor(fs, src_ino, dir);
         if (a == 1) return -EINVAL;   /* would form a cycle */
         if (a < 0) return a;          /* cannot verify: fail closed */
     }
@@ -1080,6 +1121,15 @@ static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
             return rr;
     }
     return rc;
+}
+
+static int do_link(filsys_t *fs, const char *dst, uint32_t src_ino) {
+    char name[64];
+    uint32_t dino;
+    filsys_inode_t ddir;
+    int rc = resolve_parent(fs, dst, &dino, &ddir, name);
+    if (rc) return rc;
+    return filsys_link_in(fs, src_ino, dino, name);
 }
 
 int filsys_link(filsys_t *fs, const char *from, const char *to) {
@@ -1101,32 +1151,30 @@ int filsys_link(filsys_t *fs, const char *from, const char *to) {
  * (now ino-keyed) can outlive the directory entry. */
 enum { FS_RENAME_NOREPLACE = 1 };
 
-int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int flags) {
+int filsys_rename_in(filsys_t *fs, uint32_t sdir, const char *sname,
+                     uint32_t tdir, const char *tname, unsigned int flags) {
     if (flags & ~FS_RENAME_NOREPLACE) return -EINVAL;   /* EXCHANGE/unknown unsupported */
-    if (!strcmp(from, to)) return 0;
-    filsys_inode_t sip;
-    uint32_t sino;
-    int rc = lookup(fs, from, &sino, &sip);
+    if (sdir == tdir && !strcmp(sname, tname)) return 0;
+
+    filsys_inode_t sdirip;
+    int rc = read_inode(fs, sdir, &sdirip);
     if (rc) return rc;
+    uint32_t sino;
+    rc = dir_lookup(fs, &sdirip, sname, &sino);
+    if (rc) return rc;
+    filsys_inode_t sip;
+    if (read_inode(fs, sino, &sip)) return -EIO;
 
     int isdir = mode_is_dir(fs->fs, &sip);
 
-    char fdir[PATH_MAX], fname[64];
-    split_path(from, fdir, sizeof(fdir), fname, fs->fs->desc.max_namlen + 1);
-    char tdir[PATH_MAX], tname[64];
-    rc = split_path(to, tdir, sizeof(tdir), tname, fs->fs->desc.max_namlen + 1);
-    if (rc) return rc;
-
     filsys_inode_t tdirip;
-    uint32_t tdino;
-    rc = lookup(fs, tdir, &tdino, &tdirip);
-    if (rc) return rc;
+    if (read_inode(fs, tdir, &tdirip)) return -EIO;
 
     /* Every check that can fail without mutating goes here, before the first
      * persistent change: a directory must not be renamed into its own subtree
      * (that would form a cycle). */
     if (isdir) {
-        int a = dir_ancestor(fs, sino, tdino);
+        int a = dir_ancestor(fs, sino, tdir);
         if (a == 1) return -EINVAL;   /* would form a cycle */
         if (a < 0) return a;          /* cannot verify: fail closed */
     }
@@ -1191,7 +1239,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
      * deliberately unchecked: each failure is unrepresentable -- there is no
      * recovery cheaper than the recoverable state it leaves, and a full unwind
      * is the deferred transaction object. */
-    rc = do_link(fs, to, sino);
+    rc = filsys_link_in(fs, sino, tdir, tname);
     if (rc) {
         if (had_target) {
             /* rollback: re-add the removed target's name and inode (B/C at
@@ -1202,9 +1250,9 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         return rc;
     }
 
-    rc = do_unlink(fs, fdir, fname);
+    rc = filsys_unlink_in(fs, sdir, sname);
     if (rc) {
-        do_unlink(fs, tdir, tname);   /* rollback: withdraw the link just added */
+        filsys_unlink_in(fs, tdir, tname);   /* rollback: withdraw the link just added */
         if (had_target) {
             /* rollback: restore the removed target's name and inode (B/C). */
             dir_add(fs, &tdirip, tino, tname);
@@ -1222,31 +1270,30 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
          * (D) -- and unwinding them would itself be a multi-step best-effort
          * that can fail the same way.  The crash-prefix test confirms every
          * prefix here stays alias-free (dup==0) and salvage-recoverable. */
-        if (strcmp(fdir, tdir) != 0) {
+        if (sdir != tdir) {
             filsys_inode_t fddir;
-            uint32_t fdino;
-            if (lookup(fs, fdir, &fdino, &fddir) == 0) {
+            if (read_inode(fs, sdir, &fddir) == 0) {
                 if (fddir.nlink > 1) fddir.nlink--;
-                rc = write_inode(fs, fdino, &fddir);
+                rc = write_inode(fs, sdir, &fddir);
                 if (rc) return rc;
             }
-            /* tdirip was read before do_link, which rewrote the target
+            /* tdirip was read before filsys_link_in, which rewrote the target
              * directory's inode (its size grew to hold the new entry).  Re-read
              * it fresh so we bump nlink without clobbering that update. */
-            if (read_inode(fs, tdino, &tdirip) == 0) {
+            if (read_inode(fs, tdir, &tdirip) == 0) {
                 tdirip.nlink++;
-                rc = write_inode(fs, tdino, &tdirip);
+                rc = write_inode(fs, tdir, &tdirip);
                 if (rc) return rc;
             }
         }
         /* Freeing a replaced directory target drops its ".." entry (which points
-         * at tdir), so tdir loses one reference.  In the same-parent case (fdir
+         * at tdir), so tdir loses one reference.  In the same-parent case (sdir
          * == tdir) this is tdir's only change; in the cross-parent case it nets
          * against the moved directory's ".." bump above, leaving tdir unchanged. */
         if (tisdir) {
-            if (read_inode(fs, tdino, &tdirip) == 0) {
+            if (read_inode(fs, tdir, &tdirip) == 0) {
                 if (tdirip.nlink > 1) tdirip.nlink--;
-                rc = write_inode(fs, tdino, &tdirip);
+                rc = write_inode(fs, tdir, &tdirip);
                 if (rc) return rc;
             }
         }
@@ -1254,7 +1301,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         if (read_inode(fs, sino, &cip) == 0) {
             rc = dir_remove(fs, &cip, "..");
             if (rc) return rc;
-            rc = dir_add(fs, &cip, tdino, "..");
+            rc = dir_add(fs, &cip, tdir, "..");
             if (rc) return rc;
         }
     }
@@ -1278,6 +1325,24 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
         }
     }
     return 0;
+}
+
+int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int flags) {
+    if (!strcmp(from, to)) return 0;
+    char fdir[PATH_MAX], fname[64];
+    split_path(from, fdir, sizeof(fdir), fname, fs->fs->desc.max_namlen + 1);
+    char tdir[PATH_MAX], tname[64];
+    int rc = split_path(to, tdir, sizeof(tdir), tname, fs->fs->desc.max_namlen + 1);
+    if (rc) return rc;
+    filsys_inode_t fddir;
+    uint32_t sdino;
+    rc = lookup(fs, fdir, &sdino, &fddir);
+    if (rc) return rc;
+    filsys_inode_t tddir;
+    uint32_t tdino;
+    rc = lookup(fs, tdir, &tdino, &tddir);
+    if (rc) return rc;
+    return filsys_rename_in(fs, sdino, fname, tdino, tname, flags);
 }
 
 /* Shared truncate body: shrink or extend inode `ino` (whose decoded state is
@@ -1352,12 +1417,11 @@ int filsys_stat_ino(filsys_t *fs, uint32_t ino, filsys_stat_t *st) {
     return filsys_stat_inode(fs, &ip, st);
 }
 
-ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) {
+ssize_t filsys_readlink_ino(filsys_t *fs, uint32_t ino, char *buf, size_t size) {
     if (!fs->fs->desc.iflnk)
         return -ENOSYS;   /* this edition predates symlinks */
     filsys_inode_t ip;
-    uint32_t ino;
-    int rc = lookup(fs, path, &ino, &ip);
+    int rc = read_inode(fs, ino, &ip);
     if (rc) return rc;
     if ((ip.mode & fs->fs->desc.ifmt) != fs->fs->desc.iflnk)
         return -EINVAL;
@@ -1367,15 +1431,24 @@ ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) 
     return file_read(fs, &ip, (uint8_t *)buf, n, 0);
 }
 
-int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {
+ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size) {
+    filsys_inode_t ip;
+    uint32_t ino;
+    int rc = lookup(fs, path, &ino, &ip);
+    if (rc) return rc;
+    return filsys_readlink_ino(fs, ino, buf, size);
+}
+
+int filsys_symlink_in(filsys_t *fs, const char *target, uint32_t dir,
+                      const char *name) {
     if (!fs->fs->desc.iflnk)
         return -ENOSYS;   /* this edition predates symlinks */
     int rc = uidgid_fit(fs->uid, fs->gid);
     if (rc) return rc;
-    char name[64];
     filsys_inode_t ddir;
-    uint32_t dino;
-    rc = prepare_create(fs, linkpath, &dino, &ddir, name);
+    rc = read_inode(fs, dir, &ddir);
+    if (rc) return rc;
+    rc = preflight_create(fs, &ddir, name);
     if (rc) return rc;
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
@@ -1396,10 +1469,28 @@ int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {
     if (rc) {
         /* rollback: same contract as filsys_create -- confirm the name is gone
          * before freeing the inode, and keep the inode live if it isn't. */
-        if (withdraw_name(fs, dino, name, nino) == 0)
+        if (withdraw_name(fs, dir, name, nino) == 0)
             (void)inode_destroy(fs, nino, &nip);
     }
     return rc;
+}
+
+int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {
+    char name[64];
+    uint32_t dino;
+    filsys_inode_t ddir;
+    int rc = resolve_parent(fs, linkpath, &dino, &ddir, name);
+    if (rc) return rc;
+    return filsys_symlink_in(fs, target, dino, name);
+}
+
+int filsys_chmod_ino(filsys_t *fs, uint32_t ino, mode_t mode) {
+    filsys_inode_t ip;
+    int rc = read_inode(fs, ino, &ip);
+    if (rc) return rc;
+    ip.mode = mode_chmod(fs->fs, ip.mode, mode);
+    ip.ctime = (uint32_t)time(NULL);
+    return write_inode(fs, ino, &ip);
 }
 
 int filsys_chmod(filsys_t *fs, const char *path, mode_t mode) {
@@ -1407,18 +1498,15 @@ int filsys_chmod(filsys_t *fs, const char *path, mode_t mode) {
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
     if (rc) return rc;
-    ip.mode = mode_chmod(fs->fs, ip.mode, mode);
-    ip.ctime = (uint32_t)time(NULL);
-    return write_inode(fs, ino, &ip);
+    return filsys_chmod_ino(fs, ino, mode);
 }
 
-int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid) {
+int filsys_chown_ino(filsys_t *fs, uint32_t ino, uid_t uid, gid_t gid) {
     if ((uid != (uid_t)-1 && uid > INT16_MAX) ||
         (gid != (gid_t)-1 && gid > INT16_MAX))
         return -EINVAL;
     filsys_inode_t ip;
-    uint32_t ino;
-    int rc = lookup(fs, path, &ino, &ip);
+    int rc = read_inode(fs, ino, &ip);
     if (rc) return rc;
     if (uid != (uid_t)-1) ip.uid = (int16_t)uid;
     if (gid != (gid_t)-1) ip.gid = (int16_t)gid;
@@ -1426,10 +1514,17 @@ int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid) {
     return write_inode(fs, ino, &ip);
 }
 
-int filsys_utimens(filsys_t *fs, const char *path, const int64_t tv[2]) {
+int filsys_chown(filsys_t *fs, const char *path, uid_t uid, gid_t gid) {
     filsys_inode_t ip;
     uint32_t ino;
     int rc = lookup(fs, path, &ino, &ip);
+    if (rc) return rc;
+    return filsys_chown_ino(fs, ino, uid, gid);
+}
+
+int filsys_utimens_ino(filsys_t *fs, uint32_t ino, const int64_t tv[2]) {
+    filsys_inode_t ip;
+    int rc = read_inode(fs, ino, &ip);
     if (rc) return rc;
     uint32_t now = (uint32_t)time(NULL);
     if (!tv) {
@@ -1442,6 +1537,14 @@ int filsys_utimens(filsys_t *fs, const char *path, const int64_t tv[2]) {
     }
     ip.ctime = now;
     return write_inode(fs, ino, &ip);
+}
+
+int filsys_utimens(filsys_t *fs, const char *path, const int64_t tv[2]) {
+    filsys_inode_t ip;
+    uint32_t ino;
+    int rc = lookup(fs, path, &ino, &ip);
+    if (rc) return rc;
+    return filsys_utimens_ino(fs, ino, tv);
 }
 
 int filsys_statfs(filsys_t *fs, filsys_statfs_t *st) {

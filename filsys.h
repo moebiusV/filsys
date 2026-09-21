@@ -177,6 +177,33 @@ enum {
 int filsys_utimens(filsys_t *fs, const char *path, const int64_t tv[2]);
 int filsys_statfs(filsys_t *fs, filsys_statfs_t *st);
 
+/* ---- node-anchored mutation primitives ------------------------------------
+ *
+ * The path-taking functions above resolve a path (split + walk) and then do an
+ * inode-anchored operation.  These are that operation exposed directly, for a
+ * frontend (the kernel, plan9) that has already resolved the directory inode or
+ * the inode number itself.  The `_ino` forms act on a single inode; the `_in`
+ * forms act on a name within a directory inode. */
+
+int filsys_chmod_ino(filsys_t *fs, uint32_t ino, mode_t mode);
+int filsys_chown_ino(filsys_t *fs, uint32_t ino, uid_t uid, gid_t gid);
+int filsys_utimens_ino(filsys_t *fs, uint32_t ino, const int64_t tv[2]);
+ssize_t filsys_readlink_ino(filsys_t *fs, uint32_t ino, char *buf, size_t size);
+
+int filsys_create_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
+                     uid_t uid, gid_t gid, uint32_t *ino);
+int filsys_mkdir_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
+                    uid_t uid, gid_t gid);
+int filsys_mknod_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
+                    dev_t rdev, uid_t uid, gid_t gid);
+int filsys_symlink_in(filsys_t *fs, const char *target, uint32_t dir,
+                      const char *name);
+int filsys_unlink_in(filsys_t *fs, uint32_t dir, const char *name);
+int filsys_rmdir_in(filsys_t *fs, uint32_t dir, const char *name);
+int filsys_link_in(filsys_t *fs, uint32_t src_ino, uint32_t dir, const char *name);
+int filsys_rename_in(filsys_t *fs, uint32_t sdir, const char *sname,
+                     uint32_t tdir, const char *tname, unsigned int flags);
+
 #ifdef __cplusplus
 }
 #endif
