@@ -137,7 +137,7 @@ int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, uint32_t rdev,
     return filsys_mknod_in(fs, dino, name, mode, rdev, uid, gid);
 }
 
-int filsys_unlink(filsys_t *fs, const char *path) {
+int filsys_unlink(filsys_t *fs, const char *path, int defer) {
     char dir[PATH_MAX], name[64];
     int rc = split_path(path, dir, sizeof(dir), name, filsys_namemax(fs) + 1);
     if (rc)
@@ -154,7 +154,7 @@ int filsys_unlink(filsys_t *fs, const char *path) {
     rc = path_lookup(fs, dir, &dino, &ddir);
     if (rc)
         return rc;
-    return filsys_unlink_in(fs, dino, name);
+    return filsys_unlink_in(fs, dino, name, defer);
 }
 
 int filsys_rmdir(filsys_t *fs, const char *path) {
@@ -181,7 +181,7 @@ int filsys_link(filsys_t *fs, const char *from, const char *to) {
     return filsys_link_in(fs, ino, dino, name);
 }
 
-int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int flags) {
+int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int flags, int defer) {
     if (!strcmp(from, to))
         return 0;
     char fdir[PATH_MAX], fname[64];
@@ -200,7 +200,7 @@ int filsys_rename(filsys_t *fs, const char *from, const char *to, unsigned int f
     rc = path_lookup(fs, tdir, &tdino, &tddir);
     if (rc)
         return rc;
-    return filsys_rename_in(fs, sdino, fname, tdino, tname, flags);
+    return filsys_rename_in(fs, sdino, fname, tdino, tname, flags, defer);
 }
 
 int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath) {

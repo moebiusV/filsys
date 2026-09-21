@@ -235,8 +235,13 @@ int main(int argc, char *argv[]) {
     if (fuse_opts[0]) strncat(fuse_opts, ",", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
     strncat(fuse_opts, "default_permissions", sizeof(fuse_opts) - strlen(fuse_opts) - 1);
 
+    fuse_mount_t mount;
+    memset(&mount, 0, sizeof mount);
+    mount.fs = k;
+
     fuse_ctx_t ctx;
     ctx.fs = k;
+    ctx.mount = &mount;
     ctx.uid = uid >= 0 ? (uid_t)uid : getuid();
     ctx.gid = gid >= 0 ? (gid_t)gid : getgid();
 

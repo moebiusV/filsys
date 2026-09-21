@@ -26,28 +26,6 @@
 #include <sys/stat.h>
 #include <time.h>
 
-/* Open-handle tracking for hard_remove: with hard_remove the kernel unlinks an
- * open file's name directly (no silly-rename to a hidden name), so the inode and
- * its blocks must outlive the name until the last handle closes.  Each open
- * inode carries a refcount; an unlink that drops nlink to 0 marks it pending and
- * defers the block/inode free to the final release.
- *
- * Only regular files (and symlinks) ever enter this table: the FUSE adapters
- * define no opendir/releasedir, so a directory is never "open" and rmdir /
- * directory-rename cannot reach the deferred-free path.  That is the reason
- * filsys_rmdir can free an inode unconditionally.  If opendir is ever added
- * (e.g. for a readdir-offset cache), that invariant has to be re-established,
- * or a directory can strand its blocks the same way.
- *
- * The table is a heap array that doubles on demand; the simultaneous-open count
- * is not a correctness limit (a fixed cap would surface as spurious -ENFILE on a
- * mount that legitimately holds many files open). */
-struct open_handle {
-    uint32_t ino;
-    int      refs;
-    int      pending;   /* nlink hit 0 while still open: free on last close */
-};
-
 struct filsys {
     const struct filsys_ops *ops;
     const struct filsys_dir_ops *dir;      /* fs->ops->dir, cached at open */
@@ -58,9 +36,6 @@ struct filsys {
     uid_t uid;                 /* reported ownership (default: the mounting user) */
     gid_t gid;
     int readonly;
-    struct open_handle *opens;
-    int nopen;
-    int nopen_cap;
 };
 
 /* ---- mode conversion ----------------------------------------------------- */
@@ -217,10 +192,9 @@ static int inode_destroy(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
     return 0;
 }
 
-/* Free a deferred (unlink/rename-while-open) inode: its name is gone and nlink
- * is 0, but an open handle still pins its blocks.  Re-read it by number and
- * tear it down. */
-static int free_deferred_ino(filsys_t *fs, uint32_t ino) {
+/* Free an orphaned inode (nlink 0, left behind by a deferred unlink/rename):
+ * re-read it by number and tear down its blocks and inode. */
+int filsys_free_ino(filsys_t *fs, uint32_t ino) {
     filsys_inode_t ip;
     if (read_inode(fs, ino, &ip))
         return -EIO;
@@ -380,28 +354,11 @@ int filsys_open(filsys_t **out, int edition, const char *path, int readonly,
 int filsys_close(filsys_t *fs) {
     if (!fs)
         return 0;
-    /* Drain any deferred (unlink-while-open) frees *before* the final flush, so
-     * they land inside that flush rather than after it.  A forced unmount (or
-     * the OpenBSD ifuse_try_unmount fork) may not send release for every open
-     * fd; draining here is the only path that frees those orphans.
-     *
-     * A process killed by SIGKILL never reaches filsys_close, so its in-memory
-     * open table is simply gone and the nlink==0 inode stays on disk; such
-     * persistent orphans must therefore remain detectable and recoverable by
-     * fsck (check.c) -- this drain cannot address them.
-     *
-     * Error contract: filsys_close must never return 0 if any step failed.  The
-     * final flush's error wins over a deferred-free error, because a failed
-     * flush can leave the whole image inconsistent whereas a failed deferred
-     * free is a single recoverable orphan. */
+    /* Error contract: filsys_close must never return 0 if any step failed.  The
+     * final flush's error wins over a mark_clean error, because a failed flush
+     * can leave the whole image inconsistent whereas a failed mark_clean is a
+     * recoverable flag. */
     int rc = 0;
-    for (int i = 0; i < fs->nopen; i++) {
-        if (fs->opens[i].pending) {
-            int r = free_deferred_ino(fs, fs->opens[i].ino);
-            if (r && !rc)
-                rc = r;                 /* first deferred-free failure */
-        }
-    }
     if (fs->fs) {
         /* A clean unmount clears s_fmod (the image is now consistent).  This
          * happens on the mount path, not in the backend close: fsck opens the
@@ -416,65 +373,10 @@ int filsys_close(filsys_t *fs) {
         if (r)
             rc = r;                     /* flush failure dominates */
     }
-    free(fs->opens);
     filsys_fl_free(fs->fs);
     free(fs->fs);
     free(fs);
     return rc;
-}
-
-/* Grow the open-handle table (doubling from an initial 16) and return 0, or
- * -ENFILE if the table cannot be grown. */
-static int open_reserve(filsys_t *fs) {
-    if (fs->nopen < fs->nopen_cap)
-        return 0;
-    int newcap = fs->nopen_cap ? fs->nopen_cap * 2 : 16;
-    struct open_handle *n = realloc(fs->opens, (size_t)newcap * sizeof *n);
-    if (!n)
-        return -ENFILE;
-    fs->opens = n;
-    fs->nopen_cap = newcap;
-    return 0;
-}
-
-int filsys_open_ino(filsys_t *fs, uint32_t ino) {
-    for (int i = 0; i < fs->nopen; i++)
-        if (fs->opens[i].ino == ino) {
-            fs->opens[i].refs++;
-            return 0;
-        }
-    if (open_reserve(fs) != 0)
-        return -ENFILE;
-    fs->opens[fs->nopen].ino = ino;
-    fs->opens[fs->nopen].refs = 1;
-    fs->opens[fs->nopen].pending = 0;
-    fs->nopen++;
-    return 0;
-}
-
-int filsys_close_ino(filsys_t *fs, uint32_t ino) {
-    for (int i = 0; i < fs->nopen; i++) {
-        if (fs->opens[i].ino != ino)
-            continue;
-        if (--fs->opens[i].refs > 0)
-            return 0;
-        if (!fs->opens[i].pending) {
-            fs->opens[i] = fs->opens[fs->nopen - 1];   /* drop the entry */
-            fs->nopen--;
-            return 0;
-        }
-        /* Unlinked while open: free the inode and its blocks now.  Keep the
-         * entry until the free commits -- if a fault-injected I/O fails midway,
-         * the pending marker survives so filsys_close can retry, rather than
-         * stranding a half-truncated inode nothing can find. */
-        int rc = free_deferred_ino(fs, ino);
-        if (rc == 0) {
-            fs->opens[i] = fs->opens[fs->nopen - 1];
-            fs->nopen--;
-        }
-        return rc;
-    }
-    return 0;   /* not tracked: nothing to release */
 }
 
 /* Test hook: swap the byte-slice transport (fault injection).  Internal, used
@@ -761,37 +663,24 @@ static int inode_create(filsys_t *fs, mode_t mode, uid_t uid, gid_t gid,
     return 0;
 }
 
-/* Is `ino` currently held open (hard_remove: an open handle pins the inode past
- * its last unlink, so the free is deferred to the final close)? */
-static int open_refs(filsys_t *fs, uint32_t ino) {
-    for (int i = 0; i < fs->nopen; i++)
-        if (fs->opens[i].ino == ino)
-            return fs->opens[i].refs;
-    return 0;
-}
-static void mark_pending(filsys_t *fs, uint32_t ino) {
-    for (int i = 0; i < fs->nopen; i++)
-        if (fs->opens[i].ino == ino)
-            fs->opens[i].pending = 1;
-}
-
 /* Remove `name` from parent `ddir` and decrement the named inode's link count.
- * Reports in *d whether the inode is now orphaned and whether it is pinned by
- * an open handle (hard_remove defers the free).  The caller persists the link
- * count and then either destroys (inode_destroy) or defers (mark_pending). */
+ * Reports in *d whether the inode is now orphaned and whether the caller asked
+ * to defer its free (`defer`): a deferred orphan is left on disk (mode
+ * preserved) for a later filsys_free_ino.  The caller persists the link count
+ * and then either destroys (inode_destroy) or leaves it orphaned. */
 typedef struct {
     int orphaned;   /* nlink dropped to 0: no names remain */
-    int deferred;   /* orphaned and still open */
+    int deferred;   /* orphaned and the caller asked to defer the free */
 } rm_desc_t;
 
 static int remove_name(filsys_t *fs, filsys_inode_t *ddir, const char *name,
-                       uint32_t ino, filsys_inode_t *ip, rm_desc_t *d) {
+                       uint32_t ino, filsys_inode_t *ip, int defer, rm_desc_t *d) {
     int rc = dir_remove(fs, ddir, name);
     if (rc) return rc;
     ip->nlink--;
     filsys_instr_link(ino, ip->nlink + 1, ip->nlink);
     d->orphaned = ip->nlink <= 0;
-    d->deferred = d->orphaned && open_refs(fs, ino) > 0;
+    d->deferred = d->orphaned && defer;
     return 0;
 }
 
@@ -963,7 +852,7 @@ int filsys_mknod_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
     return rc;
 }
 
-int filsys_unlink_in(filsys_t *fs, uint32_t dir, const char *name) {
+int filsys_unlink_in(filsys_t *fs, uint32_t dir, const char *name, int defer) {
     filsys_inode_t ddir;
     int rc = read_inode(fs, dir, &ddir);
     if (rc) return rc;
@@ -974,17 +863,13 @@ int filsys_unlink_in(filsys_t *fs, uint32_t dir, const char *name) {
     if (read_inode(fs, ino, &ip)) return -EIO;
     /* ---- validation/mutation line: no persistent write above ---- */
     rm_desc_t d;
-    rc = remove_name(fs, &ddir, name, ino, &ip, &d);
+    rc = remove_name(fs, &ddir, name, ino, &ip, defer, &d);
     if (rc) return rc;
     if (d.orphaned && !d.deferred)
         return inode_destroy(fs, ino, &ip);   /* last name gone, not open */
-    /* Still linked, or open (hard_remove): persist the decremented link count
-     * and, for the deferred case, mark the inode to be freed on last close. */
-    rc = write_inode(fs, ino, &ip);
-    if (rc) return rc;
-    if (d.deferred)
-        mark_pending(fs, ino);
-    return 0;
+    /* Still linked, or deferred (hard_remove): persist the decremented link
+     * count and leave the orphaned inode for a later filsys_free_ino. */
+    return write_inode(fs, ino, &ip);
 }
 
 int filsys_rmdir_in(filsys_t *fs, uint32_t dir, const char *name) {
@@ -1091,7 +976,7 @@ int filsys_link_in(filsys_t *fs, uint32_t src_ino, uint32_t dir, const char *nam
 enum { FS_RENAME_NOREPLACE = 1 };
 
 int filsys_rename_in(filsys_t *fs, uint32_t sdir, const char *sname,
-                     uint32_t tdir, const char *tname, unsigned int flags) {
+                     uint32_t tdir, const char *tname, unsigned int flags, int defer) {
     if (flags & ~FS_RENAME_NOREPLACE) return -EINVAL;   /* EXCHANGE/unknown unsupported */
     if (sdir == tdir && !strcmp(sname, tname)) return 0;
 
@@ -1187,9 +1072,9 @@ int filsys_rename_in(filsys_t *fs, uint32_t sdir, const char *sname,
         return rc;
     }
 
-    rc = filsys_unlink_in(fs, sdir, sname);
+    rc = filsys_unlink_in(fs, sdir, sname, 0);
     if (rc) {
-        filsys_unlink_in(fs, tdir, tname);   /* rollback: withdraw the link just added */
+        filsys_unlink_in(fs, tdir, tname, 0);   /* rollback: withdraw the link just added */
         if (had_target) {
             /* rollback: restore the removed target's name and inode (B/C). */
             dir_add(fs, &tdirip, tino, tname);
@@ -1247,14 +1132,14 @@ int filsys_rename_in(filsys_t *fs, uint32_t sdir, const char *sname,
      * the replaced target we orphaned above (tip_saved still holds its blocks).
      * On a failure here it stays an orphan -- a recoverable leak, not aliasing. */
     if (free_target) {
-        if (open_refs(fs, tino) > 0) {
+        if (defer) {
             /* hard_remove: the replaced target is still open.  Its nlink is
              * already persisted at 0 (for a file), so keep its mode non-zero --
              * mode != 0 is the on-disk invariant that stops ialloc from handing
-             * the number back out -- and defer the block/inode free to the last
-             * close.  Clearing mode here would let the next create() alias the
-             * still-open handle. */
-            mark_pending(fs, tino);
+             * the number back out -- and defer the block/inode free to a later
+             * filsys_free_ino.  Clearing mode here would let the next create()
+             * alias the still-open handle. */
+            ;
         } else {
             /* commit: tear the orphaned target down.  On failure it stays an
              * orphan -- a recoverable leak (B), not aliasing. */

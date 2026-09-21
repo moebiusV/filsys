@@ -13,11 +13,37 @@
 #include "filsys.h"
 #include <sys/statvfs.h>
 
+/* One open-handle-table entry: an inode with open file descriptions.  refs
+ * counts them, so the last release is the point to free an inode that was
+ * unlinked-while-open (hard_remove). */
 typedef struct {
-    filsys_t *fs;
-    uid_t     uid;   /* requesting process (per-call) */
-    gid_t     gid;
+    uint32_t ino;
+    int      refs;
+} fuse_open_t;
+
+/* Mount-wide FUSE state, passed as libfuse's private_data.  The open-handle
+ * table moved here from the engine: only FUSE has no kernel handle lifetime, so
+ * only FUSE needs to pin an inode across unlink-while-open. */
+typedef struct {
+    filsys_t    *fs;
+    fuse_open_t *open;
+    int          nopen, nopen_cap;
+} fuse_mount_t;
+
+typedef struct {
+    filsys_t     *fs;
+    fuse_mount_t *mount;   /* the open table lives here, not in the engine */
+    uid_t         uid;     /* requesting process (per-call) */
+    gid_t         gid;
 } fuse_ctx_t;
+
+/* Open-handle table: track an open inode, release it (freeing the inode on the
+ * last close if it was unlinked while open), report its refcount, and drain it
+ * at unmount. */
+int  fuse_open_track(fuse_mount_t *m, uint32_t ino);
+int  fuse_open_release(fuse_mount_t *m, uint32_t ino);
+int  fuse_open_refs(const fuse_mount_t *m, uint32_t ino);
+void fuse_open_drain(fuse_mount_t *m);
 
 /* readdir emits one entry per call; `off` is the engine's resume token
  * (filsys_dir_next's next_off, the offset of the following entry), which the

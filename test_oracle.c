@@ -83,7 +83,7 @@ static int mutate(const char *img) {
         rc = -1; goto out;
     }
     if (filsys_link(fs, "/oracle", "/oracle-link") ||          /* dir hard-link */
-        filsys_rename(fs, "/oracle/sub", "/oracle/renamed", 0) ||
+        filsys_rename(fs, "/oracle/sub", "/oracle/renamed", 0, 0) ||
         filsys_link(fs, "/oracle", "/oracle/renamed/loop") != -EINVAL) {
         rc = -1; goto out;                                     /* cycle refused */
     }

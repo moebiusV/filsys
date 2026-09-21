@@ -13,6 +13,78 @@
 #include <sys/sysmacros.h>
 #endif
 
+/* Open-handle table (the hard_remove pin, moved here from the engine).  Entries
+ * are keyed by inode number and carry a refcount; the table doubles on demand. */
+static int open_reserve(fuse_mount_t *m) {
+    if (m->nopen < m->nopen_cap)
+        return 0;
+    int newcap = m->nopen_cap ? m->nopen_cap * 2 : 16;
+    fuse_open_t *n = realloc(m->open, (size_t)newcap * sizeof *n);
+    if (!n)
+        return -ENFILE;
+    m->open = n;
+    m->nopen_cap = newcap;
+    return 0;
+}
+
+int fuse_open_track(fuse_mount_t *m, uint32_t ino) {
+    for (int i = 0; i < m->nopen; i++)
+        if (m->open[i].ino == ino) {
+            m->open[i].refs++;
+            return 0;
+        }
+    if (open_reserve(m) != 0)
+        return -ENFILE;
+    m->open[m->nopen].ino = ino;
+    m->open[m->nopen].refs = 1;
+    m->nopen++;
+    return 0;
+}
+
+int fuse_open_refs(const fuse_mount_t *m, uint32_t ino) {
+    for (int i = 0; i < m->nopen; i++)
+        if (m->open[i].ino == ino)
+            return m->open[i].refs;
+    return 0;
+}
+
+int fuse_open_release(fuse_mount_t *m, uint32_t ino) {
+    for (int i = 0; i < m->nopen; i++) {
+        if (m->open[i].ino != ino)
+            continue;
+        if (--m->open[i].refs > 0)
+            return 0;
+        /* Last close: if the inode was unlinked-while-open (nlink 0, mode
+         * preserved), free it now.  Keep the entry until the free commits, so a
+         * fault-injected failure is retried at drain time rather than stranding
+         * a half-truncated inode nothing can find. */
+        int rc = 0;
+        filsys_inode_t ip;
+        if (filsys_read_inode(m->fs, ino, &ip) == 0 && ip.nlink <= 0)
+            rc = filsys_free_ino(m->fs, ino);
+        if (rc == 0) {
+            m->open[i] = m->open[m->nopen - 1];
+            m->nopen--;
+        }
+        return rc;
+    }
+    return 0;   /* not tracked: nothing to release */
+}
+
+void fuse_open_drain(fuse_mount_t *m) {
+    /* A forced unmount may not send release for every open fd; free any
+     * unlinked-but-open inode now.  A process killed by SIGKILL never reaches
+     * this, so such orphans must stay recoverable by fsck (check.c). */
+    for (int i = 0; i < m->nopen; i++) {
+        filsys_inode_t ip;
+        if (filsys_read_inode(m->fs, m->open[i].ino, &ip) == 0 && ip.nlink <= 0)
+            filsys_free_ino(m->fs, m->open[i].ino);
+    }
+    free(m->open);
+    m->open = NULL;
+    m->nopen = m->nopen_cap = 0;
+}
+
 /* Fill a POSIX struct stat from the engine's plain-integer attributes. */
 static int fill_stat(filsys_t *fs, const filsys_inode_t *ip, struct stat *st)
 {
@@ -107,7 +179,7 @@ int fuse_op_open(fuse_ctx_t *c, const char *path, int flags, uint64_t *fh)
     if ((flags & O_ACCMODE) != O_RDONLY && filsys_is_readonly(c->fs))
         return -EROFS;
     *fh = ino;   /* read/write use the ino, so the fd outlives the directory entry */
-    return filsys_open_ino(c->fs, ino);   /* track the handle for hard_remove */
+    return fuse_open_track(c->mount, ino);   /* track the handle for hard_remove */
 }
 
 int fuse_op_read(fuse_ctx_t *c, uint64_t fh, char *buf, size_t size,
@@ -141,7 +213,7 @@ int fuse_op_create(fuse_ctx_t *c, const char *path, mode_t mode, uint64_t *fh)
     if (rc)
         return rc;
     *fh = ino;
-    return filsys_open_ino(c->fs, ino);   /* track the handle for hard_remove */
+    return fuse_open_track(c->mount, ino);   /* track the handle for hard_remove */
 }
 
 int fuse_op_mkdir(fuse_ctx_t *c, const char *path, mode_t mode)
@@ -166,7 +238,12 @@ int fuse_op_symlink(fuse_ctx_t *c, const char *target, const char *linkpath)
 
 int fuse_op_unlink(fuse_ctx_t *c, const char *path)
 {
-    return filsys_unlink(c->fs, path);
+    /* Defer the free if the inode is still open (hard_remove): the engine then
+     * leaves it orphaned and it is freed on the last release. */
+    uint32_t ino;
+    int defer = filsys_lookup(c->fs, path, &ino, NULL) == 0 &&
+                fuse_open_refs(c->mount, ino) > 0;
+    return filsys_unlink(c->fs, path, defer);
 }
 
 int fuse_op_rmdir(fuse_ctx_t *c, const char *path)
@@ -182,7 +259,11 @@ int fuse_op_link(fuse_ctx_t *c, const char *from, const char *to)
 int fuse_op_rename(fuse_ctx_t *c, const char *from, const char *to,
                      unsigned int flags)
 {
-    return filsys_rename(c->fs, from, to, flags);
+    /* Defer the free of a replaced target that is still open. */
+    uint32_t tino;
+    int defer = filsys_lookup(c->fs, to, &tino, NULL) == 0 &&
+                fuse_open_refs(c->mount, tino) > 0;
+    return filsys_rename(c->fs, from, to, flags, defer);
 }
 
 int fuse_op_chmod(fuse_ctx_t *c, const char *path, mode_t mode)
@@ -290,5 +371,5 @@ int fuse_op_fsync(fuse_ctx_t *c)
 
 int fuse_op_release(fuse_ctx_t *c, uint64_t fh)
 {
-    return filsys_close_ino(c->fs, (uint32_t)fh);
+    return fuse_open_release(c->mount, (uint32_t)fh);
 }

@@ -19,7 +19,8 @@ fuse_ctx_t fuse_ctx(void)
 {
     const struct fuse_context *fc = fuse_get_context();
     fuse_ctx_t c;
-    c.fs = (filsys_t *)fc->private_data;
+    c.mount = (fuse_mount_t *)fc->private_data;
+    c.fs = c.mount->fs;
     c.uid = fc->uid;
     c.gid = fc->gid;
     return c;
@@ -120,7 +121,9 @@ int fuse_release(const char *path, struct fuse_file_info *fi)
 
 void fuse_op_destroy(void *private_data)
 {
-    filsys_sync((filsys_t *)private_data);   /* flush on unmount; main() closes */
+    fuse_mount_t *m = (fuse_mount_t *)private_data;
+    fuse_open_drain(m);            /* free unlinked-but-open inodes */
+    filsys_sync(m->fs);            /* flush on unmount; main() closes */
 }
 
 int fuse_run_common(fuse_ctx_t *ctx, const fuse_mount_opts_t *opts,
@@ -140,7 +143,7 @@ int fuse_run_common(fuse_ctx_t *ctx, const fuse_mount_opts_t *opts,
         fuse_opt_add_arg(&args, "-o");
         fuse_opt_add_arg(&args, opts->fuse_opts);
     }
-    int rc = fuse_main(args.argc, args.argv, ops, ctx->fs);
+    int rc = fuse_main(args.argc, args.argv, ops, ctx->mount);
     fuse_opt_free_args(&args);
     return rc;
 }

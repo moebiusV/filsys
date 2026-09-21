@@ -294,7 +294,7 @@ static void run(const struct fmt *f) {
         snprintf(what, sizeof what, "%s write/read %lluB", f->name,
                  (unsigned long long)sizes[i]);
         ok(what, write_verify(fs, "/big", sizes[i]));
-        filsys_unlink(fs, "/big");
+        filsys_unlink(fs, "/big", 0);
     }
 
     /* One byte past the size-field ceiling must fail EFBIG and leak nothing. */
@@ -303,7 +303,7 @@ static void run(const struct fmt *f) {
         filsys_create(fs, "/big", 0644, 0, 0, NULL);
         ok("oversized write EFBIG",
            filsys_write(fs, "/big", &one, 1, (off_t)f->maxfile) == -EFBIG);
-        filsys_unlink(fs, "/big");
+        filsys_unlink(fs, "/big", 0);
     }
 
     /* Overflow boundaries: a negative offset, a size that would wrap the
@@ -321,7 +321,7 @@ static void run(const struct fmt *f) {
         ok("truncate -1 EFBIG", filsys_truncate(fs, "/big", -1) == -EFBIG);
         ok("truncate past ceiling EFBIG",
            filsys_truncate(fs, "/big", (off_t)f->maxfile + 1) == -EFBIG);
-        filsys_unlink(fs, "/big");
+        filsys_unlink(fs, "/big", 0);
     }
 
     /* Truncate cycles: write large, then shrink/grow/zero; the freed indirect
@@ -335,7 +335,7 @@ static void run(const struct fmt *f) {
         ok("truncate up", filsys_truncate(fs, "/big", (off_t)large) == 0);
         ok("truncate small", filsys_truncate(fs, "/big", 100) == 0);
         ok("truncate zero", filsys_truncate(fs, "/big", 0) == 0);
-        filsys_unlink(fs, "/big");
+        filsys_unlink(fs, "/big", 0);
         free(buf);
     }
 
@@ -402,7 +402,7 @@ static void run(const struct fmt *f) {
                 ssize_t m = filsys_readlink(fs, "/lnk2", b, sizeof b);
                 size_t want = L < sizeof b ? L : sizeof b;
                 ok(what, m == (ssize_t)want && memcmp(b, tgt2, want) == 0);
-                filsys_unlink(fs, "/lnk2");
+                filsys_unlink(fs, "/lnk2", 0);
             }
         } else {
             ok("symlink rejected (predates IFLNK)",
@@ -429,14 +429,14 @@ static void run(const struct fmt *f) {
         /* rename NOREPLACE: refuse to clobber, allow a fresh target */
         filsys_create(fs, "/ino2", 0644, 0, 0, NULL);
         ok("rename NOREPLACE over existing",
-           filsys_rename(fs, "/ino", "/ino2", 1) == -EEXIST);
+           filsys_rename(fs, "/ino", "/ino2", 1, 0) == -EEXIST);
         ok("rename NOREPLACE fresh",
-           filsys_rename(fs, "/ino", "/ino3", 1) == 0);
+           filsys_rename(fs, "/ino", "/ino3", 1, 0) == 0);
     }
 
-    /* open -> unlink -> read (hard_remove): an inode survives its name until
-     * the last open handle closes -- the data must stay readable after the
-     * unlink and be freed on the final release, not before. */
+    /* deferred unlink (hard_remove): an inode survives its name when the
+     * frontend asks the engine to defer the free; the data must stay readable
+     * and be freed by filsys_free_ino, not before. */
     {
         filsys_statfs_t st0;
         filsys_statfs(fs, &st0);   /* free blocks before (for the leak check) */
@@ -446,21 +446,20 @@ static void run(const struct fmt *f) {
         filsys_write(fs, "/open", wbuf, sizeof wbuf, 0);
         uint32_t ino; filsys_inode_t ip;
         filsys_lookup(fs, "/open", &ino, &ip);
-        ok("open_ino tracks", filsys_open_ino(fs, ino) == 0);
-        ok("unlink while open", filsys_unlink(fs, "/open") == 0);
-        ok("read after unlink",
+        ok("deferred unlink", filsys_unlink(fs, "/open", 1) == 0);
+        ok("read after deferred unlink",
            filsys_read_ino(fs, ino, rbuf, sizeof rbuf, 0) == (ssize_t)sizeof rbuf &&
            memcmp(wbuf, rbuf, sizeof wbuf) == 0);
-        ok("close_ino frees", filsys_close_ino(fs, ino) == 0);
+        ok("free_ino frees", filsys_free_ino(fs, ino) == 0);
         filsys_statfs_t st1;
         filsys_statfs(fs, &st1);
-        ok("unlink-open blocks freed", st1.bfree == st0.bfree);
+        ok("deferred-unlink blocks freed", st1.bfree == st0.bfree);
     }
 
-    /* open -> rename-over -> read (hard_remove): renaming /b over the open /a
-     * must not free /a's inode -- that would strand the handle and let the next
-     * create() reuse the number (the data-destroying bug).  The replaced inode
-     * survives until close_ino. */
+    /* deferred rename-over (hard_remove): renaming /b over the open /a must not
+     * free /a's inode -- that would strand the handle and let the next create()
+     * reuse the number (the data-destroying bug).  The replaced inode survives
+     * until filsys_free_ino. */
     {
         uint8_t ab[32], bb[32], rb[32] = {0};
         for (int i = 0; i < 32; i++) { ab[i] = 0x55; bb[i] = 0x2a; }   /* 7-bit: survives PDP-7 packing */
@@ -470,8 +469,7 @@ static void run(const struct fmt *f) {
         filsys_write(fs, "/b", bb, sizeof bb, 0);
         uint32_t ino; filsys_inode_t ip;
         filsys_lookup(fs, "/a", &ino, &ip);
-        ok("rename-over: open_ino", filsys_open_ino(fs, ino) == 0);
-        ok("rename-over: rename", filsys_rename(fs, "/b", "/a", 0) == 0);
+        ok("rename-over: defer", filsys_rename(fs, "/b", "/a", 0, 1) == 0);
         ok("rename-over: read survives",
            filsys_read_ino(fs, ino, rb, sizeof rb, 0) == (ssize_t)sizeof rb &&
            memcmp(ab, rb, sizeof ab) == 0);
@@ -479,7 +477,7 @@ static void run(const struct fmt *f) {
         filsys_create(fs, "/c", 0644, 0, 0, NULL);
         filsys_lookup(fs, "/c", &cino, &cip);
         ok("rename-over: inode not reused", cino != ino);
-        ok("rename-over: close frees", filsys_close_ino(fs, ino) == 0);
+        ok("rename-over: free", filsys_free_ino(fs, ino) == 0);
     }
 
     filsys_close(fs);
@@ -706,7 +704,7 @@ static void namelength(void) {
             snprintf(what, sizeof what, "%s %zu-char %s", f->name, L,
                      want == 0 ? "accepted" : "rejected");
             ok(what, got == want);
-            if (got == 0) filsys_unlink(fs, path);
+            if (got == 0) filsys_unlink(fs, path, 0);
         }
         filsys_close(fs);
         unlink(img);
@@ -920,7 +918,7 @@ static void review_regressions(void) {
         if (filsys_open(&fs, FILSYS_V7, img, 0, 0, 0, 0, NULL)) { ok("review 3: open", 0); unlink(img); return; }
         filsys_create(fs, "/keep", 0644, 0, 0, NULL);
         filsys_link(fs, "/keep", "/slot");
-        filsys_unlink(fs, "/slot");            /* free the slot; the inode survives */
+        filsys_unlink(fs, "/slot", 0);            /* free the slot; the inode survives */
 
         g_fmode = FAIL_WRITE;
         g_fail_at = 0;
@@ -992,11 +990,11 @@ static int op_write(filsys_t *fs) {
     return filsys_write(fs, "/f", buf, sizeof buf, 0);
 }
 static int op_truncate(filsys_t *fs) { return filsys_truncate(fs, "/f", 0); }
-static int op_unlink(filsys_t *fs)   { return filsys_unlink(fs, "/f"); }
+static int op_unlink(filsys_t *fs)   { return filsys_unlink(fs, "/f", 0); }
 static int op_rmdir(filsys_t *fs)    { return filsys_rmdir(fs, "/d"); }
 static int op_link(filsys_t *fs)     { return filsys_link(fs, "/f", "/g"); }
 static int op_symlink(filsys_t *fs)  { return filsys_symlink(fs, "/t", "/lnk"); }
-static int op_rename(filsys_t *fs)   { return filsys_rename(fs, "/f", "/g", 0); }
+static int op_rename(filsys_t *fs)   { return filsys_rename(fs, "/f", "/g", 0, 0); }
 
 /* rename with a replaced target, and a directory rename -- these exercise the
  * deferred-target-free and the parent-link/".." fixups that the plain
@@ -1013,13 +1011,13 @@ static void setup_dir2(filsys_t *fs) {    /* /d1 and /d2 both exist (empty) */
     filsys_mkdir(fs, "/d1", 0755, 0, 0);
     filsys_mkdir(fs, "/d2", 0755, 0, 0);
 }
-static int op_rename_over(filsys_t *fs)     { return filsys_rename(fs, "/f", "/g", 0); }
-static int op_rename_dir(filsys_t *fs)      { return filsys_rename(fs, "/d", "/e", 0); }
-static int op_rename_dir_over(filsys_t *fs) { return filsys_rename(fs, "/d1", "/d2", 0); }
+static int op_rename_over(filsys_t *fs)     { return filsys_rename(fs, "/f", "/g", 0, 0); }
+static int op_rename_dir(filsys_t *fs)      { return filsys_rename(fs, "/d", "/e", 0, 0); }
+static int op_rename_dir_over(filsys_t *fs) { return filsys_rename(fs, "/d1", "/d2", 0, 0); }
 
-/* Deferred free (hard_remove close): /f is created, opened, then unlinked, so it
- * is pending; the op closes the last handle, driving free_deferred_ino's itrunc
- * / write_inode / ifree sequence through the fault and crash injectors. */
+/* Deferred free (hard_remove): /f is created, then unlinked with defer=1 so its
+ * inode stays orphaned; the op frees it, driving filsys_free_ino's itrunc /
+ * write_inode / ifree sequence through the fault and crash injectors. */
 static uint32_t g_open_ino;
 static void setup_open_unlink(filsys_t *fs) {
     uint8_t buf[512];
@@ -1027,12 +1025,10 @@ static void setup_open_unlink(filsys_t *fs) {
     filsys_create(fs, "/f", 0644, 0, 0, NULL);
     filsys_write(fs, "/f", buf, sizeof buf, 0);
     filsys_inode_t ip;
-    if (filsys_lookup(fs, "/f", &g_open_ino, &ip) == 0) {
-        filsys_open_ino(fs, g_open_ino);
-        filsys_unlink(fs, "/f");
-    }
+    if (filsys_lookup(fs, "/f", &g_open_ino, &ip) == 0)
+        filsys_unlink(fs, "/f", 1);   /* defer: leave the inode orphaned */
 }
-static int op_close_ino(filsys_t *fs) { return filsys_close_ino(fs, g_open_ino); }
+static int op_close_ino(filsys_t *fs) { return filsys_free_ino(fs, g_open_ino); }
 
 /* Fail the 1st, 2nd, ... read/write of a single mutator and require, after every
  * injected failure: no aliasing (dup==0) and a salvage-recoverable filesystem
@@ -1394,7 +1390,7 @@ static void property_sequences(void) {
                         if (g_model[k] != ~0ULL && g_model[k] > 0) { s = k; break; }
                     }
                 if (g_model[s] != ~0ULL) {
-                    rc = filsys_unlink(fs, names[s]);
+                    rc = filsys_unlink(fs, names[s], 0);
                     if (rc == 0) g_model[s] = ~0ULL;
                 }
                 break;
@@ -1495,21 +1491,21 @@ static void rename_semantics(void) {
         filsys_mkdir(fs, "/d", 0755, 0, 0);
 
         snprintf(what, sizeof what, "%s rename file->dir EISDIR", f.name);
-        ok(what, filsys_rename(fs, "/f", "/d", 0) == -EISDIR);
+        ok(what, filsys_rename(fs, "/f", "/d", 0, 0) == -EISDIR);
         snprintf(what, sizeof what, "%s rename dir->file ENOTDIR", f.name);
-        ok(what, filsys_rename(fs, "/d", "/f", 0) == -ENOTDIR);
+        ok(what, filsys_rename(fs, "/d", "/f", 0, 0) == -ENOTDIR);
 
         if (f.edition != FILSYS_PDP7) {
             filsys_mkdir(fs, "/a", 0755, 0, 0);
             filsys_mkdir(fs, "/a/b", 0755, 0, 0);
             snprintf(what, sizeof what, "%s rename dir->descendant EINVAL", f.name);
-            ok(what, filsys_rename(fs, "/a", "/a/b/c", 0) == -EINVAL);
+            ok(what, filsys_rename(fs, "/a", "/a/b/c", 0, 0) == -EINVAL);
             /* The cycle check must run before any target removal: an existing
              * target inside the source subtree is left untouched. */
             filsys_create(fs, "/a/b/t", 0644, 0, 0, NULL);
             uint32_t tino; filsys_inode_t tip;
             snprintf(what, sizeof what, "%s rename dir->descendant keeps target", f.name);
-            ok(what, filsys_rename(fs, "/a", "/a/b/t", 0) == -EINVAL &&
+            ok(what, filsys_rename(fs, "/a", "/a/b/t", 0, 0) == -EINVAL &&
                       filsys_lookup(fs, "/a/b/t", &tino, &tip) == 0);
         }
 
@@ -1762,7 +1758,7 @@ static void bitmap_roundtrip(void) {
             rd = wr && filsys_read(fs, "/big", back, (size_t)sz, 0) == (int)sz &&
                  memcmp(buf, back, sz) == 0;
             trunc_ok = filsys_truncate(fs, "/big", 0) == 0;
-            filsys_unlink(fs, "/big");
+            filsys_unlink(fs, "/big", 0);
         }
         free(buf);
         free(back);
@@ -1889,11 +1885,11 @@ static void instrument_test(void) {
         filsys_write(fs, "/f", buf, sizeof buf, 0);   /* multi-block: several balloc */
         filsys_link(fs, "/f", "/g");
         filsys_mkdir(fs, "/d", 0755, 0, 0);
-        filsys_rename(fs, "/g", "/d/h", 0);
+        filsys_rename(fs, "/g", "/d/h", 0, 0);
         filsys_truncate(fs, "/f", 0);                 /* bfree the blocks back */
-        filsys_unlink(fs, "/d/h");
+        filsys_unlink(fs, "/d/h", 0);
         filsys_rmdir(fs, "/d");
-        filsys_unlink(fs, "/f");
+        filsys_unlink(fs, "/f", 0);
 
         int v = filsys_instr_violations();
         snprintf(what, sizeof what, "%s instrumentation (violations=%d)", f.name, v);
@@ -2001,12 +1997,12 @@ static void readdir_randomized(void) {
         for (int k = 0; k < N; k++) {
             if (k % 3 == 0) {
                 snprintf(nm, sizeof nm, "/d/f%d", k);
-                filsys_unlink(fs, nm);
+                filsys_unlink(fs, nm, 0);
             } else if (k % 5 == 0) {
                 char from[80], to[80];
                 snprintf(from, sizeof from, "/d/f%d", k);
                 snprintf(to, sizeof to, "/d/r%d", k);
-                filsys_rename(fs, from, to, 0);
+                filsys_rename(fs, from, to, 0, 0);
             }
         }
 

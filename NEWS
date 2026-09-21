@@ -21,6 +21,10 @@ fillers moved to the FUSE frontend.
   offset-resumable `filsys_dir_seek` / `filsys_dir_next` / `filsys_dir_release`,
   which returns a pointer into an internal buffer (name length via `namlen`,
   not NUL-terminated) instead of allocating a whole-directory array.
+- `filsys_open_ino` / `filsys_close_ino` are removed: the open-handle table
+  (the hard_remove pin) now lives in the FUSE frontend.  `filsys_unlink` and
+  `filsys_rename` take a `defer` flag that leaves an orphaned inode for a later
+  `filsys_free_ino`.
 
 filsys 4.1.2 (2026-09-14)
 =========================

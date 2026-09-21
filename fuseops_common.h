@@ -47,10 +47,10 @@ void fuse_op_destroy(void *private_data);
  * macFUSE init sets cfg->hard_remove = 1, and OpenBSD's FUSE2 already defaults
  * to it.  (2.11BSD's 63-byte names *could* hold the silly-rename name, so the
  * length argument doesn't bind there; hard_remove is forced uniformly anyway.
- * The deferred-free lifecycle filsys_open_ino/free_deferred_ino is built around
- * hard_remove semantics -- the name is gone and nlink drops to 0 on the first
- * unlink -- and letting one edition fall back to a hidden rename would leave an
- * untested path.) */
+ * The deferred-free lifecycle (the FUSE open-handle table plus filsys_free_ino)
+ * is built around hard_remove semantics -- the name is gone and nlink drops to
+ * 0 on the first unlink -- and letting one edition fall back to a hidden rename
+ * would leave an untested path.) */
 
 /* Behavioural differences between the FUSE2 and FUSE3 families, the "data" the
  * one shared fuse_run body reads.  Everything else the adapters differ in is a

@@ -84,12 +84,6 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
  * non-zero exit status -- the final write is the one a silent failure loses
  * the most. */
 int filsys_close(filsys_t *fs);
-/* Track an open handle on an inode (hard_remove): the kernel unlinks an open
- * file's name directly, so the inode and its blocks must outlive the name until
- * the last handle closes.  filsys_open_ino bumps the refcount; filsys_close_ino
- * drops it and, if the inode was unlinked while open, frees it then. */
-int filsys_open_ino(filsys_t *fs, uint32_t ino);
-int filsys_close_ino(filsys_t *fs, uint32_t ino);
 /* Flush the superblock (and pending metadata) without closing. */
 int filsys_sync(filsys_t *fs);
 int filsys_is_readonly(const filsys_t *fs);
@@ -183,11 +177,18 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid,
 /* rdev is the packed (major<<8 | minor) device word, as filsys_stat_t reports. */
 int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, uint32_t rdev,
                  uid_t uid, gid_t gid);
-int filsys_unlink(filsys_t *fs, const char *path);
+/* Unlink `path`.  When the inode reaches nlink 0 it is freed, unless `defer` is
+ * set, in which case it is left orphaned (mode preserved, so ialloc won't hand
+ * the number back out) for a later filsys_free_ino.  defer is the FUSE
+ * hard_remove pin: the frontend sets it while the inode is still open and frees
+ * it on the last release. */
+int filsys_unlink(filsys_t *fs, const char *path, int defer);
 int filsys_rmdir(filsys_t *fs, const char *path);
 int filsys_link(filsys_t *fs, const char *from, const char *to);
+/* As filsys_unlink, but `defer` governs the replaced target: a file renamed
+ * over while open is orphaned and left for a later filsys_free_ino. */
 int filsys_rename(filsys_t *fs, const char *from, const char *to,
-                  unsigned int flags);
+                  unsigned int flags, int defer);
 int filsys_symlink(filsys_t *fs, const char *target, const char *linkpath);
 int filsys_truncate(filsys_t *fs, const char *path, off_t size);
 int filsys_chmod(filsys_t *fs, const char *path, mode_t mode);
@@ -216,6 +217,9 @@ int filsys_chmod_ino(filsys_t *fs, uint32_t ino, mode_t mode);
 int filsys_chown_ino(filsys_t *fs, uint32_t ino, uid_t uid, gid_t gid);
 int filsys_utimens_ino(filsys_t *fs, uint32_t ino, const int64_t tv[2]);
 ssize_t filsys_readlink_ino(filsys_t *fs, uint32_t ino, char *buf, size_t size);
+/* Free an orphaned inode left behind by a deferred unlink/rename (hard_remove):
+ * re-reads it and tears down its blocks and inode. */
+int filsys_free_ino(filsys_t *fs, uint32_t ino);
 
 int filsys_create_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
                      uid_t uid, gid_t gid, uint32_t *ino);
@@ -225,11 +229,11 @@ int filsys_mknod_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
                     uint32_t rdev, uid_t uid, gid_t gid);
 int filsys_symlink_in(filsys_t *fs, const char *target, uint32_t dir,
                       const char *name);
-int filsys_unlink_in(filsys_t *fs, uint32_t dir, const char *name);
+int filsys_unlink_in(filsys_t *fs, uint32_t dir, const char *name, int defer);
 int filsys_rmdir_in(filsys_t *fs, uint32_t dir, const char *name);
 int filsys_link_in(filsys_t *fs, uint32_t src_ino, uint32_t dir, const char *name);
 int filsys_rename_in(filsys_t *fs, uint32_t sdir, const char *sname,
-                     uint32_t tdir, const char *tname, unsigned int flags);
+                     uint32_t tdir, const char *tname, unsigned int flags, int defer);
 
 #ifdef __cplusplus
 }
