@@ -112,6 +112,14 @@ void filsys_set_io(filsys_t *fs, const filsys_io_t *io);
  * after each crash-prefix / property step. */
 int filsys_invariants(filsys_t *fs, filsys_check_t *rep);
 
+/* Right-size the free-list caches (fl.free / fl.inode) from a descriptor's
+ * nicfree/nicinod instead of the fixed 946-entry worst case every mount used to
+ * carry.  `desc` is the prototype descriptor: the edition's own `desc` is copied
+ * in later by the backend open, so the caller passes the one it already has.
+ * filsys_fl_free is NULL-safe (free(NULL) is a no-op) and pairs with it. */
+int filsys_fl_alloc(filsys_edition_t *fs, const filsys_desc_t *desc);
+void filsys_fl_free(filsys_edition_t *fs);
+
 /* ---- image creation ------------------------------------------------------ */
 
 /* Options for filsys_mkfs().  Zero/NULL = the edition's default.  `boot` is a

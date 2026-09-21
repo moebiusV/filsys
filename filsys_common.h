@@ -27,11 +27,11 @@ struct filsys_edition;   /* forward: the per-mount state (defined below) */
 
 /* Engine-wide bounds the in-core types are sized by.  The names keep the V7/V8
  * prefix they inherited (they were the largest member of each format's cache
- * depth); here they are the in-core maxima the union-sized freelist_state is
- * built from, not a per-format on-disk value. */
+ * depth).  V7_NICINOD is the on-disk s_inode[] size (every edition stores 100);
+ * V8_NICFREE_LARGE is the deepest per-edition free-block cache (V9). */
 enum {
     V7_MAXBSIZE      = 8192,  /* largest block size the engine supports (512..8192; V9's 8K) */
-    V7_NICINOD       = 100,   /* free-inode cache depth (V7 family) */
+    V7_NICINOD       = 100,   /* free-inode cache depth, and the on-disk s_inode[] size */
     V8_NICFREE_LARGE = 946,   /* deepest free-block cache (V9's 8K superblock) */
 };
 
@@ -76,12 +76,14 @@ typedef filsys_inode_t  v7_inode_t;
 /* In-core free-list allocator state (V6/V7/BSD211; the PDP-7 keeps its own
  * on-disk head, V1 a bitmap).  This was the free-list cache living directly in
  * filsys_edition_t; it moves here so the generic descriptor no longer carries
- * one allocator's runtime state. */
+ * one allocator's runtime state.  free/inode are right-sized at mount from the
+ * descriptor's nicfree/nicinod (filsys_fl_alloc), not the 946-entry worst case
+ * every mount used to carry inline. */
 typedef struct {
     uint16_t nfree;
-    uint32_t free[V8_NICFREE_LARGE]; /* max free-cache depth: 50/64/100/178/946 */
     uint16_t ninode;
-    uint16_t inode[V7_NICINOD];
+    uint32_t *free;                  /* desc.nicfree entries (heap, at mount) */
+    uint16_t *inode;                 /* desc.nicinod entries (heap, at mount) */
     uint32_t tfree;                  /* total free blocks (s_tfree) */
     uint32_t tinode;                 /* total free inodes (s_tinode) */
 } freelist_state;

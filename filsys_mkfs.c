@@ -602,6 +602,8 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
     }
 
     int rc;
+    if (filsys_fl_alloc(&fs, &fs.desc))
+        return fail("out of memory\n");
     if (edition == FILSYS_PDP7) {
         if (opts->blocks != 0)
             return fail("pdp7: size is fixed by the RB09 geometry (8000 blocks/surface)\n");
@@ -630,6 +632,7 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
      * op, which for the V8-family bitmap editions heap-allocates fs.v8_bits.
      * A freshly made fs has no close path to free it, so release it here. */
     free(fs.v8_bits);
+    filsys_fl_free(&fs);
 
     if (rc)
         *errmsg = mkfs_errbuf;

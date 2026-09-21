@@ -246,8 +246,13 @@ int main(int argc, char **argv)
         int readonly = !(salvage || resolve || clri || preen || yes || ask);
         filsys_edition_t fs = {0};
         fs.desc = filsys_getformat(edition);
+        if (filsys_fl_alloc(&fs, &fs.desc)) {
+            fprintf(stderr, "%s: out of memory\n", path);
+            return 1;
+        }
         int rc = fs.desc.ops->open(&fs, path, readonly, &fs.desc, offblock * fs.desc.bsize);
         if (rc < 0) {
+            filsys_fl_free(&fs);
             fprintf(stderr, "%s: %s\n", path, strerror(-rc));
             return 1;
         }
@@ -265,6 +270,7 @@ int main(int argc, char **argv)
         int cl = fs.desc.ops->close(&fs);
         if (cl)
             fprintf(stderr, "%s: final flush failed: %s\n", path, strerror(-cl));
+        filsys_fl_free(&fs);
         return (err || cl) ? 1 : 0;
     }
 
@@ -358,8 +364,13 @@ int main(int argc, char **argv)
                 errmsg ? errmsg : strerror(-rc));
         return 2;
     }
+    if (filsys_fl_alloc(&fs, &fs.desc)) {
+        fprintf(stderr, "%s: out of memory\n", path);
+        return 2;
+    }
     rc = v7fs_open(&fs, path, readonly, &fs.desc, offblock * fs.desc.bsize);
     if (rc < 0) {
+        filsys_fl_free(&fs);
         fprintf(stderr, "%s: %s\n", path, strerror(-rc));
         return 1;
     }
@@ -383,5 +394,6 @@ int main(int argc, char **argv)
     int cl = v7fs_close(&fs);
     if (cl)
         fprintf(stderr, "%s: final flush failed: %s\n", path, strerror(-cl));
+    filsys_fl_free(&fs);
     return (err || cl) ? 1 : 0;
 }

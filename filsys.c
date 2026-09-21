@@ -269,6 +269,35 @@ static int lock_image(filsys_t *fs, const char *path, uint64_t offset) {
     return -EBUSY;
 }
 
+/* Right-size the free-list caches from the descriptor (refactoring 4).  The old
+ * freelist_state embedded free[946]/inode[100] inline, so every mount carried the
+ * V9 worst case; now the two arrays are heap-sized from nicfree/nicinod.  A
+ * nicfree/nicinod of 0 (V1/PDP-7, which use a bitmap or a word-addressed head)
+ * leaves the pointer NULL and unallocated. */
+int filsys_fl_alloc(filsys_edition_t *fs, const filsys_desc_t *desc) {
+    if (desc->nicfree) {
+        fs->fl.free = calloc(desc->nicfree, sizeof(uint32_t));
+        if (!fs->fl.free)
+            return -ENOMEM;
+    }
+    if (desc->nicinod) {
+        fs->fl.inode = calloc(desc->nicinod, sizeof(uint16_t));
+        if (!fs->fl.inode) {
+            free(fs->fl.free);
+            fs->fl.free = NULL;
+            return -ENOMEM;
+        }
+    }
+    return 0;
+}
+
+void filsys_fl_free(filsys_edition_t *fs) {
+    free(fs->fl.free);
+    free(fs->fl.inode);
+    fs->fl.free = NULL;
+    fs->fl.inode = NULL;
+}
+
 int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly,
                      uint64_t offset, uid_t uid, gid_t gid, const char *packing,
                      const char *arch, int force, const filsys_geom_t *geom,
@@ -303,8 +332,15 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
         free(fs);
         return -ENOMEM;
     }
+    rc = filsys_fl_alloc(fs->fs, &fmt);
+    if (rc) {
+        free(fs->fs);
+        free(fs);
+        return rc;
+    }
     rc = fs->ops->open(fs->fs, path, readonly, &fmt, offset);
     if (rc) {
+        filsys_fl_free(fs->fs);
         free(fs->fs);
         free(fs);
         return rc;
@@ -313,6 +349,7 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
         rc = lock_image(fs, path, offset);
         if (rc) {
             fs->ops->close(fs->fs);
+            filsys_fl_free(fs->fs);
             free(fs->fs);
             free(fs);
             return rc;
@@ -327,6 +364,7 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
         rc = fs->ops->mark_dirty(fs->fs);
         if (rc) {
             fs->ops->close(fs->fs);
+            filsys_fl_free(fs->fs);
             free(fs->fs);
             free(fs);
             return rc;
@@ -381,6 +419,7 @@ int filsys_close(filsys_t *fs) {
             rc = r;                     /* flush failure dominates */
     }
     free(fs->opens);
+    filsys_fl_free(fs->fs);
     free(fs->fs);
     free(fs);
     return rc;
