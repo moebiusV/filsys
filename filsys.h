@@ -156,6 +156,20 @@ ssize_t filsys_write_ino(filsys_t *fs, uint32_t ino, const void *buf, size_t siz
  * names the inode, so these bypass the path lookup that would return ENOENT. */
 int filsys_stat_ino(filsys_t *fs, uint32_t ino, filsys_stat_t *st);
 int filsys_truncate_ino(filsys_t *fs, uint32_t ino, off_t size);
+/* filsys_bmap_ino's *type: the mapped extent is a hole (reads back as zero) or
+ * a physical run. */
+enum {
+    FILSYS_BMAP_HOLE   = 0,
+    FILSYS_BMAP_MAPPED = 1,
+};
+/* Map a logical byte range [off, off+len) to a physical byte extent, in iomap's
+ * shape.  *paddr / *plen are the physical address and length of the contiguous
+ * run, both in bytes (OpenBSD's vop_bmap divides by DEV_BSIZE for a block
+ * number); *plen is clamped to len and to where the physical mapping stops
+ * being contiguous, so readahead gets the longest safe run.  Returns 0, or
+ * -errno (an unreadable indirect block). */
+int filsys_bmap_ino(filsys_t *fs, uint32_t ino, uint64_t off, uint64_t len,
+                    uint64_t *paddr, uint64_t *plen, int *type);
 /* Read a symlink's target (no trailing NUL) into buf; returns the byte count.
  * -ENOSYS if the edition predates symlinks, -EINVAL if path is not a symlink. */
 ssize_t filsys_readlink(filsys_t *fs, const char *path, char *buf, size_t size);

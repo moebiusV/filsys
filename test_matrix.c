@@ -2072,6 +2072,45 @@ static void query_eof_declines(void) {
        pid > 0 && WIFEXITED(st) && WEXITSTATUS(st) == 0);
 }
 
+/* The extent-mapping primitive (filsys_bmap_ino): a written block maps to a
+ * physical run, an unwritten block is a hole, and the extent clamps at the
+ * first transition. */
+static void bmap_extent(void) {
+    char img[64] = "test_matrix_bmap.img";
+    unlink(img);
+    if (mkfs_image(FILSYS_V7, img, 2000, NULL) != 0) { ok("bmap: mkfs", 0); return; }
+    filsys_t *fs;
+    if (filsys_open(&fs, FILSYS_V7, img, 0, 0, 0, 0, NULL)) { ok("bmap: open", 0); unlink(img); return; }
+
+    uint32_t ino;
+    if (filsys_create(fs, "/f", 0644, 0, 0, &ino) != 0) {
+        ok("bmap: create", 0);
+        filsys_close(fs);
+        unlink(img);
+        return;
+    }
+
+    uint8_t buf[512];
+    memset(buf, 0xab, sizeof buf);
+    filsys_write(fs, "/f", buf, 512, 0);      /* block 0 */
+    filsys_write(fs, "/f", buf, 512, 1024);   /* block 2; block 1 stays a hole */
+
+    uint64_t paddr, plen;
+    int type;
+    int r0 = filsys_bmap_ino(fs, ino, 0, 512, &paddr, &plen, &type);
+    ok("bmap: written block is mapped",
+       r0 == 0 && type == FILSYS_BMAP_MAPPED && paddr != 0 && plen == 512);
+    int r1 = filsys_bmap_ino(fs, ino, 512, 512, &paddr, &plen, &type);
+    ok("bmap: unwritten block is a hole",
+       r1 == 0 && type == FILSYS_BMAP_HOLE && paddr == 0 && plen == 512);
+    int r2 = filsys_bmap_ino(fs, ino, 0, 1024, &paddr, &plen, &type);
+    ok("bmap: extent clamps at the hole",
+       r2 == 0 && type == FILSYS_BMAP_MAPPED && plen == 512);
+
+    filsys_close(fs);
+    unlink(img);
+}
+
 int main(void) {
     /* The slow soak (fault injection x editions, exhaustive crash-prefix
      * enumeration, property-based op sequences) runs only when
@@ -2119,6 +2158,7 @@ int main(void) {
         query_eof_declines();
         stat_blocks_eio();
         review_regressions();
+        bmap_extent();
     }
     if (want_fault) fault_test();
     if (want_crash) crash_prefix_test();

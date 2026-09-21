@@ -1341,6 +1341,46 @@ int filsys_stat_ino(filsys_t *fs, uint32_t ino, filsys_stat_t *st) {
     return filsys_stat_inode(fs, &ip, st);
 }
 
+int filsys_bmap_ino(filsys_t *fs, uint32_t ino, uint64_t off, uint64_t len,
+                    uint64_t *paddr, uint64_t *plen, int *type)
+{
+    filsys_inode_t ip;
+    int rc = read_inode(fs, ino, &ip);
+    if (rc) return rc;
+    uint32_t bsize = fs->ops->blocksize(&fs->fs->desc);
+    uint32_t lbn = (uint32_t)(off / bsize);
+    uint32_t boff = (uint32_t)(off % bsize);
+
+    uint32_t bno;
+    rc = bmap(fs, &ip, lbn, 0, &bno);
+    if (rc) return rc;
+
+    *type  = bno ? FILSYS_BMAP_MAPPED : FILSYS_BMAP_HOLE;
+    *paddr = (uint64_t)bno * bsize + boff;
+    *plen  = bsize - boff;
+    if (*plen > len)
+        *plen = len;
+
+    /* Extend the run while the next logical block maps to the next consecutive
+     * physical block (a mapped run) or to another hole. */
+    uint32_t cur = lbn + 1;
+    uint32_t expect = bno ? bno + 1 : 0;
+    while (*plen < len) {
+        uint32_t nb;
+        if (bmap(fs, &ip, cur, 0, &nb))
+            break;                       /* can't walk further: end the extent */
+        if (nb != expect)
+            break;                       /* hole/mapped transition, or non-contiguous */
+        uint64_t chunk = bsize;
+        if (*plen + chunk > len)
+            chunk = len - *plen;
+        *plen += chunk;
+        cur++;
+        expect = nb ? nb + 1 : 0;
+    }
+    return 0;
+}
+
 ssize_t filsys_readlink_ino(filsys_t *fs, uint32_t ino, char *buf, size_t size) {
     if (!fs->fs->desc.iflnk)
         return -ENOSYS;   /* this edition predates symlinks */
