@@ -71,11 +71,11 @@ int v1fs_open(v1fs_t *fs, const char *path, int readonly,
     }
     fs->imgsize = imgsize;
 
-    fs->bm.freemap = malloc(fs->bm.freemap_bytes);
-    fs->bm.inodemap = malloc(fs->bm.inodemap_bytes);
+    fs->bm.freemap = filsys_alloc(FILSYS_AL_MOUNT, fs->bm.freemap_bytes, 0);
+    fs->bm.inodemap = filsys_alloc(FILSYS_AL_MOUNT, fs->bm.inodemap_bytes, 0);
     if (!fs->bm.freemap || !fs->bm.inodemap) {
-        free(fs->bm.freemap);
-        free(fs->bm.inodemap);
+        filsys_free(FILSYS_AL_MOUNT, fs->bm.freemap, fs->bm.freemap_bytes);
+        filsys_free(FILSYS_AL_MOUNT, fs->bm.inodemap, fs->bm.inodemap_bytes);
         close(fs->fd);
         fs->fd = -1;
         return -ENOMEM;
@@ -103,8 +103,8 @@ int v1fs_close(v1fs_t *fs) {
         close(fs->fd);
         fs->fd = -1;
     }
-    free(fs->bm.freemap);
-    free(fs->bm.inodemap);
+    filsys_free(FILSYS_AL_MOUNT, fs->bm.freemap, fs->bm.freemap_bytes);
+    filsys_free(FILSYS_AL_MOUNT, fs->bm.inodemap, fs->bm.inodemap_bytes);
     fs->bm.freemap = NULL;
     fs->bm.inodemap = NULL;
     return rc;

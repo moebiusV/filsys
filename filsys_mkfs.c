@@ -294,7 +294,7 @@ static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
      * applies the per-edition interleave (Coherent maptab / V6 stride / none)
      * against an empty used-block map -- nothing is allocated yet. */
     uint32_t nblk = fs->desc.ops->data_end(fs) - v7_data_first(fs);
-    uint8_t *bmap = calloc((size_t)(nblk + 7) / 8, 1);
+    uint8_t *bmap = filsys_alloc(FILSYS_AL_SCRATCH, (size_t)(nblk + 7) / 8, 1);
     if (!bmap)
         return fail("out of memory\n");
     filsys_chkctx_t cx;
@@ -302,7 +302,7 @@ static int mkfs_common(filsys_edition_t *fs, const struct mkfs_fmt *fmt,
     cx.bmap = bmap;
     cx.nblk = nblk;
     fs->desc.ops->makefree(fs, &cx);
-    free(bmap);
+    filsys_free(FILSYS_AL_SCRATCH, bmap, (size_t)(nblk + 7) / 8);
 
     /* reserved + root inodes and directories */
     uint32_t used = fmt->seed(fs);
@@ -631,7 +631,7 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
     /* mkfs_common builds the free space by reusing the check driver's salvage
      * op, which for the V8-family bitmap editions heap-allocates fs.v8_bits.
      * A freshly made fs has no close path to free it, so release it here. */
-    free(fs.v8_bits);
+    filsys_free(FILSYS_AL_MOUNT, fs.v8_bits, (size_t)(fs.v8_nbits + 7) / 8);
     filsys_fl_free(&fs);
 
     if (rc)

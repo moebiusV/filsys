@@ -138,4 +138,22 @@ typedef struct {
     uint32_t namemax;  /* longest filename */
 } filsys_statfs_t;
 
+/* ---- allocation seam ------------------------------------------------------
+ *
+ * The engine calls filsys_alloc/filsys_free directly; which arm supplies them
+ * is a build/link choice, not a runtime vtable (the userspace arm is
+ * malloc/calloc/free).  kind lets a kernel arm route the fixed-size hot kinds
+ * to pool(9) and the rest to km_alloc(..., kd_nowait) without the engine
+ * learning pools exist.  filsys_free carries the size because km_free(9)
+ * requires it. */
+typedef enum {
+    FILSYS_AL_MOUNT,    /* filsys_edition_t + its right-sized caches */
+    FILSYS_AL_BLOCK,    /* one logical block, <= V7_MAXBSIZE */
+    FILSYS_AL_BLKLIST,  /* blocktree's growable block vector */
+    FILSYS_AL_SCRATCH,  /* short-lived, variable */
+} filsys_alloc_kind_t;
+
+void *filsys_alloc(filsys_alloc_kind_t kind, size_t n, int zero);
+void  filsys_free(filsys_alloc_kind_t kind, void *p, size_t n);
+
 #endif /* FILSYS_ENGINE_H */

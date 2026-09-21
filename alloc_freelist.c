@@ -224,7 +224,7 @@ void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep
         v8_walk_free_bitmap(fs, cx, rep);
         return;
     }
-    uint8_t *seen = calloc(f->fsize ? f->fsize : 1, 1);
+    uint8_t *seen = filsys_alloc(FILSYS_AL_SCRATCH, f->fsize ? f->fsize : 1, 1);
     if (!seen)
         return;
     uint16_t n = f->fl.nfree;
@@ -278,7 +278,7 @@ void v7_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep
                 cur[i] = v7_get_daddr(f, blk + v7_chain_free_off(f) + f->desc.daddr_wid * i);
         }
     }
-    free(seen);
+    filsys_free(FILSYS_AL_SCRATCH, seen, f->fsize ? f->fsize : 1);
 }
 
 void v7_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {

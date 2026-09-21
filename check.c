@@ -26,10 +26,10 @@ static int is_regular(const filsys_edition_t *fs, const filsys_inode_t *ip);
 
 /* Initialize an edition-level directory iterator.  check.c drives dir_iter
  * directly rather than the public filsys_dir_seek, which needs a filsys_t; the
- * state and its chunk buffer are one allocation, freed with free() when done. */
+ * state and its chunk buffer are one allocation, freed with filsys_free. */
 static int check_iter_begin(filsys_edition_t *fs, const filsys_inode_t *ip,
                             filsys_iter_state_t **out) {
-    filsys_iter_state_t *st = malloc(sizeof(*st) + V7_MAXBSIZE);
+    filsys_iter_state_t *st = filsys_alloc(FILSYS_AL_SCRATCH, sizeof(*st) + V7_MAXBSIZE, 0);
     if (!st)
         return -ENOMEM;
     st->fs = fs;
@@ -82,21 +82,21 @@ int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
     filsys_chkctx_t cx;
     memset(&cx, 0, sizeof(cx));
     cx.nblk = nblk;
-    cx.bmap = calloc((nblk + 7) / 8, 1);
+    cx.bmap = filsys_alloc(FILSYS_AL_SCRATCH, (nblk + 7) / 8, 1);
     if (!cx.bmap)
         return -ENOMEM;
     /* owner table: name the inode that first claimed each block (BSD fsck's
      * phase-1b rescan), so a duplicate report says who already owns it. */
-    cx.owner = calloc(nblk + 1, sizeof(uint32_t));
+    cx.owner = filsys_alloc(FILSYS_AL_SCRATCH, (nblk + 1) * sizeof(uint32_t), 1);
     if (!cx.owner) {
-        free(cx.bmap);
+        filsys_free(FILSYS_AL_SCRATCH, cx.bmap, (nblk + 7) / 8);
         return -ENOMEM;
     }
 
-    uint8_t *state = calloc(maxino + 1, 1);
+    uint8_t *state = filsys_alloc(FILSYS_AL_SCRATCH, maxino + 1, 1);
     if (!state) {
-        free(cx.owner);
-        free(cx.bmap);
+        filsys_free(FILSYS_AL_SCRATCH, cx.owner, (nblk + 1) * sizeof(uint32_t));
+        filsys_free(FILSYS_AL_SCRATCH, cx.bmap, (nblk + 7) / 8);
         return -ENOMEM;
     }
 
@@ -131,18 +131,18 @@ int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
     if (cx.bad_blocks > FILSYS_MAXBADOK) {
         printf("too many bad blocks (%u); skipping free-list and directory checks\n",
                cx.bad_blocks);
-        free(state);
-        free(cx.owner);
-        free(cx.bmap);
+        filsys_free(FILSYS_AL_SCRATCH, state, maxino + 1);
+        filsys_free(FILSYS_AL_SCRATCH, cx.owner, (nblk + 1) * sizeof(uint32_t));
+        filsys_free(FILSYS_AL_SCRATCH, cx.bmap, (nblk + 7) / 8);
         return -1;
     }
 
     if (mode & FILSYS_CK_SALVAGE) {
         uint32_t nf = o->makefree(fs, &cx);
         printf("salvaged: free space rebuilt (%u free blocks)\n", nf);
-        free(state);
-        free(cx.owner);
-        free(cx.bmap);
+        filsys_free(FILSYS_AL_SCRATCH, state, maxino + 1);
+        filsys_free(FILSYS_AL_SCRATCH, cx.owner, (nblk + 1) * sizeof(uint32_t));
+        filsys_free(FILSYS_AL_SCRATCH, cx.bmap, (nblk + 7) / 8);
         return rep->errors ? -1 : 0;
     }
 
@@ -181,7 +181,7 @@ int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
     }
 
     /* 5. dcheck: directory link counts. */
-    uint8_t *ecount = calloc(maxino + 1, 1);
+    uint8_t *ecount = filsys_alloc(FILSYS_AL_SCRATCH, maxino + 1, 1);
     if (ecount) {
         for (uint32_t ino = 1; ino <= maxino; ino++) {
             filsys_inode_t ip;
@@ -212,7 +212,7 @@ int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
                     if (ecount[dno] == 0)
                         ecount[dno] = 0377;
                 }
-                free(it);
+                filsys_free(FILSYS_AL_SCRATCH, it, sizeof(filsys_iter_state_t) + V7_MAXBSIZE);
             }
         }
         for (uint32_t ino = 1; ino <= maxino; ino++) {
@@ -253,12 +253,12 @@ int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
         }
         if (mode & (FILSYS_CK_PREEN | FILSYS_CK_YES | FILSYS_CK_ASK))
             filsys_preen(fs, ecount, state, maxino, mode);
-        free(ecount);
+        filsys_free(FILSYS_AL_SCRATCH, ecount, maxino + 1);
     }
 
-    free(state);
-    free(cx.owner);
-    free(cx.bmap);
+    filsys_free(FILSYS_AL_SCRATCH, state, maxino + 1);
+    filsys_free(FILSYS_AL_SCRATCH, cx.owner, (nblk + 1) * sizeof(uint32_t));
+    filsys_free(FILSYS_AL_SCRATCH, cx.bmap, (nblk + 7) / 8);
 
     if (!(mode & FILSYS_CK_QUIET))
         printf("used blocks=%u  free blocks=%u  missing=%u  dup=%u  inodes=%u/%u used  errors=%u\n",
@@ -338,7 +338,7 @@ static void ncheck_dir(filsys_edition_t *fs, uint32_t dirino, const char *prefix
         if (fs->desc.ops->inode->read_inode(fs, eino, &cip) == 0 && fs_is_dir(fs, &cip))
             ncheck_dir(fs, eino, path, target, found, depth + 1);
     }
-    free(it);
+    filsys_free(FILSYS_AL_SCRATCH, it, sizeof(filsys_iter_state_t) + V7_MAXBSIZE);
 }
 
 int filsys_ncheck(filsys_edition_t *fs, uint32_t ino)
@@ -390,7 +390,7 @@ static uint32_t count_links_to(filsys_edition_t *fs, uint32_t target, uint32_t m
             if (eino == target)
                 cnt++;
         }
-        free(it);
+        filsys_free(FILSYS_AL_SCRATCH, it, sizeof(filsys_iter_state_t) + V7_MAXBSIZE);
     }
     return cnt;
 }
@@ -541,7 +541,7 @@ int filsys_resolve_dups(filsys_edition_t *fs)
     filsys_chkctx_t cx;
     memset(&cx, 0, sizeof(cx));
     cx.nblk = nblk;
-    cx.bmap = calloc((nblk + 7) / 8, 1);
+    cx.bmap = filsys_alloc(FILSYS_AL_SCRATCH, (nblk + 7) / 8, 1);
     if (!cx.bmap)
         return -ENOMEM;
 
@@ -576,13 +576,16 @@ int filsys_resolve_dups(filsys_edition_t *fs)
             if (cx.bmap[off >> 3] & m) {
                 if (ndup == cap) {
                     size_t ncap = cap ? cap * 2 : 16;
-                    struct dup *nb = realloc(dups, ncap * sizeof(*nb));
+                    struct dup *nb = filsys_alloc(FILSYS_AL_SCRATCH, ncap * sizeof(*nb), 0);
                     if (!nb) {
                         printf("out of memory tracking duplicates\n");
-                        free(dups);
-                        free(cx.bmap);
+                        filsys_free(FILSYS_AL_SCRATCH, dups, cap * sizeof(*dups));
+                        filsys_free(FILSYS_AL_SCRATCH, cx.bmap, (nblk + 7) / 8);
                         return -ENOMEM;
                     }
+                    if (dups)
+                        memcpy(nb, dups, ndup * sizeof(*nb));
+                    filsys_free(FILSYS_AL_SCRATCH, dups, cap * sizeof(*dups));
                     dups = nb;
                     cap = ncap;
                 }
@@ -599,7 +602,7 @@ int filsys_resolve_dups(filsys_edition_t *fs)
 
     if (ndup == 0) {
         printf("no duplicate blocks\n");
-        free(cx.bmap);
+        filsys_free(FILSYS_AL_SCRATCH, cx.bmap, (nblk + 7) / 8);
         return 0;
     }
 
@@ -632,11 +635,11 @@ int filsys_resolve_dups(filsys_edition_t *fs)
         printf("block %u dup; inode=%u: copied to %u\n", blk, ino, nb);
         resolved++;
     }
-    free(dups);
+    filsys_free(FILSYS_AL_SCRATCH, dups, cap * sizeof(*dups));
 
     printf("resolved %d/%zu duplicates; finalizing free list\n", resolved, ndup);
     fs->desc.ops->makefree(fs, &cx);
-    free(cx.bmap);
+    filsys_free(FILSYS_AL_SCRATCH, cx.bmap, (nblk + 7) / 8);
     return resolved == (int)ndup ? 0 : -1;
 }
 

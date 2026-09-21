@@ -133,7 +133,7 @@ struct filsys_blklist {
 
 filsys_blklist_t *filsys_blklist_new(void)
 {
-    filsys_blklist_t *b = malloc(sizeof *b);
+    filsys_blklist_t *b = filsys_alloc(FILSYS_AL_BLKLIST, sizeof *b, 0);
     if (b) {
         b->blk = NULL;
         b->n = b->cap = 0;
@@ -145,9 +145,15 @@ static int blklist_push(filsys_blklist_t *b, uint32_t bno)
 {
     if (b->n == b->cap) {
         size_t ncap = b->cap ? b->cap * 2 : 128;
-        uint32_t *nb = realloc(b->blk, ncap * sizeof *nb);
+        /* alloc-copy-free, not realloc: the kernel has no realloc, and on a
+         * failed alloc the old array stays valid and we return -ENOMEM (the
+         * same contract realloc returning NULL gave). */
+        uint32_t *nb = filsys_alloc(FILSYS_AL_BLKLIST, ncap * sizeof *nb, 0);
         if (!nb)
             return -ENOMEM;
+        if (b->blk)
+            memcpy(nb, b->blk, b->n * sizeof *nb);
+        filsys_free(FILSYS_AL_BLKLIST, b->blk, b->cap * sizeof *b->blk);
         b->blk = nb;
         b->cap = ncap;
     }
@@ -162,8 +168,8 @@ void filsys_blklist_drain(filsys_edition_t *fs, filsys_blklist_t *b)
         return;
     for (size_t i = 0; i < b->n; i++)
         fs->desc.alloc->bfree(fs, b->blk[i]);
-    free(b->blk);
-    free(b);
+    filsys_free(FILSYS_AL_BLKLIST, b->blk, b->cap * sizeof *b->blk);
+    filsys_free(FILSYS_AL_BLKLIST, b, sizeof *b);
 }
 
 /* Mark every collected block released (owned -> allocated-unassigned) for the
@@ -185,8 +191,8 @@ void filsys_blklist_discard(filsys_blklist_t *b)
 {
     if (!b)
         return;
-    free(b->blk);
-    free(b);
+    filsys_free(FILSYS_AL_BLKLIST, b->blk, b->cap * sizeof *b->blk);
+    filsys_free(FILSYS_AL_BLKLIST, b, sizeof *b);
 }
 
 /* Collect an indirect subtree into *b: the children first, the block itself

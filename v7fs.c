@@ -207,7 +207,7 @@ int v7fs_close(filsys_edition_t *fs) {
         close(fs->fd);
         fs->fd = -1;
     }
-    free(fs->v8_bits);
+    filsys_free(FILSYS_AL_MOUNT, fs->v8_bits, (size_t)(fs->v8_nbits + 7) / 8);
     fs->v8_bits = NULL;
     return rc;
 }
@@ -558,13 +558,14 @@ static int probe_walk_chain(filsys_edition_t *fmt, const filsys_io_t *io,
                             uint32_t *segs, const char **why)
 {
     uint32_t hops = 0, next = 0;
-    uint8_t *buf = malloc((size_t)bsize);
-    uint8_t *seen = calloc((size_t)((fsize + 7) / 8), 1);
+    uint8_t *buf = filsys_alloc(FILSYS_AL_BLOCK, (size_t)bsize, 0);
+    uint8_t *seen = filsys_alloc(FILSYS_AL_SCRATCH, (size_t)((fsize + 7) / 8), 1);
     *segs = 0;
     *why = NULL;
     if (!buf || !seen) {
         *why = "out of memory";
-        free(buf); free(seen);
+        filsys_free(FILSYS_AL_BLOCK, buf, (size_t)bsize);
+        filsys_free(FILSYS_AL_SCRATCH, seen, (size_t)((fsize + 7) / 8));
         return -1;
     }
     while (head != 0) {
@@ -591,8 +592,8 @@ static int probe_walk_chain(filsys_edition_t *fmt, const filsys_io_t *io,
         (*segs)++;
     }
     int rc = *why ? -1 : 0;
-    free(buf);
-    free(seen);
+    filsys_free(FILSYS_AL_BLOCK, buf, (size_t)bsize);
+    filsys_free(FILSYS_AL_SCRATCH, seen, (size_t)((fsize + 7) / 8));
     return rc;
 }
 

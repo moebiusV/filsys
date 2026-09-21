@@ -74,11 +74,11 @@ static int bsd211_iter_next(bsd211_iter_t *it) {
 /* Read the whole directory into a malloc'd buffer.  *n receives the byte count.
  * The caller frees. */
 static int bsd211_slurp(filsys_edition_t *fs, v7_inode_t *ip, uint8_t **out, size_t *n) {
-    uint8_t *buf = malloc(ip->size ? ip->size : 1);
+    uint8_t *buf = filsys_alloc(FILSYS_AL_SCRATCH, ip->size ? ip->size : 1, 0);
     if (!buf)
         return -ENOMEM;
     ssize_t got = filsys_file_read(fs, ip, buf, ip->size, 0);
-    if (got < 0) { free(buf); return (int)got; }
+    if (got < 0) { filsys_free(FILSYS_AL_SCRATCH, buf, ip->size ? ip->size : 1); return (int)got; }
     *out = buf;
     *n = (size_t)got;
     return 0;
@@ -149,7 +149,7 @@ int bsd211_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, ui
             break;
         }
     }
-    free(buf);
+    filsys_free(FILSYS_AL_SCRATCH, buf, ip->size ? ip->size : 1);
     return rc;
 }
 
@@ -180,7 +180,7 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
         fs->desc.bo->put16(buf + it.off + 4, (uint16_t)namlen);
         memcpy(buf + it.off + BSD211_DIRHDRSZ, name, namlen);
         ssize_t w = filsys_file_write(fs, ip, buf, n, 0);
-        free(buf);
+        filsys_free(FILSYS_AL_SCRATCH, buf, ip->size ? ip->size : 1);
         return w < 0 ? (int)w : 0;
     }
 
@@ -197,7 +197,7 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
         prev_off = it.off;
         end = it.off + it.reclen;
     }
-    free(buf);
+    filsys_free(FILSYS_AL_SCRATCH, buf, ip->size ? ip->size : 1);
     if (end & 3u)
         return -EIO;
 
@@ -242,9 +242,9 @@ int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name) {
             continue;
         fs->desc.bo->put16(buf + it.off, 0);   /* mark free */
         ssize_t w = filsys_file_write(fs, ip, buf, n, 0);
-        free(buf);
+        filsys_free(FILSYS_AL_SCRATCH, buf, ip->size ? ip->size : 1);
         return w < 0 ? (int)w : 0;
     }
-    free(buf);
+    filsys_free(FILSYS_AL_SCRATCH, buf, ip->size ? ip->size : 1);
     return -ENOENT;
 }

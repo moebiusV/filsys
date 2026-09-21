@@ -246,14 +246,14 @@ static int lock_image(filsys_t *fs, const char *path, uint64_t offset) {
  * leaves the pointer NULL and unallocated. */
 int filsys_fl_alloc(filsys_edition_t *fs, const filsys_desc_t *desc) {
     if (desc->nicfree) {
-        fs->fl.free = calloc(desc->nicfree, sizeof(uint32_t));
+        fs->fl.free = filsys_alloc(FILSYS_AL_MOUNT, desc->nicfree * sizeof(uint32_t), 1);
         if (!fs->fl.free)
             return -ENOMEM;
     }
     if (desc->nicinod) {
-        fs->fl.inode = calloc(desc->nicinod, sizeof(uint16_t));
+        fs->fl.inode = filsys_alloc(FILSYS_AL_MOUNT, desc->nicinod * sizeof(uint16_t), 1);
         if (!fs->fl.inode) {
-            free(fs->fl.free);
+            filsys_free(FILSYS_AL_MOUNT, fs->fl.free, desc->nicfree * sizeof(uint32_t));
             fs->fl.free = NULL;
             return -ENOMEM;
         }
@@ -262,8 +262,8 @@ int filsys_fl_alloc(filsys_edition_t *fs, const filsys_desc_t *desc) {
 }
 
 void filsys_fl_free(filsys_edition_t *fs) {
-    free(fs->fl.free);
-    free(fs->fl.inode);
+    filsys_free(FILSYS_AL_MOUNT, fs->fl.free, fs->desc.nicfree * sizeof(uint32_t));
+    filsys_free(FILSYS_AL_MOUNT, fs->fl.inode, fs->desc.nicinod * sizeof(uint16_t));
     fs->fl.free = NULL;
     fs->fl.inode = NULL;
 }
@@ -289,7 +289,7 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
             return -EINVAL;
         fmt.word = wc;
     }
-    filsys_t *fs = calloc(1, sizeof(*fs));
+    filsys_t *fs = filsys_alloc(FILSYS_AL_MOUNT, sizeof(*fs), 1);
     if (!fs)
         return -ENOMEM;
     fs->ver = edition;
@@ -299,22 +299,22 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
     fs->uid = uid;
     fs->gid = gid;
     fs->readonly = readonly;
-    fs->fs = calloc(1, fmt.state_size);
+    fs->fs = filsys_alloc(FILSYS_AL_MOUNT, fmt.state_size, 1);
     if (!fs->fs) {
-        free(fs);
+        filsys_free(FILSYS_AL_MOUNT, fs, sizeof(*fs));
         return -ENOMEM;
     }
     rc = filsys_fl_alloc(fs->fs, &fmt);
     if (rc) {
-        free(fs->fs);
-        free(fs);
+        filsys_free(FILSYS_AL_MOUNT, fs->fs, fmt.state_size);
+        filsys_free(FILSYS_AL_MOUNT, fs, sizeof(*fs));
         return rc;
     }
     rc = fs->ops->open(fs->fs, path, readonly, &fmt, offset);
     if (rc) {
         filsys_fl_free(fs->fs);
-        free(fs->fs);
-        free(fs);
+        filsys_free(FILSYS_AL_MOUNT, fs->fs, fmt.state_size);
+        filsys_free(FILSYS_AL_MOUNT, fs, sizeof(*fs));
         return rc;
     }
     if (!no_lock) {
@@ -322,8 +322,8 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
         if (rc) {
             fs->ops->close(fs->fs);
             filsys_fl_free(fs->fs);
-            free(fs->fs);
-            free(fs);
+            filsys_free(FILSYS_AL_MOUNT, fs->fs, fmt.state_size);
+            filsys_free(FILSYS_AL_MOUNT, fs, sizeof(*fs));
             return rc;
         }
     }
@@ -337,8 +337,8 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
         if (rc) {
             fs->ops->close(fs->fs);
             filsys_fl_free(fs->fs);
-            free(fs->fs);
-            free(fs);
+            filsys_free(FILSYS_AL_MOUNT, fs->fs, fmt.state_size);
+            filsys_free(FILSYS_AL_MOUNT, fs, sizeof(*fs));
             return rc;
         }
     }
@@ -374,8 +374,8 @@ int filsys_close(filsys_t *fs) {
             rc = r;                     /* flush failure dominates */
     }
     filsys_fl_free(fs->fs);
-    free(fs->fs);
-    free(fs);
+    filsys_free(FILSYS_AL_MOUNT, fs->fs, fs->fs->desc.state_size);
+    filsys_free(FILSYS_AL_MOUNT, fs, sizeof(*fs));
     return rc;
 }
 
@@ -488,7 +488,7 @@ int filsys_dir_seek(filsys_t *fs, uint32_t ino, uint64_t off, filsys_iter_t *it)
     if (!mode_is_dir(fs->fs, &ip)) return -ENOTDIR;
     /* A corrupt di_size must not turn the scan into a multi-gigabyte walk. */
     if (ip.size > maxfile(fs)) return -EFBIG;
-    filsys_iter_state_t *st = malloc(sizeof(*st) + V7_MAXBSIZE);
+    filsys_iter_state_t *st = filsys_alloc(FILSYS_AL_SCRATCH, sizeof(*st) + V7_MAXBSIZE, 0);
     if (!st) return -ENOMEM;
     st->fs = fs->fs;
     st->ip = ip;
@@ -507,7 +507,7 @@ int filsys_dir_next(filsys_iter_t *it, uint32_t *ino, const char **name,
 }
 
 int filsys_dir_release(filsys_iter_t *it) {
-    free(it->state);
+    filsys_free(FILSYS_AL_SCRATCH, it->state, sizeof(filsys_iter_state_t) + V7_MAXBSIZE);
     it->state = NULL;
     return 0;
 }

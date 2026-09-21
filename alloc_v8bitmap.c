@@ -97,7 +97,7 @@ int v8_bitmap_load(filsys_edition_t *fs, const uint8_t *sb)
         if (fs->v8_nbits > V8_BITMAP_BITS)
             return -E2BIG;
     }
-    fs->v8_bits = calloc((size_t)(fs->v8_nbits + 7) / 8, 1);
+    fs->v8_bits = filsys_alloc(FILSYS_AL_MOUNT, (size_t)(fs->v8_nbits + 7) / 8, 1);
     if (!fs->v8_bits)
         return -ENOMEM;
     if (fs->desc.freemap == V8_FREEMAP_BITMAP) {
@@ -191,9 +191,9 @@ uint32_t v8_makefree_bitmap(filsys_edition_t *fs, filsys_chkctx_t *cx)
         base = f->isize; nbits = f->fsize - f->isize;
     }
     f->v8_base = base;
+    filsys_free(FILSYS_AL_MOUNT, f->v8_bits, (size_t)(f->v8_nbits + 7) / 8);
     f->v8_nbits = nbits;
-    free(f->v8_bits);
-    f->v8_bits = calloc((size_t)(nbits + 7) / 8, 1);
+    f->v8_bits = filsys_alloc(FILSYS_AL_MOUNT, (size_t)(nbits + 7) / 8, 1);
     if (!f->v8_bits)
         return 0;
     f->fl.nfree = 0;

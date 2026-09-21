@@ -641,7 +641,7 @@ static uint32_t p7_chk_data_end(filsys_edition_t *fs)   { (void)fs; return P7_KD
 static void p7_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_check_t *rep)
 {
     p7fs_t *f = fs;
-    uint8_t *freeb = calloc(cx->nblk ? cx->nblk : 1, 1);
+    uint8_t *freeb = filsys_alloc(FILSYS_AL_SCRATCH, cx->nblk ? cx->nblk : 1, 1);
     if (!freeb)
         return;
     uint32_t head = f->freelist, guard = 0;
@@ -685,7 +685,7 @@ static void p7_chk_walk_free(filsys_edition_t *fs, filsys_chkctx_t *cx, filsys_c
             cx->bmap[off >> 3] |= m;
         }
     }
-    free(freeb);
+    filsys_free(FILSYS_AL_SCRATCH, freeb, cx->nblk ? cx->nblk : 1);
 }
 
 int p7fs_check(p7fs_t *fs, p7_check_t *rep, int mode) {
