@@ -198,9 +198,9 @@ enum {
     FILSYS_UTIME_NOW  = -1,  /* set this timestamp to the current time */
     FILSYS_UTIME_OMIT = -2,  /* leave this timestamp unchanged */
 };
-/* Set atime/mtime on `path`.  tv may be NULL (set both to now); each entry is a
- * second count since the epoch, or FILSYS_UTIME_NOW / FILSYS_UTIME_OMIT.  ctime
- * is always set to the current time. */
+/* Set atime/mtime on `path`.  tv may be NULL (set both to now); otherwise tv[0]
+ * is atime and tv[1] is mtime, each a second count since the epoch, or
+ * FILSYS_UTIME_NOW / FILSYS_UTIME_OMIT.  ctime is always set to now. */
 int filsys_utimens(filsys_t *fs, const char *path, const int64_t tv[2]);
 int filsys_statfs(filsys_t *fs, filsys_statfs_t *st);
 
