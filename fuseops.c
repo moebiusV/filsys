@@ -101,19 +101,7 @@ static void *fuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg)
     (void)conn;
     cfg->kernel_cache = 0;   /* backing store is a plain file; don't cache pages */
     cfg->use_ino = 1;        /* stable inode numbers are reported (see fill_stat) */
-    cfg->hard_remove = 1;    /* no silly-rename: libfuse's fallback writes a 28-char
-                              * ".fuse_hidden" name, which cannot fit a V7 14-byte (or
-                              * V1/PDP-7 8-byte) dirent -- every hidden file would
-                              * truncate to the same name and collide.  hard_remove is
-                              * therefore forced, not chosen.
-                              *
-                              * (2.11BSD's 63-byte names *could* hold the silly-rename
-                              * name, so the length argument doesn't bind there; hard_remove
-                              * is forced uniformly anyway.  The deferred-free lifecycle
-                              * filsys_open_ino/free_deferred_ino is built around hard_remove
-                              * semantics -- the name is gone and nlink drops to 0 on the
-                              * first unlink -- and letting one edition fall back to a
-                              * hidden rename would leave an untested path.) */
+    cfg->hard_remove = 1;    /* forced, not chosen; see fuseops_common.h */
     /* Return the handle we were given; private_data in later callbacks comes
      * from this, and fuse_get_context()->private_data already holds it. */
     return fuse_get_context()->private_data;
@@ -147,19 +135,9 @@ static struct fuse_operations fuse_ops = {
     .destroy  = fuse_op_destroy,
 };
 
+static const fuse_quirks_t fuse_quirks = { .use_ino_mount_opt = 0 };
+
 int fuse_run(fuse_ctx_t *ctx, const fuse_mount_opts_t *opts)
 {
-    struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
-    fuse_opt_add_arg(&args, opts->argv0);
-    fuse_opt_add_arg(&args, opts->mountpoint);
-    fuse_opt_add_arg(&args, "-s");
-    if (opts->foreground) fuse_opt_add_arg(&args, "-f");
-    if (opts->debug)      fuse_opt_add_arg(&args, "-d");
-    if (opts->fuse_opts && opts->fuse_opts[0]) {
-        fuse_opt_add_arg(&args, "-o");
-        fuse_opt_add_arg(&args, opts->fuse_opts);
-    }
-    int rc = fuse_main(args.argc, args.argv, &fuse_ops, ctx->fs);
-    fuse_opt_free_args(&args);
-    return rc;
+    return fuse_run_common(ctx, opts, &fuse_ops, &fuse_quirks);
 }

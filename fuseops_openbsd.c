@@ -139,30 +139,9 @@ static struct fuse_operations fuse_ops = {
     .destroy  = fuse_op_destroy,
 };
 
+static const fuse_quirks_t fuse_quirks = { .use_ino_mount_opt = 1 };
+
 int fuse_run(fuse_ctx_t *ctx, const fuse_mount_opts_t *opts)
 {
-    struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
-    fuse_opt_add_arg(&args, opts->argv0);
-    fuse_opt_add_arg(&args, opts->mountpoint);
-    fuse_opt_add_arg(&args, "-s");
-    if (opts->foreground) fuse_opt_add_arg(&args, "-f");
-    if (opts->debug)      fuse_opt_add_arg(&args, "-d");
-    /* FUSE2: no fuse_config in init, so use_ino (honour the stable st_ino our
-     * fill_stat reports) is a mount option injected before fuse_main.  Note the
-     * OpenBSD option parser is the one cgofuse flags as not fully compatible;
-     * if it rejects this on target, drop it (the kernel then synthesises node
-     * numbers, which are still stable) — see docs/fuse-ports3.md.  OpenBSD
-     * already defaults to hard_remove (no silly-rename), so no option is needed
-     * there; that is the only option anyway, since the 28-char ".fuse_hidden"
-     * fallback name cannot fit a V7 14-byte (or V1/PDP-7 8-byte) dirent.
-     * filsys_open_ino still defers the unlink free to release. */
-    fuse_opt_add_arg(&args, "-o");
-    fuse_opt_add_arg(&args, "use_ino");
-    if (opts->fuse_opts && opts->fuse_opts[0]) {
-        fuse_opt_add_arg(&args, "-o");
-        fuse_opt_add_arg(&args, opts->fuse_opts);
-    }
-    int rc = fuse_main(args.argc, args.argv, &fuse_ops, ctx->fs);
-    fuse_opt_free_args(&args);
-    return rc;
+    return fuse_run_common(ctx, opts, &fuse_ops, &fuse_quirks);
 }

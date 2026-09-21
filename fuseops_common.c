@@ -122,3 +122,25 @@ void fuse_op_destroy(void *private_data)
 {
     filsys_sync((filsys_t *)private_data);   /* flush on unmount; main() closes */
 }
+
+int fuse_run_common(fuse_ctx_t *ctx, const fuse_mount_opts_t *opts,
+                    const struct fuse_operations *ops, const fuse_quirks_t *q)
+{
+    struct fuse_args args = FUSE_ARGS_INIT(0, NULL);
+    fuse_opt_add_arg(&args, opts->argv0);
+    fuse_opt_add_arg(&args, opts->mountpoint);
+    fuse_opt_add_arg(&args, "-s");
+    if (opts->foreground) fuse_opt_add_arg(&args, "-f");
+    if (opts->debug)      fuse_opt_add_arg(&args, "-d");
+    if (q->use_ino_mount_opt) {
+        fuse_opt_add_arg(&args, "-o");
+        fuse_opt_add_arg(&args, "use_ino");
+    }
+    if (opts->fuse_opts && opts->fuse_opts[0]) {
+        fuse_opt_add_arg(&args, "-o");
+        fuse_opt_add_arg(&args, opts->fuse_opts);
+    }
+    int rc = fuse_main(args.argc, args.argv, ops, ctx->fs);
+    fuse_opt_free_args(&args);
+    return rc;
+}
