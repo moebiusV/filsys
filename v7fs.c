@@ -468,46 +468,6 @@ ssize_t filsys_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *b
     return (ssize_t)done;
 }
 
-/* ---- path lookup -------------------------------------------------------- */
-
-int filsys_path_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip) {
-    if (path[0] != '/')
-        return -EINVAL;
-    uint32_t cur = fs->desc.rootino;
-    v7_inode_t dip;
-    if (fs->desc.ops->inode->read_inode(fs, cur, &dip))
-        return -EIO;
-
-    const char *p = path + 1;
-    while (*p) {
-        const char *slash = strchr(p, '/');
-        size_t len = slash ? (size_t)(slash - p) : strlen(p);
-        if (len == 0) {
-            p++;
-            continue;
-        }
-        if (len > fs->desc.max_namlen)
-            return -ENAMETOOLONG;
-        char name[64];
-        memcpy(name, p, len);
-        name[len] = 0;
-
-        if (!fs_is_dir(fs, &dip))
-            return -ENOTDIR;
-        uint32_t next;
-        int rc = fs->desc.ops->dir->dir_lookup(fs, &dip, name, &next);
-        if (rc)
-            return rc;
-        if (fs->desc.ops->inode->read_inode(fs, next, &dip))
-            return -EIO;
-        p = slash ? slash + 1 : p + len;
-    }
-    *ino = dip.ino;
-    if (ip)
-        *ip = dip;
-    return 0;
-}
-
 /* Classify an inode's mode into a checker state (the low three type bits). */
 static uint8_t v7_inode_state(filsys_edition_t *fs, uint32_t ino, uint32_t mode) {
     (void)fs; (void)ino;

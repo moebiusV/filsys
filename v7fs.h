@@ -466,9 +466,6 @@ int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const cha
 int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name);
 int bsd211_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino);
 
-/* Resolve a path into an inode number.  0 or -errno. */
-int filsys_path_lookup(filsys_edition_t *fs, const char *path, uint32_t *ino, v7_inode_t *ip);
-
 /* ---- integrity check ---------------------------------------------------- */
 
 typedef filsys_check_t v7_check_t;

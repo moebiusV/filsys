@@ -22,14 +22,15 @@ if HAVE_FUSE
 sbin_PROGRAMS = mount.filsys
 endif
 
-# The version-agnostic library: the facade (filsys.c) plus the two on-disk
-# backends.  Installed as libfilsys.a + filsys.h so other projects can link
+# The version-agnostic library: the node-anchored core (filsys.c), its userspace
+# path shell (filsys_path.c), and the on-disk backends.  Installed as
+# libfilsys.a + filsys.h so other projects can link
 # ancient-filesystem access directly.  The public header is namespaced to
 # filsys/filsys.h so it can't collide with a generic <filsys.h>; v7fs.h is the
 # internal per-format layer and stays uninstalled.  filsys.pc lets a
 # consumer find both with a two-line PKG_CHECK_MODULES.
 lib_LIBRARIES = libfilsys.a
-libfilsys_a_SOURCES = filsys.c filsys.h filsys_ops.h filsys_common.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h instrument.c instrument.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h dir_fixed.c dir_bsd211.c alloc_freelist.c alloc_v8bitmap.c
+libfilsys_a_SOURCES = filsys.c filsys_path.c filsys.h filsys_ops.h filsys_common.h filsys_format.c filsys_names.c filsys_detect.c filsys_mkfs.c blocktree.c byteorder.c byteorder.h check.c check.h instrument.c instrument.h v1fs.c v1fs.h v7fs.c v7fs.h pdp7fs.c pdp7fs.h dir_fixed.c dir_bsd211.c alloc_freelist.c alloc_v8bitmap.c
 libfilsys_a_CFLAGS = -std=c17 -Wall -Wextra -Wshadow
 filsysincludedir = $(includedir)/filsys
 filsysinclude_HEADERS = filsys.h

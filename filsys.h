@@ -115,6 +115,12 @@ int filsys_walk(filsys_t *fs, uint32_t ino, const char *name, uint32_t *out);
 int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino,
                   filsys_inode_t *ip);
 int filsys_read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip);
+/* The root directory inode number (the start of a path walk). */
+uint32_t filsys_rootino(const filsys_t *fs);
+/* The longest legal filename (component) this edition stores. */
+uint32_t filsys_namemax(const filsys_t *fs);
+/* Is *ip a directory?  (the descriptor's per-edition type test). */
+int filsys_is_dir(const filsys_t *fs, const filsys_inode_t *ip);
 /* Fill plain-integer attributes from *ip: the POSIX mode (type bits +
  * permissions), the mounting-user ownership, the raw device word (major<<8 |
  * minor) for device files, the logical block size, and the allocated byte
@@ -128,6 +134,9 @@ int filsys_stat_inode(filsys_t *fs, const filsys_inode_t *ip, filsys_stat_t *st)
  * entry count in *count, or -errno. */
 int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents,
                    size_t *count);
+/* Read a directory's entries by inode number (the node-anchored form). */
+int filsys_readdir_ino(filsys_t *fs, uint32_t ino, filsys_dirent_t **ents,
+                       size_t *count);
 
 /* ---- file data ----------------------------------------------------------- */
 
