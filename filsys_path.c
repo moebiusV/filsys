@@ -87,14 +87,6 @@ int filsys_lookup(filsys_t *fs, const char *path, uint32_t *ino, filsys_inode_t 
     return path_lookup(fs, path, ino, ip);
 }
 
-int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents, size_t *count) {
-    uint32_t ino;
-    int rc = path_lookup(fs, path, &ino, NULL);
-    if (rc)
-        return rc;
-    return filsys_readdir_ino(fs, ino, ents, count);
-}
-
 ssize_t filsys_read(filsys_t *fs, const char *path, void *buf, size_t size, off_t off) {
     uint32_t ino;
     int rc = path_lookup(fs, path, &ino, NULL);

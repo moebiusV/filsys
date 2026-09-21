@@ -1107,7 +1107,7 @@ static int v7_probe(filsys_edition_t *fmt, const filsys_io_t *io,
 }
 
 const struct filsys_dir_ops dir_fixed = {
-    .dir_read   = v7fs_dir_read,
+    .dir_iter   = v7fs_dir_iter,
     .dir_add    = v7fs_dir_add,
     .dir_remove = v7fs_dir_remove,
     .dir_lookup = v7fs_dir_lookup,
@@ -1173,7 +1173,7 @@ int bsd211_check(filsys_edition_t *fs, v7_check_t *rep, int mode) {
 
 
 static const struct filsys_dir_ops dir_variable = {
-    .dir_read   = bsd211_dir_read,
+    .dir_iter   = bsd211_dir_iter,
     .dir_add    = bsd211_dir_add,
     .dir_remove = bsd211_dir_remove,
     .dir_lookup = bsd211_dir_lookup,

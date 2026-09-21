@@ -17,7 +17,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "filsys_engine.h"   /* on-disk types: filsys_inode_t, filsys_dirent_t, ... */
+#include "filsys_engine.h"   /* on-disk types: filsys_inode_t, filsys_iter_t, ... */
 
 /* Size in bytes of the image backing fd.  A regular file reports its st_size;
  * a block device reports 0 in st_size but its real size via lseek(SEEK_END),
@@ -130,13 +130,16 @@ int filsys_is_dir(const filsys_t *fs, const filsys_inode_t *ip);
  * stat, struct vattr) from this. */
 int filsys_stat_inode(filsys_t *fs, const filsys_inode_t *ip, filsys_stat_t *st);
 
-/* Read a directory's entries into *ents (malloc'd; free() it).  Returns the
- * entry count in *count, or -errno. */
-int filsys_readdir(filsys_t *fs, const char *path, filsys_dirent_t **ents,
-                   size_t *count);
-/* Read a directory's entries by inode number (the node-anchored form). */
-int filsys_readdir_ino(filsys_t *fs, uint32_t ino, filsys_dirent_t **ents,
-                       size_t *count);
+/* Read a directory entry-by-entry (offset-resumable).  filsys_dir_seek
+ * positions at byte offset `off` (0 to start); each filsys_dir_next returns one
+ * entry.  *name points into the iterator's buffer and is NOT NUL-terminated:
+ * use *namlen, not strcmp.  *next_off is the resume token to hand back to
+ * filsys_dir_seek.  Returns 1 (entry), 0 (end), or -errno.  Call
+ * filsys_dir_release to free the iterator. */
+int filsys_dir_seek(filsys_t *fs, uint32_t ino, uint64_t off, filsys_iter_t *it);
+int filsys_dir_next(filsys_iter_t *it, uint32_t *ino, const char **name,
+                    uint16_t *namlen, uint64_t *next_off);
+int filsys_dir_release(filsys_iter_t *it);
 
 /* ---- file data ----------------------------------------------------------- */
 

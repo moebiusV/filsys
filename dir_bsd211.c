@@ -84,45 +84,51 @@ static int bsd211_slurp(filsys_edition_t *fs, v7_inode_t *ip, uint8_t **out, siz
     return 0;
 }
 
-int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count) {
-    if ((ip->mode & fs->desc.ifmt) != fs->desc.ifdir)
-        return -ENOTDIR;
-    if (ip->size > (uint64_t)(fs->fsize - fs->isize) * fs->desc.bsize)
-        return -EFBIG;
+/* The fourth walker: an offset-resumable scan for filsys_dir_next.  The
+ * directory is read one 512-byte framing chunk at a time (a record never spans
+ * a chunk boundary); the name is a pointer into the chunk buffer with its
+ * explicit length in *namlen.  The first malformed record ends the walk. */
+int bsd211_dir_iter(filsys_iter_state_t *st, uint32_t *ino, const char **name,
+                    uint16_t *namlen, uint64_t *next_off) {
+    filsys_edition_t *fs = st->fs;
+    filsys_inode_t *ip = &st->ip;
 
-    uint8_t *buf = NULL;
-    size_t n = 0;
-    int rc = bsd211_slurp(fs, ip, &buf, &n);
-    if (rc)
-        return rc;
-
-    /* Count first, then allocate exactly.  The old code sized the array from
-     * size/12, but the smallest record this format can hold is eight bytes
-     * (dirsiz(1)), so a directory of short names overflowed it. */
-    bsd211_iter_t it;
-    size_t live = 0;
-    bsd211_iter_init(&it, &fs->desc, buf, n);
-    while (bsd211_iter_next(&it))
-        if (it.ino != 0)
-            live++;
-
-    v7_dirent_t *out = calloc(live + 1, sizeof *out);
-    if (!out) { free(buf); return -ENOMEM; }
-
-    size_t cnt = 0;
-    bsd211_iter_init(&it, &fs->desc, buf, n);
-    while (bsd211_iter_next(&it) && cnt < live) {
-        if (it.ino == 0)
-            continue;
-        out[cnt].ino = it.ino;
-        memcpy(out[cnt].name, it.name, it.namlen);
-        out[cnt].name[it.namlen] = 0;
-        cnt++;
+    for (;;) {
+        uint64_t off = st->next_off;
+        if (off >= ip->size)
+            return 0;
+        size_t chunk_off = (size_t)(off / BSD211_DIRBLKSIZ * BSD211_DIRBLKSIZ);
+        if (st->buf_off != chunk_off || st->buf_n == 0) {
+            size_t n = BSD211_DIRBLKSIZ;
+            if (n > ip->size - chunk_off)
+                n = (size_t)(ip->size - chunk_off);
+            ssize_t got = filsys_file_read(fs, ip, st->buf, n, (off_t)chunk_off);
+            if (got < 0)
+                return (int)got;
+            st->buf_off = chunk_off;
+            st->buf_n = (size_t)got;
+        }
+        size_t rel = (size_t)(off - chunk_off);
+        while (rel + BSD211_DIRHDRSZ <= st->buf_n) {
+            uint16_t eino   = fs->desc.bo->get16(st->buf + rel);
+            uint16_t reclen = fs->desc.bo->get16(st->buf + rel + 2);
+            uint16_t nlen   = fs->desc.bo->get16(st->buf + rel + 4);
+            if (reclen < BSD211_DIRMINSZ || (reclen & 3u) || rel + reclen > st->buf_n)
+                return 0;   /* truncated / malformed: end the walk */
+            if ((uint32_t)nlen + 7u > reclen || nlen > fs->desc.max_namlen)
+                return 0;
+            if (eino != 0) {
+                *ino = eino;
+                *name = (const char *)(st->buf + rel + BSD211_DIRHDRSZ);
+                *namlen = nlen;
+                *next_off = (uint64_t)(chunk_off + rel + reclen);
+                st->next_off = *next_off;
+                return 1;
+            }
+            rel += reclen;
+        }
+        st->next_off = (uint64_t)(chunk_off + BSD211_DIRBLKSIZ);
     }
-    free(buf);
-    *ents = out;
-    *count = cnt;
-    return 0;
 }
 
 int bsd211_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {

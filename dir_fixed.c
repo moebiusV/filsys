@@ -13,51 +13,6 @@
 #include "check.h"
 #include "instrument.h"
 
-int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count) {
-    if (!fs_is_dir(fs, ip))
-        return -ENOTDIR;
-    /* A directory's data cannot exceed the filesystem's data area; reject a
-     * corrupt size before the malloc below, else a bogus di_size (up to 4 GiB)
-     * turns into a multi-gigabyte allocation. */
-    if (ip->size > (uint64_t)(fs->fsize - fs->desc.ops->data_start(fs)) * fs->desc.bsize)
-        return -EFBIG;
-    size_t cap = ip->size / fs->desc.dirent_size + 1;
-    v7_dirent_t *out = calloc(cap, sizeof(v7_dirent_t));
-    if (!out)
-        return -ENOMEM;
-
-    uint8_t *buf = malloc(ip->size);
-    if (!buf) {
-        free(out);
-        return -ENOMEM;
-    }
-    ssize_t n = filsys_file_read(fs, ip, buf, ip->size, 0);
-    if (n < 0) {
-        free(buf);
-        free(out);
-        return (int)n;
-    }
-
-    size_t cnt = 0;
-    for (size_t off = 0; off + fs->desc.dirent_size <= (size_t)n; off += fs->desc.dirent_size) {
-        uint16_t ino = fs->desc.bo->get16(buf + off);
-        if (ino == 0)
-            continue;
-        out[cnt].ino = ino;
-        memcpy(out[cnt].name, buf + off + 2, fs->desc.max_namlen);
-        out[cnt].name[fs->desc.max_namlen] = 0;
-        cnt++;
-    }
-    free(buf);
-    *ents = out;
-    *count = cnt;
-    return 0;
-}
-
-void v7fs_dirents_free(v7_dirent_t *ents) {
-    free(ents);
-}
-
 /* Compare a stored fixed-format name (max_namlen bytes, zero-padded by the
  * writer) against a NUL-terminated name.  A match requires the stored bytes to
  * equal `name` up to its terminator and be zero beyond it -- the same test the
@@ -88,6 +43,53 @@ static size_t dir_chunk(const filsys_edition_t *fs) {
  * rewrite: O(1) write amplification and no heap buffer sized by the directory.
  * Reading block-by-block is also kinder to a damaged directory -- a bad block
  * past the entry being looked for no longer aborts the whole operation. */
+
+/* The fourth walker: an offset-resumable scan for filsys_dir_next.  One
+ * dir_chunk at a time sits in the iterator's buffer; *name points into it and
+ * is NOT NUL-terminated (the field is max_namlen bytes, zero-padded), so the
+ * effective length is returned in *namlen. */
+int v7fs_dir_iter(filsys_iter_state_t *st, uint32_t *ino, const char **name,
+                  uint16_t *namlen, uint64_t *next_off) {
+    filsys_edition_t *fs = st->fs;
+    filsys_inode_t *ip = &st->ip;
+    size_t esize = fs->desc.dirent_size;
+    size_t max = fs->desc.max_namlen;
+    size_t chunk = dir_chunk(fs);
+
+    for (;;) {
+        uint64_t off = st->next_off;
+        if (off >= ip->size)
+            return 0;
+        size_t chunk_off = (size_t)(off / chunk * chunk);
+        if (st->buf_off != chunk_off || st->buf_n == 0) {
+            size_t n = chunk;
+            if (n > ip->size - chunk_off)
+                n = (size_t)(ip->size - chunk_off);
+            ssize_t got = filsys_file_read(fs, ip, st->buf, n, (off_t)chunk_off);
+            if (got < 0)
+                return (int)got;
+            st->buf_off = chunk_off;
+            st->buf_n = (size_t)got;
+        }
+        size_t rel = (size_t)(off - chunk_off);
+        while (rel + esize <= st->buf_n) {
+            uint16_t eino = fs->desc.bo->get16(st->buf + rel);
+            if (eino != 0) {
+                size_t nlen = 0;
+                while (nlen < max && st->buf[rel + 2 + nlen] != 0)
+                    nlen++;
+                *ino = eino;
+                *name = (const char *)(st->buf + rel + 2);
+                *namlen = (uint16_t)nlen;
+                *next_off = (uint64_t)(chunk_off + rel + esize);
+                st->next_off = *next_off;
+                return 1;
+            }
+            rel += esize;
+        }
+        st->next_off = (uint64_t)(chunk_off + chunk);
+    }
+}
 
 int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino) {
     size_t esize = fs->desc.dirent_size;

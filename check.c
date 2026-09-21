@@ -23,6 +23,24 @@
  * checker state, and the salvage/repair actions) are vtable seams, so every
  * edition's *_check is a one-line call into this. */
 static int is_regular(const filsys_edition_t *fs, const filsys_inode_t *ip);
+
+/* Initialize an edition-level directory iterator.  check.c drives dir_iter
+ * directly rather than the public filsys_dir_seek, which needs a filsys_t; the
+ * state and its chunk buffer are one allocation, freed with free() when done. */
+static int check_iter_begin(filsys_edition_t *fs, const filsys_inode_t *ip,
+                            filsys_iter_state_t **out) {
+    filsys_iter_state_t *st = malloc(sizeof(*st) + V7_MAXBSIZE);
+    if (!st)
+        return -ENOMEM;
+    st->fs = fs;
+    st->ip = *ip;
+    st->buf = (uint8_t *)(st + 1);
+    st->buf_n = 0;
+    st->buf_off = 0;
+    st->next_off = 0;
+    *out = st;
+    return 0;
+}
 int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
                         filsys_check_t *rep, int mode)
 {
@@ -171,20 +189,18 @@ int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
                 continue;
             if (state[ino] != FILSYS_IN_IDIR)
                 continue;
-            filsys_dirent_t *ents = NULL;
-            size_t cnt = 0;
-            if (o->dir->dir_read(fs, &ip, &ents, &cnt) == 0) {
-                for (size_t e = 0; e < cnt; e++) {
-                    if (fmt->synth_dot &&
-                        ents[e].name[0] == '.' &&
-                        (ents[e].name[1] == 0 ||
-                         (ents[e].name[1] == '.' && ents[e].name[2] == 0)))
+            filsys_iter_state_t *it = NULL;
+            if (check_iter_begin(fs, &ip, &it) == 0) {
+                uint32_t dno; const char *name; uint16_t namlen; uint64_t next;
+                int rc;
+                while ((rc = o->dir->dir_iter(it, &dno, &name, &namlen, &next)) == 1) {
+                    if (fmt->synth_dot && name[0] == '.' &&
+                        (namlen == 1 || (namlen == 2 && name[1] == '.')))
                         continue;   /* synthesized "." / ".." */
-                    uint32_t dno = ents[e].ino;
                     if (dno == 0)
                         continue;
                     if (dno > maxino) {
-                        printf("%u bad; %u/%s\n", dno, ino, ents[e].name);
+                        printf("%u bad; %u/%.*s\n", dno, ino, (int)namlen, name);
                         rep->errors++;
                         continue;
                     }
@@ -196,7 +212,7 @@ int filsys_check_common(filsys_desc_t *fmt, filsys_edition_t *fs,
                     if (ecount[dno] == 0)
                         ecount[dno] = 0377;
                 }
-                free(ents);
+                free(it);
             }
         }
         for (uint32_t ino = 1; ino <= maxino; ino++) {
@@ -298,23 +314,22 @@ static void ncheck_dir(filsys_edition_t *fs, uint32_t dirino, const char *prefix
         return;
     if (!fs_is_dir(fs, &ip))
         return;
-    filsys_dirent_t *ents = NULL;
-    size_t cnt = 0;
-    if (fs->desc.ops->dir->dir_read(fs, &ip, &ents, &cnt))
+    filsys_iter_state_t *it = NULL;
+    if (check_iter_begin(fs, &ip, &it))
         return;
-    for (size_t i = 0; i < cnt; i++) {
-        uint32_t eino = ents[i].ino;
+    uint32_t eino; const char *name; uint16_t namlen; uint64_t next;
+    int rc;
+    while ((rc = fs->desc.ops->dir->dir_iter(it, &eino, &name, &namlen, &next)) == 1) {
         if (eino == 0)
             continue;
-        if (ents[i].name[0] == '.' &&
-            (ents[i].name[1] == 0 ||
-             (ents[i].name[1] == '.' && ents[i].name[2] == 0)))
+        if (name[0] == '.' &&
+            (namlen == 1 || (namlen == 2 && name[1] == '.')))
             continue;                 /* skip "." and ".." */
         char path[1024];
         if (prefix[1] == 0)           /* prefix is "/" */
-            snprintf(path, sizeof(path), "/%s", ents[i].name);
+            snprintf(path, sizeof(path), "/%.*s", (int)namlen, name);
         else
-            snprintf(path, sizeof(path), "%s/%s", prefix, ents[i].name);
+            snprintf(path, sizeof(path), "%s/%.*s", prefix, (int)namlen, name);
         if (eino == target) {
             printf("%u\t%s\n", target, path);
             *found = 1;
@@ -323,7 +338,7 @@ static void ncheck_dir(filsys_edition_t *fs, uint32_t dirino, const char *prefix
         if (fs->desc.ops->inode->read_inode(fs, eino, &cip) == 0 && fs_is_dir(fs, &cip))
             ncheck_dir(fs, eino, path, target, found, depth + 1);
     }
-    free(ents);
+    free(it);
 }
 
 int filsys_ncheck(filsys_edition_t *fs, uint32_t ino)
@@ -363,19 +378,19 @@ static uint32_t count_links_to(filsys_edition_t *fs, uint32_t target, uint32_t m
             continue;
         if (!fs_is_dir(fs, &ip))
             continue;
-        filsys_dirent_t *ents = NULL;
-        size_t n = 0;
-        if (fs->desc.ops->dir->dir_read(fs, &ip, &ents, &n) != 0)
+        filsys_iter_state_t *it = NULL;
+        if (check_iter_begin(fs, &ip, &it) != 0)
             continue;
-        for (size_t e = 0; e < n; e++) {
-            if (fs->desc.synth_dot && ents[e].name[0] == '.' &&
-                (ents[e].name[1] == 0 ||
-                 (ents[e].name[1] == '.' && ents[e].name[2] == 0)))
+        uint32_t eino; const char *name; uint16_t namlen; uint64_t next;
+        int rc;
+        while ((rc = fs->desc.ops->dir->dir_iter(it, &eino, &name, &namlen, &next)) == 1) {
+            if (fs->desc.synth_dot && name[0] == '.' &&
+                (namlen == 1 || (namlen == 2 && name[1] == '.')))
                 continue;   /* synthesized "." / ".." (PDP-7) */
-            if (ents[e].ino == target)
+            if (eino == target)
                 cnt++;
         }
-        free(ents);
+        free(it);
     }
     return cnt;
 }

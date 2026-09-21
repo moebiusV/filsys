@@ -51,10 +51,9 @@ enum {
 
 /* ---- core types -------------------------------------------------------- */
 
-/* Decoded inode/dirent are the public filsys types (no per-backend copy, so
- * the ops table needs no type-punning cast). */
+/* The decoded inode is the public filsys type (no per-backend copy, so the ops
+ * table needs no type-punning cast). */
 typedef filsys_inode_t  v1_inode_t;
-typedef filsys_dirent_t v1_dirent_t;
 
 extern const alloc_ops_t bitmap_alloc_ops;
 

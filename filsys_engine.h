@@ -62,11 +62,12 @@ typedef struct {
     uint32_t atime, mtime, ctime;
 } filsys_inode_t;
 
-/* One directory entry. */
+/* Directory iterator handle.  Stack-allocate and pass to filsys_dir_seek; the
+ * state (including its chunk buffer) is heap-owned and freed by
+ * filsys_dir_release.  Opaque: only the dir_* functions read it. */
 typedef struct {
-    uint16_t ino;
-    char     name[64];           /* name + NUL (14 for V6/V7; 63 for 2.11BSD) */
-} filsys_dirent_t;
+    void *state;
+} filsys_iter_t;
 
 typedef struct filsys filsys_t;  /* opaque */
 

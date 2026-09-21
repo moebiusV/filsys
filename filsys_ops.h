@@ -5,8 +5,8 @@
  * is one more ops table instead of a third arm of every ternary.
  *
  * The first parameter of every op is a `filsys_edition_t *` pointing at the
- * backend's own state struct; the decoded types (filsys_inode_t /
- * filsys_dirent_t) are the public structs from filsys.h.  The ops tables point
+ * backend's own state struct; the decoded type (filsys_inode_t) is the public
+ * struct from filsys.h.  The ops tables point
  * at the per-backend functions directly (the 2.1.1 fold deleted the void*-to-
  * typed adapters).
  *
@@ -140,9 +140,13 @@ int filsys_mkfs(int edition, const filsys_io_t *io, int fd, uint64_t base,
 /* Directory-format sub-vtable: the ops that differ with the on-disk directory
  * entry layout (fixed 16-byte V7 entries vs variable-length 2.11BSD entries vs
  * the 10-byte V1 entries).  The rest of the directory machinery (dir_lookup) is
- * shared and stays in filsys_ops. */
+ * shared and stays in filsys_ops.  dir_iter replaces the old whole-directory
+ * dir_read: it decodes one entry into the iterator's buffer and returns 1 with
+ * *ino / *name (a pointer into that buffer, NOT NUL-terminated) / *namlen /
+ * *next_off, or 0 at the end, or -errno. */
 struct filsys_dir_ops {
-    int (*dir_read)(filsys_edition_t *fs, filsys_inode_t *ip, filsys_dirent_t **ents, size_t *count);
+    int (*dir_iter)(filsys_iter_state_t *st, uint32_t *ino, const char **name,
+                    uint16_t *namlen, uint64_t *next_off);
     int (*dir_add)(filsys_edition_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name);
     int (*dir_remove)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name);
     int (*dir_lookup)(filsys_edition_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino);

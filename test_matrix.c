@@ -867,10 +867,16 @@ static void review_regressions(void) {
             if (filsys_create(fs, p, 0644, 0, 0, NULL) == 0)
                 created++;
         }
-        filsys_dirent_t *e = NULL;
+        uint32_t dino;
+        int drc = filsys_lookup(fs, "/d", &dino, NULL);
+        filsys_iter_t it;
         size_t n = 0;
-        int drc = filsys_readdir(fs, "/d", &e, &n);
-        free(e);
+        if (drc == 0 && (drc = filsys_dir_seek(fs, dino, 0, &it)) == 0) {
+            uint32_t eino; const char *name; uint16_t namlen; uint64_t next;
+            while (filsys_dir_next(&it, &eino, &name, &namlen, &next) == 1)
+                n++;
+            filsys_dir_release(&it);
+        }
         ok("review 1: 20 short names read back", created == 20 && drc == 0 && n >= 20);
         filsys_close(fs);
         unlink(img);
@@ -1902,21 +1908,26 @@ static void instrument_test(void) {
 #endif
 }
 
-/* Does directory `path` contain an entry named `name`?  (filsys_readdir hands
- * back every entry, "." and ".." included where they are real on-disk names;
- * the caller frees the list.) */
+/* Does directory `path` contain an entry named `name`?  The iterator hands back
+ * every entry, "." and ".." included where they are real on-disk names. */
 static int dir_has(filsys_t *fs, const char *path, const char *name) {
-    filsys_dirent_t *ents = NULL;
-    size_t count = 0;
-    if (filsys_readdir(fs, path, &ents, &count) != 0)
+    uint32_t ino;
+    if (filsys_lookup(fs, path, &ino, NULL) != 0)
         return 0;
-    for (size_t i = 0; i < count; i++)
-        if (strcmp(ents[i].name, name) == 0) {
-            free(ents);
-            return 1;
+    filsys_iter_t it;
+    if (filsys_dir_seek(fs, ino, 0, &it) != 0)
+        return 0;
+    size_t want = strlen(name);
+    uint32_t eino; const char *n; uint16_t namlen; uint64_t next;
+    int found = 0;
+    while (filsys_dir_next(&it, &eino, &n, &namlen, &next) == 1) {
+        if (namlen == want && memcmp(n, name, want) == 0) {
+            found = 1;
+            break;
         }
-    free(ents);
-    return 0;
+    }
+    filsys_dir_release(&it);
+    return found;
 }
 
 /* 2.11BSD directory records must not span a 512-byte DIRBLKSIZ boundary: a new

@@ -449,9 +449,9 @@ int  v8_bitmap_sync(filsys_edition_t *fs);
 ssize_t filsys_file_read(filsys_edition_t *fs, v7_inode_t *ip, uint8_t *buf, size_t size, off_t off);
 ssize_t filsys_file_write(filsys_edition_t *fs, v7_inode_t *ip, const uint8_t *buf, size_t size, off_t off);
 
-/* Read a directory's entries.  Caller frees with v7fs_dirents_free. */
-int v7fs_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count);
-void v7fs_dirents_free(v7_dirent_t *ents);
+/* Offset-resumable iteration over a directory (see filsys_ops.h). */
+int v7fs_dir_iter(filsys_iter_state_t *st, uint32_t *ino, const char **name,
+                  uint16_t *namlen, uint64_t *next_off);
 
 /* Look up name in a directory; returns 0 and *ino, or -ENOENT. */
 int v7fs_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino);
@@ -461,7 +461,8 @@ int v7fs_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char 
 int v7fs_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name);
 
 /* 2.11BSD variable-length directory entries (dir_bsd211.c). */
-int bsd211_dir_read(filsys_edition_t *fs, v7_inode_t *ip, v7_dirent_t **ents, size_t *count);
+int bsd211_dir_iter(filsys_iter_state_t *st, uint32_t *ino, const char **name,
+                    uint16_t *namlen, uint64_t *next_off);
 int bsd211_dir_add(filsys_edition_t *fs, v7_inode_t *ip, uint32_t ino, const char *name);
 int bsd211_dir_remove(filsys_edition_t *fs, v7_inode_t *ip, const char *name);
 int bsd211_dir_lookup(filsys_edition_t *fs, v7_inode_t *ip, const char *name, uint32_t *ino);

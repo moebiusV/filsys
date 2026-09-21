@@ -444,50 +444,59 @@ void p7fs_ifree(p7fs_t *fs, uint32_t ino) {
 
 /* ---- directories -------------------------------------------------------- */
 
-int p7fs_dir_read(p7fs_t *fs, p7_inode_t *ip, p7_dirent_t **ents, size_t *count) {
-    if (!(ip->mode & P7_IDIR))
-        return -ENOTDIR;
-    uint32_t nwords = ip->size / 2;
-    size_t ndirents = nwords / P7_DIRENTSZ;
-    /* +2 for the synthesized "." and ".." (absent on a real PDP-7 disk) */
-    p7_dirent_t *out = calloc(ndirents + 2, sizeof(*out));
-    if (!out)
-        return -ENOMEM;
+int p7fs_dir_iter(filsys_iter_state_t *st, uint32_t *ino, const char **name,
+                  uint16_t *namlen, uint64_t *next_off) {
+    filsys_edition_t *fs = st->fs;
+    filsys_inode_t *ip = &st->ip;
+    uint64_t tok = st->next_off;
 
-    size_t cnt = 0;
-    out[cnt].ino = (uint16_t)ip->ino;       strcpy(out[cnt].name, ".");   cnt++;
-    out[cnt].ino = P7_ROOTINO;    strcpy(out[cnt].name, "..");  cnt++;
+    /* The two synthetic entries come first (a real PDP-7 disk has no on-disk
+     * "." / "..").  The iterator's buffer doubles as a name scratch. */
+    if (tok == 0) {
+        st->buf[0] = '.';
+        st->buf[1] = 0;
+        *ino = ip->ino;
+        *name = (const char *)st->buf;
+        *namlen = 1;
+        *next_off = 1;
+        st->next_off = 1;
+        return 1;
+    }
+    if (tok == 1) {
+        memcpy(st->buf, "..", 3);
+        *ino = P7_ROOTINO;
+        *name = (const char *)st->buf;
+        *namlen = 2;
+        *next_off = 2;
+        st->next_off = 2;
+        return 1;
+    }
 
-    for (size_t d = 0; d < ndirents; d++) {
-        uint32_t base = (uint32_t)(d * P7_DIRENTSZ);
+    uint32_t ndirents = (ip->size / 2) / P7_DIRENTSZ;
+    for (uint32_t d = (uint32_t)(tok - 2); d < ndirents; d++) {
+        uint32_t base = d * P7_DIRENTSZ;
         uint32_t dino;
         if (inode_read_word(fs, ip, base, &dino))
-            goto fail;
+            return -EIO;
         if (dino == 0)
             continue;
         uint32_t namew[4];
         for (uint32_t w = 0; w < 4; w++)
             if (inode_read_word(fs, ip, base + 1 + w, &namew[w]))
-                goto fail;
+                return -EIO;
         char ent[P7_DIRSIZ + 1];
         unpack_name(namew, ent);
         if (!strcmp(ent, ".") || !strcmp(ent, ".."))
             continue;   /* synthesized above; a mkdir'd copy is redundant */
-        out[cnt].ino = (uint16_t)dino;
-        memcpy(out[cnt].name, ent, P7_DIRSIZ + 1);
-        cnt++;
+        *ino = (uint32_t)dino;
+        memcpy(st->buf, ent, P7_DIRSIZ + 1);
+        *name = (const char *)st->buf;
+        *namlen = (uint16_t)strlen(ent);
+        st->next_off = (uint64_t)(d + 1) + 2;
+        *next_off = st->next_off;
+        return 1;
     }
-    *ents = out;
-    *count = cnt;
     return 0;
-
-fail:
-    free(out);
-    return -EIO;
-}
-
-void p7fs_dirents_free(p7_dirent_t *ents) {
-    free(ents);
 }
 
 int p7fs_dir_add(p7fs_t *fs, p7_inode_t *ip, uint32_t ino, const char *name) {
@@ -563,7 +572,7 @@ int p7fs_dir_remove(p7fs_t *fs, p7_inode_t *ip, const char *name) {
 }
 
 int p7fs_dir_lookup(p7fs_t *fs, p7_inode_t *ip, const char *name, uint32_t *ino) {
-    /* "." and ".." are synthesized by dir_read; a lookup must agree. */
+    /* "." and ".." are synthesized by the iterator; a lookup must agree. */
     if (!strcmp(name, "."))  { *ino = ip->ino;      return 0; }
     if (!strcmp(name, "..")) { *ino = P7_ROOTINO;   return 0; }
     uint32_t nwords = ip->size / 2;
@@ -610,7 +619,7 @@ static uint32_t p7fs_makefree(filsys_edition_t *fs, filsys_chkctx_t *cx)
 }
 
 /* Preen for the PDP-7: fix link counts and reconnect orphaned regular files to
- * lost+found.  The PDP-7 directory has no on-disk "." and ".." (dir_read
+ * lost+found.  The PDP-7 directory has no on-disk "." and ".." (the iterator
  * synthesizes them), so lost+found is created empty -- its "." and ".." are
  * synthesized on read. */
 /* Classify an inode's mode into a checker state.  The PDP-7 has two type bits,
@@ -723,7 +732,7 @@ static void p7fs_statfs_op(filsys_edition_t *fs, filsys_statfs_t *st) {
     st->ffree = 0;   /* not tracked (read-only) */
 }
 static const struct filsys_dir_ops dir_pdp7 = {
-    .dir_read   = p7fs_dir_read,
+    .dir_iter   = p7fs_dir_iter,
     .dir_add    = p7fs_dir_add,
     .dir_remove = p7fs_dir_remove,
     .dir_lookup = p7fs_dir_lookup,

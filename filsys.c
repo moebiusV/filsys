@@ -171,9 +171,6 @@ static ssize_t file_read(filsys_t *fs, filsys_inode_t *ip, uint8_t *buf, size_t 
 static ssize_t file_write(filsys_t *fs, filsys_inode_t *ip, const uint8_t *buf, size_t sz, off_t off) {
     return filsys_file_write(fs->fs, ip, buf, sz, off);
 }
-static int dir_read(filsys_t *fs, filsys_inode_t *ip, filsys_dirent_t **e, size_t *n) {
-    return fs->ops->dir->dir_read(fs->fs, ip, e, n);
-}
 static int dir_lookup(filsys_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino) {
     return fs->ops->dir->dir_lookup(fs->fs, ip, name, ino);
 }
@@ -545,11 +542,57 @@ int filsys_stat_inode(filsys_t *fs, const filsys_inode_t *ip, filsys_stat_t *st)
     return 0;
 }
 
-int filsys_readdir_ino(filsys_t *fs, uint32_t ino, filsys_dirent_t **ents, size_t *count) {
+int filsys_dir_seek(filsys_t *fs, uint32_t ino, uint64_t off, filsys_iter_t *it) {
     filsys_inode_t ip;
     int rc = read_inode(fs, ino, &ip);
     if (rc) return rc;
-    return dir_read(fs, &ip, ents, count);
+    if (!mode_is_dir(fs->fs, &ip)) return -ENOTDIR;
+    /* A corrupt di_size must not turn the scan into a multi-gigabyte walk. */
+    if (ip.size > maxfile(fs)) return -EFBIG;
+    filsys_iter_state_t *st = malloc(sizeof(*st) + V7_MAXBSIZE);
+    if (!st) return -ENOMEM;
+    st->fs = fs->fs;
+    st->ip = ip;
+    st->buf = (uint8_t *)(st + 1);
+    st->buf_n = 0;
+    st->buf_off = 0;
+    st->next_off = off;
+    it->state = st;
+    return 0;
+}
+
+int filsys_dir_next(filsys_iter_t *it, uint32_t *ino, const char **name,
+                    uint16_t *namlen, uint64_t *next_off) {
+    filsys_iter_state_t *st = it->state;
+    return st->fs->desc.ops->dir->dir_iter(st, ino, name, namlen, next_off);
+}
+
+int filsys_dir_release(filsys_iter_t *it) {
+    free(it->state);
+    it->state = NULL;
+    return 0;
+}
+
+/* Is directory `ino` empty (holding only "." and "..")?  1 empty, 0 not,
+ * or -errno.  Used by rmdir and the rename target check. */
+static int dir_is_empty(filsys_t *fs, uint32_t ino) {
+    filsys_iter_t it;
+    int rc = filsys_dir_seek(fs, ino, 0, &it);
+    if (rc) return rc;
+    uint32_t eino;
+    const char *name;
+    uint16_t namlen;
+    uint64_t next;
+    while ((rc = filsys_dir_next(&it, &eino, &name, &namlen, &next)) == 1) {
+        int dot = (namlen == 1 && name[0] == '.');
+        int dotdot = (namlen == 2 && name[0] == '.' && name[1] == '.');
+        if (!dot && !dotdot) {
+            filsys_dir_release(&it);
+            return 0;
+        }
+    }
+    filsys_dir_release(&it);
+    return rc < 0 ? rc : 1;
 }
 
 ssize_t filsys_read_ino(filsys_t *fs, uint32_t ino, void *buf, size_t size, off_t off) {
@@ -924,12 +967,9 @@ int filsys_rmdir_in(filsys_t *fs, uint32_t dir, const char *name) {
     filsys_inode_t tip;
     if (read_inode(fs, ino, &tip)) return -EIO;
     if (!mode_is_dir(fs->fs, &tip)) return -ENOTDIR;
-    filsys_dirent_t *ents = NULL;
-    size_t count = 0;
-    if (dir_read(fs, &tip, &ents, &count)) return -EIO;
-    for (size_t i = 0; i < count; i++)
-        if (strcmp(ents[i].name, ".") && strcmp(ents[i].name, "..")) { free(ents); return -ENOTEMPTY; }
-    free(ents);
+    int e = dir_is_empty(fs, ino);
+    if (e < 0) return e;
+    if (!e) return -ENOTEMPTY;
     /* ---- validation/mutation line: no persistent write above ---- */
     /* One fewer name points at the directory now.  Its nlink counts its own "."
      * plus each parent entry (a historical directory may be hard-linked); it is
@@ -1065,11 +1105,9 @@ int filsys_rename_in(filsys_t *fs, uint32_t sdir, const char *sname,
         if (isdir && !tisdir) return -ENOTDIR;   /* directory over a file */
         if (!isdir && tisdir) return -EISDIR;    /* file over a directory */
         if (tisdir) {
-            filsys_dirent_t *ents = NULL; size_t count = 0;
-            if (dir_read(fs, &tip, &ents, &count)) return -EIO;
-            for (size_t i = 0; i < count; i++)
-                if (strcmp(ents[i].name, ".") && strcmp(ents[i].name, "..")) { free(ents); return -ENOTEMPTY; }
-            free(ents);
+            int e = dir_is_empty(fs, tino);
+            if (e < 0) return e;
+            if (!e) return -ENOTEMPTY;
         }
         tip_saved = tip;
         had_target = 1;

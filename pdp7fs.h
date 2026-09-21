@@ -78,9 +78,8 @@ const word_codec_t *filsys_word_codec_by_name(const char *name);
 static inline uint32_t p7_itod(uint32_t ino) { return P7_FIRSTINOBLK + ino / P7_INOPB; }
 static inline uint32_t p7_itoo(uint32_t ino) { return P7_INODESZ * (ino % P7_INOPB); }
 
-/* Decoded inode/dirent are the public filsys types. */
+/* The decoded inode is the public filsys type. */
 typedef filsys_inode_t  p7_inode_t;
-typedef filsys_dirent_t p7_dirent_t;
 
 /* PDP-7's backend state is the shared filsys_edition_t: the free-list head
  * lives in .freelist and the free-block count in .fl.tfree, so the file/dir
@@ -122,11 +121,11 @@ void     p7_ind_put(const filsys_edition_t *fs, uint8_t *buf, uint32_t i, uint32
 
 int p7fs_bmap(p7fs_t *fs, p7_inode_t *ip, uint32_t lbn, int create, uint32_t *bno);
 
-/* File data and path lookup are shared with the V7 engine (filsys_file_read/
- * write, filsys_path_lookup, filsys_dir_lookup); only the word-addressed dirent codec
- * (dir_read/add/remove) and the single-indirect bmap topology stay PDP-7. */
-int p7fs_dir_read(p7fs_t *fs, p7_inode_t *ip, p7_dirent_t **ents, size_t *count);
-void p7fs_dirents_free(p7_dirent_t *ents);
+/* File data and lookup are shared with the V7 engine (filsys_file_read/write,
+ * filsys_dir_lookup); only the word-addressed dirent codec (iter/add/remove)
+ * and the single-indirect bmap topology stay PDP-7. */
+int p7fs_dir_iter(filsys_iter_state_t *st, uint32_t *ino, const char **name,
+                  uint16_t *namlen, uint64_t *next_off);
 int p7fs_dir_lookup(p7fs_t *fs, p7_inode_t *ip, const char *name, uint32_t *ino);
 int p7fs_dir_add(p7fs_t *fs, p7_inode_t *ip, uint32_t ino, const char *name);
 int p7fs_dir_remove(p7fs_t *fs, p7_inode_t *ip, const char *name);

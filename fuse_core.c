@@ -64,22 +64,34 @@ int fuse_op_getattr_ino(fuse_ctx_t *c, uint64_t fh, struct stat *st)
 int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit,
                       void *arg)
 {
-    filsys_dirent_t *ents = NULL;
-    size_t count = 0;
-    int rc = filsys_readdir(c->fs, path, &ents, &count);
+    uint32_t ino;
+    int rc = filsys_lookup(c->fs, path, &ino, NULL);
     if (rc)
         return rc;
-    for (size_t i = 0; i < count; i++) {
+    filsys_iter_t it;
+    rc = filsys_dir_seek(c->fs, ino, 0, &it);
+    if (rc)
+        return rc;
+    size_t index = 0;
+    uint32_t eino;
+    const char *name;
+    uint16_t namlen;
+    uint64_t next_off;
+    while ((rc = filsys_dir_next(&it, &eino, &name, &namlen, &next_off)) == 1) {
         struct stat st;
         filsys_inode_t eip;
-        if (filsys_read_inode(c->fs, ents[i].ino, &eip) == 0)
+        if (filsys_read_inode(c->fs, eino, &eip) == 0)
             fill_stat(c->fs, &eip, &st);
         else
             memset(&st, 0, sizeof(st));
-        if (emit(arg, ents[i].name, &st, i))
+        char namebuf[64];
+        memcpy(namebuf, name, namlen);
+        namebuf[namlen] = 0;
+        if (emit(arg, namebuf, &st, index))
             break;
+        index++;
     }
-    free(ents);
+    filsys_dir_release(&it);
     return 0;
 }
 

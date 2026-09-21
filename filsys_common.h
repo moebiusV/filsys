@@ -17,7 +17,7 @@
 #include <sys/types.h>
 #include <errno.h>
 
-#include "filsys_engine.h"  /* on-disk types: filsys_inode_t, filsys_dirent_t, ... */
+#include "filsys_engine.h"  /* on-disk types: filsys_inode_t, filsys_iter_t, ... */
 #include "byteorder.h"    /* byte_order_ops_t, bo_* */
 #include "check.h"        /* filsys_check_t, alloc_ops_t, bitmap_state, ... */
 
@@ -68,11 +68,10 @@ typedef struct {
     filsys_probe_conf_t conf; /* how confident this match is (MAGIC/STRUCTURAL/...) */
 } filsys_probe_t;
 
-/* Decoded inode/dirent are the public filsys types (no per-backend copy, so
- * the ops table needs no type-punning cast).  The "v7_" prefix is historical:
- * every backend decodes into these. */
+/* The decoded inode is the public filsys type (no per-backend copy, so the ops
+ * table needs no type-punning cast).  The "v7_" prefix is historical: every
+ * backend decodes into these. */
 typedef filsys_inode_t  v7_inode_t;
-typedef filsys_dirent_t v7_dirent_t;
 
 /* In-core free-list allocator state (V6/V7/BSD211; the PDP-7 keeps its own
  * on-disk head, V1 a bitmap).  This was the free-list cache living directly in
@@ -135,7 +134,7 @@ typedef struct filsys_desc {
     const struct word_codec *word;  /* PDP-7 word container codec (NULL = byte-addressed) */
     uint8_t     max_namlen;         /* longest entry name (8 / 14 / 63) */
     uint8_t     dirent_size;        /* bytes per fixed entry (0 = variable) */
-    uint8_t     synth_dot;          /* dir_read synthesizes "." / ".." (PDP-7) */
+    uint8_t     synth_dot;          /* the iterator synthesizes "." / ".." (PDP-7) */
     uint8_t     freemap;            /* V8-family free-space form (V8_FREEMAP_*); 0 = free list */
     uint8_t     nomkfs;             /* 1 = mkfs.filsys cannot create this format yet (read-only) */
     uint8_t     noprobe;            /* 1 = findfs cannot detect this format yet (probe pending) */
@@ -191,5 +190,18 @@ typedef struct filsys_edition {
     uint32_t  v8_nblks;        /* on-disk bitmap blocks (0 = in-superblock) */
     uint32_t  v8_blk_start;    /* first on-disk bitmap block (out-of-superblock) */
 } filsys_edition_t;
+
+/* State of a directory iterator (filsys_dir_seek/next/release).  `buf` is the
+ * chunk buffer (up to V7_MAXBSIZE); it is heap-owned and freed by release, so
+ * it never sits on a caller's stack.  The per-format dir_iter reads a chunk on
+ * demand and hands back a pointer into buf. */
+typedef struct filsys_iter_state {
+    filsys_edition_t *fs;
+    filsys_inode_t    ip;        /* the directory inode */
+    uint8_t          *buf;       /* chunk buffer, owned */
+    size_t            buf_n;     /* bytes valid in buf */
+    size_t            buf_off;   /* directory byte offset of buf[0] */
+    uint64_t          next_off;  /* resume token: the next entry to emit */
+} filsys_iter_state_t;
 
 #endif /* FILSYS_COMMON_H */
