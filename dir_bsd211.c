@@ -1,7 +1,6 @@
 /* dir_bsd211.c - 2.11BSD variable-length directory entries (split from v7fs.c along its allocator/dir seams).
  *
  * SPDX-License-Identifier: ISC */
-#include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

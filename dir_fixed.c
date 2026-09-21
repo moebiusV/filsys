@@ -1,7 +1,6 @@
 /* dir_fixed.c - fixed 16-byte directory entries (V7/32V/Coherent/Xenix/System III/V, 2.9BSD) (split from v7fs.c along its allocator/dir seams).
  *
  * SPDX-License-Identifier: ISC */
-#include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

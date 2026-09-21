@@ -1,7 +1,6 @@
 /* alloc_v8bitmap.c - the V8-family bitmap allocator and superblock codec (split from v7fs.c along its allocator/dir seams).
  *
  * SPDX-License-Identifier: ISC */
-#include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

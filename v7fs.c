@@ -8,7 +8,8 @@
  * sys/alloc.c so the free list stays interchangeable with what a running
  * kernel expects.
  */
-#include <config.h>
+#define _POSIX_C_SOURCE 200809L
+
 #include "v7fs.h"
 #include "filsys_ops.h"
 #include "instrument.h"

@@ -12,7 +12,6 @@
  * into a full two-surface RB09 disk image.  See pdp7fs.h and pdp7-unix's
  * tools/mkfs7.
  */
-#include <config.h>
 #include "pdp7fs.h"
 #include "filsys_ops.h"
 #include "instrument.h"

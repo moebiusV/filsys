@@ -180,7 +180,8 @@ int filsys_create(filsys_t *fs, const char *path, mode_t mode, uid_t uid,
                   gid_t gid, uint32_t *ino);
 int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid,
                  gid_t gid);
-int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
+/* rdev is the packed (major<<8 | minor) device word, as filsys_stat_t reports. */
+int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, uint32_t rdev,
                  uid_t uid, gid_t gid);
 int filsys_unlink(filsys_t *fs, const char *path);
 int filsys_rmdir(filsys_t *fs, const char *path);
@@ -221,7 +222,7 @@ int filsys_create_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
 int filsys_mkdir_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
                     uid_t uid, gid_t gid);
 int filsys_mknod_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
-                    dev_t rdev, uid_t uid, gid_t gid);
+                    uint32_t rdev, uid_t uid, gid_t gid);
 int filsys_symlink_in(filsys_t *fs, const char *target, uint32_t dir,
                       const char *name);
 int filsys_unlink_in(filsys_t *fs, uint32_t dir, const char *name);

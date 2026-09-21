@@ -124,7 +124,7 @@ int filsys_mkdir(filsys_t *fs, const char *path, mode_t mode, uid_t uid, gid_t g
     return filsys_mkdir_in(fs, dino, name, mode, uid, gid);
 }
 
-int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, dev_t rdev,
+int filsys_mknod(filsys_t *fs, const char *path, mode_t mode, uint32_t rdev,
                  uid_t uid, gid_t gid) {
     if ((mode & S_IFMT) == S_IFREG)
         return filsys_create(fs, path, mode & 07777, uid, gid, NULL);

@@ -153,7 +153,12 @@ int fuse_op_mkdir(fuse_ctx_t *c, const char *path, mode_t mode)
 
 int fuse_op_mknod(fuse_ctx_t *c, const char *path, mode_t mode, dev_t rdev)
 {
-    return filsys_mknod(c->fs, path, mode, rdev, c->uid, c->gid);
+    /* Pack the host dev_t into V7's (major<<8 | minor) word.  Reject rather
+     * than mask: a modern major like 300 would otherwise silently become 44. */
+    if (major(rdev) > 255 || minor(rdev) > 255)
+        return -EINVAL;
+    uint32_t packed = (uint32_t)((major(rdev) << 8) | minor(rdev));
+    return filsys_mknod(c->fs, path, mode, packed, c->uid, c->gid);
 }
 
 int fuse_op_symlink(fuse_ctx_t *c, const char *target, const char *linkpath)

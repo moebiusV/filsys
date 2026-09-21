@@ -1,7 +1,6 @@
 /* alloc_freelist.c - the free-list block/inode allocator and its check driver (split from v7fs.c along its allocator/dir seams).
  *
  * SPDX-License-Identifier: ISC */
-#include <config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

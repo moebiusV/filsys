@@ -9,7 +9,8 @@
  *
  * SPDX-License-Identifier: ISC
  */
-#include <config.h>
+#define _POSIX_C_SOURCE 200809L
+
 #include "filsys.h"
 #include "filsys_ops.h"
 #include "v1fs.h"
@@ -24,13 +25,6 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
-
-/* major()/minor(): glibc >= 2.28 moved them from <sys/types.h> (which filsys.h
- * pulls in) into <sys/sysmacros.h>; the BSDs and macOS still declare them in
- * <sys/types.h>. */
-#ifdef HAVE_SYS_SYSMACROS_H
-#include <sys/sysmacros.h>
-#endif
 
 /* Open-handle tracking for hard_remove: with hard_remove the kernel unlinks an
  * open file's name directly (no silly-rename to a hidden name), so the inode and
@@ -252,8 +246,8 @@ static int lock_image(filsys_t *fs, const char *path, uint64_t offset) {
      * record locks (the BSDs/macOS/illumos) are per-process and drop on any
      * close of the file -- the best those hosts offer.  Solaris/illumos declare
      * F_OFD_SETLK for Linux binary compatibility but its kernel rejects it with
-     * EINVAL, so the OFD path is gated on __linux__, not just the decl. */
-#if defined(__linux__) && HAVE_DECL_F_OFD_SETLK
+     * EINVAL, so the OFD path is gated on __linux__. */
+#if defined(__linux__) && defined(F_OFD_SETLK)
     int setlk = F_OFD_SETLK, getlk = F_OFD_GETLK;
 #else
     int setlk = F_SETLK, getlk = F_GETLK;
@@ -928,7 +922,7 @@ fail:
 }
 
 int filsys_mknod_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
-                    dev_t rdev, uid_t uid, gid_t gid) {
+                    uint32_t rdev, uid_t uid, gid_t gid) {
     if (uidgid_fit(uid, gid))
         return -EINVAL;
     /* V1 has no device type bits: devices are the fixed inodes 1..40, wired up
@@ -947,12 +941,6 @@ int filsys_mknod_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
         return -EPERM;
     if (isreg)
         return filsys_create_in(fs, dir, name, mode & 07777, uid, gid, NULL);
-    /* V7 device numbers are 8-bit major + 8-bit minor packed into one word.
-     * Reject rather than mask: a modern major like 300 would otherwise
-     * silently become 44. */
-    if (major(rdev) > 255 || minor(rdev) > 255)
-        return -EINVAL;
-
     filsys_inode_t ddir;
     int rc = read_inode(fs, dir, &ddir);
     if (rc) return rc;
@@ -961,9 +949,8 @@ int filsys_mknod_in(filsys_t *fs, uint32_t dir, const char *name, mode_t mode,
     /* ---- validation/mutation line: no persistent write above ---- */
     uint32_t nino;
     filsys_inode_t nip;
-    uint32_t dev = (uint32_t)((major(rdev) << 8) | minor(rdev));
     rc = inode_create(fs, mode, uid, gid, isblk ? FILSYS_FT_BLK : FILSYS_FT_CHR,
-                      dev, &nino, &nip);
+                      rdev, &nino, &nip);
     if (rc) return rc;
     rc = dir_add(fs, &ddir, nino, name);
     if (rc) {

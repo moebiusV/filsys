@@ -8,7 +8,6 @@
  * derived from the inode-map size.  Directory entries are 10 bytes.  See
  * v1fs.h.
  */
-#include <config.h>
 #include "v1fs.h"
 #include "filsys_ops.h"
 #include "instrument.h"
