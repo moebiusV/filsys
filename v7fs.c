@@ -85,6 +85,8 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         close(fs->fd);
         return -EIO;
     }
+    uint16_t (*get16)(const uint8_t *) = fs->desc.bo->get16;
+    uint32_t (*get32)(const uint8_t *) = fs->desc.bo->get32;
     if (fs->desc.sb_decode) {
         /* V8-family: the rearranged superblock is decoded by the format's own
          * codec (v8_sb_decode), which also validates the cache counts. */
@@ -95,26 +97,26 @@ int v7fs_open(filsys_edition_t *fs, const char *path, int readonly,
         }
     } else if (fs->desc.isize_count) {
         /* V6: 16-bit superblock (s_fsize and the free cache are 2 bytes). */
-        fs->isize  = fs->desc.bo->get16(sb + 0);
-        fs->fsize  = fs->desc.bo->get16(sb + 2);
-        fs->fl.nfree  = fs->desc.bo->get16(sb + 4);
+        fs->isize  = get16(sb + 0);
+        fs->fsize  = get16(sb + 2);
+        fs->fl.nfree  = get16(sb + 4);
         for (int i = 0; i < fs->desc.nicfree; i++)
-            fs->fl.free[i] = fs->desc.bo->get16(sb + 6 + 2 * i);
-        fs->fl.ninode = fs->desc.bo->get16(sb + 206);
+            fs->fl.free[i] = get16(sb + 6 + 2 * i);
+        fs->fl.ninode = get16(sb + 206);
         for (int i = 0; i < fs->desc.nicinod; i++)
-            fs->fl.inode[i] = fs->desc.bo->get16(sb + 208 + 2 * i);
-        fs->time   = fs->desc.bo->get32(sb + 412);
+            fs->fl.inode[i] = get16(sb + 208 + 2 * i);
+        fs->time   = get32(sb + 412);
         fs->fmod   = sb[410];              /* s_fmod */
     } else {
-        fs->isize  = fs->desc.bo->get16(sb + 0);
-        fs->fsize  = fs->desc.bo->get32(sb + sb_fsize_off(fs->desc.pack4));
-        fs->fl.nfree  = fs->desc.bo->get16(sb + sb_nfree_off(fs->desc.pack4));
+        fs->isize  = get16(sb + 0);
+        fs->fsize  = get32(sb + sb_fsize_off(fs->desc.pack4));
+        fs->fl.nfree  = get16(sb + sb_nfree_off(fs->desc.pack4));
         for (int i = 0; i < fs->desc.nicfree; i++)
-            fs->fl.free[i] = fs->desc.bo->get32(sb + sb_free_off(fs->desc.pack4) + 4 * i);
-        fs->fl.ninode = fs->desc.bo->get16(sb + sb_ninode_off(fs->desc.pack4, fs->desc.nicfree));
+            fs->fl.free[i] = get32(sb + sb_free_off(fs->desc.pack4) + 4 * i);
+        fs->fl.ninode = get16(sb + sb_ninode_off(fs->desc.pack4, fs->desc.nicfree));
         for (int i = 0; i < V7_NICINOD; i++)
-            fs->fl.inode[i] = fs->desc.bo->get16(sb + sb_inode_off(fs->desc.pack4, fs->desc.nicfree) + 2 * i);
-        fs->time   = fs->desc.bo->get32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree));
+            fs->fl.inode[i] = get16(sb + sb_inode_off(fs->desc.pack4, fs->desc.nicfree) + 2 * i);
+        fs->time   = get32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree));
         fs->fmod   = sb[sb_time_off(fs->desc.pack4, fs->desc.nicfree) - fs->desc.fmod_back];  /* s_fmod */
     }
     if (fs->desc.sb_decode && fs->desc.freemap != V8_FREEMAP_LIST) {
@@ -273,46 +275,48 @@ int v7fs_super_write(filsys_edition_t *fs) {
             ? fs->io->read(fs, sb, 512, 512 + (off_t)fs->base)
             : v7fs_read_block(fs, V7_SUPERB, sb))
         return -EIO;
+    void (*put16)(uint8_t *, uint16_t) = fs->desc.bo->put16;
+    void (*put32)(uint8_t *, uint32_t) = fs->desc.bo->put32;
     if (fs->desc.sb_encode) {
         /* V8-family: the rearranged superblock is encoded by its own codec. */
         fs->desc.sb_encode(fs, sb);
     } else if (fs->desc.isize_count) {
         /* V6: a 16-bit superblock (s_fsize and the free cache are 2 bytes), and
          * no s_tfree/s_tinode -- those totals are recomputed on open. */
-        fs->desc.bo->put16(sb + 0, fs->isize);
-        fs->desc.bo->put16(sb + 2, (uint16_t)fs->fsize);
-        fs->desc.bo->put16(sb + 4, fs->fl.nfree);
+        put16(sb + 0, fs->isize);
+        put16(sb + 2, (uint16_t)fs->fsize);
+        put16(sb + 4, fs->fl.nfree);
         for (int i = 0; i < fs->desc.nicfree; i++)
-            fs->desc.bo->put16(sb + 6 + 2 * i, (uint16_t)fs->fl.free[i]);
-        fs->desc.bo->put16(sb + 206, fs->fl.ninode);
+            put16(sb + 6 + 2 * i, (uint16_t)fs->fl.free[i]);
+        put16(sb + 206, fs->fl.ninode);
         for (int i = 0; i < fs->desc.nicinod; i++)
-            fs->desc.bo->put16(sb + 208 + 2 * i, fs->fl.inode[i]);
-        fs->desc.bo->put32(sb + 412, (uint32_t)time(NULL));   /* s_time[2] */
+            put16(sb + 208 + 2 * i, fs->fl.inode[i]);
+        put32(sb + 412, (uint32_t)time(NULL));   /* s_time[2] */
         sb[410] = (uint8_t)(fs->fmod != 0);              /* s_fmod */
     } else {
-        fs->desc.bo->put16(sb + 0, fs->isize);
-        fs->desc.bo->put32(sb + sb_fsize_off(fs->desc.pack4), fs->fsize);
-        fs->desc.bo->put16(sb + sb_nfree_off(fs->desc.pack4), fs->fl.nfree);
+        put16(sb + 0, fs->isize);
+        put32(sb + sb_fsize_off(fs->desc.pack4), fs->fsize);
+        put16(sb + sb_nfree_off(fs->desc.pack4), fs->fl.nfree);
         for (int i = 0; i < fs->desc.nicfree; i++)
-            fs->desc.bo->put32(sb + sb_free_off(fs->desc.pack4) + 4 * i, fs->fl.free[i]);
-        fs->desc.bo->put16(sb + sb_ninode_off(fs->desc.pack4, fs->desc.nicfree), fs->fl.ninode);
+            put32(sb + sb_free_off(fs->desc.pack4) + 4 * i, fs->fl.free[i]);
+        put16(sb + sb_ninode_off(fs->desc.pack4, fs->desc.nicfree), fs->fl.ninode);
         for (int i = 0; i < V7_NICINOD; i++)
-            fs->desc.bo->put16(sb + sb_inode_off(fs->desc.pack4, fs->desc.nicfree) + 2 * i, fs->fl.inode[i]);
+            put16(sb + sb_inode_off(fs->desc.pack4, fs->desc.nicfree) + 2 * i, fs->fl.inode[i]);
         uint32_t now = (uint32_t)time(NULL);
-        fs->desc.bo->put32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree), now);  /* s_time */
+        put32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree), now);  /* s_time */
         sb[sb_time_off(fs->desc.pack4, fs->desc.nicfree) - fs->desc.fmod_back] = (uint8_t)(fs->fmod != 0); /* s_fmod */
         if (fs->desc.has_state)
-            fs->desc.bo->put32(sb + V7_SYSV_STATE_OFF,
-                          fs->fmod ? V7_SYSV_STATE_ACTIVE : V7_SYSV_STATE_CLEAN); /* s_state (R4 only) */
+            put32(sb + V7_SYSV_STATE_OFF,
+                  fs->fmod ? V7_SYSV_STATE_ACTIVE : V7_SYSV_STATE_CLEAN); /* s_state (R4 only) */
         if (!fs->desc.pack4 || fs->desc.magic) {
             int toff = sb_tfree_off(fs->desc.pack4, fs->desc.nicfree, fs->desc.has_dinfo);
-            fs->desc.bo->put32(sb + toff, fs->fl.tfree);        /* s_tfree */
-            fs->desc.bo->put16(sb + toff + 4, (uint16_t)fs->fl.tinode);   /* s_tinode */
+            put32(sb + toff, fs->fl.tfree);        /* s_tfree */
+            put16(sb + toff + 4, (uint16_t)fs->fl.tinode);   /* s_tinode */
         }
         if (fs->desc.interleave) {
-            fs->desc.bo->put16(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 10, fs->m);
-            fs->desc.bo->put16(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 12, fs->n);
-            fs->desc.bo->put32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 26, fs->unique);
+            put16(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 10, fs->m);
+            put16(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 12, fs->n);
+            put32(sb + sb_time_off(fs->desc.pack4, fs->desc.nicfree) + 26, fs->unique);
         }
     }
     if (fs->desc.dyn_bsize
@@ -346,20 +350,23 @@ int v7fs_read_inode(filsys_edition_t *fs, uint32_t ino, v7_inode_t *ip) {
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     const uint8_t *d = raw + off * fs->desc.inode_size;
+    uint16_t (*get16)(const uint8_t *) = fs->desc.bo->get16;
+    uint32_t (*get32)(const uint8_t *) = fs->desc.bo->get32;
+    uint32_t (*get24)(const uint8_t *) = fs->desc.bo->get24;
     memset(ip, 0, sizeof(*ip));
     ip->ino   = ino;
-    ip->mode  = fs->desc.bo->get16(d + 0);
-    ip->nlink = (int16_t)fs->desc.bo->get16(d + 2);
-    ip->uid   = (int16_t)fs->desc.bo->get16(d + 4);
-    ip->gid   = (int16_t)fs->desc.bo->get16(d + 6);
-    ip->size  = fs->desc.bo->get32(d + 8);
+    ip->mode  = get16(d + 0);
+    ip->nlink = (int16_t)get16(d + 2);
+    ip->uid   = (int16_t)get16(d + 4);
+    ip->gid   = (int16_t)get16(d + 6);
+    ip->size  = get32(d + 8);
     for (int i = 0; i < fs->desc.niaddr; i++)
         ip->addr[i] = fs->desc.addr_width == 4
-                    ? fs->desc.bo->get32(d + 12 + 4 * i)
-                    : fs->desc.bo->get24(d + 12 + 3 * i);
-    ip->atime = fs->desc.bo->get32(d + 52);
-    ip->mtime = fs->desc.bo->get32(d + 56);
-    ip->ctime = fs->desc.bo->get32(d + 60);
+                    ? get32(d + 12 + 4 * i)
+                    : get24(d + 12 + 3 * i);
+    ip->atime = get32(d + 52);
+    ip->mtime = get32(d + 56);
+    ip->ctime = get32(d + 60);
     return 0;
 }
 
@@ -383,20 +390,23 @@ int v7fs_write_inode(filsys_edition_t *fs, uint32_t ino, const v7_inode_t *ip) {
     if (v7fs_read_block(fs, bno, raw))
         return -EIO;
     uint8_t *d = raw + off * fs->desc.inode_size;
-    fs->desc.bo->put16(d + 0, (uint16_t)ip->mode);
-    fs->desc.bo->put16(d + 2, (uint16_t)ip->nlink);
-    fs->desc.bo->put16(d + 4, (uint16_t)ip->uid);
-    fs->desc.bo->put16(d + 6, (uint16_t)ip->gid);
-    fs->desc.bo->put32(d + 8, ip->size);
+    void (*put16)(uint8_t *, uint16_t) = fs->desc.bo->put16;
+    void (*put32)(uint8_t *, uint32_t) = fs->desc.bo->put32;
+    void (*put24)(uint8_t *, uint32_t) = fs->desc.bo->put24;
+    put16(d + 0, (uint16_t)ip->mode);
+    put16(d + 2, (uint16_t)ip->nlink);
+    put16(d + 4, (uint16_t)ip->uid);
+    put16(d + 6, (uint16_t)ip->gid);
+    put32(d + 8, ip->size);
     for (int i = 0; i < fs->desc.niaddr; i++) {
         if (fs->desc.addr_width == 4)
-            fs->desc.bo->put32(d + 12 + 4 * i, ip->addr[i]);
+            put32(d + 12 + 4 * i, ip->addr[i]);
         else
-            fs->desc.bo->put24(d + 12 + 3 * i, ip->addr[i]);
+            put24(d + 12 + 3 * i, ip->addr[i]);
     }
-    fs->desc.bo->put32(d + 52, ip->atime);
-    fs->desc.bo->put32(d + 56, ip->mtime);
-    fs->desc.bo->put32(d + 60, ip->ctime);
+    put32(d + 52, ip->atime);
+    put32(d + 56, ip->mtime);
+    put32(d + 60, ip->ctime);
     return v7fs_write_block(fs, bno, raw);
 }
 

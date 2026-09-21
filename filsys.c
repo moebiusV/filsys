@@ -56,6 +56,8 @@ struct open_handle {
 
 struct filsys {
     const struct filsys_ops *ops;
+    const struct filsys_dir_ops *dir;      /* fs->ops->dir, cached at open */
+    const struct filsys_inode_ops *inode;  /* fs->ops->inode, cached at open */
     filsys_edition_t *fs;                  /* backend state (filsys_edition_t / v1fs_t / p7fs_t);
                                              * its .desc is the one authoritative descriptor */
     int ver;
@@ -140,10 +142,10 @@ static int uidgid_fit(uid_t uid, gid_t gid) {
 /* ---- dispatch (internal): forward through the backend ops table ---------- */
 
 static int read_inode(filsys_t *fs, uint32_t ino, filsys_inode_t *ip) {
-    return fs->ops->inode->read_inode(fs->fs, ino, ip);
+    return fs->inode->read_inode(fs->fs, ino, ip);
 }
 static int write_inode(filsys_t *fs, uint32_t ino, const filsys_inode_t *ip) {
-    return fs->ops->inode->write_inode(fs->fs, ino, ip);
+    return fs->inode->write_inode(fs->fs, ino, ip);
 }
 static int ialloc(filsys_t *fs, uint32_t *ino) {
     return fs->ops->ialloc(fs->fs, ino);
@@ -172,22 +174,22 @@ static ssize_t file_write(filsys_t *fs, filsys_inode_t *ip, const uint8_t *buf, 
     return filsys_file_write(fs->fs, ip, buf, sz, off);
 }
 static int dir_lookup(filsys_t *fs, filsys_inode_t *ip, const char *name, uint32_t *ino) {
-    return fs->ops->dir->dir_lookup(fs->fs, ip, name, ino);
+    return fs->dir->dir_lookup(fs->fs, ip, name, ino);
 }
 static int dir_add(filsys_t *fs, filsys_inode_t *ip, uint32_t ino, const char *name) {
-    int rc = fs->ops->dir->dir_add(fs->fs, ip, ino, name);
+    int rc = fs->dir->dir_add(fs->fs, ip, ino, name);
     if (rc == 0)
         filsys_instr_dir_add(ip->ino, name, ino);
     return rc;
 }
 static int dir_remove(filsys_t *fs, filsys_inode_t *ip, const char *name) {
-    int rc = fs->ops->dir->dir_remove(fs->fs, ip, name);
+    int rc = fs->dir->dir_remove(fs->fs, ip, name);
     if (rc == 0)
         filsys_instr_dir_remove(ip->ino, name);
     return rc;
 }
 static int bmap(filsys_t *fs, filsys_inode_t *ip, uint32_t lbn, int create, uint32_t *bno) {
-    return fs->ops->inode->bmap(fs->fs, ip, lbn, create, bno);
+    return fs->inode->bmap(fs->fs, ip, lbn, create, bno);
 }
 
 /* Largest file the selected edition can address, in bytes. */
@@ -324,6 +326,8 @@ int filsys_open_arch(filsys_t **out, int edition, const char *path, int readonly
         return -ENOMEM;
     fs->ver = edition;
     fs->ops = fmt.ops;
+    fs->dir = fmt.ops->dir;
+    fs->inode = fmt.ops->inode;
     fs->uid = uid;
     fs->gid = gid;
     fs->readonly = readonly;
@@ -574,7 +578,7 @@ int filsys_stat_inode(filsys_t *fs, const filsys_inode_t *ip, filsys_stat_t *st)
      * unreadable indirect block makes the total unknowable; report the error
      * rather than a guessed (zero) count. */
     uint64_t blocks = 0;
-    int rc = fs->ops->inode->allocated_blocks(fs->fs, ip, &blocks);
+    int rc = fs->inode->allocated_blocks(fs->fs, ip, &blocks);
     if (rc)
         return rc;
     st->bytes = blocks * blksize;

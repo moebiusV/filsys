@@ -15,19 +15,21 @@
 
 /* Decode the rearranged V8-family superblock into the shared in-core fields. */
 int v8_sb_decode(filsys_edition_t *fs, const uint8_t *sb) {
-    fs->isize  = fs->desc.bo->get16(sb + V8_SB_ISIZE);
-    fs->fsize  = fs->desc.bo->get32(sb + V8_SB_FSIZE);
-    fs->fl.ninode = fs->desc.bo->get16(sb + V8_SB_NINODE);
+    uint16_t (*get16)(const uint8_t *) = fs->desc.bo->get16;
+    uint32_t (*get32)(const uint8_t *) = fs->desc.bo->get32;
+    fs->isize  = get16(sb + V8_SB_ISIZE);
+    fs->fsize  = get32(sb + V8_SB_FSIZE);
+    fs->fl.ninode = get16(sb + V8_SB_NINODE);
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->fl.inode[i] = fs->desc.bo->get16(sb + V8_SB_INODE + 2 * i);
-    fs->time   = fs->desc.bo->get32(sb + V8_SB_TIME);
+        fs->fl.inode[i] = get16(sb + V8_SB_INODE + 2 * i);
+    fs->time   = get32(sb + V8_SB_TIME);
     fs->fmod   = sb[V8_SB_FMOD];
-    fs->fl.tfree  = fs->desc.bo->get32(sb + V8_SB_TFREE);
-    fs->fl.tinode = fs->desc.bo->get16(sb + V8_SB_TINODE);
+    fs->fl.tfree  = get32(sb + V8_SB_TFREE);
+    fs->fl.tinode = get16(sb + V8_SB_TINODE);
     if (fs->desc.freemap == V8_FREEMAP_LIST) {
-        fs->fl.nfree = fs->desc.bo->get16(sb + V8_SB_NFREE);
+        fs->fl.nfree = get16(sb + V8_SB_NFREE);
         for (int i = 0; i < fs->desc.nicfree; i++)
-            fs->fl.free[i] = fs->desc.bo->get32(sb + V8_SB_FREE + 4 * i);
+            fs->fl.free[i] = get32(sb + V8_SB_FREE + 4 * i);
     } else {
         fs->fl.nfree = 0;   /* bitmap: no free-list cache */
     }
@@ -37,19 +39,21 @@ int v8_sb_decode(filsys_edition_t *fs, const uint8_t *sb) {
 }
 
 int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb) {
-    fs->desc.bo->put16(sb + V8_SB_ISIZE, fs->isize);
-    fs->desc.bo->put32(sb + V8_SB_FSIZE, fs->fsize);
-    fs->desc.bo->put16(sb + V8_SB_NINODE, fs->fl.ninode);
+    void (*put16)(uint8_t *, uint16_t) = fs->desc.bo->put16;
+    void (*put32)(uint8_t *, uint32_t) = fs->desc.bo->put32;
+    put16(sb + V8_SB_ISIZE, fs->isize);
+    put32(sb + V8_SB_FSIZE, fs->fsize);
+    put16(sb + V8_SB_NINODE, fs->fl.ninode);
     for (int i = 0; i < V7_NICINOD; i++)
-        fs->desc.bo->put16(sb + V8_SB_INODE + 2 * i, fs->fl.inode[i]);
-    fs->desc.bo->put32(sb + V8_SB_TIME, (uint32_t)time(NULL));
+        put16(sb + V8_SB_INODE + 2 * i, fs->fl.inode[i]);
+    put32(sb + V8_SB_TIME, (uint32_t)time(NULL));
     sb[V8_SB_FMOD] = (uint8_t)(fs->fmod != 0);
-    fs->desc.bo->put32(sb + V8_SB_TFREE, fs->fl.tfree);
-    fs->desc.bo->put16(sb + V8_SB_TINODE, (uint16_t)fs->fl.tinode);
+    put32(sb + V8_SB_TFREE, fs->fl.tfree);
+    put16(sb + V8_SB_TINODE, (uint16_t)fs->fl.tinode);
     if (fs->desc.freemap == V8_FREEMAP_LIST) {
-        fs->desc.bo->put16(sb + V8_SB_NFREE, fs->fl.nfree);
+        put16(sb + V8_SB_NFREE, fs->fl.nfree);
         for (int i = 0; i < fs->desc.nicfree; i++)
-            fs->desc.bo->put32(sb + V8_SB_FREE + 4 * i, fs->fl.free[i]);
+            put32(sb + V8_SB_FREE + 4 * i, fs->fl.free[i]);
     } else if (fs->desc.freemap == V8_FREEMAP_BITMAP) {
         /* in-superblock bitmap: S_valid=1 and S_bfree[] from the in-core bits */
         sb[V8_SB_VALID] = 1;
@@ -62,12 +66,12 @@ int v8_sb_encode(filsys_edition_t *fs, uint8_t *sb) {
                 if (fs->v8_bits[i >> 3] & (uint8_t)(1u << (i & 7)))
                     word |= (1u << b);
             }
-            fs->desc.bo->put32(sb + V8_SB_BFREE + 4 * w, word);
+            put32(sb + V8_SB_BFREE + 4 * w, word);
         }
     } else {   /* out-of-superblock bitmap (v10): S_flag=1, S_bsize=BSIZE*8 */
         sb[V8_SB_VALID] = 1;
         sb[V8_SB_FLAG] = 1;
-        fs->desc.bo->put32(sb + V8_SB_BSIZE, fs->desc.bsize * 8);
+        put32(sb + V8_SB_BSIZE, fs->desc.bsize * 8);
     }
     return 0;
 }

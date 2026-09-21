@@ -54,9 +54,10 @@ static int bsd211_iter_next(bsd211_iter_t *it) {
         return 0;                            /* misaligned: stop */
     if (off + BSD211_DIRHDRSZ > it->n)
         return 0;
-    uint16_t ino    = it->desc->bo->get16(it->buf + off);
-    uint16_t reclen = it->desc->bo->get16(it->buf + off + 2);
-    uint16_t namlen = it->desc->bo->get16(it->buf + off + 4);
+    uint16_t (*get16)(const uint8_t *) = it->desc->bo->get16;
+    uint16_t ino    = get16(it->buf + off);
+    uint16_t reclen = get16(it->buf + off + 2);
+    uint16_t namlen = get16(it->buf + off + 4);
     if (reclen < BSD211_DIRMINSZ || (reclen & 3u) || off + reclen > it->n)
         return 0;
     if ((uint32_t)namlen + 7u > reclen || namlen > it->desc->max_namlen)

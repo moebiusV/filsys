@@ -321,6 +321,7 @@ void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
     uint32_t cur[V6_NICFREE];
     memcpy(cur, fs->fl.free, sizeof(cur));
     uint32_t blocks = 0, guard = 0;
+    uint16_t (*get16)(const uint8_t *) = fs->desc.bo->get16;
     while (n > 0) {
         uint32_t bno = cur[--n];
         if (bno == 0)
@@ -330,9 +331,9 @@ void v6_count_free(filsys_edition_t *fs, uint32_t *nblk, uint32_t *nino) {
             uint8_t blk[V6_BSIZE];
             if (v7fs_read_block(fs, bno, blk))
                 break;
-            n = fs->desc.bo->get16(blk + 0);
+            n = get16(blk + 0);
             for (int i = 0; i < fs->desc.nicfree; i++)
-                cur[i] = fs->desc.bo->get16(blk + 2 + 2 * i);
+                cur[i] = get16(blk + 2 + 2 * i);
         }
         if (++guard > fs->fsize + fs->desc.nicfree)
             break;
