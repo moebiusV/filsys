@@ -75,18 +75,18 @@ static int fuse_getattr(const char *path, struct fuse_darwin_attr *attr,
 struct rd_bridge {
     void *buf;
     fuse_darwin_fill_dir_t filler;
-    size_t off;   /* resume offset: entries with index < off were already sent */
+    uint64_t off;   /* resume offset: entries with next_off <= off were already sent */
 };
 
 static int rd_emit(void *arg, const char *name, const struct stat *st,
-                   size_t index)
+                   uint64_t off)
 {
     struct rd_bridge *b = arg;
-    if (index < b->off)
+    if (off <= b->off)
         return 0;                       /* skip past the resume point */
     struct fuse_darwin_attr attr;
     stat_to_darwin_attr(&attr, st);
-    return b->filler(b->buf, name, &attr, (off_t)index + 1, 0);
+    return b->filler(b->buf, name, &attr, (off_t)off, 0);
 }
 
 static int fuse_readdir(const char *path, void *buf, fuse_darwin_fill_dir_t filler,
@@ -96,7 +96,7 @@ static int fuse_readdir(const char *path, void *buf, fuse_darwin_fill_dir_t fill
     (void)fi; (void)fl;
     /* macFUSE calls readdir with non-zero offsets even for the first (and only)
      * pass, so the resume offset must be honoured rather than assumed zero. */
-    struct rd_bridge b = { buf, filler, off < 0 ? 0 : (size_t)off };
+    struct rd_bridge b = { buf, filler, off < 0 ? 0 : (uint64_t)off };
     fuse_ctx_t c = fuse_ctx();
     return fuse_op_readdir(&c, path, rd_emit, &b);
 }

@@ -72,7 +72,6 @@ int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit,
     rc = filsys_dir_seek(c->fs, ino, 0, &it);
     if (rc)
         return rc;
-    size_t index = 0;
     uint32_t eino;
     const char *name;
     uint16_t namlen;
@@ -87,9 +86,8 @@ int fuse_op_readdir(fuse_ctx_t *c, const char *path, fuse_emit_t emit,
         char namebuf[64];
         memcpy(namebuf, name, namlen);
         namebuf[namlen] = 0;
-        if (emit(arg, namebuf, &st, index))
+        if (emit(arg, namebuf, &st, next_off))
             break;
-        index++;
     }
     filsys_dir_release(&it);
     return 0;

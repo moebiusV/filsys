@@ -19,11 +19,12 @@ typedef struct {
     gid_t     gid;
 } fuse_ctx_t;
 
-/* readdir emits one entry per call; `index` is the entry's 0-based position in
- * the directory (stable across calls), which the adapter turns into a FUSE
- * resume offset.  A non-zero return stops the walk. */
+/* readdir emits one entry per call; `off` is the engine's resume token
+ * (filsys_dir_next's next_off, the offset of the following entry), which the
+ * adapter hands to the FUSE filler as that entry's offset.  A non-zero return
+ * stops the walk. */
 typedef int (*fuse_emit_t)(void *arg, const char *name, const struct stat *st,
-                           size_t index);
+                           uint64_t off);
 
 int fuse_op_getattr(fuse_ctx_t *c, const char *path, struct stat *st);
 /* Stat an open handle (fi->fh = ino): an unlinked-open fd has no path. */

@@ -42,23 +42,23 @@ static int fuse_getattr(const char *path, struct stat *st)
 struct rd_bridge {
     void *buf;
     fuse_fill_dir_t filler;
-    size_t off;   /* resume offset: entries with index < off were already sent */
+    uint64_t off;   /* resume offset: entries with next_off <= off were already sent */
 };
 
 static int rd_emit(void *arg, const char *name, const struct stat *st,
-                   size_t index)
+                   uint64_t off)
 {
     struct rd_bridge *b = arg;
-    if (index < b->off)
+    if (off <= b->off)
         return 0;                       /* skip past the resume point */
-    return b->filler(b->buf, name, st, (off_t)index + 1);   /* FUSE2: 4 args */
+    return b->filler(b->buf, name, st, (off_t)off);   /* FUSE2: 4 args */
 }
 
 static int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                         off_t off, struct fuse_file_info *fi)
 {
     (void)fi;
-    struct rd_bridge b = { buf, filler, off < 0 ? 0 : (size_t)off };
+    struct rd_bridge b = { buf, filler, off < 0 ? 0 : (uint64_t)off };
     fuse_ctx_t c = fuse_ctx();
     return fuse_op_readdir(&c, path, rd_emit, &b);
 }
