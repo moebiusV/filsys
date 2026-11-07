@@ -1,5 +1,7 @@
 # filsys
 
+[github.com/moebiusV/filsys](https://github.com/moebiusV/filsys) | `git clone https://github.com/moebiusV/filsys`
+
 Mount a **Research Unix** filesystem image — the PDP-7 through Tenth Edition,
 plus 32V, Coherent, early Xenix, 2.9/2.11BSD and System III/V — as a FUSE
 filesystem on Linux, macOS, the BSDs, or illumos, so files can be copied
